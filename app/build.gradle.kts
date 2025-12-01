@@ -68,13 +68,14 @@ dependencies {
     implementation(libs.androidx.material3)
 
     // Compose UI libraries (no explicit versions because BOM or explicit coordinates below)
-    implementation("androidx.compose.ui:ui:1.6.0") // adjust if you have BOM or catalog entry
-    implementation("androidx.compose.material3:material3:1.2.0")
-    implementation("androidx.activity:activity-compose:1.9.0")
+    implementation(libs.androidx.ui) // adjust if you have BOM or catalog entry
+    //implementation("androidx.compose.material3:material3:1.4.0")
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.ui.tooling.preview)
 
     // Optional: helpful tooling for preview and debug
-    debugImplementation("androidx.compose.ui:ui-tooling:1.6.0")
-    debugImplementation("androidx.compose.ui:ui-tooling-preview:1.6.0")
+    debugImplementation(libs.androidx.ui.tooling)
+    debugImplementation(libs.androidx.ui.tooling.preview)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
