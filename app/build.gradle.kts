@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.compose.compiler)
 }
 
 android {
@@ -28,13 +29,32 @@ android {
             )
         }
     }
+
+    // Use Java 17 for Compose
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "11"
+
+    kotlin {
+        compilerOptions {
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+        }
     }
+
+
+
+    buildFeatures {
+        compose = true
+    }
+
+    composeOptions {
+        // Pick a Compose compiler version compatible with your Kotlin plugin.
+        // If you run into compatibility issues, I can adjust this to match your Kotlin plugin.
+        kotlinCompilerExtensionVersion = "1.5.14"
+    }
+
+    namespace = "com.example.automationcompanion"
 }
 
 dependencies {
@@ -43,6 +63,19 @@ dependencies {
     implementation(libs.material)
     implementation(libs.androidx.activity)
     implementation(libs.androidx.constraintlayout)
+    implementation(libs.androidx.runtime)
+    implementation(libs.androidx.navigation.compose)
+    implementation(libs.androidx.material3)
+
+    // Compose UI libraries (no explicit versions because BOM or explicit coordinates below)
+    implementation("androidx.compose.ui:ui:1.6.0") // adjust if you have BOM or catalog entry
+    implementation("androidx.compose.material3:material3:1.2.0")
+    implementation("androidx.activity:activity-compose:1.9.0")
+
+    // Optional: helpful tooling for preview and debug
+    debugImplementation("androidx.compose.ui:ui-tooling:1.6.0")
+    debugImplementation("androidx.compose.ui:ui-tooling-preview:1.6.0")
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
