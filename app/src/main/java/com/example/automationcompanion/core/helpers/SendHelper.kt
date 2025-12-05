@@ -20,7 +20,7 @@ import kotlinx.coroutines.launch
  */
 object SendHelper {
     private const val TAG = "SendHelper"
-    private const val DEV_CHANNEL_ID = "locationservicetest_automation_dev"
+    private const val DEV_CHANNEL_ID = "automationcompanion_dev"
 
     /**
      * Entry point for callers. Launches an IO coroutine.

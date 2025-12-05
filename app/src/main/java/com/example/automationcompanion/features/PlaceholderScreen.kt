@@ -20,8 +20,8 @@ fun PlaceholderScreen(title: String, todos:List<String>, onBack: () -> Unit) {
         Text("Placeholder / TODOS:", style = MaterialTheme.typography.titleMedium)
         Spacer(modifier = Modifier.height(8.dp))
 
-        for ((i,t) in todos.withIndex()) {
-            Text("• ${t}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 4.dp))
+        for ((_,t) in todos.withIndex()) {
+            Text("• $t", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 4.dp))
         }
 
         Spacer(modifier = Modifier.weight(1f))

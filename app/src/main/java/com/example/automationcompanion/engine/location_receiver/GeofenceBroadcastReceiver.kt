@@ -11,14 +11,14 @@ import com.example.automationcompanion.core.helpers.SendHelper
 class GeofenceBroadcastReceiver : BroadcastReceiver() {
 
     companion object {
-        private const val TAG = "GeofenceReceiver"
+        //private const val TAG = "GeofenceReceiver"
     }
 
     override fun onReceive(context: Context, intent: Intent) {
         try {
-            Log.i("LocDebug", "GeofenceBroadcastReceiver.ONRECV RAW: action=${intent?.action} comp=${intent?.component} data=${intent?.data} flags=0x${intent?.flags?.toString(16)} extras=${intent?.extras}")
+            Log.i("LocDebug", "GeofenceBroadcastReceiver.ONRECV RAW: action=${intent.action} comp=${intent.component} data=${intent.data} flags=0x${intent.flags.toString(16)} extras=${intent.extras}")
 
-            val extras = intent?.extras
+            val extras = intent.extras
             if (extras == null) {
                 Log.i("LocDebug", "GeofenceBroadcastReceiver: intent.extras is NULL")
             } else {

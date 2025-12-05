@@ -7,18 +7,18 @@ import android.content.Intent
 import android.os.PowerManager
 import android.util.Log
 import com.example.automationcompanion.core.helpers.FallbackFlow
-import com.example.automationcompanion.core.helpers.RootLocationToggle
+//import com.example.automationcompanion.core.helpers.RootLocationToggle
 import com.example.automationcompanion.engine.accessibility.TileTogglerAccessibilityService
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlin.time.Duration.Companion.seconds
+//import kotlinx.coroutines.CoroutineScope
+//import kotlinx.coroutines.Dispatchers
+//import kotlinx.coroutines.launch
+//import kotlin.time.Duration.Companion.seconds
 
 class SlotAlarmReceiver : BroadcastReceiver() {
 
     companion object {
         private const val TAG = "SlotAlarmReceiver"
-        private const val TAG_ROOT = "HandleStartRoot"
+//        private const val TAG_ROOT = "HandleStartRoot"
     }
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -27,15 +27,15 @@ class SlotAlarmReceiver : BroadcastReceiver() {
 
         Log.i(TAG, "Received alarm action=$action slotId=$slotId")
 
-        if (slotId == -1L) {
-            // If no slotId provided, fall back to generic behavior (optional)
-        }
+//        if (slotId == -1L) {
+//            // If no slotId provided, fall back to generic behavior (optional)
+//        }
 
         when (action) {
-            "com.example.locauto.START_SLOT" -> {
+            "com.example.automationcompanion.START_SLOT" -> {
                 handleStart(context, slotId)
             }
-            "com.example.locauto.STOP_SLOT" -> {
+            "com.example.automationcompanion.STOP_SLOT" -> {
                 handleStop(context, slotId)
             }
             else -> {
@@ -51,7 +51,7 @@ class SlotAlarmReceiver : BroadcastReceiver() {
     private fun wakeAndDo(context: Context, block: () -> Unit) {
         try {
             val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
-            val wl = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "locauto:slot_wl")
+            val wl = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "automationcompanion:slot_wl")
             wl.acquire(15_000L) // hold for 15 seconds max
             try {
                 block()

@@ -15,24 +15,24 @@ class StopTrackingReceiver : BroadcastReceiver() {
 
     companion object {
         private const val TAG = "StopTrackingReceiver"
-        const val ACTION_STOP_TRACKING = "com.example.locationservicetest_automation.ACTION_STOP_TRACKING"
+        const val ACTION_STOP_TRACKING = "com.example.automationcompanion.ACTION_STOP_TRACKING"
         const val TRACKING_NOTIFICATION_ID = 1
 
         /**
          * Helper to create the PendingIntent used in the notification action.
          * Use this when building the notification action in TrackingForegroundService.
          */
-        fun buildStopPendingIntent(context: Context): android.app.PendingIntent {
-            val stopIntent = Intent(context, StopTrackingReceiver::class.java).apply {
-                action = ACTION_STOP_TRACKING
-            }
-            return android.app.PendingIntent.getBroadcast(
-                context,
-                0,
-                stopIntent,
-                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
-            )
-        }
+//        fun buildStopPendingIntent(context: Context): android.app.PendingIntent {
+//            val stopIntent = Intent(context, StopTrackingReceiver::class.java).apply {
+//                action = ACTION_STOP_TRACKING
+//            }
+//            return android.app.PendingIntent.getBroadcast(
+//                context,
+//                0,
+//                stopIntent,
+//                android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+//            )
+//        }
     }
 
     override fun onReceive(context: Context, intent: Intent?) {

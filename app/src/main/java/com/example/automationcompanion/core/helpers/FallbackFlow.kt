@@ -12,7 +12,7 @@ import com.example.automationcompanion.R
 import com.example.automationcompanion.features.system_context_automation.location.ui.EnableLocationActivity
 
 object FallbackFlow {
-    private const val CHANNEL_ID = "locationservicetest_automation_fallback"
+    private const val CHANNEL_ID = "automationcompanion_fallback"
     private const val NOTIF_ID_ENABLE_LOCATION = 1001
     private const val NOTIF_ID_ENABLE_ACCESSIBILITY = 1002
 

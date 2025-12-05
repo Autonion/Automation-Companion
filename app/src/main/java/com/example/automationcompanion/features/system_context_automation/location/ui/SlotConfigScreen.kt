@@ -1,24 +1,23 @@
 // app/src/main/java/com/example/automationcompanion/features/system_context_automation/ui/SlotConfigScreen.kt
 package com.example.automationcompanion.features.system_context_automation.location.ui
 
-import android.view.ViewGroup
 import android.widget.SeekBar
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.Alignment
 import androidx.compose.material3.Text
 import androidx.compose.foundation.clickable
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.viewinterop.AndroidView
+
+//import androidx.compose.ui.tooling.preview.Preview
 //import com.example.automationcompanion.features.system_context_automation.location.RootOptInToggle
-import kotlin.math.asin
-import kotlin.math.atan2
-import kotlin.math.cos
-import kotlin.math.sin
+//import kotlin.math.asin
+//import kotlin.math.atan2
+//import kotlin.math.cos
+//import kotlin.math.sin
 
 @Composable
 fun SlotConfigScreen(
@@ -35,18 +34,18 @@ fun SlotConfigScreen(
     onRadiusChanged: (Int) -> Unit,
     onMessageChanged: (String) -> Unit,
     onPickContactClicked: () -> Unit,
-    onPickLocationClicked: () -> Unit,
+    //onPickLocationClicked: () -> Unit,
     onStartTimeClicked: () -> Unit,
     onEndTimeClicked: () -> Unit,
-//    onSaveClicked: (Int, Boolean) -> Unit,
+    //onSaveClicked: (Int, Boolean) -> Unit,
     onSaveClicked: (Int) -> Unit,
     // expose map callbacks for external actions
-    initialLat: Double,
-    initialLng: Double,
-    initialRadius: Float,
-    onMapPointSelected: (Double, Double) -> Unit
+    //initialLat: Double,
+    //initialLng: Double,
+    //initialRadius: Float,
+    //onMapPointSelected: (Double, Double) -> Unit
 ) {
-    val ctx = LocalContext.current
+    //val ctx = LocalContext.current
     Column(modifier = Modifier
         .fillMaxSize()
         .padding(16.dp),
