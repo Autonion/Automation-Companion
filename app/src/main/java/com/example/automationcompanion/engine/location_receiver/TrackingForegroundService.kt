@@ -24,9 +24,9 @@ import kotlin.math.max
 
 class TrackingForegroundService : Service() {
     companion object {
-        const val ACTION_START_FOR_SLOT = "com.example.locationservicetest_automation.ACTION_START_SLOT"
-        const val ACTION_STOP_FOR_SLOT = "com.example.locationservicetest_automation.ACTION_STOP_SLOT"
-        private const val CHANNEL_ID = "locationservicetest_automation_tracking"
+        const val ACTION_START_FOR_SLOT = "com.example.automationcompanion.ACTION_START_SLOT"
+        const val ACTION_STOP_FOR_SLOT = "com.example.automationcompanion.ACTION_STOP_SLOT"
+        private const val CHANNEL_ID = "automationcompanion_tracking"
 
         /**
          * Generic start without slotId. Starts service in foreground (useful for manual starts).
@@ -72,10 +72,10 @@ class TrackingForegroundService : Service() {
     }
 
     private lateinit var geofencingClient: com.google.android.gms.location.GeofencingClient
-    private val geofencePendingIntent: PendingIntent by lazy {
-        val intent = Intent(this, GeofenceBroadcastReceiver::class.java)
-        PendingIntent.getBroadcast(this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE)
-    }
+//    private val geofencePendingIntent: PendingIntent by lazy {
+//        val intent = Intent(this, GeofenceBroadcastReceiver::class.java)
+//        PendingIntent.getBroadcast(this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE)
+//    }
 
 
     override fun onCreate() {
@@ -170,16 +170,16 @@ class TrackingForegroundService : Service() {
                                         val statusCode = ex.statusCode
                                         Log.e("LocDebug", "Failed to add geofence for slot $slotId: statusCode=$statusCode message=${ex.message}", ex)
                                     } else {
-                                        Log.e("LocDebug", "Failed to add geofence for slot $slotId: ${ex?.message}", ex)
+                                        Log.e("LocDebug", "Failed to add geofence for slot $slotId: ${ex.message}", ex)
                                     }
                                 }
-                            } catch (e: SecurityException) {
+                            } catch (_: SecurityException) {
                                 Log.w("LocDebug", "Immediate proximity check skipped: missing location permission")
                             }
                         }
                     }
                     .addOnFailureListener { ex ->
-                        Log.e("LocDebug", "Failed to add geofence for slot ${slot.id}: ${ex?.message}", ex)
+                        Log.e("LocDebug", "Failed to add geofence for slot ${slot.id}: ${ex.message}", ex)
                         FallbackFlow.showEnableLocationNotification(applicationContext)
                     }
             } catch (ise: SecurityException) {
@@ -217,11 +217,6 @@ class TrackingForegroundService : Service() {
             val c = NotificationChannel(CHANNEL_ID, "Tracking", NotificationManager.IMPORTANCE_LOW)
             nm.createNotificationChannel(c)
         }
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        // TODO: stop location updates / unregister geofence
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

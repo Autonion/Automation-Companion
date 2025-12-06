@@ -2,7 +2,6 @@
 package com.example.automationcompanion.features.system_context_automation.location.ui
 
 import android.Manifest
-import android.app.Activity
 import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
@@ -25,7 +24,7 @@ import android.widget.Toast
 import androidx.core.content.ContextCompat
 import android.content.pm.PackageManager
 import android.util.Log
-import com.example.automationcompanion.core.helpers.AlarmHelpers
+import androidx.compose.runtime.mutableIntStateOf
 import com.example.automationcompanion.data.db.AppDatabase
 import com.example.automationcompanion.data.models.Slot
 import com.example.automationcompanion.engine.location_receiver.LocationReminderReceiver
@@ -36,7 +35,7 @@ class SlotConfigActivity : AppCompatActivity() {
     // UI state — keep simple and lift into a ViewModel when desired
     private var lat by mutableStateOf("61.979434")
     private var lng by mutableStateOf("99.171125")
-    private var radius by mutableStateOf(300)
+    private var radius by mutableIntStateOf(300)
     private var message by mutableStateOf("")
     private var contactsCsv by mutableStateOf("")
 
@@ -50,7 +49,7 @@ class SlotConfigActivity : AppCompatActivity() {
 
     // Activity result launchers
     private val contactPickerLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
-        if (res.resultCode == Activity.RESULT_OK && res.data != null) {
+        if (res.resultCode == RESULT_OK && res.data != null) {
             val uri: Uri? = res.data!!.data
             uri?.let { u ->
                 val num = fetchPhoneNumberFromContact(u)
@@ -63,7 +62,7 @@ class SlotConfigActivity : AppCompatActivity() {
         }
     }
 
-    private val requestMultiplePermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { perms ->
+    private val requestMultiplePermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { _ ->
         // handle permission results
         // nothing special here; we'll check again at save
     }
@@ -95,10 +94,10 @@ class SlotConfigActivity : AppCompatActivity() {
                         val pick = Intent(Intent.ACTION_PICK, ContactsContract.CommonDataKinds.Phone.CONTENT_URI)
                         contactPickerLauncher.launch(pick)
                     },
-                    onPickLocationClicked = {
-                        // if you have a separate map-picker activity, launch it
-                        // mapPickerLauncher.launch(Intent(this, MapPickerActivity::class.java))
-                    },
+//                    onPickLocationClicked = {
+//                        // if you have a separate map-picker activity, launch it
+//                        // mapPickerLauncher.launch(Intent(this, MapPickerActivity::class.java))
+//                    },
                     onStartTimeClicked = {
                         showTimePicker(true)
                     },
@@ -111,13 +110,13 @@ class SlotConfigActivity : AppCompatActivity() {
                     onSaveClicked = { remindMinutes ->
                         doSaveSlot(remindMinutes)
                     },
-                    initialLat = lat.toDoubleOrNull() ?: 16.504464,
-                    initialLng = lng.toDoubleOrNull() ?: 80.652678,
-                    initialRadius = radius.toFloat(),
-                    onMapPointSelected = { aLat, aLng ->
-                        lat = aLat.toString()
-                        lng = aLng.toString()
-                    }
+//                    initialLat = lat.toDoubleOrNull() ?: 16.504464,
+//                    initialLng = lng.toDoubleOrNull() ?: 80.652678,
+//                    initialRadius = radius.toFloat(),
+//                    onMapPointSelected = { aLat, aLng ->
+//                        lat = aLat.toString()
+//                        lng = aLng.toString()
+//                    }
                 )
             }
         }
@@ -157,21 +156,21 @@ class SlotConfigActivity : AppCompatActivity() {
         tpd.show()
     }
 
-    fun scheduleReminderForSlot(context: Context, slotId: Long, remindAtMillis: Long) {
-        val am = context.getSystemService(android.app.AlarmManager::class.java)
-        val intent = Intent(context, com.example.automationcompanion.engine.location_receiver.LocationReminderReceiver::class.java).apply {
-            putExtra(com.example.automationcompanion.engine.location_receiver.LocationReminderReceiver.EXTRA_SLOT_ID, slotId)
-        }
-        val pi = PendingIntent.getBroadcast(
-            context,
-            ("reminder_$slotId").hashCode(),
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        // Use your AlarmHelpers helper to schedule exact or fallback; fallback to setExact if helper not available:
-        AlarmHelpers.scheduleExactOrFallback(context, remindAtMillis, pi, null)
-    }
+//    fun scheduleReminderForSlot(context: Context, slotId: Long, remindAtMillis: Long) {
+//        val am = context.getSystemService(android.app.AlarmManager::class.java)
+//        val intent = Intent(context, com.example.automationcompanion.engine.location_receiver.LocationReminderReceiver::class.java).apply {
+//            putExtra(com.example.automationcompanion.engine.location_receiver.LocationReminderReceiver.EXTRA_SLOT_ID, slotId)
+//        }
+//        val pi = PendingIntent.getBroadcast(
+//            context,
+//            ("reminder_$slotId").hashCode(),
+//            intent,
+//            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+//        )
+//
+//        // Use your AlarmHelpers helper to schedule exact or fallback; fallback to setExact if helper not available:
+//        AlarmHelpers.scheduleExactOrFallback(context, remindAtMillis, pi, null)
+//    }
 
     private fun scheduleLocationReminders(
         context: Context,
@@ -179,7 +178,7 @@ class SlotConfigActivity : AppCompatActivity() {
         startMillis: Long,
         remindMinutes: Int
     ) {
-        val am = context.getSystemService(android.app.AlarmManager::class.java)
+        val am = context.getSystemService(AlarmManager::class.java)
 
         val reminderStart = startMillis - remindMinutes * 60_000L
         if (reminderStart <= System.currentTimeMillis()) {

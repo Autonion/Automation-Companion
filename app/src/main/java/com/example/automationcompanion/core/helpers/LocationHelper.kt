@@ -20,16 +20,16 @@ object LocationHelper {
             }
     }
 
-    fun unregisterGeofenceById(context: Context, slotId: Long) {
-        val geofencingClient = LocationServices.getGeofencingClient(context)
-        geofencingClient.removeGeofences(listOf(slotId.toString()))
-            .addOnSuccessListener {
-                Log.i("LocationHelper", "Geofence removed for slot $slotId")
-            }
-            .addOnFailureListener { e ->
-                Log.w("LocationHelper", "Failed removing geofence for $slotId: ${e.message}")
-            }
-    }
+//    fun unregisterGeofenceById(context: Context, slotId: Long) {
+//        val geofencingClient = LocationServices.getGeofencingClient(context)
+//        geofencingClient.removeGeofences(listOf(slotId.toString()))
+//            .addOnSuccessListener {
+//                Log.i("LocationHelper", "Geofence removed for slot $slotId")
+//            }
+//            .addOnFailureListener { e ->
+//                Log.w("LocationHelper", "Failed removing geofence for $slotId: ${e.message}")
+//            }
+//    }
 
     private fun geofencePendingIntent(context: Context): PendingIntent {
         val intent = Intent(context, GeofenceBroadcastReceiver::class.java)

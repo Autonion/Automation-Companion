@@ -2,8 +2,6 @@ package com.example.automationcompanion.features.system_context_automation.locat
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -20,6 +18,8 @@ import android.location.LocationManager
 import android.os.Build
 import android.widget.Toast
 import androidx.activity.result.ActivityResult
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.core.content.ContextCompat
@@ -106,7 +106,7 @@ fun SystemContextMainScreen(
         return try {
             val lm = ctx.getSystemService(Context.LOCATION_SERVICE) as LocationManager
             lm.isProviderEnabled(LocationManager.GPS_PROVIDER) || lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
-        } catch (t: Throwable) {
+        } catch (_: Throwable) {
             false
         }
     }
@@ -184,7 +184,7 @@ fun SystemContextMainScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
-                            imageVector = Icons.Default.ArrowBack,
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Back"
                         )
                     }
@@ -226,7 +226,7 @@ fun SystemContextMainScreen(
                 }
             )
 
-            Divider()
+            HorizontalDivider()
 
             // ⭐ Remaining TODO features (not implemented yet)
             Text(
@@ -250,11 +250,11 @@ fun isAccessibilityEnabled(context: Context): Boolean {
     return am == 1
 }
 
-fun openAccessibilitySettings(context: Context) {
-    val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    context.startActivity(intent)
-}
+//fun openAccessibilitySettings(context: Context) {
+//    val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+//    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+//    context.startActivity(intent)
+//}
 
 @Composable
 private fun FeatureCard(title: String, description: String, onClick: () -> Unit) {

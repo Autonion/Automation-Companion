@@ -15,8 +15,12 @@ abstract class AppDatabase : RoomDatabase() {
         @Volatile private var INSTANCE: AppDatabase? = null
         fun get(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
-                val inst = Room.databaseBuilder(context.applicationContext, AppDatabase::class.java, "locauto.db")
-                    .fallbackToDestructiveMigration()
+                val inst = Room.databaseBuilder(
+                    context.applicationContext,
+                    AppDatabase::class.java,
+                    "locauto.db"
+                )
+                    .fallbackToDestructiveMigration(false)
                     .build()
                 INSTANCE = inst
                 inst
