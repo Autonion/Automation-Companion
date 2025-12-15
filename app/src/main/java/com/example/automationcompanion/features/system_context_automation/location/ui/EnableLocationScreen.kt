@@ -9,8 +9,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
-import com.example.automationcompanion.engine.accessibility.TileTogglerAccessibilityService
-import com.example.automationcompanion.engine.location_receiver.TrackingForegroundService
+import com.example.automationcompanion.features.system_context_automation.location.engine.accessibility.TileToggleFeature
+import com.example.automationcompanion.features.system_context_automation.location.engine.location_receiver.TrackingForegroundService
+import com.example.automationcompanion.features.system_context_automation.location.isAccessibilityEnabled
 
 @Composable
 fun EnableLocationScreen(
@@ -33,6 +34,7 @@ fun EnableLocationScreen(
                 if (success) {
                     // attempt toggle via accessibility
                     tryAccessibilityToggle(
+                        context = context,
                         onStart = { loading = true },
                         onStop = { loading = false },
                         onSuccess = {
@@ -83,22 +85,32 @@ fun EnableLocationScreen(
 }
 
 private fun tryAccessibilityToggle(
+    context: android.content.Context,
     onStart: () -> Unit,
     onStop: () -> Unit,
     onSuccess: () -> Unit,
     onFallback: () -> Unit
 ) {
-    val acc = TileTogglerAccessibilityService.instance
-    if (acc != null) {
-        onStart()
-        acc.attemptToggleLocation { success ->
-            onStop()
-            if (success) onSuccess() else onFallback()
-        }
-    } else {
+    if (!isAccessibilityEnabled(context)) {
+        context.startActivity(
+            Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+        )
         onFallback()
+        return
+    }
+
+    onStart()
+
+    TileToggleFeature.toggleLocation { success ->
+        // already on main thread
+        onStop()
+        if (success) onSuccess() else onFallback()
     }
 }
+
+
 
 @Preview
 @Composable

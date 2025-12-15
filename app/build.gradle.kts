@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.compose.compiler)
     id("com.google.devtools.ksp")
     kotlin("kapt")
+    alias(libs.plugins.kotlin.serialization)
 }
 
 android {
@@ -47,6 +48,7 @@ android {
 
 
     buildFeatures {
+        viewBinding = true
         compose = true
     }
 
@@ -94,6 +96,16 @@ dependencies {
     //kapt(libs.androidx.room.compiler)
     ksp(libs.androidx.room.compiler)
     implementation(libs.compose.icons)
+
+    //Gesture Recording Playback
+    implementation(libs.kotlinx.serialization.json)
+    implementation(libs.androidx.lifecycle.viewmodel.ktx)
+    implementation("androidx.localbroadcastmanager:localbroadcastmanager:1.1.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-savedstate:2.6.2")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
+    implementation("androidx.savedstate:savedstate:1.2.0")
+
+
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

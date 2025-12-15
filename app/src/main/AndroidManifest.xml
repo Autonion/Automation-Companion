@@ -20,6 +20,10 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
 
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
 
     <application
         android:allowBackup="true"
@@ -53,41 +57,47 @@
         </activity>
 
         <service
-            android:name=".engine.location_receiver.TrackingForegroundService"
+            android:name=".features.system_context_automation.location.engine.location_receiver.TrackingForegroundService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="location" />
 
         <receiver
-            android:name=".engine.location_receiver.SlotAlarmReceiver"
+            android:name=".features.system_context_automation.location.engine.location_receiver.SlotAlarmReceiver"
             android:exported="false" />
 
         <receiver
-            android:name=".engine.location_receiver.StopTrackingReceiver"
+            android:name=".features.system_context_automation.location.engine.location_receiver.StopTrackingReceiver"
             android:exported="false" />
         <receiver
-            android:name=".engine.location_receiver.GeofenceBroadcastReceiver"
+            android:name=".features.system_context_automation.location.engine.location_receiver.GeofenceBroadcastReceiver"
             android:exported="false" />
 
         <receiver
-            android:name=".engine.location_receiver.LocationReminderReceiver"
+            android:name=".features.system_context_automation.location.engine.location_receiver.LocationReminderReceiver"
             android:exported="false"/>
 
+        <!-- Overlay Service -->
         <service
-            android:name=".engine.accessibility.TileTogglerAccessibilityService"
+            android:name=".features.gesture_recording_playback.overlay.OverlayService"
             android:enabled="true"
             android:exported="false"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            android:foregroundServiceType="specialUse">
+            <property android:name="android.app.property.FOREGROUND_SERVICE_TYPE" android:value="specialUse" />
+        </service>
 
+        <!-- Accessibility Service for Automation -->
+        <service
+            android:name=".features.gesture_recording_playback.overlay.AutomationService"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
             </intent-filter>
-
             <meta-data
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config" />
         </service>
-
 
 
     </application>

@@ -2,4 +2,13 @@
 <resources>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    <color name="marker_color">#FF4081</color>
+    <color name="overlay_background">#FFFFFF</color>
+    <color name="overlay_surface">#FFFFFF</color>
+    <color name="overlay_stroke">#22000000</color>
+    <color name="overlay_primary">#3F51B5</color>
+    <color name="overlay_primary_dark">#303F9F</color>
+    <color name="overlay_on_primary">#FFFFFF</color>
+    <color name="overlay_secondary">#888888</color>
+    <color name="overlay_ripple">#11000000</color>
 </resources>

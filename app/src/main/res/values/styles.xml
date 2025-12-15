@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Rounded material-like button used inside overlay -->
+    <style name="OverlayButton" parent="Widget.AppCompat.Button.Borderless">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:background">@drawable/overlay_button_bg</item>
+        <item name="android:minHeight">44dp</item>
+        <item name="android:paddingTop">8dp</item>
+        <item name="android:paddingBottom">8dp</item>
+        <item name="android:paddingLeft">12dp</item>
+        <item name="android:paddingRight">12dp</item>
+        <item name="android:textColor">@color/overlay_primary_dark</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:gravity">center</item>
+        <item name="android:drawablePadding">6dp</item>
+        <item name="android:layout_marginTop">6dp</item>
+    </style>
+
+    <style name="OverlayButtonCompact">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:padding">6dp</item>
+        <item name="android:gravity">center</item>
+        <item name="android:drawablePadding">4dp</item>
+    </style>
+
+
+</resources>

@@ -25,10 +25,10 @@ import androidx.core.content.ContextCompat
 import android.content.pm.PackageManager
 import android.util.Log
 import androidx.compose.runtime.mutableIntStateOf
-import com.example.automationcompanion.data.db.AppDatabase
-import com.example.automationcompanion.data.models.Slot
-import com.example.automationcompanion.engine.location_receiver.LocationReminderReceiver
-import com.example.automationcompanion.engine.location_receiver.TrackingForegroundService
+import com.example.automationcompanion.features.system_context_automation.location.data.db.AppDatabase
+import com.example.automationcompanion.features.system_context_automation.location.data.models.Slot
+import com.example.automationcompanion.features.system_context_automation.location.engine.location_receiver.LocationReminderReceiver
+import com.example.automationcompanion.features.system_context_automation.location.engine.location_receiver.TrackingForegroundService
 
 class SlotConfigActivity : AppCompatActivity() {
 

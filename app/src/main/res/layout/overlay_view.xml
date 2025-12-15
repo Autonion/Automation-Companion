@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content">
+
+    <LinearLayout
+        android:id="@+id/controlPanel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="@drawable/panel_background_translucent"
+        android:elevation="16dp"
+        android:layout_margin="8dp"
+        android:padding="12dp">
+
+        <LinearLayout
+            android:id="@+id/mainControls"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <Button
+                android:id="@+id/btnPlay"
+                style="@style/OverlayButtonCompact"
+                android:text="@string/play"
+                android:drawableTop="@drawable/ic_play"/>
+
+            <Button
+                android:id="@+id/btnStop"
+                style="@style/OverlayButtonCompact"
+                android:text="@string/stop"
+                android:drawableTop="@drawable/ic_stop"
+                android:visibility="gone"/>
+
+            <Button
+                android:id="@+id/btnRestart"
+                style="@style/OverlayButtonCompact"
+                android:text="@string/restart"
+                android:drawableTop="@drawable/ic_restart"
+                android:visibility="gone"/>
+
+            <Button
+                android:id="@+id/btnSave"
+                style="@style/OverlayButtonCompact"
+                android:text="@string/save_preset"
+                android:drawableTop="@drawable/ic_save"/>
+
+            <Button
+                android:id="@+id/btnToggleInput"
+                style="@style/OverlayButtonCompact"
+                android:text="@string/mode_interact"
+                android:drawableTop="@drawable/ic_edit"/>
+
+            <Button
+                android:id="@+id/btnAdd"
+                style="@style/OverlayButtonCompact"
+                android:text="@string/add"
+                android:drawableTop="@drawable/ic_add"/>
+
+            <Button
+                android:id="@+id/btnClear"
+                style="@style/OverlayButtonCompact"
+                android:text="@string/clear_all"
+                android:drawableTop="@drawable/ic_clear"/>
+
+            <Button
+                android:id="@+id/btnClose"
+                style="@style/OverlayButtonCompact"
+                android:text="@string/close"
+                android:drawableTop="@drawable/ic_close"/>
+
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/addControls"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <Button
+                android:id="@+id/btnAddClick"
+                style="@style/OverlayButtonCompact"
+                android:text="@string/add_click"
+                android:drawableTop="@drawable/ic_click"/>
+
+            <Button
+                android:id="@+id/btnAddLongClick"
+                style="@style/OverlayButtonCompact"
+                android:text="@string/add_long_click"
+                android:drawableTop="@drawable/ic_touch_app"/>
+
+<!--            <Button-->
+<!--                android:id="@+id/btnAddScroll"-->
+<!--                style="@style/OverlayButtonCompact"-->
+<!--                android:text="@string/add_scroll"-->
+<!--                android:drawableTop="@drawable/ic_scroll"/>-->
+
+            <Button
+                android:id="@+id/btnAddSwipe"
+                style="@style/OverlayButtonCompact"
+                android:text="@string/add_swipe"
+                android:drawableTop="@drawable/ic_swipe"/>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:background="#33000000"
+                android:layout_marginVertical="8dp"/>
+
+            <Button
+                android:id="@+id/btnBack"
+                style="@style/OverlayButtonCompact"
+                android:text="@string/back"
+                android:drawableTop="@drawable/ic_back"/>
+
+        </LinearLayout>
+
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="8dp">
+
+            <TextView
+                android:id="@+id/tvActionCount"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/action_count"
+                android:textSize="12sp"
+                android:gravity="center"/>
+
+            <LinearLayout
+                android:id="@+id/layoutLoopCount"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center"
+                android:clickable="true"
+                android:focusable="true"
+                android:padding="4dp"
+                android:layout_marginTop="4dp">
+
+                <TextView
+                    android:id="@+id/tvLoopCount"
+                    android:layout_width="0dp"
+                    android:layout_weight="1"
+                    android:layout_height="wrap_content"
+                    android:text="@string/loop_count"
+                    android:textSize="12sp"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:gravity="center"/>
+
+                <ImageView
+                    android:layout_width="16dp"
+                    android:layout_height="16dp"
+                    android:src="@drawable/ic_edit"
+                    android:layout_marginStart="4dp"/>
+            </LinearLayout>
+        </LinearLayout>
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/tvSaveConfirmation"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:background="#B2000000"
+        android:padding="16dp"
+        android:text="Preset Saved!"
+        android:textColor="@android:color/white"
+        android:textSize="16sp"
+        android:visibility="gone"
+        android:elevation="20dp"/>
+
+</FrameLayout>

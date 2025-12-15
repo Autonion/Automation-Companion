@@ -1,5 +1,26 @@
 <resources>
     <string name="app_name">Automation Companion</string>
-    <string name="accessibility_desc">Accessibility helper for automated quick-settings interaction to toggle Location for scheduled automations.</string>
+    <string name="accessibility_desc">Accessibility Service for Automation Companion.</string>
+    <string name="accessibility_description_gesture">Required for touch automation</string>
+    <string name="overlay_permission">Overlay permission is required to show controls</string>
+    <string name="accessibility_permission">Accessibility permission is required for automation</string>
+    <string name="start_setup">Start Setup</string>
+    <string name="add_click">Add Click</string>
+    <string name="add_scroll">Add Scroll</string>
+    <string name="add_swipe">Add Swipe</string>
+    <string name="add_long_click">Add Long Click</string>
+    <string name="play">Play</string>
+    <string name="stop">Stop</string>
+    <string name="restart">Restart</string>
+    <string name="add">Add</string>
+    <string name="back">Back</string>
+    <string name="clear_all">Clear All</string>
+    <string name="close">Close</string>
+    <string name="save_preset">Save Preset</string>
+    <string name="loop_count">Loop: %d</string>
+    <string name="action_count">Actions: %d</string>
+    <string name="mode_interact">Interact</string>
+    <string name="mode_edit">Edit</string>
+    <string name="edit">Edit Loops</string>
 
 </resources>

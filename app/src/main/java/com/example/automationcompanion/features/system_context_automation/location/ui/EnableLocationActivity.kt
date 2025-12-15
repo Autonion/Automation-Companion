@@ -1,6 +1,7 @@
 // file: EnableLocationActivity.kt
 package com.example.automationcompanion.features.system_context_automation.location.ui
 
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -11,10 +12,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
-import com.example.automationcompanion.engine.accessibility.TileTogglerAccessibilityService
-import com.example.automationcompanion.engine.location_receiver.TrackingForegroundService
+import com.example.automationcompanion.features.system_context_automation.location.engine.location_receiver.TrackingForegroundService
 import java.util.concurrent.Executor
 import androidx.compose.material3.MaterialTheme
+import com.example.automationcompanion.features.system_context_automation.location.engine.accessibility.TileToggleFeature
+import com.example.automationcompanion.features.system_context_automation.location.isAccessibilityEnabled
 
 class EnableLocationActivity : AppCompatActivity() {
 
@@ -106,23 +108,35 @@ class EnableLocationActivity : AppCompatActivity() {
         openPanelLauncher.launch(panel)
     }
 
-    private fun tryAccessibilityToggleOrFinish() {
-        val acc = TileTogglerAccessibilityService.instance
-        if (acc != null) {
-            acc.attemptToggleLocation { success ->
-                runOnUiThread {
-                    if (success) {
-                        TrackingForegroundService.start(this)
-                        setResult(RESULT_OK)
-                    } else {
-                        setResult(RESULT_CANCELED)
-                    }
-                    finish()
-                }
+    fun requestAccessibilityPermission(context: Context) {
+        context.startActivity(
+            Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-        } else {
+        )
+    }
+
+
+    private fun tryAccessibilityToggleOrFinish() {
+
+        if (!isAccessibilityEnabled(this)) {
+            requestAccessibilityPermission(this)
             setResult(RESULT_CANCELED)
             finish()
+            return
+        }
+
+        TileToggleFeature.toggleLocation { success ->
+            runOnUiThread {
+                if (success) {
+                    TrackingForegroundService.start(this)
+                    setResult(RESULT_OK)
+                } else {
+                    setResult(RESULT_CANCELED)
+                }
+                finish()
+            }
         }
     }
+
 }

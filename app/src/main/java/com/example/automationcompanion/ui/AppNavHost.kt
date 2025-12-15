@@ -5,6 +5,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.automationcompanion.features.PlaceholderScreen
+import com.example.automationcompanion.features.gesture_recording_playback.GestureRecordingScreen
 import com.example.automationcompanion.features.system_context_automation.location.SystemContextMainScreen
 
 
@@ -35,15 +36,7 @@ fun AppNavHost() {
         }
 
         composable(Routes.GESTURE) {
-            PlaceholderScreen(
-                title = "Gesture Recording & Playback",
-                todos = listOf(
-                    "RecorderService stub (Accessibility)",
-                    "Macro model & serializer",
-                    "PlayerService stub (safe playback)"
-                ),
-                onBack = { navController.popBackStack() }
-            )
+            GestureRecordingScreen()
         }
 
         composable(Routes.DYN_UI) {
