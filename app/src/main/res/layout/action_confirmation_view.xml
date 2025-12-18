@@ -7,7 +7,9 @@
     android:background="#CC1C1C1C"
     android:padding="16dp"
     android:elevation="20dp"
-    android:gravity="center">
+    android:gravity="center"
+    android:clickable="true"
+    android:focusable="true">
 
     <LinearLayout
         android:layout_width="wrap_content"
@@ -20,6 +22,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="@string/hold_time_ms"
+            android:textColor="#FFFFFF"
             android:layout_marginEnd="8dp"
             android:id="@+id/tvHoldTime"
             android:visibility="gone"/>

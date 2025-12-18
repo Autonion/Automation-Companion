@@ -1,9 +1,11 @@
 package com.example.automationcompanion.features.gesture_recording_playback.managers
 
+import android.annotation.SuppressLint
 import android.graphics.PointF
 import android.util.Log
 import android.view.Gravity
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
@@ -361,11 +363,51 @@ object ActionManager {
         }
 
         val params = FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
-            gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
             bottomMargin = 200
         }
         container.addView(view, params)
+        makeDraggable(view)
     }
+
+    @SuppressLint("ClickableViewAccessibility")
+    fun makeDraggable(view: View) {
+        var startX = 0f
+        var startY = 0f
+        var touchX = 0f
+        var touchY = 0f
+
+        view.setOnTouchListener { v, event ->
+            when (event.actionMasked) {
+
+                MotionEvent.ACTION_DOWN -> {
+                    startX = v.x
+                    startY = v.y
+                    touchX = event.rawX
+                    touchY = event.rawY
+                    true
+                }
+
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = event.rawX - touchX
+                    val dy = event.rawY - touchY
+
+                    v.x = startX + dx
+                    v.y = startY + dy
+                    true
+                }
+
+                MotionEvent.ACTION_UP,
+                MotionEvent.ACTION_CANCEL -> {
+                    // Optional: snap, clamp, or save position here
+                    true
+                }
+
+                else -> false
+            }
+        }
+    }
+
 
     private fun removeConfirmation(container: ViewGroup) {
         container.findViewWithTag<View>(CONFIRMATION_VIEW_TAG)?.let {
