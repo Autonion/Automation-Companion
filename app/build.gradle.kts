@@ -3,7 +3,6 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.compose.compiler)
     id("com.google.devtools.ksp")
-    kotlin("kapt")
     alias(libs.plugins.kotlin.serialization)
 }
 
@@ -51,14 +50,6 @@ android {
         viewBinding = true
         compose = true
     }
-
-    composeOptions {
-        // Pick a Compose compiler version compatible with your Kotlin plugin.
-        // If you run into compatibility issues, I can adjust this to match your Kotlin plugin.
-        kotlinCompilerExtensionVersion = "1.5.14"
-    }
-
-    namespace = "com.example.automationcompanion"
 }
 
 dependencies {
@@ -86,7 +77,6 @@ dependencies {
     implementation(libs.androidx.biometric)
     implementation(libs.osmdroid.android)
     implementation(libs.androidx.preference)
-    implementation(libs.osmdroid.android)
     implementation(libs.osmdroid.mapsforge)
     implementation(libs.mapsforge.map.android)
     implementation(libs.mapsforge.map.reader)
@@ -100,10 +90,10 @@ dependencies {
     //Gesture Recording Playback
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
-    implementation("androidx.localbroadcastmanager:localbroadcastmanager:1.1.0")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-savedstate:2.6.2")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.2")
-    implementation("androidx.savedstate:savedstate:1.2.0")
+    implementation(libs.androidx.localbroadcastmanager)
+    implementation(libs.androidx.lifecycle.viewmodel.savedstate)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.savedstate)
 
 
 
