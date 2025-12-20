@@ -7,7 +7,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.automationcompanion"
+    namespace = "com.autonion.automationcompanion"
     compileSdk {
         version = release(36)
     }
