@@ -12,13 +12,6 @@ import androidx.compose.material3.Text
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.viewinterop.AndroidView
 
-//import androidx.compose.ui.tooling.preview.Preview
-//import com.example.automationcompanion.features.system_context_automation.location.RootOptInToggle
-//import kotlin.math.asin
-//import kotlin.math.atan2
-//import kotlin.math.cos
-//import kotlin.math.sin
-
 @Composable
 fun SlotConfigScreen(
     // UI state (can be backed by ViewModel) — provide defaults
@@ -39,11 +32,7 @@ fun SlotConfigScreen(
     onEndTimeClicked: () -> Unit,
     //onSaveClicked: (Int, Boolean) -> Unit,
     onSaveClicked: (Int) -> Unit,
-    // expose map callbacks for external actions
-    //initialLat: Double,
-    //initialLng: Double,
-    //initialRadius: Float,
-    //onMapPointSelected: (Double, Double) -> Unit
+    onPickFromMapClicked: () -> Unit
 ) {
     //val ctx = LocalContext.current
     Column(modifier = Modifier
@@ -66,6 +55,13 @@ fun SlotConfigScreen(
             label = { Text("Longitude") },
             modifier = Modifier.fillMaxWidth()
         )
+
+        Button(
+            onClick = onPickFromMapClicked,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Pick from map")
+        }
 
         Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
             Column {

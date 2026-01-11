@@ -29,6 +29,7 @@ import com.autonion.automationcompanion.features.system_context_automation.locat
 import com.autonion.automationcompanion.features.system_context_automation.location.data.models.Slot
 import com.autonion.automationcompanion.features.system_context_automation.location.engine.location_receiver.LocationReminderReceiver
 import com.autonion.automationcompanion.features.system_context_automation.location.engine.location_receiver.TrackingForegroundService
+import androidx.core.net.toUri
 
 class SlotConfigActivity : AppCompatActivity() {
 
@@ -67,9 +68,28 @@ class SlotConfigActivity : AppCompatActivity() {
         // nothing special here; we'll check again at save
     }
 
+    private fun handleDeepLink(intent: Intent?) {
+        val uri = intent?.data ?: return
+
+        val latParam = uri.getQueryParameter("lat")
+        val lngParam = uri.getQueryParameter("lng")
+        val radiusParam = uri.getQueryParameter("radius")
+
+        if (latParam != null && lngParam != null) {
+            lat = latParam
+            lng = lngParam
+        }
+
+        radiusParam?.toIntOrNull()?.let {
+            radius = it
+        }
+    }
+
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        handleDeepLink(intent)
         // optionally load defaults from intent extras
 
         setContent {
@@ -110,6 +130,9 @@ class SlotConfigActivity : AppCompatActivity() {
                     onSaveClicked = { remindMinutes ->
                         doSaveSlot(remindMinutes)
                     },
+                    onPickFromMapClicked = {
+                        openMapPickerWebsite()
+                    }
 //                    initialLat = lat.toDoubleOrNull() ?: 16.504464,
 //                    initialLng = lng.toDoubleOrNull() ?: 80.652678,
 //                    initialRadius = radius.toFloat(),
@@ -289,4 +312,18 @@ class SlotConfigActivity : AppCompatActivity() {
             }
         }
     }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleDeepLink(intent) // 👈 REQUIRED for repeat links
+    }
+
+    private fun openMapPickerWebsite() {
+        val url = ("https://geo-radius-picker.vercel.app/" +
+                "?lat=$lat&lng=$lng&radius=$radius").toUri()
+
+        val intent = Intent(Intent.ACTION_VIEW, url)
+        startActivity(intent)
+    }
+
 }

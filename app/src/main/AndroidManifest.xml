@@ -52,9 +52,23 @@
         <activity
             android:name=".features.system_context_automation.location.ui.SlotConfigActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:windowSoftInputMode="adjustResize"
-            android:theme="@style/Theme.AutomationCompanion" >
+            android:theme="@style/Theme.AutomationCompanion">
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data
+                    android:scheme="myapp"
+                    android:host="location-picker" />
+            </intent-filter>
+
         </activity>
+
 
         <service
             android:name=".features.system_context_automation.location.engine.location_receiver.TrackingForegroundService"
