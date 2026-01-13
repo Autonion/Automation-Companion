@@ -6,7 +6,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.autonion.automationcompanion.features.PlaceholderScreen
 import com.autonion.automationcompanion.features.gesture_recording_playback.GestureRecordingScreen
-import com.autonion.automationcompanion.features.system_context_automation.location.SystemContextMainScreen
+import com.autonion.automationcompanion.features.system_context_automation.SystemContextMainScreen
 
 
 private const val ROUTE_HOME = "home"

@@ -13,18 +13,31 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import android.provider.Settings
 import android.util.Log
+import com.autonion.automationcompanion.features.system_context_automation.location.helpers.SendHelper
 
 class LocationReminderReceiver : BroadcastReceiver() {
 
     companion object {
         const val EXTRA_SLOT_ID = "slotId"
-        const val ACTION_REMIND = "com.example.automationcompanion.ACTION_REMIND_LOCATION"
+        const val ACTION_REMIND = "com.autonion.automationcompanion.ACTION_REMIND_LOCATION"
+        const val ACTION_SEND_AT_START = "ACTION_SEND_AT_START"
+
         private const val TAG = "LocationReminderReceiver"
     }
 
     override fun onReceive(context: Context, intent: Intent?) {
         if (intent == null) return
         if (intent.action != ACTION_REMIND) return
+
+        when (intent.action) {
+            ACTION_SEND_AT_START -> {
+                val slotId = intent.getLongExtra(EXTRA_SLOT_ID, -1L)
+                if (slotId != -1L) {
+                    SendHelper.startSendIfNeeded(context, slotId)
+                }
+            }
+        }
+
 
         val slotId = intent.getLongExtra(EXTRA_SLOT_ID, -1L)
         if (slotId == -1L) {

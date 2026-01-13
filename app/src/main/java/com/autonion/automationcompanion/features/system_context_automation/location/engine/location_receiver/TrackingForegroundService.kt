@@ -19,6 +19,7 @@ import com.autonion.automationcompanion.R
 import com.autonion.automationcompanion.features.system_context_automation.location.helpers.FallbackFlow
 import com.autonion.automationcompanion.features.system_context_automation.location.helpers.SendHelper
 import com.autonion.automationcompanion.features.system_context_automation.location.data.db.AppDatabase
+import com.autonion.automationcompanion.features.system_context_automation.location.data.models.Slot
 import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofencingClient
@@ -27,12 +28,15 @@ import com.google.android.gms.location.LocationServices
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import java.util.Calendar
 import kotlin.math.max
 
 class TrackingForegroundService : Service() {
     companion object {
-        const val ACTION_START_FOR_SLOT = "com.example.automationcompanion.ACTION_START_SLOT"
-        const val ACTION_STOP_FOR_SLOT = "com.example.automationcompanion.ACTION_STOP_SLOT"
+        const val ACTION_START_FOR_SLOT = "com.autonion.automationcompanion.ACTION_START_SLOT"
+        const val ACTION_STOP_FOR_SLOT = "com.autonion.automationcompanion.ACTION_STOP_SLOT"
+        const val ACTION_START_ALL = "com.autonion.automationcompanion.ACTION_START_ALL"
+
         private const val CHANNEL_ID = "automationcompanion_tracking"
 
         /**
@@ -44,6 +48,14 @@ class TrackingForegroundService : Service() {
             }
             ContextCompat.startForegroundService(context, i)
         }
+
+        fun startAll(context: Context) {
+            val i = Intent(context, TrackingForegroundService::class.java).apply {
+                action = ACTION_START_ALL
+            }
+            ContextCompat.startForegroundService(context, i)
+        }
+
 
         /**
          * Generic stop. Sends a stop request to the service.
@@ -76,6 +88,10 @@ class TrackingForegroundService : Service() {
             }
             context.startService(i)
         }
+        fun refreshAll(context: Context) {
+            stop(context)
+            start(context)
+        }
     }
 
     private lateinit var geofencingClient: GeofencingClient
@@ -95,106 +111,249 @@ class TrackingForegroundService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.i("LocDebug", "TrackingForegroundService onStartCommand action=${intent?.action} extras=${intent?.extras}")
+
+
+        // 🔴 MUST BE FIRST – NO CONDITIONS
+        startForeground(1, buildNotification())
 
         val action = intent?.action
         val slotId = intent?.getLongExtra("slotId", -1L) ?: -1L
+        Log.i("TrackingService", "onStartCommand action=${intent?.action} slotId=$slotId")
 
-        if (action == ACTION_START_FOR_SLOT && slotId != -1L) {
-            startForeground(1, buildNotification())
-            registerGeofenceForSlot(slotId)
-        } else if ((action == ACTION_STOP_FOR_SLOT && slotId != -1L) || action == null) {
-            // stop tracking: remove geofence for that slot and stop foreground
-            unregisterGeofenceForSlot(slotId)
-            stopForeground(true)
-            stopSelf()
+        when (action) {
+
+            ACTION_START_FOR_SLOT -> {
+                if (slotId != -1L) {
+                    registerGeofenceForSlot(slotId)
+                }
+            }
+
+            ACTION_START_ALL -> {
+                registerAllEnabledSlots()
+            }
+
+            ACTION_STOP_FOR_SLOT -> {
+                if (slotId != -1L) {
+                    unregisterGeofenceForSlot(slotId)
+                }
+                stopForeground(true)
+                stopSelf()
+            }
         }
+
+
         return START_STICKY
     }
 
-    private fun registerGeofenceForSlot(slotId: Long) {
-        // Read slot from DB on background thread
+    private fun registerAllEnabledSlots() {
         CoroutineScope(Dispatchers.IO).launch {
+
+            val dao = AppDatabase.get(applicationContext).slotDao()
+            val slots = dao.getAllEnabled() // we’ll add this query
+
+            Log.i("LocDebug", "Registering ${slots.size} enabled slots")
+
+            slots.forEach { slot ->
+                registerGeofenceForSlot(slot.id)
+            }
+        }
+    }
+
+
+    private fun shouldActivateToday(slot: Slot): Boolean {
+        if (slot.activeDays == "ALL") return true
+
+        val today = when (Calendar.getInstance().get(Calendar.DAY_OF_WEEK)) {
+            Calendar.MONDAY -> "MON"
+            Calendar.TUESDAY -> "TUE"
+            Calendar.WEDNESDAY -> "WED"
+            Calendar.THURSDAY -> "THU"
+            Calendar.FRIDAY -> "FRI"
+            Calendar.SATURDAY -> "SAT"
+            Calendar.SUNDAY -> "SUN"
+            else -> return false
+        }
+
+        return slot.activeDays.split(",").contains(today)
+    }
+
+    private fun registerGeofenceForSlot(slotId: Long) {
+        CoroutineScope(Dispatchers.IO).launch {
+
             val db = AppDatabase.get(applicationContext)
             val slot = db.slotDao().getById(slotId)
+
+            // 1️⃣ Slot must exist
             if (slot == null) {
                 Log.w("LocDebug", "registerGeofenceForSlot: slot null for id=$slotId")
                 return@launch
             }
 
-            // Permission check
-            if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-                FallbackFlow.showEnableLocationNotification(applicationContext)
-                Log.w("LocDebug", "registerGeofenceForSlot: missing ACCESS_FINE_LOCATION")
+            // 🔁 IMPORTANT: clear any previous geofence for this slot
+            geofencingClient.removeGeofences(listOf(slot.id.toString()))
+            Log.i("LocDebug", "Cleared existing geofence for slot ${slot.id}")
+
+            // 2️⃣ Day-of-week filter (CRITICAL)
+            if (!shouldActivateToday(slot)) {
+                Log.i(
+                    "LocDebug",
+                    "Skipping geofence for slot ${slot.id} (today not allowed: ${slot.activeDays})"
+                )
                 return@launch
             }
 
-            val g = Geofence.Builder()
+//            // 3️⃣ Time window filter (CRITICAL)
+//            val now = System.currentTimeMillis()
+//            if (now < slot.startMillis || now > slot.endMillis) {
+//                Log.i(
+//                    "LocDebug",
+//                    "Skipping geofence for slot ${slot.id} (outside time window)"
+//                )
+//                return@launch
+//            }
+
+            // 4️⃣ Location permission check
+            if (
+                checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                Log.w("LocDebug", "registerGeofenceForSlot: missing ACCESS_FINE_LOCATION")
+                FallbackFlow.showEnableLocationNotification(applicationContext)
+                return@launch
+            }
+
+            // 5️⃣ Build geofence
+            val geofence = Geofence.Builder()
                 .setRequestId(slot.id.toString())
-                .setCircularRegion(slot.lat, slot.lng, slot.radiusMeters)
-                .setExpirationDuration(max(0L, slot.endMillis - System.currentTimeMillis()))
+                .setCircularRegion(
+                    slot.lat,
+                    slot.lng,
+                    slot.radiusMeters
+                )
+                .setExpirationDuration(
+                    max(0L, slot.endMillis - System.currentTimeMillis())
+                )
                 .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER)
                 .build()
 
             val geofenceRequest = GeofencingRequest.Builder()
                 .setInitialTrigger(GeofencingRequest.INITIAL_TRIGGER_ENTER)
-                .addGeofence(g)
+                .addGeofence(geofence)
                 .build()
 
-            // IMPORTANT: use a **component-only** intent here (no custom action / extras).
-            // Play Services will populate the delivered Intent with its own extras that GeofencingEvent.fromIntent expects.
-            val piIntent = Intent(applicationContext, GeofenceBroadcastReceiver::class.java)
-            val requestCode = slot.id.toInt() // unique per slot avoids collisions
-            val piFlags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
-            val pi = PendingIntent.getBroadcast(applicationContext, requestCode, piIntent, piFlags)
+            // IMPORTANT: component-only intent
+            val intent = Intent(applicationContext, GeofenceBroadcastReceiver::class.java)
+            val requestCode = slot.id.toInt()
+            val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+            val pendingIntent =
+                PendingIntent.getBroadcast(applicationContext, requestCode, intent, flags)
 
             try {
-                Log.i("LocDebug", "registerGeofenceForSlot called for slotId=$slotId (lat=${slot.lat}, lng=${slot.lng}, radius=${slot.radiusMeters})")
-                geofencingClient.addGeofences(geofenceRequest, pi)
+                Log.i(
+                    "LocDebug",
+                    "registerGeofenceForSlot called for slotId=${slot.id} " +
+                            "(lat=${slot.lat}, lng=${slot.lng}, radius=${slot.radiusMeters})"
+                )
+
+                geofencingClient.addGeofences(geofenceRequest, pendingIntent)
                     .addOnSuccessListener {
+
                         Log.i("LocDebug", "Geofence added for slot ${slot.id}")
 
-                        // Immediate proximity check: if device is inside and slot active, trigger send
-                        val now = System.currentTimeMillis()
-                        if (now >= slot.startMillis && now <= slot.endMillis) {
+                        // 6️⃣ Immediate proximity check (WITH day + time guard)
+                        val now2 = System.currentTimeMillis()
+                        if (
+                            shouldActivateToday(slot) &&
+                            isNowWithinSlotTime(slot)
+
+                        ) {
                             try {
-                                val fused = LocationServices.getFusedLocationProviderClient(applicationContext)
-                                fused.lastLocation.addOnSuccessListener { loc ->
-                                    if (loc != null) {
-                                        val results = FloatArray(1)
-                                        Location.distanceBetween(slot.lat, slot.lng, loc.latitude, loc.longitude, results)
-                                        val dist = results[0]
-                                        Log.i("LocDebug", "Immediate proximity check: dist=$dist radius=${slot.radiusMeters}")
-                                        if (dist <= slot.radiusMeters) {
-                                            // if inside, trigger the same send flow (helper handles sent flag)
-                                            SendHelper.startSendIfNeeded(applicationContext, slot.id)
+                                val fused =
+                                    LocationServices.getFusedLocationProviderClient(applicationContext)
+
+                                fused.lastLocation
+                                    .addOnSuccessListener { loc ->
+                                        if (loc == null) {
+                                            Log.i("LocDebug", "Immediate proximity check: lastLocation null")
+                                            return@addOnSuccessListener
                                         }
-                                    } else {
-                                        Log.i("LocDebug", "Immediate proximity check: lastLocation null")
+
+                                        val results = FloatArray(1)
+                                        Location.distanceBetween(
+                                            slot.lat,
+                                            slot.lng,
+                                            loc.latitude,
+                                            loc.longitude,
+                                            results
+                                        )
+
+                                        val dist = results[0]
+                                        Log.i(
+                                            "LocDebug",
+                                            "Immediate proximity check: dist=$dist radius=${slot.radiusMeters}"
+                                        )
+
+                                        if (dist <= slot.radiusMeters) {
+                                            SendHelper.startSendIfNeeded(
+                                                applicationContext,
+                                                slot.id
+                                            )
+                                        }
                                     }
-                                }.addOnFailureListener { ex ->
-                                    if (ex is ApiException) {
-                                        val statusCode = ex.statusCode
-                                        Log.e("LocDebug", "Failed to add geofence for slot $slotId: statusCode=$statusCode message=${ex.message}", ex)
-                                    } else {
-                                        Log.e("LocDebug", "Failed to add geofence for slot $slotId: ${ex.message}", ex)
-                                    }
-                                }
+
                             } catch (_: SecurityException) {
-                                Log.w("LocDebug", "Immediate proximity check skipped: missing location permission")
+                                Log.w(
+                                    "LocDebug",
+                                    "Immediate proximity check skipped: missing permission"
+                                )
                             }
                         }
                     }
                     .addOnFailureListener { ex ->
-                        Log.e("LocDebug", "Failed to add geofence for slot ${slot.id}: ${ex.message}", ex)
+                        Log.e(
+                            "LocDebug",
+                            "Failed to add geofence for slot ${slot.id}: ${ex.message}",
+                            ex
+                        )
                         FallbackFlow.showEnableLocationNotification(applicationContext)
                     }
-            } catch (ise: SecurityException) {
-                Log.e("LocDebug", "SecurityException when adding geofence for slot $slotId", ise)
+
+            } catch (e: SecurityException) {
+                Log.e(
+                    "LocDebug",
+                    "SecurityException when adding geofence for slot ${slot.id}",
+                    e
+                )
                 FallbackFlow.showEnableLocationNotification(applicationContext)
             }
         }
     }
+
+    private fun isNowWithinSlotTime(slot: Slot): Boolean {
+        val now = Calendar.getInstance()
+
+        val start = Calendar.getInstance().apply {
+            timeInMillis = slot.startMillis
+            set(Calendar.YEAR, now.get(Calendar.YEAR))
+            set(Calendar.MONTH, now.get(Calendar.MONTH))
+            set(Calendar.DAY_OF_MONTH, now.get(Calendar.DAY_OF_MONTH))
+        }
+
+        val end = Calendar.getInstance().apply {
+            timeInMillis = slot.endMillis
+            set(Calendar.YEAR, now.get(Calendar.YEAR))
+            set(Calendar.MONTH, now.get(Calendar.MONTH))
+            set(Calendar.DAY_OF_MONTH, now.get(Calendar.DAY_OF_MONTH))
+        }
+
+        // Overnight window support
+        if (end.before(start)) {
+            end.add(Calendar.DATE, 1)
+        }
+
+        return now.timeInMillis in start.timeInMillis..end.timeInMillis
+    }
+
 
 
 

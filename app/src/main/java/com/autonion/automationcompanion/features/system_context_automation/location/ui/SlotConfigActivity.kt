@@ -23,13 +23,20 @@ import kotlinx.coroutines.launch
 import android.widget.Toast
 import androidx.core.content.ContextCompat
 import android.content.pm.PackageManager
+import android.os.Build
 import android.util.Log
+import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableIntStateOf
 import com.autonion.automationcompanion.features.system_context_automation.location.data.db.AppDatabase
 import com.autonion.automationcompanion.features.system_context_automation.location.data.models.Slot
 import com.autonion.automationcompanion.features.system_context_automation.location.engine.location_receiver.LocationReminderReceiver
 import com.autonion.automationcompanion.features.system_context_automation.location.engine.location_receiver.TrackingForegroundService
 import androidx.core.net.toUri
+import com.autonion.automationcompanion.features.system_context_automation.location.engine.location_receiver.MidnightResetReceiver
+import com.autonion.automationcompanion.features.system_context_automation.location.helpers.AppInitManager
+import com.autonion.automationcompanion.features.system_context_automation.location.helpers.AutomationAction
+import com.autonion.automationcompanion.features.system_context_automation.location.permissions.PermissionPreflight
+
 
 class SlotConfigActivity : AppCompatActivity() {
 
@@ -46,6 +53,25 @@ class SlotConfigActivity : AppCompatActivity() {
     private var startMinute = -1
     private var endHour = -1
     private var endMinute = -1
+    private var editingSlotId: Long? = null
+
+    // Action toggle state (EDIT MODE AWARE)
+    private var smsEnabled by mutableStateOf(false)
+
+    private var volumeEnabled by mutableStateOf(false)
+    private var ringVolume by mutableStateOf(5f)
+    private var mediaVolume by mutableStateOf(5f)
+
+    private var brightnessEnabled by mutableStateOf(false)
+    private var brightness by mutableStateOf(150f)
+
+    private var dndEnabled by mutableStateOf(false)
+    private var remindBeforeMinutes by mutableStateOf("15")
+
+    private var selectedDays by mutableStateOf(
+        setOf("MON","TUE","WED","THU","FRI","SAT","SUN")
+    )
+
 
 
     // Activity result launchers
@@ -85,16 +111,61 @@ class SlotConfigActivity : AppCompatActivity() {
         }
     }
 
+    private val notificationPermissionLauncher =
+        registerForActivityResult(
+            ActivityResultContracts.RequestPermission()
+        ) { granted ->
+            if (!granted) {
+                Toast.makeText(
+                    this,
+                    "Notifications disabled — success alerts won’t appear",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AppInitManager.init(applicationContext)
+        editingSlotId = intent.getLongExtra("slotId", -1L)
+            .takeIf { it != -1L }
 
         handleDeepLink(intent)
         // optionally load defaults from intent extras
 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermissionLauncher.launch(
+                Manifest.permission.POST_NOTIFICATIONS
+            )
+        }
+
+
+        editingSlotId?.let { slotId ->
+            CoroutineScope(Dispatchers.IO).launch {
+                val slot = AppDatabase
+                    .get(applicationContext)
+                    .slotDao()
+                    .getById(slotId)
+
+                slot?.let {
+                    runOnUiThread {
+                        populateFromSlot(it)
+                    }
+                }
+            }
+        }
+
+
         setContent {
             MaterialTheme {
                 SlotConfigScreen(
+                    title = if (editingSlotId == null) "Create Slot" else "Edit Slot",
                     latitude = lat,
                     longitude = lng,
                     radiusMeters = radius,
@@ -102,48 +173,123 @@ class SlotConfigActivity : AppCompatActivity() {
                     contactsCsv = contactsCsv,
                     startLabel = startLabel,
                     endLabel = endLabel,
+
+                    smsEnabled = smsEnabled,
+                    onSmsEnabledChange = { smsEnabled = it },
+
+                    volumeEnabled = volumeEnabled,
+                    ringVolume = ringVolume,
+                    mediaVolume = mediaVolume,
+                    onVolumeEnabledChange = { volumeEnabled = it },
+                    onRingVolumeChange = { ringVolume = it },
+                    onMediaVolumeChange = { mediaVolume = it },
+
+                    brightnessEnabled = brightnessEnabled,
+                    brightness = brightness,
+                    onBrightnessEnabledChange = { brightnessEnabled = it },
+                    onBrightnessChange = { brightness = it },
+
+                    dndEnabled = dndEnabled,
+                    onDndEnabledChange = { dndEnabled = it },
+                    remindBeforeMinutes = remindBeforeMinutes,
+                    onRemindBeforeMinutesChange = { remindBeforeMinutes = it },
+
                     onLatitudeChanged = { lat = it },
                     onLongitudeChanged = { lng = it },
                     onRadiusChanged = { radius = it },
                     onMessageChanged = { message = it },
-                    onPickContactClicked = {
-                        // ensure permission
-                        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED) {
-                            requestMultiplePermissions.launch(arrayOf(Manifest.permission.READ_CONTACTS))
-                        }
-                        val pick = Intent(Intent.ACTION_PICK, ContactsContract.CommonDataKinds.Phone.CONTENT_URI)
-                        contactPickerLauncher.launch(pick)
+                    onPickContactClicked = { pickContact() },
+                    onStartTimeClicked = { showTimePicker(true) },
+                    onEndTimeClicked = { showTimePicker(false) },
+                    onPickFromMapClicked = { openMapPickerWebsite() },
+                    onSaveClicked = { remind, actions ->
+                        doSaveSlot(remind, actions)
                     },
-//                    onPickLocationClicked = {
-//                        // if you have a separate map-picker activity, launch it
-//                        // mapPickerLauncher.launch(Intent(this, MapPickerActivity::class.java))
-//                    },
-                    onStartTimeClicked = {
-                        showTimePicker(true)
-                    },
-                    onEndTimeClicked = {
-                        showTimePicker(false)
-                    },
-//                    onSaveClicked = { remindMinutes,useRootToggle ->
-//                        doSaveSlot(remindMinutes,useRootToggle)
-//                    },
-                    onSaveClicked = { remindMinutes ->
-                        doSaveSlot(remindMinutes)
-                    },
-                    onPickFromMapClicked = {
-                        openMapPickerWebsite()
-                    }
-//                    initialLat = lat.toDoubleOrNull() ?: 16.504464,
-//                    initialLng = lng.toDoubleOrNull() ?: 80.652678,
-//                    initialRadius = radius.toFloat(),
-//                    onMapPointSelected = { aLat, aLng ->
-//                        lat = aLat.toString()
-//                        lng = aLng.toString()
-//                    }
-                )
+                    selectedDays = selectedDays,
+                    onSelectedDaysChange = { selectedDays = it },
+                    )
             }
         }
     }
+
+    private fun pickContact() {
+        if (ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.READ_CONTACTS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestMultiplePermissions.launch(
+                arrayOf(Manifest.permission.READ_CONTACTS)
+            )
+            return
+        }
+
+        val pick = Intent(
+            Intent.ACTION_PICK,
+            ContactsContract.CommonDataKinds.Phone.CONTENT_URI
+        )
+        contactPickerLauncher.launch(pick)
+    }
+
+
+    private fun populateFromSlot(slot: Slot) {
+        lat = slot.lat.toString()
+        lng = slot.lng.toString()
+        radius = slot.radiusMeters.toInt()
+        remindBeforeMinutes = slot.remindBeforeMinutes.toString()
+        selectedDays =
+            if (slot.activeDays == "ALL") {
+                setOf("MON","TUE","WED","THU","FRI","SAT","SUN")
+            } else {
+                slot.activeDays.split(",").toSet()
+            }
+
+
+
+        message = ""
+        contactsCsv = ""
+
+        slot.actions.forEach { action ->
+            when (action) {
+                is AutomationAction.SendSms -> {
+                    smsEnabled = true
+                    message = action.message
+                    contactsCsv = action.contactsCsv
+                }
+
+                is AutomationAction.SetVolume -> {
+                    volumeEnabled = true
+                    ringVolume = action.ring.toFloat()
+                    mediaVolume = action.media.toFloat()
+                }
+
+                is AutomationAction.SetBrightness -> {
+                    brightnessEnabled = true
+                    brightness = action.level.toFloat()
+                }
+
+                is AutomationAction.SetDnd -> {
+                    dndEnabled = action.enabled
+                }
+            }
+        }
+
+        val startCal = java.util.Calendar.getInstance().apply {
+            timeInMillis = slot.startMillis
+        }
+        val endCal = java.util.Calendar.getInstance().apply {
+            timeInMillis = slot.endMillis
+        }
+
+        startHour = startCal.get(java.util.Calendar.HOUR_OF_DAY)
+        startMinute = startCal.get(java.util.Calendar.MINUTE)
+        endHour = endCal.get(java.util.Calendar.HOUR_OF_DAY)
+        endMinute = endCal.get(java.util.Calendar.MINUTE)
+
+        startLabel = "%02d:%02d".format(startHour, startMinute)
+        endLabel = "%02d:%02d".format(endHour, endMinute)
+    }
+
 
     private fun fetchPhoneNumberFromContact(uri: Uri): String? {
         var number: String? = null
@@ -235,10 +381,110 @@ class SlotConfigActivity : AppCompatActivity() {
         Log.i("Reminder", "Scheduled repeating reminder for slot=$slotId start=$reminderStart interval=$reminderInterval")
     }
 
+    val actions = mutableListOf<AutomationAction>()
 
 
     //doSaveSlot(remindMinutes: Int, useRootToggle: Boolean)
-    private fun doSaveSlot(remindMinutes: Int) {
+    private fun doSaveSlot(
+        remindMinutes: Int,
+        actions: List<AutomationAction>
+    ) {
+        // 🔒 1️⃣ Permission preflight (NEW)
+        val missing = PermissionPreflight
+            .missingSystemPermissions(this, actions)
+
+        if (missing.isNotEmpty()) {
+            val intent = PermissionPreflight.settingsIntent(missing.first())
+            startActivity(intent)
+
+            Toast.makeText(
+                this,
+                "Grant required permission to enable selected automations",
+                Toast.LENGTH_LONG
+            ).show()
+
+            return
+        }
+
+        // 2️⃣ RUNTIME permission: SEND_SMS (ONLY if SMS action exists)
+        if (
+            actions.any { it is AutomationAction.SendSms } &&
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.SEND_SMS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            pendingSave = remindMinutes to actions
+            smsPermissionLauncher.launch(Manifest.permission.SEND_SMS)
+            return
+        }
+
+        // 3️⃣ All permissions OK → save
+        saveSlotInternal(remindMinutes, actions)
+    }
+
+    fun scheduleMidnightReset(context: Context) {
+        val am = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+
+        val cal = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 5)
+            add(java.util.Calendar.DATE, 1)
+        }
+
+        val intent = Intent(context, MidnightResetReceiver::class.java)
+        val pi = PendingIntent.getBroadcast(
+            context,
+            1001,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        am.setInexactRepeating(
+            android.app.AlarmManager.RTC_WAKEUP,
+            cal.timeInMillis,
+            android.app.AlarmManager.INTERVAL_DAY,
+            pi
+        )
+    }
+
+
+    private fun ensureSmsPermission(onGranted: () -> Unit) {
+        if (ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.SEND_SMS
+            ) == PackageManager.PERMISSION_GRANTED
+        ) {
+            onGranted()
+        } else {
+            smsPermissionLauncher.launch(Manifest.permission.SEND_SMS)
+        }
+    }
+    private var pendingSave: Pair<Int, List<AutomationAction>>? = null
+
+    private val smsPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) {
+                pendingSave?.let { (remind, actions) ->
+                    saveSlotInternal(remind, actions)
+                    pendingSave = null
+                }
+            } else {
+                Toast.makeText(
+                    this,
+                    "SMS permission is required to send messages",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+
+
+
+    private fun saveSlotInternal(
+        remindMinutes: Int,
+        actions: List<AutomationAction>
+    ) {
         // validate
         val latD = lat.toDoubleOrNull()
         val lngD = lng.toDoubleOrNull()
@@ -250,14 +496,16 @@ class SlotConfigActivity : AppCompatActivity() {
             Toast.makeText(this, "Set start/end times", Toast.LENGTH_SHORT).show()
             return
         }
-        if (contactsCsv.isBlank()) {
+        if (actions.any { it is AutomationAction.SendSms } && contactsCsv.isBlank()) {
             Toast.makeText(this, "Select contacts", Toast.LENGTH_SHORT).show()
             return
         }
 
-        // compute start/end millis similar to your earlier logic
+
+        // compute start/end millis
         val now = System.currentTimeMillis()
         val nowCal = java.util.Calendar.getInstance().apply { timeInMillis = now }
+
         val startCal = nowCal.clone() as java.util.Calendar
         startCal.set(java.util.Calendar.HOUR_OF_DAY, startHour)
         startCal.set(java.util.Calendar.MINUTE, startMinute)
@@ -271,6 +519,7 @@ class SlotConfigActivity : AppCompatActivity() {
         endCal.set(java.util.Calendar.SECOND, 0)
         endCal.set(java.util.Calendar.MILLISECOND, 0)
         var endMillis = endCal.timeInMillis
+
         if (endMillis <= startMillis) {
             endCal.add(java.util.Calendar.DATE, 1)
             endMillis = endCal.timeInMillis
@@ -282,36 +531,63 @@ class SlotConfigActivity : AppCompatActivity() {
             endMillis = endCal.timeInMillis
         }
 
-        // persist using repository (example)
         CoroutineScope(Dispatchers.IO).launch {
             val repo = AppDatabase.get(applicationContext).slotDao()
+
+            val activeDaysString =
+                if (selectedDays.size == 7) {
+                    "ALL"
+                } else {
+                    selectedDays.joinToString(",")
+                }
+
+
             val slotEntity = Slot(
                 lat = latD,
                 lng = lngD,
                 radiusMeters = radius.toFloat(),
                 startMillis = startMillis,
                 endMillis = endMillis,
-                message = message.ifBlank { "Auto message" },
-                contactsCsv = contactsCsv,
-                remindBeforeMinutes = remindMinutes
-//                useRootToggle = useRootToggle
+                remindBeforeMinutes = remindMinutes,
+                actions = actions,
+                activeDays = activeDaysString
             )
-            val id = repo.insert(slotEntity)
+
+            val dao = AppDatabase.get(applicationContext).slotDao()
+
+            val finalId = if (editingSlotId == null) {
+                dao.insert(slotEntity)
+            } else {
+                dao.update(
+                    slotEntity.copy(
+                        id = editingSlotId!!
+                    )
+                )
+                editingSlotId!!
+            }
+
 
             runOnUiThread {
+                // 1️⃣ ensure all old slots are alive
+                TrackingForegroundService.startAll(this@SlotConfigActivity)
+
                 scheduleLocationReminders(
                     context = this@SlotConfigActivity,
-                    slotId = id,
+                    slotId = finalId,
                     startMillis = startMillis,
                     remindMinutes = remindMinutes
                 )
 
-                TrackingForegroundService.startForSlot(this@SlotConfigActivity, id)
-                Toast.makeText(this@SlotConfigActivity, "Saved slot id=$id", Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    this@SlotConfigActivity,
+                    "Saved slot id=$finalId",
+                    Toast.LENGTH_SHORT
+                ).show()
                 finish()
             }
         }
     }
+
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)

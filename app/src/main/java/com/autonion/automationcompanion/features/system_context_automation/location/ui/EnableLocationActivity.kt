@@ -18,6 +18,7 @@ import androidx.compose.material3.MaterialTheme
 import com.autonion.automationcompanion.features.system_context_automation.location.engine.accessibility.TileToggleFeature
 import com.autonion.automationcompanion.features.system_context_automation.location.isAccessibilityEnabled
 
+
 class EnableLocationActivity : AppCompatActivity() {
 
     private lateinit var executor: Executor

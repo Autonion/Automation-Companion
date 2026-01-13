@@ -13,6 +13,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
 
     <uses-permission android:name="android.permission.SEND_SMS"/>
     <uses-permission android:name="android.permission.READ_CONTACTS" />
@@ -48,6 +50,10 @@
             android:name=".features.system_context_automation.location.ui.EnableLocationActivity"
             android:exported="false"
             android:launchMode="singleTop" />
+
+        <activity
+            android:name=".features.system_context_automation.location.LocationSlotsActivity"
+            android:exported="false" />
 
         <activity
             android:name=".features.system_context_automation.location.ui.SlotConfigActivity"
@@ -90,6 +96,26 @@
         <receiver
             android:name=".features.system_context_automation.location.engine.location_receiver.LocationReminderReceiver"
             android:exported="false"/>
+
+        <receiver
+            android:name=".features.system_context_automation.location.engine.location_receiver.MidnightResetReceiver"
+            android:exported="false" />
+        <receiver
+            android:name=".features.system_context_automation.location.engine.location_receiver.BootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".features.system_context_automation.location.engine.time.TimeTickReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.TIME_TICK" />
+            </intent-filter>
+        </receiver>
+
 
         <!-- Overlay Service -->
         <service

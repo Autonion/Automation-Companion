@@ -13,7 +13,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.automationcompanion"
+        applicationId = "com.autonion.automationcompanion"
         minSdk = 24
         targetSdk = 36
         versionCode = 1

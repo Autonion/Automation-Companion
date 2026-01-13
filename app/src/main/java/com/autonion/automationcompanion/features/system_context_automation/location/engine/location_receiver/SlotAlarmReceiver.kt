@@ -9,8 +9,10 @@ import android.os.PowerManager
 import android.util.Log
 import com.autonion.automationcompanion.features.system_context_automation.location.engine.accessibility.TileToggleFeature
 import com.autonion.automationcompanion.features.system_context_automation.location.helpers.FallbackFlow
-//import com.example.automationcompanion.core.helpers.RootLocationToggle
 import com.autonion.automationcompanion.features.system_context_automation.location.isAccessibilityEnabled
+
+//import com.example.automationcompanion.core.helpers.RootLocationToggle
+
 
 //import kotlinx.coroutines.CoroutineScope
 //import kotlinx.coroutines.Dispatchers
@@ -35,10 +37,10 @@ class SlotAlarmReceiver : BroadcastReceiver() {
 //        }
 
         when (action) {
-            "com.example.automationcompanion.START_SLOT" -> {
+            "com.autonion.automationcompanion.START_SLOT" -> {
                 handleStart(context, slotId)
             }
-            "com.example.automationcompanion.STOP_SLOT" -> {
+            "com.autonion.automationcompanion.STOP_SLOT" -> {
                 handleStop(context, slotId)
             }
             else -> {
