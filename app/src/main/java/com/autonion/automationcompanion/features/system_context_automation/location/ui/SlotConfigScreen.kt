@@ -10,6 +10,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -164,17 +165,7 @@ fun SlotConfigScreen(
         ActionRow(
             label = "Send Message",
             checked = smsEnabled,
-            onCheckedChange = onSmsEnabledChange,
-            onTest = {
-                Toast.makeText(
-                    ctx,
-                    if (contactsCsv.isBlank())
-                        "No contacts selected"
-                    else
-                        "Test: \"$message\" → $contactsCsv",
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
+            onCheckedChange = onSmsEnabledChange
         )
 
         if (smsEnabled) {
@@ -209,14 +200,7 @@ fun SlotConfigScreen(
         ActionRow(
             label = "Set Volume",
             checked = volumeEnabled,
-            onCheckedChange = onVolumeEnabledChange,
-            onTest = {
-                Toast.makeText(
-                    ctx,
-                    "Test volume → Ring ${ringVolume.toInt()}, Media ${mediaVolume.toInt()}",
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
+            onCheckedChange = onVolumeEnabledChange
         )
 
         if (volumeEnabled) {
@@ -225,7 +209,7 @@ fun SlotConfigScreen(
                 Slider(
                     value = ringVolume,
                     onValueChange = onRingVolumeChange,
-                    valueRange = 0f..15f
+                    valueRange = 0f..7f
                 )
 
                 Text("Media: ${mediaVolume.toInt()}")
@@ -243,14 +227,7 @@ fun SlotConfigScreen(
         ActionRow(
             label = "Set Brightness",
             checked = brightnessEnabled,
-            onCheckedChange = onBrightnessEnabledChange,
-            onTest = {
-                Toast.makeText(
-                    ctx,
-                    "Test brightness → ${brightness.toInt()}",
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
+            onCheckedChange = onBrightnessEnabledChange
         )
 
         if (brightnessEnabled) {
@@ -266,14 +243,13 @@ fun SlotConfigScreen(
         }
 
         // ───────────── DND ─────────────
+        // NOTE: DND disabled if Volume is enabled (Realme ROM conflict: volume changes reset DND)
 
         ActionRow(
             label = "Do Not Disturb",
             checked = dndEnabled,
-            onCheckedChange = onDndEnabledChange,
-            onTest = {
-                Toast.makeText(ctx, "Test DND toggle", Toast.LENGTH_SHORT).show()
-            }
+            enabled = !volumeEnabled,  // Disable DND if Volume is ON
+            onCheckedChange = onDndEnabledChange
         )
 
         // ───────────── Reminder ─────────────
@@ -330,15 +306,16 @@ private fun ActionRow(
     label: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
-    onTest: () -> Unit
+    enabled: Boolean = true
 ) {
     Row(
-        Modifier.fillMaxWidth(),
+        Modifier
+            .fillMaxWidth()
+            .alpha(if (enabled) 1f else 0.5f),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(label, Modifier.weight(1f))
-        TextButton(onClick = onTest) { Text("Test") }
-        Switch(checked, onCheckedChange)
+        Switch(checked, onCheckedChange, enabled = enabled)
     }
 }
 

@@ -9,6 +9,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.ContactsContract
+import android.provider.Settings
 import android.widget.TimePicker
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -33,16 +34,18 @@ import com.autonion.automationcompanion.features.system_context_automation.locat
 import com.autonion.automationcompanion.features.system_context_automation.location.engine.location_receiver.TrackingForegroundService
 import androidx.core.net.toUri
 import com.autonion.automationcompanion.features.system_context_automation.location.engine.location_receiver.MidnightResetReceiver
+import com.autonion.automationcompanion.features.system_context_automation.location.engine.location_receiver.SlotStartAlarmReceiver
 import com.autonion.automationcompanion.features.system_context_automation.location.helpers.AppInitManager
 import com.autonion.automationcompanion.features.system_context_automation.location.helpers.AutomationAction
 import com.autonion.automationcompanion.features.system_context_automation.location.permissions.PermissionPreflight
+import com.google.android.gms.location.LocationServices
 
 
 class SlotConfigActivity : AppCompatActivity() {
 
     // UI state — keep simple and lift into a ViewModel when desired
-    private var lat by mutableStateOf("61.979434")
-    private var lng by mutableStateOf("99.171125")
+    private var lat by mutableStateOf("0.0")
+    private var lng by mutableStateOf("0.0")
     private var radius by mutableIntStateOf(300)
     private var message by mutableStateOf("")
     private var contactsCsv by mutableStateOf("")
@@ -59,8 +62,8 @@ class SlotConfigActivity : AppCompatActivity() {
     private var smsEnabled by mutableStateOf(false)
 
     private var volumeEnabled by mutableStateOf(false)
-    private var ringVolume by mutableStateOf(5f)
-    private var mediaVolume by mutableStateOf(5f)
+    private var ringVolume by mutableStateOf(3f)
+    private var mediaVolume by mutableStateOf(8f)
 
     private var brightnessEnabled by mutableStateOf(false)
     private var brightness by mutableStateOf(150f)
@@ -132,6 +135,8 @@ class SlotConfigActivity : AppCompatActivity() {
             .takeIf { it != -1L }
 
         handleDeepLink(intent)
+        // Fetch current device location for default values
+        fetchCurrentLocation()
         // optionally load defaults from intent extras
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -186,11 +191,27 @@ class SlotConfigActivity : AppCompatActivity() {
 
                     brightnessEnabled = brightnessEnabled,
                     brightness = brightness,
-                    onBrightnessEnabledChange = { brightnessEnabled = it },
+                    onBrightnessEnabledChange = { enabled ->
+                        if (enabled) {
+                            if (checkAndRequestWriteSettingsPermission()) {
+                                brightnessEnabled = true
+                            }
+                        } else {
+                            brightnessEnabled = false
+                        }
+                    },
                     onBrightnessChange = { brightness = it },
 
                     dndEnabled = dndEnabled,
-                    onDndEnabledChange = { dndEnabled = it },
+                    onDndEnabledChange = { enabled ->
+                        if (enabled) {
+                            if (checkAndRequestDndPermission()) {
+                                dndEnabled = true
+                            }
+                        } else {
+                            dndEnabled = false
+                        }
+                    },
                     remindBeforeMinutes = remindBeforeMinutes,
                     onRemindBeforeMinutesChange = { remindBeforeMinutes = it },
 
@@ -290,6 +311,38 @@ class SlotConfigActivity : AppCompatActivity() {
         endLabel = "%02d:%02d".format(endHour, endMinute)
     }
 
+    /**
+     * Fetch the current device location and update lat/lng values.
+     * Uses FusedLocationProviderClient to get the last known location.
+     */
+    private fun fetchCurrentLocation() {
+        // Check if location permission is granted
+        if (ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            Log.i("LocationFetch", "Location permission not granted, using default values")
+            return
+        }
+
+        try {
+            val fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
+            fusedLocationClient.lastLocation.addOnSuccessListener { location ->
+                if (location != null) {
+                    lat = String.format("%.6f", location.latitude)
+                    lng = String.format("%.6f", location.longitude)
+                    Log.i("LocationFetch", "Got current location: lat=$lat, lng=$lng")
+                } else {
+                    Log.i("LocationFetch", "Last location is null, keeping default values")
+                }
+            }.addOnFailureListener { exception ->
+                Log.w("LocationFetch", "Failed to get location: ${exception.message}")
+            }
+        } catch (e: Exception) {
+            Log.w("LocationFetch", "Error fetching location: ${e.message}")
+        }
+    }
 
     private fun fetchPhoneNumberFromContact(uri: Uri): String? {
         var number: String? = null
@@ -381,7 +434,52 @@ class SlotConfigActivity : AppCompatActivity() {
         Log.i("Reminder", "Scheduled repeating reminder for slot=$slotId start=$reminderStart interval=$reminderInterval")
     }
 
-    val actions = mutableListOf<AutomationAction>()
+    /**
+     * Schedule an alarm to automatically re-register the geofence at the slot's start time.
+     * This ensures the geofence is registered even if the slot wasn't checked at startup.
+     */
+    private fun scheduleSlotStartAlarm(
+        context: Context,
+        slotId: Long,
+        startMillis: Long
+    ) {
+        if (startMillis <= System.currentTimeMillis()) {
+            Log.i("SlotStartAlarm", "Not scheduling start alarm for slot=$slotId: time already passed")
+            // Immediately register if start time already reached
+            TrackingForegroundService.startForSlot(context, slotId)
+            return
+        }
+
+        val am = context.getSystemService(AlarmManager::class.java)
+
+        val intent = Intent(context, SlotStartAlarmReceiver::class.java).apply {
+            action = "com.autonion.automationcompanion.ACTION_SLOT_START"
+            putExtra("slotId", slotId)
+        }
+
+        val pi = PendingIntent.getBroadcast(
+            context,
+            ("slot_start_$slotId").hashCode(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        try {
+            am.setExactAndAllowWhileIdle(
+                AlarmManager.RTC_WAKEUP,
+                startMillis,
+                pi
+            )
+            Log.i("SlotStartAlarm", "Scheduled slot start alarm for slot=$slotId at time=$startMillis")
+        } catch (e: SecurityException) {
+            Log.w("SlotStartAlarm", "Failed to schedule exact alarm, trying inexact: ${e.message}")
+            am.setAndAllowWhileIdle(
+                AlarmManager.RTC_WAKEUP,
+                startMillis,
+                pi
+            )
+        }
+    }
 
 
     //doSaveSlot(remindMinutes: Int, useRootToggle: Boolean)
@@ -571,6 +669,13 @@ class SlotConfigActivity : AppCompatActivity() {
                 // 1️⃣ ensure all old slots are alive
                 TrackingForegroundService.startAll(this@SlotConfigActivity)
 
+                // 2️⃣ Schedule alarm for this slot's start time (NEW - CRITICAL FIX)
+                scheduleSlotStartAlarm(
+                    context = this@SlotConfigActivity,
+                    slotId = finalId,
+                    startMillis = startMillis
+                )
+
                 scheduleLocationReminders(
                     context = this@SlotConfigActivity,
                     slotId = finalId,
@@ -602,4 +707,51 @@ class SlotConfigActivity : AppCompatActivity() {
         startActivity(intent)
     }
 
+    // ───────────── Permission Handling for Special Permissions ─────────────
+
+    private fun checkAndRequestWriteSettingsPermission(): Boolean {
+        return if (Settings.System.canWrite(this)) {
+            true
+        } else {
+            showWriteSettingsDialog()
+            false
+        }
+    }
+
+    private fun checkAndRequestDndPermission(): Boolean {
+        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        return if (nm.isNotificationPolicyAccessGranted) {
+            true
+        } else {
+            showDndPermissionDialog()
+            false
+        }
+    }
+
+    private fun showWriteSettingsDialog() {
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Brightness Permission Required")
+            .setMessage("To set brightness automatically, this app needs the 'Modify System Settings' permission.\n\nTap 'Grant' to open Settings where you can enable it.")
+            .setPositiveButton("Grant") { _, _ ->
+                val intent = Intent(android.provider.Settings.ACTION_MANAGE_WRITE_SETTINGS)
+                    .setData("package:$packageName".toUri())
+                startActivity(intent)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showDndPermissionDialog() {
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Do Not Disturb Permission Required")
+            .setMessage("To control Do Not Disturb automatically, this app needs the 'Access Notification Policy' permission.\n\nTap 'Grant' to open Settings where you can enable it.")
+            .setPositiveButton("Grant") { _, _ ->
+                val intent = Intent(android.provider.Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
+                startActivity(intent)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
 }
+
