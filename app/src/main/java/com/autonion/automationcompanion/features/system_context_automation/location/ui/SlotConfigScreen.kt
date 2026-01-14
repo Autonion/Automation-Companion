@@ -14,7 +14,10 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import com.autonion.automationcompanion.features.system_context_automation.location.helpers.AutomationAction
+import com.autonion.automationcompanion.features.automation.actions.models.AutomationAction
+import com.autonion.automationcompanion.features.automation.actions.models.ConfiguredAction
+import com.autonion.automationcompanion.features.automation.actions.ui.ActionPicker
+import com.autonion.automationcompanion.features.automation.actions.builders.ActionBuilder
 import java.time.DayOfWeek
 
 @Composable
@@ -23,42 +26,23 @@ fun SlotConfigScreen(
     latitude: String,
     longitude: String,
     radiusMeters: Int,
-    message: String,
-    contactsCsv: String,
     startLabel: String,
     endLabel: String,
     onLatitudeChanged: (String) -> Unit,
     onLongitudeChanged: (String) -> Unit,
     onRadiusChanged: (Int) -> Unit,
-    onMessageChanged: (String) -> Unit,
-    onPickContactClicked: () -> Unit,
     onStartTimeClicked: () -> Unit,
     onEndTimeClicked: () -> Unit,
     onSaveClicked: (Int, List<AutomationAction>) -> Unit,
     onPickFromMapClicked: () -> Unit,
-    smsEnabled: Boolean,
-    onSmsEnabledChange: (Boolean) -> Unit,
-
-    volumeEnabled: Boolean,
-    ringVolume: Float,
-    mediaVolume: Float,
-    onVolumeEnabledChange: (Boolean) -> Unit,
-    onRingVolumeChange: (Float) -> Unit,
-    onMediaVolumeChange: (Float) -> Unit,
-
-    brightnessEnabled: Boolean,
-    brightness: Float,
-    onBrightnessEnabledChange: (Boolean) -> Unit,
-    onBrightnessChange: (Float) -> Unit,
-
-    dndEnabled: Boolean,
-    onDndEnabledChange: (Boolean) -> Unit,
+    onPickContactClicked: (actionIndex: Int) -> Unit,
     remindBeforeMinutes: String,
     onRemindBeforeMinutesChange: (String) -> Unit,
-
     selectedDays: Set<String>,
     onSelectedDaysChange: (Set<String>) -> Unit,
-
+    configuredActions: List<ConfiguredAction>,
+    onActionsChanged: (List<ConfiguredAction>) -> Unit,
+    volumeEnabled: Boolean,  // To check if volume is on for DND disable logic
     ) {
     val ctx = LocalContext.current
     val scrollState = rememberScrollState()
@@ -158,99 +142,19 @@ fun SlotConfigScreen(
         )
 
         Divider()
-        Text("Automations", style = MaterialTheme.typography.titleMedium)
 
-        // ───────────── SMS ─────────────
-
-        ActionRow(
-            label = "Send Message",
-            checked = smsEnabled,
-            onCheckedChange = onSmsEnabledChange
+        // ───────────── Actions (Delegated to ActionPicker) ─────────────
+        // ActionPicker manages all action UI: SMS, Volume, Brightness, DND
+        // This screen only handles trigger-specific config (location, time, days)
+        ActionPicker(
+            configuredActions = configuredActions,
+            onActionsChanged = onActionsChanged,
+            onPickContactClicked = onPickContactClicked,
+            dndDisabledReason = if (volumeEnabled)
+                "Disabled: Volume is active (Realme ROM conflict)" else null
         )
 
-        if (smsEnabled) {
-            Column(Modifier.padding(start = 12.dp)) {
-
-                OutlinedTextField(
-                    value = message,
-                    onValueChange = onMessageChanged,
-                    label = { Text("Message") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Button(
-                    onClick = onPickContactClicked,
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text("Select contact") }
-
-                if (contactsCsv.isBlank()) {
-                    Text(
-                        "⚠ Select at least one contact",
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                } else {
-                    Text(contactsCsv, style = MaterialTheme.typography.bodySmall)
-                }
-            }
-        }
-
-        // ───────────── Volume ─────────────
-
-        ActionRow(
-            label = "Set Volume",
-            checked = volumeEnabled,
-            onCheckedChange = onVolumeEnabledChange
-        )
-
-        if (volumeEnabled) {
-            Column(Modifier.padding(start = 12.dp)) {
-                Text("Ring: ${ringVolume.toInt()}")
-                Slider(
-                    value = ringVolume,
-                    onValueChange = onRingVolumeChange,
-                    valueRange = 0f..7f
-                )
-
-                Text("Media: ${mediaVolume.toInt()}")
-                Slider(
-                    value = mediaVolume,
-                    onValueChange = onMediaVolumeChange,
-                    valueRange = 0f..15f
-                )
-
-            }
-        }
-
-        // ───────────── Brightness ─────────────
-
-        ActionRow(
-            label = "Set Brightness",
-            checked = brightnessEnabled,
-            onCheckedChange = onBrightnessEnabledChange
-        )
-
-        if (brightnessEnabled) {
-            Column(Modifier.padding(start = 12.dp)) {
-                Text("Brightness: ${brightness.toInt()}")
-                Slider(
-                    value = brightness,
-                    onValueChange = onBrightnessChange,
-                    valueRange = 10f..255f
-                )
-
-            }
-        }
-
-        // ───────────── DND ─────────────
-        // NOTE: DND disabled if Volume is enabled (Realme ROM conflict: volume changes reset DND)
-
-        ActionRow(
-            label = "Do Not Disturb",
-            checked = dndEnabled,
-            enabled = !volumeEnabled,  // Disable DND if Volume is ON
-            onCheckedChange = onDndEnabledChange
-        )
+        Divider()
 
         // ───────────── Reminder ─────────────
 
@@ -263,23 +167,12 @@ fun SlotConfigScreen(
 
         // ───────────── Save ─────────────
 
-        val hasAnyAction =
-            smsEnabled || volumeEnabled || brightnessEnabled || dndEnabled
+        val hasAnyAction = ActionBuilder.hasAnyValidAction(configuredActions)
 
         Button(
             enabled = hasAnyAction,
             onClick = {
-                val actions = buildActions(
-                    message,
-                    contactsCsv,
-                    smsEnabled,
-                    volumeEnabled,
-                    ringVolume,
-                    mediaVolume,
-                    brightnessEnabled,
-                    brightness,
-                    dndEnabled
-                )
+                val actions = ActionBuilder.buildActions(configuredActions)
 
                 onSaveClicked(
                     remindBeforeMinutes.toIntOrNull() ?: 15,
@@ -299,55 +192,4 @@ fun SlotConfigScreen(
             )
         }
     }
-}
-
-@Composable
-private fun ActionRow(
-    label: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-    enabled: Boolean = true
-) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .alpha(if (enabled) 1f else 0.5f),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(label, Modifier.weight(1f))
-        Switch(checked, onCheckedChange, enabled = enabled)
-    }
-}
-
-private fun buildActions(
-    message: String,
-    contactsCsv: String,
-    smsEnabled: Boolean,
-    volumeEnabled: Boolean,
-    ringVolume: Float,
-    mediaVolume: Float,
-    brightnessEnabled: Boolean,
-    brightness: Float,
-    dndEnabled: Boolean
-): List<AutomationAction> {
-
-    val actions = mutableListOf<AutomationAction>()
-
-    if (smsEnabled && contactsCsv.isNotBlank()) {
-        actions += AutomationAction.SendSms(message, contactsCsv)
-    }
-    if (volumeEnabled) {
-        actions += AutomationAction.SetVolume(
-            ringVolume.toInt(),
-            mediaVolume.toInt()
-        )
-    }
-    if (brightnessEnabled) {
-        actions += AutomationAction.SetBrightness(brightness.toInt())
-    }
-    if (dndEnabled) {
-        actions += AutomationAction.SetDnd(true)
-    }
-
-    return actions
 }

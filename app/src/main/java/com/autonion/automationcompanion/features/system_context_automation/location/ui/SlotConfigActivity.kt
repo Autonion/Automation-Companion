@@ -36,7 +36,9 @@ import androidx.core.net.toUri
 import com.autonion.automationcompanion.features.system_context_automation.location.engine.location_receiver.MidnightResetReceiver
 import com.autonion.automationcompanion.features.system_context_automation.location.engine.location_receiver.SlotStartAlarmReceiver
 import com.autonion.automationcompanion.features.system_context_automation.location.helpers.AppInitManager
-import com.autonion.automationcompanion.features.system_context_automation.location.helpers.AutomationAction
+import com.autonion.automationcompanion.features.automation.actions.models.AutomationAction
+import com.autonion.automationcompanion.features.automation.actions.models.ConfiguredAction
+import com.autonion.automationcompanion.features.automation.actions.builders.ActionBuilder
 import com.autonion.automationcompanion.features.system_context_automation.location.permissions.PermissionPreflight
 import com.google.android.gms.location.LocationServices
 
@@ -47,8 +49,6 @@ class SlotConfigActivity : AppCompatActivity() {
     private var lat by mutableStateOf("0.0")
     private var lng by mutableStateOf("0.0")
     private var radius by mutableIntStateOf(300)
-    private var message by mutableStateOf("")
-    private var contactsCsv by mutableStateOf("")
 
     private var startLabel by mutableStateOf("--:--")
     private var endLabel by mutableStateOf("--:--")
@@ -58,17 +58,10 @@ class SlotConfigActivity : AppCompatActivity() {
     private var endMinute = -1
     private var editingSlotId: Long? = null
 
-    // Action toggle state (EDIT MODE AWARE)
-    private var smsEnabled by mutableStateOf(false)
+    // Action configuration state — managed as a list of ConfiguredActions
+    // This replaces all the individual action toggles (smsEnabled, volumeEnabled, etc.)
+    private var configuredActions by mutableStateOf<List<ConfiguredAction>>(emptyList())
 
-    private var volumeEnabled by mutableStateOf(false)
-    private var ringVolume by mutableStateOf(3f)
-    private var mediaVolume by mutableStateOf(8f)
-
-    private var brightnessEnabled by mutableStateOf(false)
-    private var brightness by mutableStateOf(150f)
-
-    private var dndEnabled by mutableStateOf(false)
     private var remindBeforeMinutes by mutableStateOf("15")
 
     private var selectedDays by mutableStateOf(
@@ -78,13 +71,31 @@ class SlotConfigActivity : AppCompatActivity() {
 
 
     // Activity result launchers
+    private var contactPickerActionIndex = -1  // Track which SMS action's contact picker is open
+
     private val contactPickerLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
         if (res.resultCode == RESULT_OK && res.data != null) {
             val uri: Uri? = res.data!!.data
             uri?.let { u ->
                 val num = fetchPhoneNumberFromContact(u)
                 if (!num.isNullOrBlank()) {
-                    contactsCsv = if (contactsCsv.isBlank()) num else "$contactsCsv;$num"
+                    // Update the SMS action's contacts
+                    if (contactPickerActionIndex >= 0 && contactPickerActionIndex < configuredActions.size) {
+                        val smsAction = configuredActions.getOrNull(contactPickerActionIndex)
+                        if (smsAction is ConfiguredAction.SendSms) {
+                            val updatedContacts = if (smsAction.contactsCsv.isBlank())
+                                num else "${smsAction.contactsCsv};$num"
+                            
+                            configuredActions = configuredActions.mapIndexed { idx, action ->
+                                if (idx == contactPickerActionIndex) {
+                                    smsAction.copy(contactsCsv = updatedContacts)
+                                } else {
+                                    action
+                                }
+                            }
+                            contactPickerActionIndex = -1
+                        }
+                    }
                 } else {
                     Toast.makeText(this, "No number in contact", Toast.LENGTH_SHORT).show()
                 }
@@ -174,61 +185,57 @@ class SlotConfigActivity : AppCompatActivity() {
                     latitude = lat,
                     longitude = lng,
                     radiusMeters = radius,
-                    message = message,
-                    contactsCsv = contactsCsv,
                     startLabel = startLabel,
                     endLabel = endLabel,
-
-                    smsEnabled = smsEnabled,
-                    onSmsEnabledChange = { smsEnabled = it },
-
-                    volumeEnabled = volumeEnabled,
-                    ringVolume = ringVolume,
-                    mediaVolume = mediaVolume,
-                    onVolumeEnabledChange = { volumeEnabled = it },
-                    onRingVolumeChange = { ringVolume = it },
-                    onMediaVolumeChange = { mediaVolume = it },
-
-                    brightnessEnabled = brightnessEnabled,
-                    brightness = brightness,
-                    onBrightnessEnabledChange = { enabled ->
-                        if (enabled) {
-                            if (checkAndRequestWriteSettingsPermission()) {
-                                brightnessEnabled = true
-                            }
-                        } else {
-                            brightnessEnabled = false
-                        }
-                    },
-                    onBrightnessChange = { brightness = it },
-
-                    dndEnabled = dndEnabled,
-                    onDndEnabledChange = { enabled ->
-                        if (enabled) {
-                            if (checkAndRequestDndPermission()) {
-                                dndEnabled = true
-                            }
-                        } else {
-                            dndEnabled = false
-                        }
-                    },
-                    remindBeforeMinutes = remindBeforeMinutes,
-                    onRemindBeforeMinutesChange = { remindBeforeMinutes = it },
 
                     onLatitudeChanged = { lat = it },
                     onLongitudeChanged = { lng = it },
                     onRadiusChanged = { radius = it },
-                    onMessageChanged = { message = it },
-                    onPickContactClicked = { pickContact() },
                     onStartTimeClicked = { showTimePicker(true) },
                     onEndTimeClicked = { showTimePicker(false) },
                     onPickFromMapClicked = { openMapPickerWebsite() },
+                    onPickContactClicked = { actionIndex ->
+                        contactPickerActionIndex = actionIndex
+                        pickContact()
+                    },
                     onSaveClicked = { remind, actions ->
                         doSaveSlot(remind, actions)
                     },
+                    remindBeforeMinutes = remindBeforeMinutes,
+                    onRemindBeforeMinutesChange = { remindBeforeMinutes = it },
                     selectedDays = selectedDays,
                     onSelectedDaysChange = { selectedDays = it },
-                    )
+                    configuredActions = configuredActions,
+                    onActionsChanged = { newActions ->
+                        // Check permissions before allowing brightness or DND actions
+                        val filteredActions = newActions.filter { action ->
+                            when (action) {
+                                // Brightness requires WRITE_SETTINGS permission
+                                is ConfiguredAction.Brightness -> {
+                                    if (!Settings.System.canWrite(this@SlotConfigActivity)) {
+                                        showWriteSettingsDialog()
+                                        false  // Don't add action yet
+                                    } else {
+                                        true
+                                    }
+                                }
+                                // DND requires NOTIFICATION_POLICY_ACCESS permission
+                                is ConfiguredAction.Dnd -> {
+                                    val nm = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+                                    if (!nm.isNotificationPolicyAccessGranted) {
+                                        showDndPermissionDialog()
+                                        false  // Don't add action yet
+                                    } else {
+                                        true
+                                    }
+                                }
+                                else -> true  // Audio and SMS don't need special permissions here
+                            }
+                        }
+                        configuredActions = filteredActions
+                    },
+                    volumeEnabled = configuredActions.any { it is ConfiguredAction.Audio }
+                )
             }
         }
     }
@@ -265,32 +272,44 @@ class SlotConfigActivity : AppCompatActivity() {
                 slot.activeDays.split(",").toSet()
             }
 
-
-
-        message = ""
-        contactsCsv = ""
-
-        slot.actions.forEach { action ->
+        // Reconstruct ConfiguredActions from AutomationActions
+        configuredActions = slot.actions.mapNotNull { action ->
             when (action) {
                 is AutomationAction.SendSms -> {
-                    smsEnabled = true
-                    message = action.message
-                    contactsCsv = action.contactsCsv
+                    ConfiguredAction.SendSms(action.message, action.contactsCsv)
                 }
 
                 is AutomationAction.SetVolume -> {
-                    volumeEnabled = true
-                    ringVolume = action.ring.toFloat()
-                    mediaVolume = action.media.toFloat()
+                    ConfiguredAction.Audio(action.ring, action.media)
                 }
 
                 is AutomationAction.SetBrightness -> {
-                    brightnessEnabled = true
-                    brightness = action.level.toFloat()
+                    ConfiguredAction.Brightness(action.level)
                 }
 
                 is AutomationAction.SetDnd -> {
-                    dndEnabled = action.enabled
+                    ConfiguredAction.Dnd(action.enabled)
+                }
+
+                // ───────────── Display Actions ─────────────
+                is AutomationAction.SetDarkMode -> {
+                    ConfiguredAction.DarkMode(action.enabled)
+                }
+
+                is AutomationAction.SetAutoRotate -> {
+                    ConfiguredAction.AutoRotate(action.enabled)
+                }
+
+                is AutomationAction.SetScreenTimeout -> {
+                    ConfiguredAction.ScreenTimeout(action.durationMs)
+                }
+
+                is AutomationAction.SetNightLight -> {
+                    ConfiguredAction.NightLight(action.enabled)
+                }
+
+                is AutomationAction.SetKeepScreenAwake -> {
+                    ConfiguredAction.KeepScreenAwake(action.enabled)
                 }
             }
         }
@@ -592,10 +611,6 @@ class SlotConfigActivity : AppCompatActivity() {
         }
         if (startHour < 0 || endHour < 0) {
             Toast.makeText(this, "Set start/end times", Toast.LENGTH_SHORT).show()
-            return
-        }
-        if (actions.any { it is AutomationAction.SendSms } && contactsCsv.isBlank()) {
-            Toast.makeText(this, "Select contacts", Toast.LENGTH_SHORT).show()
             return
         }
 

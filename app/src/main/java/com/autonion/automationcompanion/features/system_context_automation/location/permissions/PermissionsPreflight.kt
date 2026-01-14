@@ -4,7 +4,7 @@ import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.provider.Settings
-import com.autonion.automationcompanion.features.system_context_automation.location.helpers.AutomationAction
+import com.autonion.automationcompanion.features.automation.actions.models.AutomationAction
 import com.caverock.androidsvg.BuildConfig
 
 

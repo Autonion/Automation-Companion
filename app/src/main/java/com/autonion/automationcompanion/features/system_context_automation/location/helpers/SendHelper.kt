@@ -16,7 +16,8 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.autonion.automationcompanion.features.system_context_automation.location.data.db.AppDatabase
-import com.autonion.automationcompanion.features.system_context_automation.location.helpers.AutomationAction
+import com.autonion.automationcompanion.features.automation.actions.models.AutomationAction
+import com.autonion.automationcompanion.features.system_context_automation.location.engine.location_receiver.TrackingForegroundService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -102,6 +103,43 @@ object SendHelper {
                     }
                     executeSetDnd(context, action)
                 }
+
+                // ───────────── Display Actions ─────────────
+                is AutomationAction.SetDarkMode -> {
+                    if (!canWriteSettings) {
+                        Log.w(TAG, "WRITE_SETTINGS not granted, skipping dark mode")
+                        return@forEach
+                    }
+                    executeSetDarkMode(context, action)
+                }
+
+                is AutomationAction.SetAutoRotate -> {
+                    if (!canWriteSettings) {
+                        Log.w(TAG, "WRITE_SETTINGS not granted, skipping auto-rotate")
+                        return@forEach
+                    }
+                    executeSetAutoRotate(context, action)
+                }
+
+                is AutomationAction.SetScreenTimeout -> {
+                    if (!canWriteSettings) {
+                        Log.w(TAG, "WRITE_SETTINGS not granted, skipping screen timeout")
+                        return@forEach
+                    }
+                    executeSetScreenTimeout(context, action)
+                }
+
+                is AutomationAction.SetNightLight -> {
+                    if (!canWriteSettings) {
+                        Log.w(TAG, "WRITE_SETTINGS not granted, skipping night light")
+                        return@forEach
+                    }
+                    executeSetNightLight(context, action)
+                }
+
+                is AutomationAction.SetKeepScreenAwake -> {
+                    executeSetKeepScreenAwake(context, action)
+                }
             }
         }
     }
@@ -152,6 +190,87 @@ object SendHelper {
             notifySuccess(context, "Do Not Disturb $status")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to set DND", e)
+        }
+    }
+
+    // ───────────────── Display Actions ─────────────────
+
+    private fun executeSetDarkMode(context: Context, action: AutomationAction.SetDarkMode) {
+        try {
+            val modeValue = if (action.enabled) 1 else 0
+            Settings.Secure.putInt(context.contentResolver, "dark_mode_override", modeValue)
+            val status = if (action.enabled) "enabled" else "disabled"
+            Log.i(TAG, "Dark mode $status")
+            notifySuccess(context, "Dark Mode $status")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to set dark mode", e)
+        }
+    }
+
+    private fun executeSetAutoRotate(context: Context, action: AutomationAction.SetAutoRotate) {
+        try {
+            Settings.System.putInt(
+                context.contentResolver,
+                Settings.System.ACCELEROMETER_ROTATION,
+                if (action.enabled) 1 else 0
+            )
+            val status = if (action.enabled) "enabled" else "disabled"
+            Log.i(TAG, "Auto-rotate $status")
+            notifySuccess(context, "Auto-rotate $status")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to set auto-rotate", e)
+        }
+    }
+
+    private fun executeSetScreenTimeout(context: Context, action: AutomationAction.SetScreenTimeout) {
+        try {
+            Settings.System.putInt(
+                context.contentResolver,
+                Settings.System.SCREEN_OFF_TIMEOUT,
+                action.durationMs
+            )
+            val durationLabel = when (action.durationMs) {
+                15_000 -> "15 seconds"
+                30_000 -> "30 seconds"
+                60_000 -> "1 minute"
+                300_000 -> "5 minutes"
+                else -> "${action.durationMs}ms"
+            }
+            Log.i(TAG, "Screen timeout set to $durationLabel")
+            notifySuccess(context, "Screen timeout set to $durationLabel")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to set screen timeout", e)
+        }
+    }
+
+    private fun executeSetNightLight(context: Context, action: AutomationAction.SetNightLight) {
+        try {
+            Settings.Secure.putInt(
+                context.contentResolver,
+                "night_display_activated",
+                if (action.enabled) 1 else 0
+            )
+            val status = if (action.enabled) "enabled" else "disabled"
+            Log.i(TAG, "Night light $status")
+            notifySuccess(context, "Night Light $status")
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to set night light", e)
+        }
+    }
+
+    private fun executeSetKeepScreenAwake(context: Context, action: AutomationAction.SetKeepScreenAwake) {
+        try {
+            if (action.enabled) {
+                TrackingForegroundService.acquirePartialWakeLock(context)
+                Log.i(TAG, "Keep screen awake activated")
+                notifySuccess(context, "Keep screen awake activated")
+            } else {
+                TrackingForegroundService.releasePartialWakeLock(context)
+                Log.i(TAG, "Keep screen awake deactivated")
+                notifySuccess(context, "Keep screen awake deactivated")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to manage keep screen awake", e)
         }
     }
 

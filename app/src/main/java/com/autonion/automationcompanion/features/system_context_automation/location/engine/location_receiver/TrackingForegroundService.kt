@@ -7,6 +7,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.os.IBinder
+import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import android.app.NotificationManager
 import android.app.NotificationChannel
@@ -102,9 +103,43 @@ class TrackingForegroundService : Service() {
             stop(context)
             start(context)
         }
+
+        /**
+         * Acquire partial wake lock to keep screen awake.
+         * Used by Keep Screen Awake Display action.
+         * Graceful: If WAKE_LOCK permission not granted, logs warning but does not crash.
+         */
+        fun acquirePartialWakeLock(context: Context) {
+            try {
+                val i = Intent(context, TrackingForegroundService::class.java).apply {
+                    action = "ACTION_ACQUIRE_WAKE_LOCK"
+                }
+                ContextCompat.startForegroundService(context, i)
+                Log.i("TrackingService", "Partial wake lock acquire requested")
+            } catch (e: Exception) {
+                Log.w("TrackingService", "Failed to acquire wake lock", e)
+            }
+        }
+
+        /**
+         * Release partial wake lock to allow normal sleep.
+         * Used by Keep Screen Awake Display action.
+         */
+        fun releasePartialWakeLock(context: Context) {
+            try {
+                val i = Intent(context, TrackingForegroundService::class.java).apply {
+                    action = "ACTION_RELEASE_WAKE_LOCK"
+                }
+                context.startService(i)
+                Log.i("TrackingService", "Partial wake lock release requested")
+            } catch (e: Exception) {
+                Log.w("TrackingService", "Failed to release wake lock", e)
+            }
+        }
     }
 
     private lateinit var geofencingClient: GeofencingClient
+    private var partialWakeLock: PowerManager.WakeLock? = null
 //    private val geofencePendingIntent: PendingIntent by lazy {
 //        val intent = Intent(this, GeofenceBroadcastReceiver::class.java)
 //        PendingIntent.getBroadcast(this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE)
@@ -150,6 +185,14 @@ class TrackingForegroundService : Service() {
                 } else {
                     Log.w("TrackingService", "Invalid volume extras: ring=$ring media=$media")
                 }
+            }
+
+            "ACTION_ACQUIRE_WAKE_LOCK" -> {
+                acquireWakeLock()
+            }
+
+            "ACTION_RELEASE_WAKE_LOCK" -> {
+                releaseWakeLock()
             }
 
             ACTION_STOP_FOR_SLOT -> {
@@ -484,6 +527,51 @@ class TrackingForegroundService : Service() {
         } catch (t: Throwable) {
             Log.e("TrackingService", "Failed to perform foreground volume change", t)
         }
+    }
+
+    /**
+     * Acquire partial wake lock to keep screen awake (CPU stays active but screen may sleep).
+     * Used by Keep Screen Awake Display action.
+     */
+    private fun acquireWakeLock() {
+        try {
+            if (partialWakeLock?.isHeld == true) {
+                Log.w("TrackingService", "Wake lock already held")
+                return
+            }
+
+            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+            partialWakeLock = powerManager.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "automationcompanion:keep_screen_awake"
+            ).apply {
+                acquire()
+                Log.i("TrackingService", "Partial wake lock acquired")
+            }
+        } catch (e: Exception) {
+            Log.w("TrackingService", "Failed to acquire wake lock", e)
+        }
+    }
+
+    /**
+     * Release partial wake lock to allow normal sleep.
+     * Used by Keep Screen Awake Display action.
+     */
+    private fun releaseWakeLock() {
+        try {
+            if (partialWakeLock?.isHeld == true) {
+                partialWakeLock?.release()
+                Log.i("TrackingService", "Partial wake lock released")
+            }
+        } catch (e: Exception) {
+            Log.w("TrackingService", "Failed to release wake lock", e)
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // Clean up wake lock on service destruction
+        releaseWakeLock()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
