@@ -292,9 +292,6 @@ class SlotConfigActivity : AppCompatActivity() {
                 }
 
                 // ───────────── Display Actions ─────────────
-                is AutomationAction.SetDarkMode -> {
-                    ConfiguredAction.DarkMode(action.enabled)
-                }
 
                 is AutomationAction.SetAutoRotate -> {
                     ConfiguredAction.AutoRotate(action.enabled)
@@ -302,10 +299,6 @@ class SlotConfigActivity : AppCompatActivity() {
 
                 is AutomationAction.SetScreenTimeout -> {
                     ConfiguredAction.ScreenTimeout(action.durationMs)
-                }
-
-                is AutomationAction.SetNightLight -> {
-                    ConfiguredAction.NightLight(action.enabled)
                 }
 
                 is AutomationAction.SetKeepScreenAwake -> {

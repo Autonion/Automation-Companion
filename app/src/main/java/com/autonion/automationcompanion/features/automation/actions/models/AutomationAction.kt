@@ -40,12 +40,6 @@ sealed class AutomationAction {
     // ───────────── Display Actions ─────────────
 
     @Serializable
-    @SerialName("set_dark_mode")
-    data class SetDarkMode(
-        val enabled: Boolean
-    ) : AutomationAction()
-
-    @Serializable
     @SerialName("set_auto_rotate")
     data class SetAutoRotate(
         val enabled: Boolean
@@ -55,12 +49,6 @@ sealed class AutomationAction {
     @SerialName("set_screen_timeout")
     data class SetScreenTimeout(
         val durationMs: Int
-    ) : AutomationAction()
-
-    @Serializable
-    @SerialName("set_night_light")
-    data class SetNightLight(
-        val enabled: Boolean
     ) : AutomationAction()
 
     @Serializable

@@ -49,14 +49,6 @@ sealed class ConfiguredAction {
     ) : ConfiguredAction()
 
     /**
-     * Dark Mode action configuration.
-     * Non-root only: Uses Settings.Secure on Android 10+ or graceful fallback to Settings app.
-     */
-    data class DarkMode(
-        val enabled: Boolean
-    ) : ConfiguredAction()
-
-    /**
      * Auto-rotate action configuration.
      * Non-root only: Uses Settings.System ACCELEROMETER_ROTATION.
      */
@@ -71,14 +63,6 @@ sealed class ConfiguredAction {
      */
     data class ScreenTimeout(
         val durationMs: Int       // 15000, 30000, 60000, or 300000
-    ) : ConfiguredAction()
-
-    /**
-     * Night Light action configuration.
-     * Non-root only: Uses Settings.Secure NIGHT_DISPLAY on Android 7+ or graceful fallback.
-     */
-    data class NightLight(
-        val enabled: Boolean
     ) : ConfiguredAction()
 
     /**

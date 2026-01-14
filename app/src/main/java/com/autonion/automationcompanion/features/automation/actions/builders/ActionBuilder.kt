@@ -46,9 +46,6 @@ object ActionBuilder {
                 }
 
                 // ───────────── Display Actions ─────────────
-                is ConfiguredAction.DarkMode -> {
-                    AutomationAction.SetDarkMode(config.enabled)
-                }
 
                 is ConfiguredAction.AutoRotate -> {
                     AutomationAction.SetAutoRotate(config.enabled)
@@ -56,10 +53,6 @@ object ActionBuilder {
 
                 is ConfiguredAction.ScreenTimeout -> {
                     AutomationAction.SetScreenTimeout(config.durationMs)
-                }
-
-                is ConfiguredAction.NightLight -> {
-                    AutomationAction.SetNightLight(config.enabled)
                 }
 
                 is ConfiguredAction.KeepScreenAwake -> {
@@ -85,10 +78,8 @@ object ActionBuilder {
                 config.message.isNotBlank() && config.contactsCsv.isNotBlank()
             }
             // Display actions: all have safe defaults
-            is ConfiguredAction.DarkMode -> true
             is ConfiguredAction.AutoRotate -> true
             is ConfiguredAction.ScreenTimeout -> true
-            is ConfiguredAction.NightLight -> true
             is ConfiguredAction.KeepScreenAwake -> true
         }
     }

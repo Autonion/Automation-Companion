@@ -21,10 +21,8 @@ class ActionExecutor(
                     is AutomationAction.SetBrightness -> executeSetBrightness(action)
                     is AutomationAction.SetDnd -> executeSetDnd(action)
                     // ───────────── Display Actions ─────────────
-                    is AutomationAction.SetDarkMode -> executeSetDarkMode(action)
                     is AutomationAction.SetAutoRotate -> executeSetAutoRotate(action)
                     is AutomationAction.SetScreenTimeout -> executeSetScreenTimeout(action)
-                    is AutomationAction.SetNightLight -> executeSetNightLight(action)
                     is AutomationAction.SetKeepScreenAwake -> executeSetKeepScreenAwake(action)
                 }
             } catch (t: Throwable) {
@@ -100,29 +98,6 @@ class ActionExecutor(
 
     // ───────────────── Display Actions ─────────────────
 
-    /**
-     * Set Dark Mode on/off.
-     * Non-root implementation: Uses Settings.Secure DARK_MODE_SCHEDULE_TYPE (Android 10+)
-     * Fallback: Opens display settings for manual configuration on older devices.
-     * Graceful: If permission denied, logs warning but does not crash.
-     */
-    private fun executeSetDarkMode(action: AutomationAction.SetDarkMode) {
-        if (!Settings.System.canWrite(context)) {
-            Log.w("ActionExecutor", "WRITE_SETTINGS not granted for dark mode; fallback would open settings")
-            // Graceful fallback: user can manually configure in settings if needed
-            return
-        }
-
-        try {
-            // Android 10+: Use DARK_MODE_SCHEDULE_TYPE
-            // 0 = off, 1 = on, 2 = schedule, 3 = custom schedule
-            val modeValue = if (action.enabled) 1 else 0
-            Settings.Secure.putInt(context.contentResolver, "dark_mode_override", modeValue)
-            Log.i("ActionExecutor", "Set dark mode: ${action.enabled}")
-        } catch (e: Exception) {
-            Log.w("ActionExecutor", "Failed to set dark mode, may require Android 10+", e)
-        }
-    }
 
     /**
      * Set Auto-rotate on/off.
@@ -170,30 +145,6 @@ class ActionExecutor(
         }
     }
 
-    /**
-     * Set Night Light on/off.
-     * Non-root implementation: Uses Settings.Secure NIGHT_DISPLAY (Android 7+).
-     * Fallback: Gracefully handles older devices that don't support this setting.
-     * Graceful: If permission denied or feature not supported, logs warning.
-     */
-    private fun executeSetNightLight(action: AutomationAction.SetNightLight) {
-        if (!Settings.System.canWrite(context)) {
-            Log.w("ActionExecutor", "WRITE_SETTINGS not granted for night light")
-            return
-        }
-
-        try {
-            // Android 7+ feature
-            Settings.Secure.putInt(
-                context.contentResolver,
-                "night_display_activated",
-                if (action.enabled) 1 else 0
-            )
-            Log.i("ActionExecutor", "Set night light: ${action.enabled}")
-        } catch (e: Exception) {
-            Log.w("ActionExecutor", "Failed to set night light, may require Android 7+", e)
-        }
-    }
 
     /**
      * Set Keep Screen Awake during active trigger.

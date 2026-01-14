@@ -105,13 +105,6 @@ object SendHelper {
                 }
 
                 // ───────────── Display Actions ─────────────
-                is AutomationAction.SetDarkMode -> {
-                    if (!canWriteSettings) {
-                        Log.w(TAG, "WRITE_SETTINGS not granted, skipping dark mode")
-                        return@forEach
-                    }
-                    executeSetDarkMode(context, action)
-                }
 
                 is AutomationAction.SetAutoRotate -> {
                     if (!canWriteSettings) {
@@ -127,14 +120,6 @@ object SendHelper {
                         return@forEach
                     }
                     executeSetScreenTimeout(context, action)
-                }
-
-                is AutomationAction.SetNightLight -> {
-                    if (!canWriteSettings) {
-                        Log.w(TAG, "WRITE_SETTINGS not granted, skipping night light")
-                        return@forEach
-                    }
-                    executeSetNightLight(context, action)
                 }
 
                 is AutomationAction.SetKeepScreenAwake -> {
@@ -195,18 +180,6 @@ object SendHelper {
 
     // ───────────────── Display Actions ─────────────────
 
-    private fun executeSetDarkMode(context: Context, action: AutomationAction.SetDarkMode) {
-        try {
-            val modeValue = if (action.enabled) 1 else 0
-            Settings.Secure.putInt(context.contentResolver, "dark_mode_override", modeValue)
-            val status = if (action.enabled) "enabled" else "disabled"
-            Log.i(TAG, "Dark mode $status")
-            notifySuccess(context, "Dark Mode $status")
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to set dark mode", e)
-        }
-    }
-
     private fun executeSetAutoRotate(context: Context, action: AutomationAction.SetAutoRotate) {
         try {
             Settings.System.putInt(
@@ -229,6 +202,12 @@ object SendHelper {
                 Settings.System.SCREEN_OFF_TIMEOUT,
                 action.durationMs
             )
+
+            val applied = Settings.System.getInt(
+                context.contentResolver,
+                Settings.System.SCREEN_OFF_TIMEOUT
+            )
+            Log.e("DEBUG_TIMEOUT", "Requested=${action.durationMs}, Applied=$applied")
             val durationLabel = when (action.durationMs) {
                 15_000 -> "15 seconds"
                 30_000 -> "30 seconds"
@@ -240,21 +219,6 @@ object SendHelper {
             notifySuccess(context, "Screen timeout set to $durationLabel")
         } catch (e: Exception) {
             Log.w(TAG, "Failed to set screen timeout", e)
-        }
-    }
-
-    private fun executeSetNightLight(context: Context, action: AutomationAction.SetNightLight) {
-        try {
-            Settings.Secure.putInt(
-                context.contentResolver,
-                "night_display_activated",
-                if (action.enabled) 1 else 0
-            )
-            val status = if (action.enabled) "enabled" else "disabled"
-            Log.i(TAG, "Night light $status")
-            notifySuccess(context, "Night Light $status")
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to set night light", e)
         }
     }
 

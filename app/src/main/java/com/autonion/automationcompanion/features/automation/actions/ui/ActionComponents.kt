@@ -138,37 +138,6 @@ internal fun SmsActionConfig(
 
 // ───────────── Display Actions ─────────────
 
-/**
- * Dark Mode action configuration UI.
- * Non-root: Uses Settings.Secure DARK_MODE_SCHEDULE_TYPE (Android 10+)
- * Falls back to opening Settings on unsupported devices.
- */
-@Composable
-internal fun DarkModeActionConfig(
-    action: ConfiguredAction.DarkMode,
-    onActionChanged: (ConfiguredAction.DarkMode) -> Unit
-) {
-    Column(Modifier.padding(start = 12.dp)) {
-        Row(
-            Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                if (action.enabled) "Dark Mode: ON" else "Dark Mode: OFF",
-                Modifier.weight(1f)
-            )
-            Switch(action.enabled, onCheckedChange = { newValue ->
-                onActionChanged(action.copy(enabled = newValue))
-            })
-        }
-        Text(
-            "Note: Requires display settings permission",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.outline,
-            modifier = Modifier.padding(top = 4.dp)
-        )
-    }
-}
 
 /**
  * Auto-rotate action configuration UI.
@@ -231,37 +200,6 @@ internal fun ScreenTimeoutActionConfig(
     }
 }
 
-/**
- * Night Light action configuration UI.
- * Non-root: Uses Settings.Secure NIGHT_DISPLAY (Android 7+)
- * Falls back on unsupported devices.
- */
-@Composable
-internal fun NightLightActionConfig(
-    action: ConfiguredAction.NightLight,
-    onActionChanged: (ConfiguredAction.NightLight) -> Unit
-) {
-    Column(Modifier.padding(start = 12.dp)) {
-        Row(
-            Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                if (action.enabled) "Night Light: ON" else "Night Light: OFF",
-                Modifier.weight(1f)
-            )
-            Switch(action.enabled, onCheckedChange = { newValue ->
-                onActionChanged(action.copy(enabled = newValue))
-            })
-        }
-        Text(
-            "Requires Android 7+",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.outline,
-            modifier = Modifier.padding(top = 4.dp)
-        )
-    }
-}
 
 /**
  * Keep Screen Awake action configuration UI.

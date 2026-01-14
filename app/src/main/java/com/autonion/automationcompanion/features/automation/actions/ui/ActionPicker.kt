@@ -2,25 +2,12 @@ package com.autonion.automationcompanion.features.automation.actions.ui
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.autonion.automationcompanion.features.automation.actions.models.ConfiguredAction
 
-/**
- * ActionPicker is a trigger-agnostic, reusable UI component for configuring actions.
- *
- * Design:
- * - Manages all action configuration UI in one place
- * - Does NOT know about location, battery, time, or any trigger context
- * - Can be plugged into any trigger type (location, battery, app state, etc.)
- * - Each action is independently collapsible/expandable
- *
- * @param configuredActions Current list of configured actions
- * @param onActionsChanged Callback when actions are added/modified/removed
- * @param onPickContactClicked Callback when user wants to pick a contact (activity-level concern)
- * @param dndDisabledReason Optional reason why DND is disabled (e.g., "Disabled when Volume is active")
- */
 @Composable
 fun ActionPicker(
     configuredActions: List<ConfiguredAction>,
@@ -34,31 +21,25 @@ fun ActionPicker(
     ) {
         Text("Automations", style = MaterialTheme.typography.titleMedium)
 
-        // ───────────── Audio (Volume) ─────────────
-        var audioExpanded by remember {
-            mutableStateOf(
-                configuredActions.any { it is ConfiguredAction.Audio }
-            )
-        }
+        /* -------------------- AUDIO -------------------- */
+
         val audioAction = configuredActions.filterIsInstance<ConfiguredAction.Audio>().firstOrNull()
+        var audioExpanded by remember(configuredActions) {
+            mutableStateOf(audioAction != null)
+        }
 
         ActionRow(
             label = "Set Volume",
             checked = audioAction != null,
             onCheckedChange = { enabled ->
                 if (enabled) {
-                    // Add default audio action if not present
                     if (audioAction == null) {
                         onActionsChanged(
-                            configuredActions + ConfiguredAction.Audio(
-                                ringVolume = 3,
-                                mediaVolume = 8
-                            )
+                            configuredActions + ConfiguredAction.Audio(3, 8)
                         )
                     }
                     audioExpanded = true
                 } else {
-                    // Remove audio action
                     onActionsChanged(configuredActions.filterNot { it is ConfiguredAction.Audio })
                     audioExpanded = false
                 }
@@ -68,23 +49,22 @@ fun ActionPicker(
         if (audioAction != null && audioExpanded) {
             AudioActionConfig(
                 action = audioAction,
-                onActionChanged = { updatedAction ->
+                onActionChanged = { updated ->
                     onActionsChanged(
-                        configuredActions.map { if (it is ConfiguredAction.Audio) updatedAction else it }
+                        configuredActions.map { if (it is ConfiguredAction.Audio) updated else it }
                     )
                 }
             )
         }
 
-        Divider(modifier = Modifier.padding(vertical = 8.dp))
+        HorizontalDivider()
 
-        // ───────────── Brightness ─────────────
-        var brightnessExpanded by remember {
-            mutableStateOf(
-                configuredActions.any { it is ConfiguredAction.Brightness }
-            )
-        }
+        /* -------------------- BRIGHTNESS -------------------- */
+
         val brightnessAction = configuredActions.filterIsInstance<ConfiguredAction.Brightness>().firstOrNull()
+        var brightnessExpanded by remember(configuredActions) {
+            mutableStateOf(brightnessAction != null)
+        }
 
         ActionRow(
             label = "Set Brightness",
@@ -93,7 +73,7 @@ fun ActionPicker(
                 if (enabled) {
                     if (brightnessAction == null) {
                         onActionsChanged(
-                            configuredActions + ConfiguredAction.Brightness(level = 150)
+                            configuredActions + ConfiguredAction.Brightness(150)
                         )
                     }
                     brightnessExpanded = true
@@ -107,20 +87,20 @@ fun ActionPicker(
         if (brightnessAction != null && brightnessExpanded) {
             BrightnessActionConfig(
                 action = brightnessAction,
-                onActionChanged = { updatedAction ->
+                onActionChanged = { updated ->
                     onActionsChanged(
-                        configuredActions.map { if (it is ConfiguredAction.Brightness) updatedAction else it }
+                        configuredActions.map { if (it is ConfiguredAction.Brightness) updated else it }
                     )
                 }
             )
         }
 
-        Divider(modifier = Modifier.padding(vertical = 8.dp))
+        HorizontalDivider()
 
-        // ───────────── DND ─────────────
-        // Note: DND may be disabled due to hardware conflicts (e.g., Realme ROM)
-        val dndDisabled = dndDisabledReason != null
+        /* -------------------- DND -------------------- */
+
         val dndAction = configuredActions.filterIsInstance<ConfiguredAction.Dnd>().firstOrNull()
+        val dndDisabled = dndDisabledReason != null
 
         ActionRow(
             label = "Do Not Disturb",
@@ -129,9 +109,7 @@ fun ActionPicker(
             onCheckedChange = { enabled ->
                 if (enabled) {
                     if (dndAction == null) {
-                        onActionsChanged(
-                            configuredActions + ConfiguredAction.Dnd(enabled = true)
-                        )
+                        onActionsChanged(configuredActions + ConfiguredAction.Dnd(true))
                     }
                 } else {
                     onActionsChanged(configuredActions.filterNot { it is ConfiguredAction.Dnd })
@@ -148,16 +126,15 @@ fun ActionPicker(
             )
         }
 
-        Divider(modifier = Modifier.padding(vertical = 8.dp))
+        HorizontalDivider()
 
-        // ───────────── Send SMS ─────────────
-        var smsExpanded by remember {
-            mutableStateOf(
-                configuredActions.any { it is ConfiguredAction.SendSms }
-            )
-        }
+        /* -------------------- SMS -------------------- */
+
         val smsAction = configuredActions.filterIsInstance<ConfiguredAction.SendSms>().firstOrNull()
         val smsIndex = configuredActions.indexOfFirst { it is ConfiguredAction.SendSms }
+        var smsExpanded by remember(configuredActions) {
+            mutableStateOf(smsAction != null)
+        }
 
         ActionRow(
             label = "Send Message",
@@ -166,10 +143,7 @@ fun ActionPicker(
                 if (enabled) {
                     if (smsAction == null) {
                         onActionsChanged(
-                            configuredActions + ConfiguredAction.SendSms(
-                                message = "",
-                                contactsCsv = ""
-                            )
+                            configuredActions + ConfiguredAction.SendSms("", "")
                         )
                     }
                     smsExpanded = true
@@ -180,12 +154,12 @@ fun ActionPicker(
             }
         )
 
-        if (smsAction != null && smsExpanded) {
+        if (smsAction != null && smsExpanded && smsIndex >= 0) {
             SmsActionConfig(
                 action = smsAction,
-                onActionChanged = { updatedAction ->
+                onActionChanged = { updated ->
                     onActionsChanged(
-                        configuredActions.map { if (it is ConfiguredAction.SendSms) updatedAction else it }
+                        configuredActions.map { if (it is ConfiguredAction.SendSms) updated else it }
                     )
                 },
                 onPickContactClicked = {
@@ -194,228 +168,167 @@ fun ActionPicker(
             )
         }
 
-        Divider(modifier = Modifier.padding(vertical = 8.dp))
+        HorizontalDivider()
 
-        // ───────────── Display (Master Group) ─────────────
-        var displayExpanded by remember {
-            mutableStateOf(
-                configuredActions.any {
-                    it is ConfiguredAction.DarkMode ||
-                            it is ConfiguredAction.AutoRotate ||
-                            it is ConfiguredAction.ScreenTimeout ||
-                            it is ConfiguredAction.NightLight ||
-                            it is ConfiguredAction.KeepScreenAwake
-                }
-            )
+        /* -------------------- DISPLAY (GROUP) -------------------- */
+
+        val hasAnyDisplayAction = configuredActions.any {
+                    it is ConfiguredAction.AutoRotate ||
+                    it is ConfiguredAction.ScreenTimeout ||
+                    it is ConfiguredAction.KeepScreenAwake
+        }
+
+        var displayExpanded by remember(configuredActions) {
+            mutableStateOf(hasAnyDisplayAction)
         }
 
         ActionRow(
             label = "Display",
-            checked = displayExpanded,
+            checked = hasAnyDisplayAction,
             onCheckedChange = { enabled ->
-                if (!enabled) {
-                    // Remove all Display actions
-                    onActionsChanged(
-                        configuredActions.filterNot {
-                            it is ConfiguredAction.DarkMode ||
-                                    it is ConfiguredAction.AutoRotate ||
-                                    it is ConfiguredAction.ScreenTimeout ||
-                                    it is ConfiguredAction.NightLight ||
-                                    it is ConfiguredAction.KeepScreenAwake
-                        }
-                    )
-                    displayExpanded = false
-                } else {
-                    displayExpanded = true
-                }
+                displayExpanded = enabled
             }
         )
 
         if (displayExpanded) {
-            Column(Modifier.padding(start = 12.dp)) {
-                // ───── Dark Mode ─────
-                val darkModeAction = configuredActions.filterIsInstance<ConfiguredAction.DarkMode>().firstOrNull()
-                var darkModeExpanded by remember {
-                    mutableStateOf(darkModeAction != null)
-                }
 
-                ActionRow(
-                    label = "Dark Mode",
-                    checked = darkModeAction != null,
-                    onCheckedChange = { enabled ->
-                        if (enabled) {
-                            if (darkModeAction == null) {
-                                onActionsChanged(
-                                    configuredActions + ConfiguredAction.DarkMode(enabled = true)
-                                )
-                            }
-                            darkModeExpanded = true
-                        } else {
-                            onActionsChanged(configuredActions.filterNot { it is ConfiguredAction.DarkMode })
-                            darkModeExpanded = false
+            // ───── Auto-rotate ─────
+            val autoRotateAction =
+                configuredActions.filterIsInstance<ConfiguredAction.AutoRotate>().firstOrNull()
+
+            ActionRow(
+                label = "Auto-rotate",
+                checked = autoRotateAction != null,
+                onCheckedChange = { enabled ->
+                    if (enabled) {
+                        if (autoRotateAction == null) {
+                            onActionsChanged(configuredActions + ConfiguredAction.AutoRotate(true))
                         }
+                    } else {
+                        onActionsChanged(
+                            configuredActions.filterNot { it is ConfiguredAction.AutoRotate }
+                        )
+                    }
+                }
+            )
+
+            if (autoRotateAction != null) {
+                AutoRotateActionConfig(
+                    action = autoRotateAction,
+                    onActionChanged = { updated ->
+                        onActionsChanged(
+                            configuredActions.map {
+                                if (it is ConfiguredAction.AutoRotate) updated else it
+                            }
+                        )
                     }
                 )
+            }
 
-                if (darkModeAction != null && darkModeExpanded) {
-                    DarkModeActionConfig(
-                        action = darkModeAction,
-                        onActionChanged = { updatedAction ->
+            Spacer(Modifier.height(8.dp))
+
+            // ───── Screen Timeout ─────
+            val screenTimeoutAction =
+                configuredActions.filterIsInstance<ConfiguredAction.ScreenTimeout>().firstOrNull()
+
+            ActionRow(
+                label = "Screen Timeout",
+                checked = screenTimeoutAction != null,
+                onCheckedChange = { enabled ->
+                    if (enabled) {
+                        if (screenTimeoutAction == null) {
                             onActionsChanged(
-                                configuredActions.map { if (it is ConfiguredAction.DarkMode) updatedAction else it }
+                                configuredActions + ConfiguredAction.ScreenTimeout(30_000)
                             )
                         }
-                    )
+                    } else {
+                        onActionsChanged(
+                            configuredActions.filterNot { it is ConfiguredAction.ScreenTimeout }
+                        )
+                    }
                 }
+            )
 
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // ───── Auto-rotate ─────
-                val autoRotateAction = configuredActions.filterIsInstance<ConfiguredAction.AutoRotate>().firstOrNull()
-                var autoRotateExpanded by remember {
-                    mutableStateOf(autoRotateAction != null)
-                }
-
-                ActionRow(
-                    label = "Auto-rotate",
-                    checked = autoRotateAction != null,
-                    onCheckedChange = { enabled ->
-                        if (enabled) {
-                            if (autoRotateAction == null) {
-                                onActionsChanged(
-                                    configuredActions + ConfiguredAction.AutoRotate(enabled = true)
-                                )
+            if (screenTimeoutAction != null) {
+                ScreenTimeoutActionConfig(
+                    action = screenTimeoutAction,
+                    onActionChanged = { updated ->
+                        onActionsChanged(
+                            configuredActions.map {
+                                if (it is ConfiguredAction.ScreenTimeout) updated else it
                             }
-                            autoRotateExpanded = true
-                        } else {
-                            onActionsChanged(configuredActions.filterNot { it is ConfiguredAction.AutoRotate })
-                            autoRotateExpanded = false
-                        }
+                        )
                     }
                 )
+            }
 
-                if (autoRotateAction != null && autoRotateExpanded) {
-                    AutoRotateActionConfig(
-                        action = autoRotateAction,
-                        onActionChanged = { updatedAction ->
+            Spacer(Modifier.height(8.dp))
+
+            // ───── Prevent Sleep ─────
+            val keepAwakeAction =
+                configuredActions.filterIsInstance<ConfiguredAction.KeepScreenAwake>().firstOrNull()
+
+            ActionRow(
+                label = "Prevent Sleep",
+                checked = keepAwakeAction != null,
+                onCheckedChange = { enabled ->
+                    if (enabled) {
+                        if (keepAwakeAction == null) {
                             onActionsChanged(
-                                configuredActions.map { if (it is ConfiguredAction.AutoRotate) updatedAction else it }
+                                configuredActions + ConfiguredAction.KeepScreenAwake(true)
                             )
                         }
-                    )
+                    } else {
+                        onActionsChanged(
+                            configuredActions.filterNot { it is ConfiguredAction.KeepScreenAwake }
+                        )
+                    }
                 }
+            )
 
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // ───── Screen Timeout ─────
-                val screenTimeoutAction = configuredActions.filterIsInstance<ConfiguredAction.ScreenTimeout>().firstOrNull()
-                var screenTimeoutExpanded by remember {
-                    mutableStateOf(screenTimeoutAction != null)
-                }
-
-                ActionRow(
-                    label = "Screen Timeout",
-                    checked = screenTimeoutAction != null,
-                    onCheckedChange = { enabled ->
-                        if (enabled) {
-                            if (screenTimeoutAction == null) {
-                                onActionsChanged(
-                                    configuredActions + ConfiguredAction.ScreenTimeout(durationMs = 30_000)
-                                )
+            if (keepAwakeAction != null) {
+                KeepScreenAwakeActionConfig(
+                    action = keepAwakeAction,
+                    onActionChanged = { updated ->
+                        onActionsChanged(
+                            configuredActions.map {
+                                if (it is ConfiguredAction.KeepScreenAwake) updated else it
                             }
-                            screenTimeoutExpanded = true
-                        } else {
-                            onActionsChanged(configuredActions.filterNot { it is ConfiguredAction.ScreenTimeout })
-                            screenTimeoutExpanded = false
-                        }
+                        )
                     }
                 )
-
-                if (screenTimeoutAction != null && screenTimeoutExpanded) {
-                    ScreenTimeoutActionConfig(
-                        action = screenTimeoutAction,
-                        onActionChanged = { updatedAction ->
-                            onActionsChanged(
-                                configuredActions.map { if (it is ConfiguredAction.ScreenTimeout) updatedAction else it }
-                            )
-                        }
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // ───── Night Light ─────
-                val nightLightAction = configuredActions.filterIsInstance<ConfiguredAction.NightLight>().firstOrNull()
-                var nightLightExpanded by remember {
-                    mutableStateOf(nightLightAction != null)
-                }
-
-                ActionRow(
-                    label = "Night Light",
-                    checked = nightLightAction != null,
-                    onCheckedChange = { enabled ->
-                        if (enabled) {
-                            if (nightLightAction == null) {
-                                onActionsChanged(
-                                    configuredActions + ConfiguredAction.NightLight(enabled = true)
-                                )
-                            }
-                            nightLightExpanded = true
-                        } else {
-                            onActionsChanged(configuredActions.filterNot { it is ConfiguredAction.NightLight })
-                            nightLightExpanded = false
-                        }
-                    }
-                )
-
-                if (nightLightAction != null && nightLightExpanded) {
-                    NightLightActionConfig(
-                        action = nightLightAction,
-                        onActionChanged = { updatedAction ->
-                            onActionsChanged(
-                                configuredActions.map { if (it is ConfiguredAction.NightLight) updatedAction else it }
-                            )
-                        }
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // ───── Keep Screen Awake ─────
-                val keepScreenAwakeAction = configuredActions.filterIsInstance<ConfiguredAction.KeepScreenAwake>().firstOrNull()
-                var keepScreenAwakeExpanded by remember {
-                    mutableStateOf(keepScreenAwakeAction != null)
-                }
-
-                ActionRow(
-                    label = "Keep Screen Awake",
-                    checked = keepScreenAwakeAction != null,
-                    onCheckedChange = { enabled ->
-                        if (enabled) {
-                            if (keepScreenAwakeAction == null) {
-                                onActionsChanged(
-                                    configuredActions + ConfiguredAction.KeepScreenAwake(enabled = true)
-                                )
-                            }
-                            keepScreenAwakeExpanded = true
-                        } else {
-                            onActionsChanged(configuredActions.filterNot { it is ConfiguredAction.KeepScreenAwake })
-                            keepScreenAwakeExpanded = false
-                        }
-                    }
-                )
-
-                if (keepScreenAwakeAction != null && keepScreenAwakeExpanded) {
-                    KeepScreenAwakeActionConfig(
-                        action = keepScreenAwakeAction,
-                        onActionChanged = { updatedAction ->
-                            onActionsChanged(
-                                configuredActions.map { if (it is ConfiguredAction.KeepScreenAwake) updatedAction else it }
-                            )
-                        }
-                    )
-                }
             }
         }
+
+
     }
+}
+
+/* -------------------- HELPERS -------------------- */
+
+@Composable
+private inline fun <reified T : ConfiguredAction> DisplayToggle(
+    label: String,
+    configuredActions: List<ConfiguredAction>,
+    crossinline onActionsChanged: (List<ConfiguredAction>) -> Unit,
+    crossinline defaultAction: () -> T
+) {
+    val action = configuredActions.filterIsInstance<T>().firstOrNull()
+    var expanded by remember(configuredActions) { mutableStateOf(action != null) }
+
+    ActionRow(
+        label = label,
+        checked = action != null,
+        onCheckedChange = { enabled ->
+            if (enabled) {
+                if (action == null) {
+                    onActionsChanged(configuredActions + defaultAction())
+                }
+                expanded = true
+            } else {
+                onActionsChanged(configuredActions.filterNot { it is T })
+                expanded = false
+            }
+        }
+    )
 }
