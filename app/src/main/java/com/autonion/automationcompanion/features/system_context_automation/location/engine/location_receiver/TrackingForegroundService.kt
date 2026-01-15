@@ -530,9 +530,11 @@ class TrackingForegroundService : Service() {
     }
 
     /**
-     * Acquire partial wake lock to keep screen awake (CPU stays active but screen may sleep).
+     * Acquire wake lock to keep screen awake.
      * Used by Keep Screen Awake Display action.
+     * Using SCREEN_BRIGHT_WAKE_LOCK to actually keep the screen on (not just CPU).
      */
+    @Suppress("DEPRECATION") // SCREEN_BRIGHT_WAKE_LOCK is deprecated but still necessary for this use case
     private fun acquireWakeLock() {
         try {
             if (partialWakeLock?.isHeld == true) {
@@ -541,12 +543,13 @@ class TrackingForegroundService : Service() {
             }
 
             val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+            // Use SCREEN_BRIGHT_WAKE_LOCK to keep screen on, or SCREEN_DIM_WAKE_LOCK for dimmed screen
             partialWakeLock = powerManager.newWakeLock(
-                PowerManager.PARTIAL_WAKE_LOCK,
+                PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
                 "automationcompanion:keep_screen_awake"
             ).apply {
                 acquire()
-                Log.i("TrackingService", "Partial wake lock acquired")
+                Log.i("TrackingService", "Screen wake lock acquired")
             }
         } catch (e: Exception) {
             Log.w("TrackingService", "Failed to acquire wake lock", e)
@@ -554,14 +557,14 @@ class TrackingForegroundService : Service() {
     }
 
     /**
-     * Release partial wake lock to allow normal sleep.
+     * Release wake lock to allow normal sleep.
      * Used by Keep Screen Awake Display action.
      */
     private fun releaseWakeLock() {
         try {
             if (partialWakeLock?.isHeld == true) {
                 partialWakeLock?.release()
-                Log.i("TrackingService", "Partial wake lock released")
+                Log.i("TrackingService", "Screen wake lock released")
             }
         } catch (e: Exception) {
             Log.w("TrackingService", "Failed to release wake lock", e)
