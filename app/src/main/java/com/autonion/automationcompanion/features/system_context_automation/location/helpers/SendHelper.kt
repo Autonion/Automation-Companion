@@ -1,10 +1,13 @@
 package com.autonion.automationcompanion.features.system_context_automation.location.helpers
 
 import android.Manifest
+import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.os.Build
@@ -15,8 +18,11 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import com.autonion.automationcompanion.features.automation.actions.models.AppActionType
 import com.autonion.automationcompanion.features.system_context_automation.location.data.db.AppDatabase
 import com.autonion.automationcompanion.features.automation.actions.models.AutomationAction
+import com.autonion.automationcompanion.features.automation.actions.models.NotificationType
+import com.autonion.automationcompanion.features.automation.actions.receivers.DelayedNotificationReceiver
 import com.autonion.automationcompanion.features.system_context_automation.location.engine.location_receiver.TrackingForegroundService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -125,6 +131,22 @@ object SendHelper {
                 is AutomationAction.SetKeepScreenAwake -> {
                     executeSetKeepScreenAwake(context, action)
                 }
+
+                is AutomationAction.AppAction -> {
+                    executeAppAction(context, action)
+                }
+
+                is AutomationAction.NotificationAction -> {
+                    executeNotificationAction(context, action)
+                }
+
+                is AutomationAction.SetBatterySaver -> {
+                    if (!canWriteSettings) {
+                        Log.w(TAG, "WRITE_SETTINGS not granted, skipping battery saver")
+                        return@forEach
+                    }
+                    executeSetBatterySaver(context, action)
+                }
             }
         }
     }
@@ -133,12 +155,17 @@ object SendHelper {
 
     private fun executeSetVolume(context: Context, action: AutomationAction.SetVolume) {
         try {
-            // Delegate to foreground service which runs with a persistent notification.
-            com.autonion.automationcompanion.features.system_context_automation.location.engine.location_receiver.TrackingForegroundService
-                .startVolumeChange(context, action.ring, action.media)
-            Log.i(TAG, "Delegated volume change to TrackingForegroundService: ring=${action.ring}, media=${action.media}")
+            // Delegate to foreground service
+            TrackingForegroundService.startVolumeChange(
+                context,
+                action.ring,
+                action.media,
+                action.alarm,
+                action.ringerMode
+            )
+            Log.i(TAG, "Delegated volume change with ringer mode: ${action.ringerMode}")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to delegate volume change to foreground service", e)
+            Log.e(TAG, "Failed to delegate volume change", e)
         }
     }
 
@@ -238,6 +265,178 @@ object SendHelper {
         }
     }
 
+    // Add these new execution functions:
+
+    private fun executeAppAction(context: Context, action: AutomationAction.AppAction) {
+        try {
+            val intent = when (action.actionType) {
+                AppActionType.LAUNCH -> {
+                    context.packageManager.getLaunchIntentForPackage(action.packageName)
+                }
+                AppActionType.INFO -> {
+                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = android.net.Uri.parse("package:${action.packageName}")
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                }
+            }
+
+            if (intent != null) {
+                context.startActivity(intent)
+                val actionType = if (action.actionType == AppActionType.LAUNCH) "launched" else "opened info for"
+                Log.i(TAG, "App ${action.packageName} $actionType")
+                notifySuccess(context, "App ${action.packageName} $actionType")
+            } else {
+                Log.w(TAG, "Could not create intent for package: ${action.packageName}")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to execute app action", e)
+        }
+    }
+
+    private fun executeNotificationAction(context: Context, action: AutomationAction.NotificationAction) {
+        try {
+            if (action.delayMinutes > 0 && action.notificationType == NotificationType.REMINDER) {
+                // Schedule delayed notification
+                scheduleDelayedNotification(context, action)
+                Log.i(TAG, "Scheduled delayed notification: ${action.title}")
+                notifySuccess(context, "Reminder scheduled for ${action.delayMinutes} minutes")
+            } else {
+                // Show immediate notification
+                showNotification(context, action)
+                Log.i(TAG, "Notification shown: ${action.title}")
+                notifySuccess(context, "Notification shown")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to show notification", e)
+        }
+    }
+
+    private fun showNotification(context: Context, action: AutomationAction.NotificationAction) {
+        val channelId = when (action.notificationType) {
+            NotificationType.SILENT -> "silent_channel"
+            NotificationType.ONGOING -> "ongoing_channel"
+            NotificationType.REMINDER -> "reminder_channel"
+            else -> "default_channel"
+        }
+
+        val notification = NotificationCompat.Builder(context, channelId)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle(action.title)
+            .setContentText(action.text)
+            .setAutoCancel(action.notificationType != NotificationType.ONGOING)
+            .setOngoing(action.notificationType == NotificationType.ONGOING)
+            .setPriority(
+                when (action.notificationType) {
+                    NotificationType.SILENT -> NotificationCompat.PRIORITY_LOW
+                    NotificationType.ONGOING -> NotificationCompat.PRIORITY_DEFAULT
+                    else -> NotificationCompat.PRIORITY_HIGH
+                }
+            )
+            .build()
+
+        notifyIfAllowed(context, action.title.hashCode(), notification)
+    }
+
+    // Update the scheduleDelayedNotification function to handle alarm permission:
+    private fun scheduleDelayedNotification(context: Context, action: AutomationAction.NotificationAction) {
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+
+        // Check if we can schedule exact alarms (Android 12+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            if (!alarmManager.canScheduleExactAlarms()) {
+                // Cannot schedule exact alarms, show notification immediately
+                showNotification(context, action)
+                Log.w(TAG, "Cannot schedule exact alarms, showing notification immediately")
+                return
+            }
+        }
+
+        val triggerTime = System.currentTimeMillis() + (action.delayMinutes * 60 * 1000L)
+
+        val intent = Intent(context, DelayedNotificationReceiver::class.java).apply {
+            putExtra("title", action.title)
+            putExtra("text", action.text)
+            putExtra("notificationType", action.notificationType.name)
+        }
+
+        val pendingIntent = android.app.PendingIntent.getBroadcast(
+            context,
+            action.title.hashCode(),
+            intent,
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE
+        )
+
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                alarmManager.setExactAndAllowWhileIdle(
+                    android.app.AlarmManager.RTC_WAKEUP,
+                    triggerTime,
+                    pendingIntent
+                )
+            } else {
+                alarmManager.setExact(
+                    android.app.AlarmManager.RTC_WAKEUP,
+                    triggerTime,
+                    pendingIntent
+                )
+            }
+            Log.i(TAG, "Scheduled delayed notification for ${action.delayMinutes} minutes")
+        } catch (e: SecurityException) {
+            Log.e(TAG, "SecurityException when scheduling alarm: ${e.message}")
+            // Fallback to immediate notification
+            showNotification(context, action)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to schedule delayed notification", e)
+        }
+    }
+    private fun executeSetBatterySaver(context: Context, action: AutomationAction.SetBatterySaver) {
+        try {
+            // Check if device supports battery saver API
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
+                // For Android 5.1+ (API 22+), we can use PowerManager
+                val powerManager = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    // Android 6.0+ - Try to use Settings.Global
+                    try {
+                        // Note: This requires WRITE_SETTINGS permission
+                        android.provider.Settings.Global.putInt(
+                            context.contentResolver,
+                            "low_power_mode", // Use string constant for compatibility
+                            if (action.enabled) 1 else 0
+                        )
+
+                        // Verify change
+                        val isEnabled = android.provider.Settings.Global.getInt(
+                            context.contentResolver,
+                            "low_power_mode",
+                            0
+                        ) == 1
+
+                        val status = if (isEnabled) "enabled" else "disabled"
+                        Log.i(TAG, "Battery saver $status (attempted: ${if (action.enabled) "enable" else "disable"})")
+                        notifySuccess(context, "Battery saver $status")
+                    } catch (e: SecurityException) {
+                        Log.e(TAG, "Permission denied for battery saver", e)
+                        notifySuccess(context, "Permission denied for battery saver")
+                    }
+                } else {
+                    // Android 5.1 - 5.1.1
+                    // Some devices might not support battery saver control
+                    Log.w(TAG, "Battery saver control may not be fully supported on this device")
+                    notifySuccess(context, "Battery saver control may be limited on this device")
+                }
+            } else {
+                // Pre-Lollipop: Show toast that it's not supported
+                Log.w(TAG, "Battery saver API not available on this device")
+                notifySuccess(context, "Battery saver control not supported on this device")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to set battery saver", e)
+        }
+    }
+
     // ---------- Notifications ----------
 
     private fun notifySuccess(context: Context, message: String) {
@@ -268,9 +467,12 @@ object SendHelper {
         }
     }
 
+    // Also update the ensureChannel function to create notification channels for new notification types:
     private fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val nm = context.getSystemService(NotificationManager::class.java)
+
+            // Create success channel
             if (nm.getNotificationChannel(SUCCESS_CHANNEL_ID) == null) {
                 nm.createNotificationChannel(
                     NotificationChannel(
@@ -279,6 +481,27 @@ object SendHelper {
                         NotificationManager.IMPORTANCE_HIGH
                     )
                 )
+            }
+
+            // Create notification type channels
+            listOf(
+                "default_channel" to "Default Notifications",
+                "silent_channel" to "Silent Notifications",
+                "ongoing_channel" to "Ongoing Notifications",
+                "reminder_channel" to "Reminder Notifications"
+            ).forEach { (channelId, channelName) ->
+                if (nm.getNotificationChannel(channelId) == null) {
+                    nm.createNotificationChannel(
+                        NotificationChannel(
+                            channelId,
+                            channelName,
+                            when (channelId) {
+                                "silent_channel" -> NotificationManager.IMPORTANCE_LOW
+                                else -> NotificationManager.IMPORTANCE_HIGH
+                            }
+                        )
+                    )
+                }
             }
         }
     }

@@ -1,5 +1,8 @@
 package com.autonion.automationcompanion.features.automation.actions.models
 
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+
 /**
  * ConfiguredAction represents the configuration state of an action as the user builds it.
  * This is separate from AutomationAction which is the final executable action.
@@ -21,7 +24,9 @@ sealed class ConfiguredAction {
      */
     data class Audio(
         val ringVolume: Int,      // 0-7
-        val mediaVolume: Int      // 0-15
+        val mediaVolume: Int,     // 0-15
+        val alarmVolume: Int = 8, // 0-15 (default 8)
+        val ringerMode: RingerMode = RingerMode.NORMAL // NORMAL, VIBRATE, SILENT
     ) : ConfiguredAction()
 
     /**
@@ -71,6 +76,36 @@ sealed class ConfiguredAction {
      * Duration managed by trigger lifecycle (acquired when trigger activates, released when deactivates).
      */
     data class KeepScreenAwake(
+        val enabled: Boolean
+    ) : ConfiguredAction()
+
+    // ============ NEW ACTIONS ============
+
+    /**
+     * App action configuration.
+     * Launch app or open app info based on package name.
+     */
+    data class AppAction(
+        val packageName: String,
+        val actionType: AppActionType // LAUNCH, INFO
+    ) : ConfiguredAction()
+
+    /**
+     * Notification action configuration.
+     * Show notification with title, text, and optional delay.
+     */
+    data class NotificationAction(
+        val title: String,
+        val text: String,
+        val notificationType: NotificationType = NotificationType.NORMAL,
+        val delayMinutes: Int = 0 // 0 = immediate
+    ) : ConfiguredAction()
+
+    /**
+     * Battery saver action configuration.
+     * Toggle battery saver on/off.
+     */
+    data class BatterySaver(
         val enabled: Boolean
     ) : ConfiguredAction()
 }

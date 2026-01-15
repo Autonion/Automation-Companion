@@ -35,33 +35,33 @@ internal fun ActionRow(
  * Audio (Volume) action configuration UI.
  * Allows user to set ring and media volume levels.
  */
-@Composable
-internal fun AudioActionConfig(
-    action: ConfiguredAction.Audio,
-    onActionChanged: (ConfiguredAction.Audio) -> Unit
-) {
-    Column(Modifier.padding(start = 12.dp)) {
-        Text("Ring: ${action.ringVolume}")
-        Slider(
-            value = action.ringVolume.toFloat(),
-            onValueChange = { newValue ->
-                onActionChanged(action.copy(ringVolume = newValue.toInt()))
-            },
-            valueRange = 0f..7f,
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Text("Media: ${action.mediaVolume}")
-        Slider(
-            value = action.mediaVolume.toFloat(),
-            onValueChange = { newValue ->
-                onActionChanged(action.copy(mediaVolume = newValue.toInt()))
-            },
-            valueRange = 0f..15f,
-            modifier = Modifier.fillMaxWidth()
-        )
-    }
-}
+//@Composable
+//internal fun AudioActionConfig(
+//    action: ConfiguredAction.Audio,
+//    onActionChanged: (ConfiguredAction.Audio) -> Unit
+//) {
+//    Column(Modifier.padding(start = 12.dp)) {
+//        Text("Ring: ${action.ringVolume}")
+//        Slider(
+//            value = action.ringVolume.toFloat(),
+//            onValueChange = { newValue ->
+//                onActionChanged(action.copy(ringVolume = newValue.toInt()))
+//            },
+//            valueRange = 0f..7f,
+//            modifier = Modifier.fillMaxWidth()
+//        )
+//
+//        Text("Media: ${action.mediaVolume}")
+//        Slider(
+//            value = action.mediaVolume.toFloat(),
+//            onValueChange = { newValue ->
+//                onActionChanged(action.copy(mediaVolume = newValue.toInt()))
+//            },
+//            valueRange = 0f..15f,
+//            modifier = Modifier.fillMaxWidth()
+//        )
+//    }
+//}
 
 /**
  * Brightness action configuration UI.

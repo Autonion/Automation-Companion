@@ -6,14 +6,19 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.autonion.automationcompanion.features.automation.actions.models.AppActionType
 import com.autonion.automationcompanion.features.automation.actions.models.ConfiguredAction
+import com.autonion.automationcompanion.features.automation.actions.models.NotificationType
+import com.autonion.automationcompanion.features.automation.actions.models.RingerMode
 
 @Composable
 fun ActionPicker(
     configuredActions: List<ConfiguredAction>,
     onActionsChanged: (List<ConfiguredAction>) -> Unit,
     onPickContactClicked: (actionIndex: Int) -> Unit,
-    dndDisabledReason: String? = null
+    onPickAppClicked: (actionIndex: Int) -> Unit, // NEW
+    dndDisabledReason: String? = null,
+    context: android.content.Context // NEW: Needed for app picker
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -21,21 +26,25 @@ fun ActionPicker(
     ) {
         Text("Automations", style = MaterialTheme.typography.titleMedium)
 
-        /* -------------------- AUDIO -------------------- */
-
+        /* -------------------- AUDIO (UPDATED) -------------------- */
         val audioAction = configuredActions.filterIsInstance<ConfiguredAction.Audio>().firstOrNull()
         var audioExpanded by remember(configuredActions) {
             mutableStateOf(audioAction != null)
         }
 
         ActionRow(
-            label = "Set Volume",
+            label = "Set Volume & Ringer",
             checked = audioAction != null,
             onCheckedChange = { enabled ->
                 if (enabled) {
                     if (audioAction == null) {
                         onActionsChanged(
-                            configuredActions + ConfiguredAction.Audio(3, 8)
+                            configuredActions + ConfiguredAction.Audio(
+                                ringVolume = 3,
+                                mediaVolume = 8,
+                                alarmVolume = 8,
+                                ringerMode = RingerMode.NORMAL
+                            )
                         )
                     }
                     audioExpanded = true
@@ -56,7 +65,6 @@ fun ActionPicker(
                 }
             )
         }
-
         HorizontalDivider()
 
         /* -------------------- BRIGHTNESS -------------------- */
@@ -164,6 +172,121 @@ fun ActionPicker(
                 },
                 onPickContactClicked = {
                     onPickContactClicked(smsIndex)
+                }
+            )
+        }
+
+        HorizontalDivider()
+        /* -------------------- APP ACTION -------------------- */
+        val appAction = configuredActions.filterIsInstance<ConfiguredAction.AppAction>().firstOrNull()
+        val appActionIndex = configuredActions.indexOfFirst { it is ConfiguredAction.AppAction }
+        var appExpanded by remember(configuredActions) {
+            mutableStateOf(appAction != null)
+        }
+
+        ActionRow(
+            label = "App Action",
+            checked = appAction != null,
+            onCheckedChange = { enabled ->
+                if (enabled) {
+                    if (appAction == null) {
+                        onActionsChanged(
+                            configuredActions + ConfiguredAction.AppAction(
+                                packageName = "",
+                                actionType = AppActionType.LAUNCH
+                            )
+                        )
+                    }
+                    appExpanded = true
+                } else {
+                    onActionsChanged(configuredActions.filterNot { it is ConfiguredAction.AppAction })
+                    appExpanded = false
+                }
+            }
+        )
+
+        if (appAction != null && appExpanded && appActionIndex >= 0) {
+            AppActionConfig(
+                context = context,
+                action = appAction,
+                onActionChanged = { updated ->
+                    onActionsChanged(
+                        configuredActions.map { if (it is ConfiguredAction.AppAction) updated else it }
+                    )
+                },
+                onPickAppClicked = {
+                    onPickAppClicked(appActionIndex)
+                }
+            )
+        }
+
+        HorizontalDivider()
+
+        /* -------------------- NOTIFICATION -------------------- */
+        val notificationAction = configuredActions.filterIsInstance<ConfiguredAction.NotificationAction>().firstOrNull()
+        var notificationExpanded by remember(configuredActions) {
+            mutableStateOf(notificationAction != null)
+        }
+
+        ActionRow(
+            label = "Show Notification",
+            checked = notificationAction != null,
+            onCheckedChange = { enabled ->
+                if (enabled) {
+                    if (notificationAction == null) {
+                        onActionsChanged(
+                            configuredActions + ConfiguredAction.NotificationAction(
+                                title = "",
+                                text = "",
+                                notificationType = NotificationType.NORMAL
+                            )
+                        )
+                    }
+                    notificationExpanded = true
+                } else {
+                    onActionsChanged(configuredActions.filterNot { it is ConfiguredAction.NotificationAction })
+                    notificationExpanded = false
+                }
+            }
+        )
+
+        if (notificationAction != null && notificationExpanded) {
+            NotificationActionConfig(
+                action = notificationAction,
+                onActionChanged = { updated ->
+                    onActionsChanged(
+                        configuredActions.map { if (it is ConfiguredAction.NotificationAction) updated else it }
+                    )
+                }
+            )
+        }
+
+        HorizontalDivider()
+
+        /* -------------------- BATTERY SAVER -------------------- */
+        val batterySaverAction = configuredActions.filterIsInstance<ConfiguredAction.BatterySaver>().firstOrNull()
+
+        ActionRow(
+            label = "Battery Saver",
+            checked = batterySaverAction != null,
+            onCheckedChange = { enabled ->
+                if (enabled) {
+                    if (batterySaverAction == null) {
+                        onActionsChanged(configuredActions + ConfiguredAction.BatterySaver(false))
+                    }
+                } else {
+                    onActionsChanged(configuredActions.filterNot { it is ConfiguredAction.BatterySaver })
+                }
+            }
+        )
+
+        if (batterySaverAction != null) {
+            BatterySaverActionConfig(
+                action = batterySaverAction,
+                onActionChanged = { updated ->
+                    onActionsChanged(
+                        configuredActions.map { if (it is ConfiguredAction.BatterySaver) updated else it }
+                    )
                 }
             )
         }

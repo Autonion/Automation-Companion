@@ -39,6 +39,7 @@ import com.autonion.automationcompanion.features.system_context_automation.locat
 import com.autonion.automationcompanion.features.automation.actions.models.AutomationAction
 import com.autonion.automationcompanion.features.automation.actions.models.ConfiguredAction
 import com.autonion.automationcompanion.features.automation.actions.builders.ActionBuilder
+import com.autonion.automationcompanion.features.automation.actions.ui.AppPickerActivity
 import com.autonion.automationcompanion.features.system_context_automation.location.permissions.PermissionPreflight
 import com.google.android.gms.location.LocationServices
 
@@ -101,6 +102,35 @@ class SlotConfigActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    private var appPickerActionIndex = -1  // Track which App action's picker is open
+
+    private val appPickerLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
+        if (res.resultCode == RESULT_OK && res.data != null) {
+            val packageName = res.data?.getStringExtra("selected_package_name")
+            packageName?.let { pkg ->
+                if (appPickerActionIndex >= 0 && appPickerActionIndex < configuredActions.size) {
+                    val appAction = configuredActions.getOrNull(appPickerActionIndex)
+                    if (appAction is ConfiguredAction.AppAction) {
+                        configuredActions = configuredActions.mapIndexed { idx, action ->
+                            if (idx == appPickerActionIndex) {
+                                appAction.copy(packageName = pkg)
+                            } else {
+                                action
+                            }
+                        }
+                        appPickerActionIndex = -1
+                    }
+                }
+            }
+        }
+    }
+
+    // Add this function to open app picker:
+    private fun openAppPicker() {
+        val intent = Intent(this, AppPickerActivity::class.java)
+        appPickerLauncher.launch(intent)
     }
 
     private val requestMultiplePermissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { _ ->
@@ -198,6 +228,10 @@ class SlotConfigActivity : AppCompatActivity() {
                         contactPickerActionIndex = actionIndex
                         pickContact()
                     },
+                    onPickAppClicked = { actionIndex ->  // NEW PARAMETER
+                        appPickerActionIndex = actionIndex
+                        openAppPicker()
+                    },
                     onSaveClicked = { remind, actions ->
                         doSaveSlot(remind, actions)
                     },
@@ -234,7 +268,8 @@ class SlotConfigActivity : AppCompatActivity() {
                         }
                         configuredActions = filteredActions
                     },
-                    volumeEnabled = configuredActions.any { it is ConfiguredAction.Audio }
+                    volumeEnabled = configuredActions.any { it is ConfiguredAction.Audio },
+                    context = this  // NEW: Pass context for app picker
                 )
             }
         }
@@ -303,6 +338,25 @@ class SlotConfigActivity : AppCompatActivity() {
 
                 is AutomationAction.SetKeepScreenAwake -> {
                     ConfiguredAction.KeepScreenAwake(action.enabled)
+                }
+
+                // ============ NEW ACTIONS ============
+
+                is AutomationAction.AppAction -> {
+                    ConfiguredAction.AppAction(action.packageName, action.actionType)
+                }
+
+                is AutomationAction.NotificationAction -> {
+                    ConfiguredAction.NotificationAction(
+                        action.title,
+                        action.text,
+                        action.notificationType,
+                        action.delayMinutes
+                    )
+                }
+
+                is AutomationAction.SetBatterySaver -> {
+                    ConfiguredAction.BatterySaver(action.enabled)
                 }
             }
         }

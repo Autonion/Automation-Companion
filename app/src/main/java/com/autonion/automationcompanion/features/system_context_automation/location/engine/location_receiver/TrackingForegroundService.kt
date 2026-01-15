@@ -17,6 +17,7 @@ import android.os.Build
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.autonion.automationcompanion.R
+import com.autonion.automationcompanion.features.automation.actions.models.RingerMode
 import com.autonion.automationcompanion.features.system_context_automation.location.helpers.FallbackFlow
 import com.autonion.automationcompanion.features.system_context_automation.location.helpers.SendHelper
 import com.autonion.automationcompanion.features.system_context_automation.location.data.db.AppDatabase
@@ -80,11 +81,13 @@ class TrackingForegroundService : Service() {
             ContextCompat.startForegroundService(context, i)
         }
 
-        fun startVolumeChange(context: Context, ring: Int, media: Int) {
+        fun startVolumeChange(context: Context, ring: Int, media: Int, alarm: Int, ringerMode: RingerMode) {
             val i = Intent(context, TrackingForegroundService::class.java).apply {
                 action = ACTION_PERFORM_VOLUME
                 putExtra("ring", ring)
                 putExtra("media", media)
+                putExtra("alarm", alarm)
+                putExtra("ringerMode", ringerMode.ordinal) // Store as ordinal
             }
             ContextCompat.startForegroundService(context, i)
         }
@@ -180,8 +183,11 @@ class TrackingForegroundService : Service() {
             ACTION_PERFORM_VOLUME -> {
                 val ring = intent?.getIntExtra("ring", -1) ?: -1
                 val media = intent?.getIntExtra("media", -1) ?: -1
+                val alarm = intent?.getIntExtra("alarm", 8) ?: 8
+                val ringerModeOrdinal = intent?.getIntExtra("ringerMode", RingerMode.NORMAL.ordinal) ?: RingerMode.NORMAL.ordinal
+                val ringerMode = RingerMode.values().getOrElse(ringerModeOrdinal) { RingerMode.NORMAL }
                 if (ring != -1 && media != -1) {
-                    performVolumeChange(ring, media)
+                    performVolumeChange(ring, media,alarm, ringerMode)
                 } else {
                     Log.w("TrackingService", "Invalid volume extras: ring=$ring media=$media")
                 }
@@ -450,18 +456,32 @@ class TrackingForegroundService : Service() {
 
     // Perform volume change from the foreground service context to satisfy stricter OEM policies
     // Realme ROM workaround: pre-occupy media focus with silent audio before setStreamVolume
-    private fun performVolumeChange(ring: Int, media: Int) {
+    private fun performVolumeChange(ring: Int, media: Int, alarm: Int, ringerMode: RingerMode) {
         try {
             val am = getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
 
             val ringMax = am.getStreamMaxVolume(android.media.AudioManager.STREAM_RING)
             val mediaMax = am.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)
+            val alarmMax = am.getStreamMaxVolume(android.media.AudioManager.STREAM_ALARM)
 
             val ringVolume = ring.coerceIn(0, ringMax)
             val mediaVolume = media.coerceIn(0, mediaMax)
+            val alarmVolume = alarm.coerceIn(0, alarmMax)
+
+            // Set ringer mode
+            when (ringerMode) {
+                RingerMode.NORMAL -> {
+                    am.ringerMode = android.media.AudioManager.RINGER_MODE_NORMAL
+                }
+                RingerMode.VIBRATE -> {
+                    am.ringerMode = android.media.AudioManager.RINGER_MODE_VIBRATE
+                }
+                RingerMode.SILENT -> {
+                    am.ringerMode = android.media.AudioManager.RINGER_MODE_SILENT
+                }
+            }
 
             // ============ REALME FIX: Pre-occupy media focus with silent audio ============
-            // This tricks the ROM into accepting setStreamVolume for media (even when muting to 0)
             try {
                 val silentAudio = android.media.AudioTrack(
                     android.media.AudioAttributes.Builder()
@@ -478,7 +498,7 @@ class TrackingForegroundService : Service() {
                 )
                 silentAudio.play()
                 Log.i("TrackingService", "Realme workaround: playing silent audio to pre-occupy media focus")
-                Thread.sleep(100) // Brief delay to allow audio focus to settle
+                Thread.sleep(100)
                 silentAudio.stop()
                 silentAudio.release()
             } catch (e: Exception) {
@@ -503,11 +523,13 @@ class TrackingForegroundService : Service() {
                 if (focusResult == android.media.AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
                     am.setStreamVolume(android.media.AudioManager.STREAM_RING, ringVolume, android.media.AudioManager.FLAG_SHOW_UI)
                     am.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, mediaVolume, android.media.AudioManager.FLAG_SHOW_UI)
+                    am.setStreamVolume(android.media.AudioManager.STREAM_ALARM, alarmVolume, android.media.AudioManager.FLAG_SHOW_UI)
                     am.abandonAudioFocusRequest(focusRequest)
-                    Log.i("TrackingService", "Foreground volume set - Ring: $ringVolume/$ringMax, Media: $mediaVolume/$mediaMax (with Realme workaround)")
+                    Log.i("TrackingService", "Foreground volume set - Ring: $ringVolume/$ringMax, Media: $mediaVolume/$mediaMax, Alarm: $alarmVolume/$alarmMax, RingerMode: $ringerMode")
                 } else {
                     am.setStreamVolume(android.media.AudioManager.STREAM_RING, ringVolume, android.media.AudioManager.FLAG_SHOW_UI)
                     am.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, mediaVolume, android.media.AudioManager.FLAG_SHOW_UI)
+                    am.setStreamVolume(android.media.AudioManager.STREAM_ALARM, alarmVolume, android.media.AudioManager.FLAG_SHOW_UI)
                     Log.w("TrackingService", "Foreground audio focus not granted; attempted setStreamVolume")
                 }
             } else {
@@ -516,11 +538,13 @@ class TrackingForegroundService : Service() {
                 if (focusResult == android.media.AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
                     am.setStreamVolume(android.media.AudioManager.STREAM_RING, ringVolume, android.media.AudioManager.FLAG_SHOW_UI)
                     am.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, mediaVolume, android.media.AudioManager.FLAG_SHOW_UI)
+                    am.setStreamVolume(android.media.AudioManager.STREAM_ALARM, alarmVolume, android.media.AudioManager.FLAG_SHOW_UI)
                     am.abandonAudioFocus(afListener)
-                    Log.i("TrackingService", "Foreground volume set - Ring: $ringVolume/$ringMax, Media: $mediaVolume/$mediaMax (with Realme workaround)")
+                    Log.i("TrackingService", "Foreground volume set - Ring: $ringVolume/$ringMax, Media: $mediaVolume/$mediaMax, Alarm: $alarmVolume/$alarmMax, RingerMode: $ringerMode")
                 } else {
                     am.setStreamVolume(android.media.AudioManager.STREAM_RING, ringVolume, android.media.AudioManager.FLAG_SHOW_UI)
                     am.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, mediaVolume, android.media.AudioManager.FLAG_SHOW_UI)
+                    am.setStreamVolume(android.media.AudioManager.STREAM_ALARM, alarmVolume, android.media.AudioManager.FLAG_SHOW_UI)
                     Log.w("TrackingService", "Foreground audio focus not granted; attempted setStreamVolume")
                 }
             }

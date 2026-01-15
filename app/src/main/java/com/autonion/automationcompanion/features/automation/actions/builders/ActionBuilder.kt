@@ -1,7 +1,6 @@
 package com.autonion.automationcompanion.features.automation.actions.builders
 
-import com.autonion.automationcompanion.features.automation.actions.models.AutomationAction
-import com.autonion.automationcompanion.features.automation.actions.models.ConfiguredAction
+import com.autonion.automationcompanion.features.automation.actions.models.*
 
 /**
  * ActionBuilder converts user-configured actions (ConfiguredAction) into executable actions (AutomationAction).
@@ -25,7 +24,12 @@ object ActionBuilder {
         return configuredActions.mapNotNull { config ->
             when (config) {
                 is ConfiguredAction.Audio -> {
-                    AutomationAction.SetVolume(config.ringVolume, config.mediaVolume)
+                    AutomationAction.SetVolume(
+                        config.ringVolume,
+                        config.mediaVolume,
+                        config.alarmVolume,
+                        config.ringerMode
+                    )
                 }
 
                 is ConfiguredAction.Brightness -> {
@@ -58,6 +62,35 @@ object ActionBuilder {
                 is ConfiguredAction.KeepScreenAwake -> {
                     AutomationAction.SetKeepScreenAwake(config.enabled)
                 }
+
+                // ============ NEW ACTIONS ============
+
+                is ConfiguredAction.AppAction -> {
+                    // Validation: App action requires non-empty package name
+                    if (config.packageName.isNotBlank()) {
+                        AutomationAction.AppAction(config.packageName, config.actionType)
+                    } else {
+                        null
+                    }
+                }
+
+                is ConfiguredAction.NotificationAction -> {
+                    // Validation: Notification requires non-empty title and text
+                    if (config.title.isNotBlank() && config.text.isNotBlank()) {
+                        AutomationAction.NotificationAction(
+                            config.title,
+                            config.text,
+                            config.notificationType,
+                            config.delayMinutes
+                        )
+                    } else {
+                        null
+                    }
+                }
+
+                is ConfiguredAction.BatterySaver -> {
+                    AutomationAction.SetBatterySaver(config.enabled)
+                }
             }
         }
     }
@@ -81,6 +114,11 @@ object ActionBuilder {
             is ConfiguredAction.AutoRotate -> true
             is ConfiguredAction.ScreenTimeout -> true
             is ConfiguredAction.KeepScreenAwake -> true
+            // New actions
+            is ConfiguredAction.AppAction -> config.packageName.isNotBlank()
+            is ConfiguredAction.NotificationAction ->
+                config.title.isNotBlank() && config.text.isNotBlank()
+            is ConfiguredAction.BatterySaver -> true
         }
     }
 

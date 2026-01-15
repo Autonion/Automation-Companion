@@ -22,7 +22,9 @@ sealed class AutomationAction {
     @SerialName("set_volume")
     data class SetVolume(
         val ring: Int,
-        val media: Int
+        val media: Int,
+        val alarm: Int,
+        val ringerMode: RingerMode
     ) : AutomationAction()
 
     @Serializable
@@ -54,6 +56,30 @@ sealed class AutomationAction {
     @Serializable
     @SerialName("set_keep_screen_awake")
     data class SetKeepScreenAwake(
+        val enabled: Boolean
+    ) : AutomationAction()
+
+    // ============ NEW ACTIONS ============
+
+    @Serializable
+    @SerialName("app_action")
+    data class AppAction(
+        val packageName: String,
+        val actionType: AppActionType
+    ) : AutomationAction()
+
+    @Serializable
+    @SerialName("notification")
+    data class NotificationAction(
+        val title: String,
+        val text: String,
+        val notificationType: NotificationType,
+        val delayMinutes: Int
+    ) : AutomationAction()
+
+    @Serializable
+    @SerialName("set_battery_saver")
+    data class SetBatterySaver(
         val enabled: Boolean
     ) : AutomationAction()
 }

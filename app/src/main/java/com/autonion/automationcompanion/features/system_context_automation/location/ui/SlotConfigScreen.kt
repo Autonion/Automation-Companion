@@ -36,6 +36,7 @@ fun SlotConfigScreen(
     onSaveClicked: (Int, List<AutomationAction>) -> Unit,
     onPickFromMapClicked: () -> Unit,
     onPickContactClicked: (actionIndex: Int) -> Unit,
+    onPickAppClicked: (actionIndex: Int) -> Unit,  // NEW PARAMETER
     remindBeforeMinutes: String,
     onRemindBeforeMinutesChange: (String) -> Unit,
     selectedDays: Set<String>,
@@ -43,6 +44,7 @@ fun SlotConfigScreen(
     configuredActions: List<ConfiguredAction>,
     onActionsChanged: (List<ConfiguredAction>) -> Unit,
     volumeEnabled: Boolean,  // To check if volume is on for DND disable logic
+    context: android.content.Context  // NEW PARAMETER for app picker
     ) {
     val ctx = LocalContext.current
     val scrollState = rememberScrollState()
@@ -150,8 +152,10 @@ fun SlotConfigScreen(
             configuredActions = configuredActions,
             onActionsChanged = onActionsChanged,
             onPickContactClicked = onPickContactClicked,
+            onPickAppClicked = onPickAppClicked,  // PASS NEW PARAMETER
             dndDisabledReason = if (volumeEnabled)
-                "Disabled: Volume is active (Realme ROM conflict)" else null
+                "Disabled: Volume is active (Realme ROM conflict)" else null,
+            context = context
         )
 
         Divider()
