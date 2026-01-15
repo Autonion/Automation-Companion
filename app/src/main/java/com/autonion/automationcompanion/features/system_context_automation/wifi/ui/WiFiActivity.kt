@@ -1,9 +1,11 @@
 package com.autonion.automationcompanion.features.system_context_automation.wifi.ui
 
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -24,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import com.autonion.automationcompanion.features.automation.actions.builders.ActionBuilder
 import com.autonion.automationcompanion.features.automation.actions.models.ConfiguredAction
 import com.autonion.automationcompanion.features.automation.actions.ui.ActionPicker
+import com.autonion.automationcompanion.features.automation.actions.ui.AppPickerActivity
 import com.autonion.automationcompanion.features.system_context_automation.location.data.db.AppDatabase
 import com.autonion.automationcompanion.features.system_context_automation.location.data.models.Slot
 import com.autonion.automationcompanion.features.system_context_automation.shared.models.TriggerConfig
@@ -185,12 +188,52 @@ private fun WiFiSlotCard(
 
 class WiFiConfigActivity : AppCompatActivity() {
 
+    private var appPickerActionIndex = -1
+
+    private val appPickerLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK && result.data != null) {
+            val packageName = result.data?.getStringExtra("selected_package_name")
+            packageName?.let { pkg ->
+                updateAppAction(pkg)
+            }
+        }
+    }
+
+    private var configuredActionsState by mutableStateOf<List<ConfiguredAction>>(emptyList())
+
+    private fun updateAppAction(packageName: String) {
+        if (appPickerActionIndex >= 0 && appPickerActionIndex < configuredActionsState.size) {
+            val appAction = configuredActionsState.getOrNull(appPickerActionIndex)
+            if (appAction is ConfiguredAction.AppAction) {
+                configuredActionsState = configuredActionsState.mapIndexed { idx, action ->
+                    if (idx == appPickerActionIndex) {
+                        appAction.copy(packageName = packageName)
+                    } else {
+                        action
+                    }
+                }
+                appPickerActionIndex = -1
+            }
+        }
+    }
+
+    private fun openAppPicker(actionIndex: Int) {
+        appPickerActionIndex = actionIndex
+        val intent = Intent(this, AppPickerActivity::class.java)
+        appPickerLauncher.launch(intent)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             MaterialTheme {
                 WiFiConfigScreen(
-                    onBack = { finish() }
+                    onBack = { finish() },
+                    configuredActions = configuredActionsState,
+                    onActionsChanged = { configuredActionsState = it },
+                    onPickAppClicked = { actionIndex -> openAppPicker(actionIndex) }
                 )
             }
         }
@@ -200,13 +243,15 @@ class WiFiConfigActivity : AppCompatActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WiFiConfigScreen(
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    configuredActions: List<ConfiguredAction>,
+    onActionsChanged: (List<ConfiguredAction>) -> Unit,
+    onPickAppClicked: (Int) -> Unit
 ) {
     val context = LocalContext.current
 
     var connectionState by remember { mutableStateOf(TriggerConfig.WiFi.ConnectionState.CONNECTED) }
     var ssidFilter by remember { mutableStateOf("") }
-    var configuredActions by remember { mutableStateOf<List<ConfiguredAction>>(emptyList()) }
 
     Scaffold(
         topBar = {
@@ -271,11 +316,11 @@ fun WiFiConfigScreen(
                 ActionPicker(
                     context = context,
                     configuredActions = configuredActions,
-                    onActionsChanged = { configuredActions = it },
+                    onActionsChanged = onActionsChanged,
                     onPickContactClicked = { _ ->
-                        // Handle contact picker
+                        // Handle contact picker if needed
                     },
-                    onPickAppClicked = { }
+                    onPickAppClicked = onPickAppClicked
                 )
             }
 
@@ -349,5 +394,3 @@ private fun saveWiFiSlot(
         }
     }
 }
-
-

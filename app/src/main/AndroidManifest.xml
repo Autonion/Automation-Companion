@@ -186,14 +186,13 @@
             </intent-filter>
         </receiver>
 
-        <!-- Wi-Fi Trigger Receiver -->
+        <!-- Wi-Fi Trigger Receiver (for Android < 7 only, Android 7+ uses NetworkCallback) -->
         <receiver
             android:name=".features.system_context_automation.wifi.engine.WiFiBroadcastReceiver"
             android:exported="false">
             <intent-filter>
                 <action android:name="android.net.wifi.WIFI_STATE_CHANGED" />
-                <action android:name="android.net.wifi.STATE_CHANGE" />
-                <action android:name="android.net.conn.CONNECTIVITY_CHANGE" />
+                <action android:name="android.net.wifi.NETWORK_STATE_CHANGED_ACTION" />
             </intent-filter>
         </receiver>
 

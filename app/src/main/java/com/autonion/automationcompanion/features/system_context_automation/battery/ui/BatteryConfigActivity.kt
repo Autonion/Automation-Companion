@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import com.autonion.automationcompanion.features.automation.actions.builders.ActionBuilder
 import com.autonion.automationcompanion.features.automation.actions.models.ConfiguredAction
 import com.autonion.automationcompanion.features.automation.actions.ui.ActionPicker
+import com.autonion.automationcompanion.features.automation.actions.ui.AppPickerActivity
 import com.autonion.automationcompanion.features.system_context_automation.battery.engine.BatteryServiceManager
 import com.autonion.automationcompanion.features.system_context_automation.location.data.db.AppDatabase
 import com.autonion.automationcompanion.features.system_context_automation.location.data.models.Slot
@@ -35,6 +36,7 @@ import kotlinx.serialization.json.Json
 class BatteryConfigActivity : AppCompatActivity() {
 
     private var contactPickerActionIndex: Int? = null
+    private var appPickerActionIndex = -1
 
     private val pickContactLauncher = registerForActivityResult(ActivityResultContracts.PickContact()) { uri ->
         if (uri != null && contactPickerActionIndex != null) {
@@ -54,12 +56,50 @@ class BatteryConfigActivity : AppCompatActivity() {
         }
     }
 
+    private val appPickerLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK && result.data != null) {
+            val packageName = result.data?.getStringExtra("selected_package_name")
+            packageName?.let { pkg ->
+                updateAppAction(pkg)
+            }
+        }
+    }
+
+    private var configuredActionsState by mutableStateOf<List<ConfiguredAction>>(emptyList())
+
+    private fun updateAppAction(packageName: String) {
+        if (appPickerActionIndex >= 0 && appPickerActionIndex < configuredActionsState.size) {
+            val appAction = configuredActionsState.getOrNull(appPickerActionIndex)
+            if (appAction is ConfiguredAction.AppAction) {
+                configuredActionsState = configuredActionsState.mapIndexed { idx, action ->
+                    if (idx == appPickerActionIndex) {
+                        appAction.copy(packageName = packageName)
+                    } else {
+                        action
+                    }
+                }
+                appPickerActionIndex = -1
+            }
+        }
+    }
+
+    private fun openAppPicker(actionIndex: Int) {
+        appPickerActionIndex = actionIndex
+        val intent = Intent(this, AppPickerActivity::class.java)
+        appPickerLauncher.launch(intent)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             MaterialTheme {
                 BatteryConfigScreen(
-                    onBack = { finish() }
+                    onBack = { finish() },
+                    configuredActions = configuredActionsState,
+                    onActionsChanged = { configuredActionsState = it },
+                    onPickAppClicked = { actionIndex -> openAppPicker(actionIndex) }
                 )
             }
         }
@@ -69,13 +109,15 @@ class BatteryConfigActivity : AppCompatActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BatteryConfigScreen(
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    configuredActions: List<ConfiguredAction>,
+    onActionsChanged: (List<ConfiguredAction>) -> Unit,
+    onPickAppClicked: (Int) -> Unit
 ) {
     val context = LocalContext.current
 
     var batteryPercentage by remember { mutableIntStateOf(20) }
     var thresholdType by remember { mutableStateOf(TriggerConfig.Battery.ThresholdType.REACHES_OR_BELOW) }
-    var configuredActions by remember { mutableStateOf<List<ConfiguredAction>>(emptyList()) }
     var contactPickerActionIndex by remember { mutableStateOf<Int?>(null) }
 
     Scaffold(
@@ -142,12 +184,12 @@ fun BatteryConfigScreen(
                 ActionPicker(
                     context = context,
                     configuredActions = configuredActions,
-                    onActionsChanged = { configuredActions = it },
+                    onActionsChanged = onActionsChanged,
                     onPickContactClicked = { actionIndex ->
                         contactPickerActionIndex = actionIndex
                         // Launch contact picker
                     },
-                    onPickAppClicked = { }
+                    onPickAppClicked = onPickAppClicked
                 )
             }
 
@@ -224,4 +266,3 @@ private fun saveBatterySlot(
         }
     }
 }
-
