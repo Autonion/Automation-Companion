@@ -8,19 +8,24 @@ import com.autonion.automationcompanion.features.automation.actions.models.Autom
 data class Slot(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
 
-    val lat: Double,
-    val lng: Double,
-    val radiusMeters: Float,
+    // Multi-trigger support
+    val triggerType: String = "LOCATION",  // LOCATION, BATTERY, TIME_OF_DAY, WIFI
+    val triggerConfigJson: String? = null,  // JSON of TriggerConfig; null for location (uses lat/lng)
 
-    val startMillis: Long,
-    val endMillis: Long,
+    // Legacy location fields (kept for backward compat)
+    val lat: Double? = null,
+    val lng: Double? = null,
+    val radiusMeters: Float? = null,
+
+    val startMillis: Long? = null,
+    val endMillis: Long? = null,
 
     val remindBeforeMinutes: Int = 0,
     val actions: List<AutomationAction>,
     val enabled: Boolean = true,
 
     // Scheduling
-    val activeDays: String,          // "ALL" or "MON,TUE,WED"
+    val activeDays: String = "ALL",          // "ALL" or "MON,TUE,WED"
 
     // Runtime state (authoritative)
     val isInsideGeofence: Boolean = false,

@@ -273,10 +273,12 @@ class TrackingForegroundService : Service() {
 
             // 3️⃣ Time window filter (CRITICAL)
             val now = System.currentTimeMillis()
-            if (now < slot.startMillis || now > slot.endMillis) {
+            val startMillis = slot.startMillis ?: return@launch
+            val endMillis = slot.endMillis ?: return@launch
+            if (now < startMillis || now > endMillis) {
                 Log.i(
                     "LocDebug",
-                    "Skipping geofence for slot ${slot.id} (outside time window: now=$now, start=${slot.startMillis}, end=${slot.endMillis})"
+                    "Skipping geofence for slot ${slot.id} (outside time window: now=$now, start=$startMillis, end=$endMillis)"
                 )
                 return@launch
             }
@@ -292,15 +294,19 @@ class TrackingForegroundService : Service() {
             }
 
             // 5️⃣ Build geofence
+            val lat = slot.lat ?: return@launch
+            val lng = slot.lng ?: return@launch
+            val radiusMeters = slot.radiusMeters ?: return@launch
+            
             val geofence = Geofence.Builder()
                 .setRequestId(slot.id.toString())
                 .setCircularRegion(
-                    slot.lat,
-                    slot.lng,
-                    slot.radiusMeters
+                    lat,
+                    lng,
+                    radiusMeters
                 )
                 .setExpirationDuration(
-                    max(0L, slot.endMillis - System.currentTimeMillis())
+                    max(0L, endMillis - System.currentTimeMillis())
                 )
                 .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER)
                 .build()
@@ -401,15 +407,18 @@ class TrackingForegroundService : Service() {
     private fun isNowWithinSlotTime(slot: Slot): Boolean {
         val now = Calendar.getInstance()
 
+        val startMillis = slot.startMillis ?: return false
+        val endMillis = slot.endMillis ?: return false
+
         val start = Calendar.getInstance().apply {
-            timeInMillis = slot.startMillis
+            timeInMillis = startMillis
             set(Calendar.YEAR, now.get(Calendar.YEAR))
             set(Calendar.MONTH, now.get(Calendar.MONTH))
             set(Calendar.DAY_OF_MONTH, now.get(Calendar.DAY_OF_MONTH))
         }
 
         val end = Calendar.getInstance().apply {
-            timeInMillis = slot.endMillis
+            timeInMillis = endMillis
             set(Calendar.YEAR, now.get(Calendar.YEAR))
             set(Calendar.MONTH, now.get(Calendar.MONTH))
             set(Calendar.DAY_OF_MONTH, now.get(Calendar.DAY_OF_MONTH))

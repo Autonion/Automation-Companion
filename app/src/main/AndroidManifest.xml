@@ -10,6 +10,7 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
@@ -28,7 +29,8 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
-
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -82,6 +84,41 @@
             android:exported="false"
             android:theme="@style/Theme.AppCompat.Light.Dialog" />
 
+        <!-- Battery Trigger Activities -->
+        <activity
+            android:name=".features.system_context_automation.battery.ui.BatterySlotsActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".features.system_context_automation.battery.ui.BatteryConfigActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <service
+            android:name=".features.system_context_automation.battery.engine.BatteryMonitoringService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <!-- Time-of-Day Trigger Activities -->
+        <activity
+            android:name=".features.system_context_automation.timeofday.ui.TimeOfDayActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".features.system_context_automation.timeofday.ui.TimeOfDayConfigActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- Wi-Fi Trigger Activities -->
+        <activity
+            android:name=".features.system_context_automation.wifi.ui.WiFiActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".features.system_context_automation.wifi.ui.WiFiConfigActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
 
         <service
             android:name=".features.system_context_automation.location.engine.location_receiver.TrackingForegroundService"
@@ -131,6 +168,34 @@
             </intent-filter>
         </receiver>
 
+        <!-- Battery Trigger Receiver -->
+        <receiver
+            android:name=".features.system_context_automation.battery.engine.BatteryBroadcastReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BATTERY_CHANGED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Time-of-Day Trigger Receiver -->
+        <receiver
+            android:name=".features.system_context_automation.timeofday.engine.TimeOfDayReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.autonion.automationcompanion.action.TIME_OF_DAY_ALARM" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Wi-Fi Trigger Receiver -->
+        <receiver
+            android:name=".features.system_context_automation.wifi.engine.WiFiBroadcastReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.net.wifi.WIFI_STATE_CHANGED" />
+                <action android:name="android.net.wifi.STATE_CHANGE" />
+                <action android:name="android.net.conn.CONNECTIVITY_CHANGE" />
+            </intent-filter>
+        </receiver>
 
         <!-- Overlay Service -->
         <service

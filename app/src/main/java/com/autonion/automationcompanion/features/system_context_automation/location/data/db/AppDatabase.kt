@@ -10,7 +10,7 @@ import com.autonion.automationcompanion.features.system_context_automation.locat
 
 @Database(
     entities = [Slot::class],
-    version = 3, // ⬅️ bump version
+    version = 4, // ⬅️ bump version for multi-trigger support
     exportSchema = false
 )
 @TypeConverters(AutomationActionConverter::class)
@@ -30,7 +30,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "locauto.db"
                 )
-                    .addMigrations(MIGRATION_2_3)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4)
                     .build()
                     .also { INSTANCE = it }
             }

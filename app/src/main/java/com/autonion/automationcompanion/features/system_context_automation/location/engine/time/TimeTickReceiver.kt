@@ -68,14 +68,14 @@ class TimeTickReceiver : BroadcastReceiver() {
     private fun isWithinTimeWindow(slot: com.autonion.automationcompanion.features.system_context_automation.location.data.models.Slot, now: Calendar): Boolean {
 
         val start = Calendar.getInstance().apply {
-            timeInMillis = slot.startMillis
+            timeInMillis = slot.startMillis ?: return@apply
             set(Calendar.YEAR, now.get(Calendar.YEAR))
             set(Calendar.MONTH, now.get(Calendar.MONTH))
             set(Calendar.DAY_OF_MONTH, now.get(Calendar.DAY_OF_MONTH))
         }
 
         val end = Calendar.getInstance().apply {
-            timeInMillis = slot.endMillis
+            timeInMillis = slot.endMillis ?: return@apply
             set(Calendar.YEAR, now.get(Calendar.YEAR))
             set(Calendar.MONTH, now.get(Calendar.MONTH))
             set(Calendar.DAY_OF_MONTH, now.get(Calendar.DAY_OF_MONTH))

@@ -36,7 +36,7 @@ fun LocationSlotsScreen(
 
     val grouped = slots.groupBy {
         when {
-            it.startMillis < now -> "Past"
+            it.startMillis!! < now -> "Past"
             it.startMillis < now + 24 * 60 * 60 * 1000 -> "Today"
             else -> "Upcoming"
         }
@@ -130,7 +130,7 @@ private fun SlotCard(
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    "Radius ${slot.radiusMeters.toInt()} m",
+                    "Radius ${slot.radiusMeters?.toInt()} m",
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier.weight(1f)
                 )
@@ -168,8 +168,8 @@ private fun SlotCard(
     }
 }
 
-private fun formatTime(millis: Long): String {
-    val cal = Calendar.getInstance().apply { timeInMillis = millis }
+private fun formatTime(millis: Long?): String {
+    val cal = Calendar.getInstance().apply { timeInMillis = millis!! }
     return "%02d:%02d".format(
         cal.get(Calendar.HOUR_OF_DAY),
         cal.get(Calendar.MINUTE)

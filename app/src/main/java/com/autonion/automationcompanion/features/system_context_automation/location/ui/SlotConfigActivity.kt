@@ -296,9 +296,9 @@ class SlotConfigActivity : AppCompatActivity() {
 
 
     private fun populateFromSlot(slot: Slot) {
-        lat = slot.lat.toString()
-        lng = slot.lng.toString()
-        radius = slot.radiusMeters.toInt()
+        lat = slot.lat?.toString() ?: "0"
+        lng = slot.lng?.toString() ?: "0"
+        radius = (slot.radiusMeters?.toInt()) ?: 300
         remindBeforeMinutes = slot.remindBeforeMinutes.toString()
         selectedDays =
             if (slot.activeDays == "ALL") {
@@ -362,10 +362,10 @@ class SlotConfigActivity : AppCompatActivity() {
         }
 
         val startCal = java.util.Calendar.getInstance().apply {
-            timeInMillis = slot.startMillis
+            timeInMillis = slot.startMillis ?: System.currentTimeMillis()
         }
         val endCal = java.util.Calendar.getInstance().apply {
-            timeInMillis = slot.endMillis
+            timeInMillis = slot.endMillis ?: System.currentTimeMillis()
         }
 
         startHour = startCal.get(java.util.Calendar.HOUR_OF_DAY)
