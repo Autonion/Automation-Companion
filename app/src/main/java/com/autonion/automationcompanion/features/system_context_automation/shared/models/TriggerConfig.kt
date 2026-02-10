@@ -65,4 +65,19 @@ sealed class TriggerConfig {
             DISCONNECTED
         }
     }
+    @Serializable
+    @SerialName("app")
+    data class App(
+        val packageName: String,
+        val appName: String? = null,
+        val triggerOn: TriggerOn = TriggerOn.OPEN
+    ) : TriggerConfig() {
+        @Serializable
+        enum class TriggerOn {
+            @SerialName("open")
+            OPEN,
+            @SerialName("close")
+            CLOSE
+        }
+    }
 }

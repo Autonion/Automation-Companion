@@ -22,6 +22,9 @@ interface SlotDao {
     @Query("SELECT * FROM slots")
     fun getAllFlow(): Flow<List<Slot>>
 
+    @Query("SELECT * FROM slots WHERE triggerType = :type")
+    fun getSlotsByType(type: String): Flow<List<Slot>>
+
     @Query("UPDATE slots SET enabled = :enabled WHERE id = :id")
     suspend fun setEnabled(id: Long, enabled: Boolean)
 

@@ -5,7 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.provider.Settings
 import com.autonion.automationcompanion.features.automation.actions.models.AutomationAction
-import com.caverock.androidsvg.BuildConfig
+
 
 
 object PermissionPreflight {
@@ -39,11 +39,11 @@ object PermissionPreflight {
         return missing.distinct()
     }
 
-    fun settingsIntent(permission: SystemPermission): Intent {
+    fun settingsIntent(context: Context, permission: SystemPermission): Intent {
         return when (permission) {
             SystemPermission.WriteSettings ->
                 Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS)
-                    .setData(android.net.Uri.parse("package:${BuildConfig.APPLICATION_ID}"))
+                    .setData(android.net.Uri.parse("package:${context.packageName}"))
 
             SystemPermission.DndAccess ->
                 Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)

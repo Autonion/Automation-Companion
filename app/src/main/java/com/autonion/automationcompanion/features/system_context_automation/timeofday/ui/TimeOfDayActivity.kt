@@ -36,6 +36,7 @@ import com.autonion.automationcompanion.features.system_context_automation.timeo
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.clickable
 
 class TimeOfDayActivity : AppCompatActivity() {
 
@@ -45,14 +46,19 @@ class TimeOfDayActivity : AppCompatActivity() {
             MaterialTheme {
                 TimeOfDaySlotsScreen(
                     onBack = { finish() },
-                    onAddClicked = { startTimeOfDayConfig() }
+                    onAddClicked = { startTimeOfDayConfig() },
+                    onEditClicked = { slotId -> startTimeOfDayConfig(slotId) }
                 )
             }
         }
     }
 
-    private fun startTimeOfDayConfig() {
-        startActivity(android.content.Intent(this, TimeOfDayConfigActivity::class.java))
+    private fun startTimeOfDayConfig(slotId: Long = -1L) {
+        val intent = android.content.Intent(this, TimeOfDayConfigActivity::class.java)
+        if (slotId != -1L) {
+            intent.putExtra("slotId", slotId)
+        }
+        startActivity(intent)
     }
 }
 
@@ -60,7 +66,8 @@ class TimeOfDayActivity : AppCompatActivity() {
 @Composable
 fun TimeOfDaySlotsScreen(
     onBack: () -> Unit,
-    onAddClicked: () -> Unit
+    onAddClicked: () -> Unit,
+    onEditClicked: (Long) -> Unit
 ) {
     val context = LocalContext.current
     val dao = remember { AppDatabase.get(context).slotDao() }
@@ -115,6 +122,7 @@ fun TimeOfDaySlotsScreen(
                                 dao.setEnabled(slot.id, enabled)
                             }
                         },
+                        onEdit = { onEditClicked(slot.id) },
                         onDelete = {
                             scope.launch {
                                 dao.delete(slot)
@@ -140,6 +148,7 @@ fun TimeOfDaySlotsScreen(
 private fun TimeOfDaySlotCard(
     slot: Slot,
     onToggleEnabled: (Boolean) -> Unit,
+    onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
     val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
@@ -150,7 +159,9 @@ private fun TimeOfDaySlotCard(
     }
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onEdit() },
         elevation = CardDefaults.cardElevation(4.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -187,6 +198,7 @@ private fun TimeOfDaySlotCard(
 class TimeOfDayConfigActivity : AppCompatActivity() {
 
     private var appPickerActionIndex = -1
+    private var slotId: Long = -1L
 
     private val appPickerLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -200,6 +212,11 @@ class TimeOfDayConfigActivity : AppCompatActivity() {
     }
 
     private var configuredActionsState by mutableStateOf<List<ConfiguredAction>>(emptyList())
+
+    // State for the config values
+    private var loadedHour by mutableIntStateOf(8)
+    private var loadedMinute by mutableIntStateOf(0)
+    private var loadedRepeatDaily by mutableStateOf(true)
 
     private fun updateAppAction(packageName: String) {
         if (appPickerActionIndex >= 0 && appPickerActionIndex < configuredActionsState.size) {
@@ -225,14 +242,67 @@ class TimeOfDayConfigActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        slotId = intent.getLongExtra("slotId", -1L)
+        if (slotId != -1L) {
+            loadSlotData(slotId)
+        }
+
         setContent {
             MaterialTheme {
+                // Pass loaded values as initial values if we have them, creating a key to reset state when they change
+                // But Composable state initialization happens once.
+                // We need to pass the state down or initialize the composable with them.
+                // Better: Hoist the state to Activity or use a ViewModel. 
+                // Given the current structure, I'll pass the state objects to the screen.
+                // Or I can just pass the values and let the screen initialize its state, 
+                // BUT if I update the values asynchronously (from DB), the screen state won't update unless I key it or pass mutable state.
+                
+                // Let's refactor ConfigScreen to accept initial values
+                // Since I can't easily refactor the whole screen signature without changing its internal state handling,
+                // I will use a key to force recomposition when data loads. Or I can pass the state objects.
+                
+                // Keying by slotId might not be enough if data loads later.
+                // Let's make the screen state observable from here.
+                
                 TimeOfDayConfigScreen(
                     onBack = { finish() },
                     configuredActions = configuredActionsState,
                     onActionsChanged = { configuredActionsState = it },
-                    onPickAppClicked = { actionIndex -> openAppPicker(actionIndex) }
+                    onPickAppClicked = { actionIndex -> openAppPicker(actionIndex) },
+                    initialHour = loadedHour,
+                    initialMinute = loadedMinute,
+                    initialRepeatDaily = loadedRepeatDaily,
+                    isEditing = slotId != -1L,
+                    onSave = { h, m, r, actions ->
+                         saveTimeOfDaySlot(this, slotId, h, m, r, actions) {
+                             finish()
+                         }
+                    }
                 )
+            }
+        }
+    }
+
+    private fun loadSlotData(id: Long) {
+        CoroutineScope(Dispatchers.IO).launch {
+            val dao = AppDatabase.get(this@TimeOfDayConfigActivity).slotDao()
+            val slot = dao.getById(id) ?: return@launch
+
+            val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+             val config = slot.triggerConfigJson?.let {
+                try { json.decodeFromString<TriggerConfig.TimeOfDay>(it) } catch (e: Exception) { null }
+            }
+
+            val loadedActions = ActionBuilder.toConfiguredActions(this@TimeOfDayConfigActivity, slot.actions)
+
+            CoroutineScope(Dispatchers.Main).launch {
+                configuredActionsState = loadedActions
+                config?.let {
+                    loadedHour = it.hour
+                    loadedMinute = it.minute
+                    loadedRepeatDaily = it.repeatDaily
+                }
             }
         }
     }
@@ -244,18 +314,24 @@ fun TimeOfDayConfigScreen(
     onBack: () -> Unit,
     configuredActions: List<ConfiguredAction>,
     onActionsChanged: (List<ConfiguredAction>) -> Unit,
-    onPickAppClicked: (Int) -> Unit
+    onPickAppClicked: (Int) -> Unit,
+    initialHour: Int = 8,
+    initialMinute: Int = 0,
+    initialRepeatDaily: Boolean = true,
+    isEditing: Boolean = false,
+    onSave: (Int, Int, Boolean, List<ConfiguredAction>) -> Unit = { _, _, _, _ -> } // Modified signature
 ) {
     val context = LocalContext.current
 
-    var hour by remember { mutableIntStateOf(8) }
-    var minute by remember { mutableIntStateOf(0) }
-    var repeatDaily by remember { mutableStateOf(true) }
+    // Use current values if they change (from loading)
+    var hour by remember(initialHour) { mutableIntStateOf(initialHour) }
+    var minute by remember(initialMinute) { mutableIntStateOf(initialMinute) }
+    var repeatDaily by remember(initialRepeatDaily) { mutableStateOf(initialRepeatDaily) }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Create Time-of-Day Automation") },
+                title = { Text(if (isEditing) "Edit Time-of-Day Automation" else "Create Time-of-Day Automation") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -347,19 +423,11 @@ fun TimeOfDayConfigScreen(
             // Save button
             Button(
                 onClick = {
-                    saveTimeOfDaySlot(
-                        context,
-                        hour,
-                        minute,
-                        repeatDaily,
-                        configuredActions
-                    ) {
-                        onBack()
-                    }
+                    onSave(hour, minute, repeatDaily, configuredActions)
                 },
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
             ) {
                 Text("Save Automation")
             }
@@ -371,6 +439,7 @@ fun TimeOfDayConfigScreen(
 
 private fun saveTimeOfDaySlot(
     context: Context,
+    slotId: Long,
     hour: Int,
     minute: Int,
     repeatDaily: Boolean,
@@ -395,6 +464,7 @@ private fun saveTimeOfDaySlot(
             )
 
             val slot = Slot(
+                id = if (slotId != -1L) slotId else 0,
                 triggerType = "TIME_OF_DAY",
                 triggerConfigJson = triggerConfigJson,
                 actions = actions,
@@ -403,13 +473,18 @@ private fun saveTimeOfDaySlot(
             )
 
             val dao = AppDatabase.get(context).slotDao()
-            val slotId = dao.insert(slot)
+            val finalSlotId = if (slotId != -1L) {
+                dao.update(slot)
+                slotId
+            } else {
+                dao.insert(slot)
+            }
 
             // Schedule alarm
-            TimeOfDayReceiver.scheduleAlarm(context, slotId, hour, minute)
+            TimeOfDayReceiver.scheduleAlarm(context, finalSlotId, hour, minute)
 
             android.os.Handler(android.os.Looper.getMainLooper()).post {
-                Toast.makeText(context, "Time-of-day automation created", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Time-of-day automation saved", Toast.LENGTH_SHORT).show()
                 onSuccess()
             }
         } catch (e: Exception) {

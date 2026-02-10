@@ -29,6 +29,7 @@ import com.autonion.automationcompanion.features.system_context_automation.batte
 import com.autonion.automationcompanion.features.system_context_automation.location.data.db.AppDatabase
 import com.autonion.automationcompanion.features.system_context_automation.location.data.models.Slot
 import com.autonion.automationcompanion.features.system_context_automation.shared.models.TriggerConfig
+import androidx.compose.foundation.clickable
 
 class BatterySlotsActivity : AppCompatActivity() {
 
@@ -59,14 +60,19 @@ class BatterySlotsActivity : AppCompatActivity() {
             MaterialTheme {
                 BatterySlotsScreen(
                     onBack = { finish() },
-                    onAddClicked = { startBatteryConfig() }
+                    onAddClicked = { startBatteryConfig() },
+                    onEditClicked = { slotId -> startBatteryConfig(slotId) }
                 )
             }
         }
     }
 
-    private fun startBatteryConfig() {
-        startActivity(android.content.Intent(this, BatteryConfigActivity::class.java))
+    private fun startBatteryConfig(slotId: Long = -1L) {
+        val intent = android.content.Intent(this, BatteryConfigActivity::class.java)
+        if (slotId != -1L) {
+            intent.putExtra("slotId", slotId)
+        }
+        startActivity(intent)
     }
 }
 
@@ -74,7 +80,8 @@ class BatterySlotsActivity : AppCompatActivity() {
 @Composable
 fun BatterySlotsScreen(
     onBack: () -> Unit,
-    onAddClicked: () -> Unit
+    onAddClicked: () -> Unit,
+    onEditClicked: (Long) -> Unit
 ) {
     val context = LocalContext.current
     val dao = remember { AppDatabase.get(context).slotDao() }
@@ -135,6 +142,7 @@ fun BatterySlotsScreen(
                                 }
                             }
                         },
+                        onEdit = { onEditClicked(slot.id) },
                         onDelete = {
                             scope.launch {
                                 dao.delete(slot)
@@ -165,6 +173,7 @@ fun BatterySlotsScreen(
 private fun BatterySlotCard(
     slot: Slot,
     onToggleEnabled: (Boolean) -> Unit,
+    onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
     val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
@@ -175,7 +184,9 @@ private fun BatterySlotCard(
     }
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onEdit() },
         elevation = CardDefaults.cardElevation(4.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -208,6 +219,3 @@ private fun BatterySlotCard(
         }
     }
 }
-
-// Compose wrapper for LazyColumn (needed for items)
-

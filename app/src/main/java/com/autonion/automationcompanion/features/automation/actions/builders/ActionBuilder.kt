@@ -129,4 +129,56 @@ object ActionBuilder {
     fun hasAnyValidAction(configuredActions: List<ConfiguredAction>): Boolean {
         return configuredActions.any { isValid(it) }
     }
+
+    /**
+     * Converts executable AutomationActions back to ConfiguredActions for editing.
+     *
+     * @param context Context needed for resolving resources/contracts if necessary
+     * @param actions List of executable actions
+     * @return List of UI configuration models
+     */
+    fun toConfiguredActions(context: android.content.Context, actions: List<AutomationAction>): List<ConfiguredAction> {
+        return actions.map { action ->
+            when (action) {
+                is AutomationAction.SetVolume -> ConfiguredAction.Audio(
+                    ringVolume = action.ring,
+                    mediaVolume = action.media,
+                    alarmVolume = action.alarm,
+                    ringerMode = action.ringerMode
+                )
+                is AutomationAction.SetBrightness -> ConfiguredAction.Brightness(
+                    level = action.level
+                )
+                is AutomationAction.SetDnd -> ConfiguredAction.Dnd(
+                    enabled = action.enabled
+                )
+                is AutomationAction.SendSms -> ConfiguredAction.SendSms(
+                    message = action.message,
+                    contactsCsv = action.contactsCsv
+                )
+                is AutomationAction.SetAutoRotate -> ConfiguredAction.AutoRotate(
+                    enabled = action.enabled
+                )
+                is AutomationAction.SetScreenTimeout -> ConfiguredAction.ScreenTimeout(
+                    durationMs = action.durationMs
+                )
+                is AutomationAction.SetKeepScreenAwake -> ConfiguredAction.KeepScreenAwake(
+                    enabled = action.enabled
+                )
+                is AutomationAction.AppAction -> ConfiguredAction.AppAction(
+                    packageName = action.packageName,
+                    actionType = action.actionType
+                )
+                is AutomationAction.NotificationAction -> ConfiguredAction.NotificationAction(
+                    title = action.title,
+                    text = action.text,
+                    notificationType = action.notificationType,
+                    delayMinutes = action.delayMinutes
+                )
+                is AutomationAction.SetBatterySaver -> ConfiguredAction.BatterySaver(
+                    enabled = action.enabled
+                )
+            }
+        }
+    }
 }

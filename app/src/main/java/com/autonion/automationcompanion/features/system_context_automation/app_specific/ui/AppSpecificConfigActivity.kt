@@ -1,9 +1,8 @@
-package com.autonion.automationcompanion.features.system_context_automation.battery.ui
+package com.autonion.automationcompanion.features.system_context_automation.app_specific.ui
 
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
-import android.provider.ContactsContract
 import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -15,8 +14,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -24,45 +21,39 @@ import com.autonion.automationcompanion.features.automation.actions.builders.Act
 import com.autonion.automationcompanion.features.automation.actions.models.ConfiguredAction
 import com.autonion.automationcompanion.features.automation.actions.ui.ActionPicker
 import com.autonion.automationcompanion.features.automation.actions.ui.AppPickerActivity
-import com.autonion.automationcompanion.features.system_context_automation.battery.engine.BatteryServiceManager
 import com.autonion.automationcompanion.features.system_context_automation.location.data.db.AppDatabase
 import com.autonion.automationcompanion.features.system_context_automation.location.data.models.Slot
 import com.autonion.automationcompanion.features.system_context_automation.shared.models.TriggerConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.Json
 
-class BatteryConfigActivity : AppCompatActivity() {
+class AppSpecificConfigActivity : AppCompatActivity() {
 
-    private var contactPickerActionIndex: Int? = null
     private var appPickerActionIndex = -1
+    private var isPickingTriggerApp = false
 
-    private val pickContactLauncher = registerForActivityResult(ActivityResultContracts.PickContact()) { uri ->
-        if (uri != null && contactPickerActionIndex != null) {
-            val cursor = contentResolver.query(
-                uri,
-                arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER),
-                null,
-                null,
-                null
-            )
-            cursor?.use {
-                if (it.moveToFirst()) {
-                    val number = it.getString(0)
-                    // Update would go here
-                }
-            }
-        }
-    }
+    // State for the trigger app (the app that triggers this automation)
+    private var selectedTriggerAppPackage by mutableStateOf<String?>(null)
+    private var selectedTriggerAppName by mutableStateOf<String?>(null)
 
     private val appPickerLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == RESULT_OK && result.data != null) {
             val packageName = result.data?.getStringExtra("selected_package_name")
+            val appName = result.data?.getStringExtra("selected_app_name") // Assuming AppPicker returns name as well? verify.
+            // Actually AppPickerActivity doesn't return app name currently, only package name in intent data "selected_package_name"
+            // We might need to fetch the app name or just show package name for now/fetch it here.
+            
             packageName?.let { pkg ->
-                updateAppAction(pkg)
+                if (isPickingTriggerApp) {
+                    selectedTriggerAppPackage = pkg
+                    selectedTriggerAppName = pkg // Placeholder, ideally fetch label
+                    isPickingTriggerApp = false
+                } else {
+                    updateAppAction(pkg)
+                }
             }
         }
     }
@@ -87,6 +78,13 @@ class BatteryConfigActivity : AppCompatActivity() {
 
     private fun openAppPicker(actionIndex: Int) {
         appPickerActionIndex = actionIndex
+        isPickingTriggerApp = false
+        val intent = Intent(this, AppPickerActivity::class.java)
+        appPickerLauncher.launch(intent)
+    }
+
+    private fun openTriggerAppPicker() {
+        isPickingTriggerApp = true
         val intent = Intent(this, AppPickerActivity::class.java)
         appPickerLauncher.launch(intent)
     }
@@ -103,16 +101,15 @@ class BatteryConfigActivity : AppCompatActivity() {
 
         setContent {
             MaterialTheme {
-                BatteryConfigScreen(
+                AppSpecificConfigScreen(
                     onBack = { finish() },
                     configuredActions = configuredActionsState,
                     onActionsChanged = { configuredActionsState = it },
                     onPickAppClicked = { actionIndex -> openAppPicker(actionIndex) },
-                    initialBatteryPercentage = loadedBatteryPercentage,
-                    initialThresholdType = loadedThresholdType,
-                    isEditing = slotId != -1L,
-                    onSave = { percentage, type, actions ->
-                        saveBatterySlot(this, slotId, percentage, type, actions) {
+                    onPickTriggerApp = { openTriggerAppPicker() },
+                    selectedTriggerApp = selectedTriggerAppPackage,
+                    onSave = {
+                        saveAppSlot(this, slotId, selectedTriggerAppPackage, configuredActionsState) {
                             finish()
                         }
                     }
@@ -121,26 +118,23 @@ class BatteryConfigActivity : AppCompatActivity() {
         }
     }
 
-    private var loadedBatteryPercentage by mutableIntStateOf(20)
-    private var loadedThresholdType by mutableStateOf(TriggerConfig.Battery.ThresholdType.REACHES_OR_BELOW)
-
     private fun loadSlotData(id: Long) {
         CoroutineScope(Dispatchers.IO).launch {
-            val dao = AppDatabase.get(this@BatteryConfigActivity).slotDao()
+            val dao = AppDatabase.get(this@AppSpecificConfigActivity).slotDao()
             val slot = dao.getById(id) ?: return@launch
 
-            val json = Json { ignoreUnknownKeys = true }
+            val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
             val config = slot.triggerConfigJson?.let {
-                try { json.decodeFromString<TriggerConfig.Battery>(it) } catch (e: Exception) { null }
+                try { json.decodeFromString<TriggerConfig.App>(it) } catch (e: Exception) { null }
             }
 
-            val loadedActions = ActionBuilder.toConfiguredActions(this@BatteryConfigActivity, slot.actions)
+            val loadedActions = ActionBuilder.toConfiguredActions(this@AppSpecificConfigActivity, slot.actions)
 
             CoroutineScope(Dispatchers.Main).launch {
                 configuredActionsState = loadedActions
                 config?.let {
-                    loadedBatteryPercentage = it.batteryPercentage
-                    loadedThresholdType = it.thresholdType
+                    selectedTriggerAppPackage = it.packageName
+                    selectedTriggerAppName = it.appName ?: it.packageName
                 }
             }
         }
@@ -149,26 +143,61 @@ class BatteryConfigActivity : AppCompatActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BatteryConfigScreen(
+fun AppSpecificConfigScreen(
     onBack: () -> Unit,
     configuredActions: List<ConfiguredAction>,
     onActionsChanged: (List<ConfiguredAction>) -> Unit,
     onPickAppClicked: (Int) -> Unit,
-    initialBatteryPercentage: Int = 20,
-    initialThresholdType: TriggerConfig.Battery.ThresholdType = TriggerConfig.Battery.ThresholdType.REACHES_OR_BELOW,
-    isEditing: Boolean = false,
-    onSave: (Int, TriggerConfig.Battery.ThresholdType, List<ConfiguredAction>) -> Unit = { _, _, _ -> }
+    onPickTriggerApp: () -> Unit,
+    selectedTriggerApp: String?,
+    onSave: () -> Unit
 ) {
     val context = LocalContext.current
 
-    var batteryPercentage by remember(initialBatteryPercentage) { mutableIntStateOf(initialBatteryPercentage) }
-    var thresholdType by remember(initialThresholdType) { mutableStateOf(initialThresholdType) }
-    var contactPickerActionIndex by remember { mutableStateOf<Int?>(null) }
+    // JIT Permissions Logic
+    fun checkAndRequestWriteSettings(): Boolean {
+        return if (android.provider.Settings.System.canWrite(context)) {
+            true
+        } else {
+            val intent = android.content.Intent(android.provider.Settings.ACTION_MANAGE_WRITE_SETTINGS)
+            intent.data = android.net.Uri.parse("package:${context.packageName}")
+            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+            Toast.makeText(context, "Grant 'Modify System Settings' permission to use this action.", Toast.LENGTH_LONG).show()
+            false
+        }
+    }
+
+    fun checkAndRequestDndAccess(): Boolean {
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        return if (nm.isNotificationPolicyAccessGranted) {
+            true
+        } else {
+             val intent = android.content.Intent(android.provider.Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
+             intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+             context.startActivity(intent)
+             Toast.makeText(context, "Grant 'Do Not Disturb Access' permission to use this action.", Toast.LENGTH_LONG).show()
+             false
+        }
+    }
+    
+    // Intercept action changes to check permissions
+    val handleActionsChanged: (List<ConfiguredAction>) -> Unit = { newActions ->
+        // Check if any NEW action requires permission
+        val filtered = newActions.filter { action ->
+            when (action) {
+                is ConfiguredAction.Brightness -> checkAndRequestWriteSettings()
+                is ConfiguredAction.Dnd -> checkAndRequestDndAccess()
+                else -> true
+            }
+        }
+        onActionsChanged(filtered)
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (isEditing) "Edit Battery Automation" else "Create Battery Automation") },
+                title = { Text("App Specific Automation") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -184,40 +213,18 @@ fun BatteryConfigScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Battery percentage selector
+            // Trigger App Selector
             Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                Text("Battery Percentage", style = MaterialTheme.typography.labelMedium)
+                Text("Trigger App", style = MaterialTheme.typography.labelMedium)
                 Spacer(modifier = Modifier.height(8.dp))
-                Slider(
-                    value = batteryPercentage.toFloat(),
-                    onValueChange = { batteryPercentage = it.toInt() },
-                    valueRange = 1f..100f,
-                    steps = 99,
+                
+                OutlinedButton(
+                    onClick = onPickTriggerApp,
                     modifier = Modifier.fillMaxWidth()
-                )
-                Text("$batteryPercentage%", style = MaterialTheme.typography.bodyLarge)
-            }
-
-            Divider()
-
-            // Threshold type selector
-            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                Text("Trigger Type", style = MaterialTheme.typography.labelMedium)
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
-                        selected = thresholdType == TriggerConfig.Battery.ThresholdType.REACHES_OR_BELOW,
-                        onClick = { thresholdType = TriggerConfig.Battery.ThresholdType.REACHES_OR_BELOW },
-                        label = { Text("At or Below") },
-                        modifier = Modifier.weight(1f)
-                    )
-                    FilterChip(
-                        selected = thresholdType == TriggerConfig.Battery.ThresholdType.REACHES_OR_ABOVE,
-                        onClick = { thresholdType = TriggerConfig.Battery.ThresholdType.REACHES_OR_ABOVE },
-                        label = { Text("At or Above") },
-                        modifier = Modifier.weight(1f)
-                    )
+                ) {
+                    Text(selectedTriggerApp ?: "Select App")
                 }
+                Text("Automation triggers when this app is opened", style = MaterialTheme.typography.bodySmall)
             }
 
             Divider()
@@ -229,11 +236,8 @@ fun BatteryConfigScreen(
                 ActionPicker(
                     context = context,
                     configuredActions = configuredActions,
-                    onActionsChanged = onActionsChanged,
-                    onPickContactClicked = { actionIndex ->
-                        contactPickerActionIndex = actionIndex
-                        // Launch contact picker
-                    },
+                    onActionsChanged = handleActionsChanged,
+                    onPickContactClicked = { _ -> },
                     onPickAppClicked = onPickAppClicked
                 )
             }
@@ -242,9 +246,8 @@ fun BatteryConfigScreen(
 
             // Save button
             Button(
-                onClick = {
-                    onSave(batteryPercentage, thresholdType, configuredActions)
-                },
+                onClick = onSave,
+                enabled = selectedTriggerApp != null,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp)
@@ -257,21 +260,22 @@ fun BatteryConfigScreen(
     }
 }
 
-private fun saveBatterySlot(
+private fun saveAppSlot(
     context: Context,
     slotId: Long,
-    batteryPercentage: Int,
-    thresholdType: TriggerConfig.Battery.ThresholdType,
+    packageName: String?,
     configuredActions: List<ConfiguredAction>,
     onSuccess: () -> Unit
 ) {
+    if (packageName == null) return
+
     CoroutineScope(Dispatchers.IO).launch {
         try {
-            val json = Json { classDiscriminator = "type" }
+            val json = kotlinx.serialization.json.Json { classDiscriminator = "type" }
 
-            val triggerConfig = TriggerConfig.Battery(
-                batteryPercentage = batteryPercentage,
-                thresholdType = thresholdType
+            val triggerConfig = TriggerConfig.App(
+                packageName = packageName,
+                appName = packageName // Ideally we resolve the name
             )
 
             val actions = ActionBuilder.buildActions(configuredActions)
@@ -282,7 +286,7 @@ private fun saveBatterySlot(
 
             val slot = Slot(
                 id = if (slotId != -1L) slotId else 0,
-                triggerType = "BATTERY",
+                triggerType = "APP",
                 triggerConfigJson = triggerConfigJson,
                 actions = actions,
                 enabled = true,
@@ -296,16 +300,13 @@ private fun saveBatterySlot(
                 dao.insert(slot)
             }
 
-            // Start battery monitoring service
-            BatteryServiceManager.startMonitoringIfNeeded(context)
-
             android.os.Handler(android.os.Looper.getMainLooper()).post {
-                Toast.makeText(context, "Battery automation saved", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Automation saved", Toast.LENGTH_SHORT).show()
                 onSuccess()
             }
         } catch (e: Exception) {
             android.os.Handler(android.os.Looper.getMainLooper()).post {
-                Toast.makeText(context, "Error saving automation: ${e.message}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Error saving: ${e.message}", Toast.LENGTH_SHORT).show()
             }
         }
     }

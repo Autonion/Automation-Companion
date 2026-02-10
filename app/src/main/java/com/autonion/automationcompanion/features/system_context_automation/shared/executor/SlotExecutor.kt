@@ -43,15 +43,18 @@ object SlotExecutor {
             return
         }
 
-        // Check execution lock (once per day per slot)
-        val today = getTodayKey()
-        if (slot.lastExecutedDay == today) {
-            Log.i(TAG, "Slot $slotId already executed today, skipping")
-            return
+        // Check execution lock (once per day per slot) - SKIP for App/WiFi
+        // App and WiFi triggers should run every time event occurs.
+        // Location/Time triggers might need daily limit (though Location currently bypasses this anyway).
+        if (slot.triggerType != "APP" && slot.triggerType != "WIFI") {
+            val today = getTodayKey()
+            if (slot.lastExecutedDay == today) {
+                Log.i(TAG, "Slot $slotId already executed today, skipping")
+                return
+            }
+             // Update execution lock
+            dao.updateLastExecutedDay(slotId, today)
         }
-
-        // Update execution lock
-        dao.updateLastExecutedDay(slotId, today)
 
         Log.i(TAG, "Executing slot $slotId (type=${slot.triggerType})")
 

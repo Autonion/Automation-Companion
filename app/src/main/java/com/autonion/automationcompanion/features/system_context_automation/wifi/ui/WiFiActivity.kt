@@ -33,6 +33,7 @@ import com.autonion.automationcompanion.features.system_context_automation.share
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.clickable
 
 class WiFiActivity : AppCompatActivity() {
 
@@ -42,14 +43,19 @@ class WiFiActivity : AppCompatActivity() {
             MaterialTheme {
                 WiFiSlotsScreen(
                     onBack = { finish() },
-                    onAddClicked = { startWiFiConfig() }
+                    onAddClicked = { startWiFiConfig() },
+                    onEditClicked = { slotId -> startWiFiConfig(slotId) }
                 )
             }
         }
     }
 
-    private fun startWiFiConfig() {
-        startActivity(android.content.Intent(this, WiFiConfigActivity::class.java))
+    private fun startWiFiConfig(slotId: Long = -1L) {
+        val intent = android.content.Intent(this, WiFiConfigActivity::class.java)
+        if (slotId != -1L) {
+            intent.putExtra("slotId", slotId)
+        }
+        startActivity(intent)
     }
 }
 
@@ -57,7 +63,8 @@ class WiFiActivity : AppCompatActivity() {
 @Composable
 fun WiFiSlotsScreen(
     onBack: () -> Unit,
-    onAddClicked: () -> Unit
+    onAddClicked: () -> Unit,
+    onEditClicked: (Long) -> Unit
 ) {
     val context = LocalContext.current
     val dao = remember { AppDatabase.get(context).slotDao() }
@@ -66,8 +73,28 @@ fun WiFiSlotsScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     var recentlyDeleted by remember { mutableStateOf<Slot?>(null) }
 
-    val allSlots by dao.getAllFlow().collectAsState(initial = emptyList())
-    val slots = allSlots.filter { it.triggerType == "WIFI" }
+    val slots by dao.getSlotsByType("WIFI").collectAsState(initial = emptyList())
+
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    var isLocationPermissionGranted by remember { mutableStateOf(true) }
+
+    val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        isLocationPermissionGranted = isGranted
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                isLocationPermissionGranted = com.autonion.automationcompanion.features.system_context_automation.shared.utils.PermissionUtils.isLocationPermissionGranted(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -82,50 +109,89 @@ fun WiFiSlotsScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
-            FloatingActionButton(onClick = onAddClicked) {
+            FloatingActionButton(onClick = {
+                if (!isLocationPermissionGranted) {
+                    permissionLauncher.launch(android.Manifest.permission.ACCESS_FINE_LOCATION)
+                } else if (!com.autonion.automationcompanion.features.system_context_automation.shared.utils.PermissionUtils.isAccessibilityServiceEnabled(context)) {
+                    android.widget.Toast.makeText(context, "Accessibility Service required for automation actions", android.widget.Toast.LENGTH_LONG).show()
+                    com.autonion.automationcompanion.features.system_context_automation.shared.utils.PermissionUtils.requestAccessibilityPermission(context)
+                } else {
+                    onAddClicked()
+                }
+            }) {
                 Icon(Icons.Default.Add, contentDescription = "Add")
             }
         }
     ) { padding ->
-        if (slots.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .padding(padding)
-                    .fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("No Wi-Fi automations yet")
+        Column(
+            modifier = Modifier
+                .padding(padding)
+                .fillMaxSize()
+        ) {
+            if (!isLocationPermissionGranted) {
+                com.autonion.automationcompanion.features.system_context_automation.shared.ui.PermissionWarningCard(
+                    title = "Location Permission Required",
+                    description = "Wi-Fi automation needs location permission to detect network SSID (Android requirement).",
+                    buttonText = "Allow",
+                    onClick = {
+                        permissionLauncher.launch(android.Manifest.permission.ACCESS_FINE_LOCATION)
+                    }
+                )
             }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .padding(padding)
-                    .fillMaxSize(),
-                contentPadding = PaddingValues(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                items(slots, key = { it.id }) { slot ->
-                    WiFiSlotCard(
-                        slot = slot,
-                        onToggleEnabled = { enabled ->
-                            scope.launch {
-                                dao.setEnabled(slot.id, enabled)
-                            }
-                        },
-                        onDelete = {
-                            scope.launch {
-                                dao.delete(slot)
-                                recentlyDeleted = slot
-                                val result = snackbarHostState.showSnackbar(
-                                    message = "Slot deleted",
-                                    actionLabel = "Undo"
-                                )
-                                if (result == SnackbarResult.ActionPerformed) {
-                                    recentlyDeleted?.let { dao.insert(it.copy(id = 0)) }
+
+            if (slots.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("No Wi-Fi automations yet")
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    contentPadding = PaddingValues(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(slots, key = { it.id }) { slot ->
+                        WiFiSlotCard(
+                            slot = slot,
+                            onToggleEnabled = { enabled ->
+                                if (enabled) {
+                                    if (!com.autonion.automationcompanion.features.system_context_automation.shared.utils.PermissionUtils.isLocationPermissionGranted(context)) {
+                                         android.widget.Toast.makeText(context, "Location permission required", android.widget.Toast.LENGTH_LONG).show()
+                                         permissionLauncher.launch(android.Manifest.permission.ACCESS_FINE_LOCATION)
+                                         return@WiFiSlotCard
+                                    }
+                                    if (!com.autonion.automationcompanion.features.system_context_automation.shared.utils.PermissionUtils.isAccessibilityServiceEnabled(context)) {
+                                         android.widget.Toast.makeText(context, "Accessibility Service required", android.widget.Toast.LENGTH_LONG).show()
+                                         com.autonion.automationcompanion.features.system_context_automation.shared.utils.PermissionUtils.requestAccessibilityPermission(context)
+                                         return@WiFiSlotCard
+                                    }
+                                }
+                                scope.launch {
+                                    dao.setEnabled(slot.id, enabled)
+                                }
+                            },
+                            onEdit = { onEditClicked(slot.id) },
+                            onDelete = {
+                                scope.launch {
+                                    dao.delete(slot)
+                                    recentlyDeleted = slot
+                                    val result = snackbarHostState.showSnackbar(
+                                        message = "Slot deleted",
+                                        actionLabel = "Undo"
+                                    )
+                                    if (result == SnackbarResult.ActionPerformed) {
+                                        recentlyDeleted?.let { dao.insert(it.copy(id = 0)) }
+                                    }
                                 }
                             }
-                        }
-                    )
+                        )
+                    }
                 }
             }
         }
@@ -136,6 +202,7 @@ fun WiFiSlotsScreen(
 private fun WiFiSlotCard(
     slot: Slot,
     onToggleEnabled: (Boolean) -> Unit,
+    onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
     val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
@@ -146,7 +213,9 @@ private fun WiFiSlotCard(
     }
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onEdit() },
         elevation = CardDefaults.cardElevation(4.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -189,6 +258,7 @@ private fun WiFiSlotCard(
 class WiFiConfigActivity : AppCompatActivity() {
 
     private var appPickerActionIndex = -1
+    private var slotId: Long = -1L
 
     private val appPickerLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -201,7 +271,19 @@ class WiFiConfigActivity : AppCompatActivity() {
         }
     }
 
+    private val permissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+           Toast.makeText(this, "Permission granted. Tap Save again.", Toast.LENGTH_SHORT).show()
+        } else {
+           Toast.makeText(this, "Location permission is required for Wi-Fi automation.", Toast.LENGTH_LONG).show()
+        }
+    }
+
     private var configuredActionsState by mutableStateOf<List<ConfiguredAction>>(emptyList())
+    private var connectionState by mutableStateOf(TriggerConfig.WiFi.ConnectionState.CONNECTED)
+    private var ssidFilter by mutableStateOf("")
 
     private fun updateAppAction(packageName: String) {
         if (appPickerActionIndex >= 0 && appPickerActionIndex < configuredActionsState.size) {
@@ -227,14 +309,56 @@ class WiFiConfigActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        slotId = intent.getLongExtra("slotId", -1L)
+        
+        if (slotId != -1L) {
+            loadSlotData(slotId)
+        }
+
         setContent {
             MaterialTheme {
                 WiFiConfigScreen(
                     onBack = { finish() },
                     configuredActions = configuredActionsState,
+                    connectionState = connectionState,
+                    onConnectionStateChanged = { connectionState = it },
+                    ssidFilter = ssidFilter,
+                    onSsidFilterChanged = { ssidFilter = it },
                     onActionsChanged = { configuredActionsState = it },
-                    onPickAppClicked = { actionIndex -> openAppPicker(actionIndex) }
+                    onPickAppClicked = { actionIndex -> openAppPicker(actionIndex) },
+                    onSaveClicked = { cState, ssid, actions ->
+                         if (!com.autonion.automationcompanion.features.system_context_automation.shared.utils.PermissionUtils.isLocationPermissionGranted(this)) {
+                             permissionLauncher.launch(android.Manifest.permission.ACCESS_FINE_LOCATION)
+                         } else {
+                             saveWiFiSlot(this, slotId, cState, ssid, actions) {
+                                 finish()
+                             }
+                         }
+                    }
                 )
+            }
+        }
+    }
+
+    private fun loadSlotData(id: Long) {
+        CoroutineScope(Dispatchers.IO).launch {
+            val dao = AppDatabase.get(this@WiFiConfigActivity).slotDao()
+            val slot = dao.getById(id) ?: return@launch
+            
+            val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+            val config = slot.triggerConfigJson?.let { 
+                try { json.decodeFromString<TriggerConfig.WiFi>(it) } catch (e: Exception) { null } 
+            }
+            
+            val loadedActions = ActionBuilder.toConfiguredActions(this@WiFiConfigActivity, slot.actions)
+            
+            CoroutineScope(Dispatchers.Main).launch {
+                configuredActionsState = loadedActions
+                config?.let {
+                    connectionState = it.connectionState
+                    ssidFilter = it.optionalSsid ?: ""
+                }
             }
         }
     }
@@ -245,13 +369,55 @@ class WiFiConfigActivity : AppCompatActivity() {
 fun WiFiConfigScreen(
     onBack: () -> Unit,
     configuredActions: List<ConfiguredAction>,
+    connectionState: TriggerConfig.WiFi.ConnectionState,
+    onConnectionStateChanged: (TriggerConfig.WiFi.ConnectionState) -> Unit,
+    ssidFilter: String,
+    onSsidFilterChanged: (String) -> Unit,
     onActionsChanged: (List<ConfiguredAction>) -> Unit,
-    onPickAppClicked: (Int) -> Unit
+    onPickAppClicked: (Int) -> Unit,
+    onSaveClicked: (TriggerConfig.WiFi.ConnectionState, String?, List<ConfiguredAction>) -> Unit
 ) {
     val context = LocalContext.current
 
-    var connectionState by remember { mutableStateOf(TriggerConfig.WiFi.ConnectionState.CONNECTED) }
-    var ssidFilter by remember { mutableStateOf("") }
+    // JIT Permissions Logic
+    fun checkAndRequestWriteSettings(): Boolean {
+        return if (android.provider.Settings.System.canWrite(context)) {
+            true
+        } else {
+            val intent = android.content.Intent(android.provider.Settings.ACTION_MANAGE_WRITE_SETTINGS)
+            intent.data = android.net.Uri.parse("package:${context.packageName}")
+            intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+            Toast.makeText(context, "Grant 'Modify System Settings' permission to use this action.", Toast.LENGTH_LONG).show()
+            false
+        }
+    }
+
+    fun checkAndRequestDndAccess(): Boolean {
+        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        return if (nm.isNotificationPolicyAccessGranted) {
+            true
+        } else {
+             val intent = android.content.Intent(android.provider.Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
+             intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+             context.startActivity(intent)
+             Toast.makeText(context, "Grant 'Do Not Disturb Access' permission to use this action.", Toast.LENGTH_LONG).show()
+             false
+        }
+    }
+    
+    // Intercept action changes to check permissions
+    val handleActionsChanged: (List<ConfiguredAction>) -> Unit = { newActions ->
+        // Check if any NEW action requires permission
+        val filtered = newActions.filter { action ->
+            when (action) {
+                is ConfiguredAction.Brightness -> checkAndRequestWriteSettings()
+                is ConfiguredAction.Dnd -> checkAndRequestDndAccess()
+                else -> true
+            }
+        }
+        onActionsChanged(filtered)
+    }
 
     Scaffold(
         topBar = {
@@ -279,13 +445,13 @@ fun WiFiConfigScreen(
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
                         selected = connectionState == TriggerConfig.WiFi.ConnectionState.CONNECTED,
-                        onClick = { connectionState = TriggerConfig.WiFi.ConnectionState.CONNECTED },
+                        onClick = { onConnectionStateChanged(TriggerConfig.WiFi.ConnectionState.CONNECTED) },
                         label = { Text("Connected") },
                         modifier = Modifier.weight(1f)
                     )
                     FilterChip(
                         selected = connectionState == TriggerConfig.WiFi.ConnectionState.DISCONNECTED,
-                        onClick = { connectionState = TriggerConfig.WiFi.ConnectionState.DISCONNECTED },
+                        onClick = { onConnectionStateChanged(TriggerConfig.WiFi.ConnectionState.DISCONNECTED) },
                         label = { Text("Disconnected") },
                         modifier = Modifier.weight(1f)
                     )
@@ -300,7 +466,7 @@ fun WiFiConfigScreen(
                 Spacer(modifier = Modifier.height(8.dp))
                 OutlinedTextField(
                     value = ssidFilter,
-                    onValueChange = { ssidFilter = it },
+                    onValueChange = onSsidFilterChanged,
                     label = { Text("Leave empty to match any network") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
@@ -316,7 +482,7 @@ fun WiFiConfigScreen(
                 ActionPicker(
                     context = context,
                     configuredActions = configuredActions,
-                    onActionsChanged = onActionsChanged,
+                    onActionsChanged = handleActionsChanged,
                     onPickContactClicked = { _ ->
                         // Handle contact picker if needed
                     },
@@ -329,14 +495,11 @@ fun WiFiConfigScreen(
             // Save button
             Button(
                 onClick = {
-                    saveWiFiSlot(
-                        context,
+                    onSaveClicked(
                         connectionState,
                         ssidFilter.ifBlank { null },
                         configuredActions
-                    ) {
-                        onBack()
-                    }
+                    )
                 },
                 modifier = Modifier
                     .fillMaxWidth()
@@ -352,6 +515,7 @@ fun WiFiConfigScreen(
 
 private fun saveWiFiSlot(
     context: Context,
+    slotId: Long,
     connectionState: TriggerConfig.WiFi.ConnectionState,
     ssid: String?,
     configuredActions: List<ConfiguredAction>,
@@ -373,6 +537,7 @@ private fun saveWiFiSlot(
             )
 
             val slot = Slot(
+                id = if (slotId != -1L) slotId else 0,
                 triggerType = "WIFI",
                 triggerConfigJson = triggerConfigJson,
                 actions = actions,
@@ -381,10 +546,14 @@ private fun saveWiFiSlot(
             )
 
             val dao = AppDatabase.get(context).slotDao()
-            dao.insert(slot)
+            if (slotId != -1L) {
+                dao.update(slot)
+            } else {
+                dao.insert(slot)
+            }
 
             android.os.Handler(android.os.Looper.getMainLooper()).post {
-                Toast.makeText(context, "Wi-Fi automation created", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Wi-Fi automation saved", Toast.LENGTH_SHORT).show()
                 onSuccess()
             }
         } catch (e: Exception) {

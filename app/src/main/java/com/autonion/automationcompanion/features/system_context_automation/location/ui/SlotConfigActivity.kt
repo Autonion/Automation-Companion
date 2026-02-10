@@ -558,7 +558,7 @@ class SlotConfigActivity : AppCompatActivity() {
             .missingSystemPermissions(this, actions)
 
         if (missing.isNotEmpty()) {
-            val intent = PermissionPreflight.settingsIntent(missing.first())
+            val intent = PermissionPreflight.settingsIntent(this, missing.first())
             startActivity(intent)
 
             Toast.makeText(

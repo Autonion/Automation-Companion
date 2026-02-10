@@ -31,14 +31,36 @@ fun LocationSlotsScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     var recentlyDeleted by remember { mutableStateOf<Slot?>(null) }
 
-    val slots by dao.getAllFlow().collectAsState(initial = emptyList())
+    val slots by dao.getSlotsByType("LOCATION").collectAsState(initial = emptyList())
     val now = System.currentTimeMillis()
 
     val grouped = slots.groupBy {
+        val start = it.startMillis ?: 0L
         when {
-            it.startMillis!! < now -> "Past"
-            it.startMillis < now + 24 * 60 * 60 * 1000 -> "Today"
+            start < now -> "Past"
+            start < now + 24 * 60 * 60 * 1000 -> "Today"
             else -> "Upcoming"
+        }
+    }
+
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    var isLocationPermissionGranted by remember { mutableStateOf(true) }
+
+    val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        isLocationPermissionGranted = isGranted
+    }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                isLocationPermissionGranted = com.autonion.automationcompanion.features.system_context_automation.shared.utils.PermissionUtils.isLocationPermissionGranted(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }
 
@@ -53,59 +75,79 @@ fun LocationSlotsScreen(
             }
         }
     ) { padding ->
-
-        if (slots.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .padding(padding)
-                    .fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("No automations created yet")
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .padding(padding)
-                    .fillMaxSize(),
-                contentPadding = PaddingValues(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-
-                grouped.forEach { (section, sectionSlots) ->
-                    item {
-                        Text(
-                            section,
-                            style = MaterialTheme.typography.titleSmall,
-                            modifier = Modifier.padding(vertical = 4.dp)
-                        )
+        Column(
+             modifier = Modifier
+                .padding(padding)
+                .fillMaxSize()
+        ) {
+            if (!isLocationPermissionGranted) {
+                com.autonion.automationcompanion.features.system_context_automation.shared.ui.PermissionWarningCard(
+                    title = "Location Permission Required",
+                    description = "Location automation requires location access to trigger actions.",
+                    buttonText = "Allow",
+                    onClick = {
+                        permissionLauncher.launch(android.Manifest.permission.ACCESS_FINE_LOCATION)
                     }
+                )
+            }
 
-                    items(sectionSlots, key = { it.id }) { slot ->
-                        SlotCard(
-                            slot = slot,
-                            onToggleEnabled = { enabled ->
-                                scope.launch {
-                                    dao.setEnabled(slot.id, enabled)
-                                }
-                            },
-                            onEdit = { onEditSlot(slot.id) },
-                            onDelete = {
-                                recentlyDeleted = slot
-                                scope.launch {
-                                    dao.delete(slot)
-                                    val result = snackbarHostState.showSnackbar(
-                                        message = "Slot deleted",
-                                        actionLabel = "Undo"
-                                    )
-                                    if (result == SnackbarResult.ActionPerformed) {
-                                        recentlyDeleted?.let {
-                                            dao.insert(it.copy(id = 0))
+            if (slots.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("No automations created yet")
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    contentPadding = PaddingValues(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    grouped.forEach { (section, sectionSlots) ->
+                        item {
+                            Text(
+                                section,
+                                style = MaterialTheme.typography.titleSmall,
+                                modifier = Modifier.padding(vertical = 4.dp)
+                            )
+                        }
+
+                        items(sectionSlots, key = { it.id }) { slot ->
+                            SlotCard(
+                                slot = slot,
+                                onToggleEnabled = { enabled ->
+                                    if (enabled && !com.autonion.automationcompanion.features.system_context_automation.shared.utils.PermissionUtils.isLocationPermissionGranted(context)) {
+                                         android.widget.Toast.makeText(context, "Location permission required to enable automation", android.widget.Toast.LENGTH_LONG).show()
+                                         permissionLauncher.launch(android.Manifest.permission.ACCESS_FINE_LOCATION)
+                                    } else {
+                                        scope.launch {
+                                            dao.setEnabled(slot.id, enabled)
+                                        }
+                                    }
+                                },
+                                onEdit = { onEditSlot(slot.id) },
+                                onDelete = {
+                                    recentlyDeleted = slot
+                                    scope.launch {
+                                        dao.delete(slot)
+                                        val result = snackbarHostState.showSnackbar(
+                                            message = "Slot deleted",
+                                            actionLabel = "Undo"
+                                        )
+                                        if (result == SnackbarResult.ActionPerformed) {
+                                            recentlyDeleted?.let {
+                                                dao.insert(it.copy(id = 0))
+                                            }
                                         }
                                     }
                                 }
-                            }
-                        )
+                            )
+                        }
                     }
                 }
             }
@@ -169,7 +211,8 @@ private fun SlotCard(
 }
 
 private fun formatTime(millis: Long?): String {
-    val cal = Calendar.getInstance().apply { timeInMillis = millis!! }
+    if (millis == null) return "--:--"
+    val cal = Calendar.getInstance().apply { timeInMillis = millis }
     return "%02d:%02d".format(
         cal.get(Calendar.HOUR_OF_DAY),
         cal.get(Calendar.MINUTE)

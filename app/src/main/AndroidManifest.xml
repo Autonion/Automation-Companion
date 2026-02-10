@@ -120,6 +120,16 @@
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
 
+        <!-- App Specific Trigger Activities -->
+        <activity
+            android:name=".features.system_context_automation.app_specific.ui.AppSpecificActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".features.system_context_automation.app_specific.ui.AppSpecificConfigActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
         <service
             android:name=".features.system_context_automation.location.engine.location_receiver.TrackingForegroundService"
             android:enabled="true"

@@ -19,6 +19,7 @@ import com.autonion.automationcompanion.features.system_context_automation.locat
 import com.autonion.automationcompanion.features.system_context_automation.battery.ui.BatterySlotsActivity
 import com.autonion.automationcompanion.features.system_context_automation.timeofday.ui.TimeOfDayActivity
 import com.autonion.automationcompanion.features.system_context_automation.wifi.ui.WiFiActivity
+import com.autonion.automationcompanion.features.system_context_automation.app_specific.ui.AppSpecificActivity
 
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -47,6 +48,10 @@ fun SystemContextMainScreen(
             onWiFiSelected = {
                 showTriggerDialog = false
                 context.startActivity(Intent(context, WiFiActivity::class.java))
+            },
+            onAppSpecificSelected = {
+                showTriggerDialog = false
+                context.startActivity(Intent(context, AppSpecificActivity::class.java))
             }
         )
     }
@@ -115,6 +120,12 @@ fun SystemContextMainScreen(
                 description = "Trigger on Wi-Fi connect/disconnect",
                 onClick = { /* Info only */ }
             )
+
+            FeatureCard(
+                title = "App Specific",
+                description = "Trigger when app opens/closes",
+                onClick = { /* Info only */ }
+            )
         }
     }
 }
@@ -125,7 +136,8 @@ private fun TriggerSelectionDialog(
     onLocationSelected: () -> Unit,
     onBatterySelected: () -> Unit,
     onTimeOfDaySelected: () -> Unit,
-    onWiFiSelected: () -> Unit
+    onWiFiSelected: () -> Unit,
+    onAppSpecificSelected: () -> Unit
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -151,6 +163,11 @@ private fun TriggerSelectionDialog(
                     label = "Wi-Fi",
                     description = "Wi-Fi connectivity trigger",
                     onClick = onWiFiSelected
+                )
+                TriggerOption(
+                    label = "App Specific",
+                    description = "Trigger when app opens",
+                    onClick = onAppSpecificSelected
                 )
             }
         },
