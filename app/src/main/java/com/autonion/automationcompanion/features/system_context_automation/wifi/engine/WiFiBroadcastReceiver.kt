@@ -27,6 +27,7 @@ class WiFiBroadcastReceiver : BroadcastReceiver() {
     companion object {
         private const val TAG = "WiFiReceiver"
         private var networkCallback: ConnectivityManager.NetworkCallback? = null
+        private var lastKnownState: WiFiState? = null
 
         /**
          * Register network callback for Android 7+ (API 24+)
@@ -53,29 +54,28 @@ class WiFiBroadcastReceiver : BroadcastReceiver() {
                     override fun onAvailable(network: Network) {
                         super.onAvailable(network)
                         Log.i(TAG, "Network available (WiFi connected)")
-                        CoroutineScope(Dispatchers.IO).launch {
-                            evaluateWiFiSlots(context)
+                        val newState = WiFiState.CONNECTED
+                        if (newState != lastKnownState) {
+                            lastKnownState = newState
+                            CoroutineScope(Dispatchers.IO).launch {
+                                evaluateWiFiSlots(context, newState)
+                            }
+                        } else {
+                            Log.d(TAG, "Skipping duplicate CONNECTED event")
                         }
                     }
 
                     override fun onLost(network: Network) {
                         super.onLost(network)
                         Log.i(TAG, "Network lost (WiFi disconnected)")
-                        CoroutineScope(Dispatchers.IO).launch {
-                            evaluateWiFiSlots(context)
-                        }
-                    }
-
-                    override fun onCapabilitiesChanged(
-                        network: Network,
-                        networkCapabilities: NetworkCapabilities
-                    ) {
-                        super.onCapabilitiesChanged(network, networkCapabilities)
-                        if (networkCapabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) {
-                            Log.i(TAG, "WiFi capabilities changed")
+                        val newState = WiFiState.DISCONNECTED
+                        if (newState != lastKnownState) {
+                            lastKnownState = newState
                             CoroutineScope(Dispatchers.IO).launch {
-                                evaluateWiFiSlots(context)
+                                evaluateWiFiSlots(context, newState)
                             }
+                        } else {
+                            Log.d(TAG, "Skipping duplicate DISCONNECTED event")
                         }
                     }
                 }
@@ -96,6 +96,7 @@ class WiFiBroadcastReceiver : BroadcastReceiver() {
                         val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
                         connectivityManager.unregisterNetworkCallback(it)
                         networkCallback = null
+                        lastKnownState = null
                         Log.i(TAG, "Network callback unregistered")
                     } catch (e: Exception) {
                         Log.e(TAG, "Error unregistering network callback", e)
@@ -104,11 +105,10 @@ class WiFiBroadcastReceiver : BroadcastReceiver() {
             }
         }
 
-        private suspend fun evaluateWiFiSlots(context: Context) {
-            val currentState = getCurrentWiFiState(context)
-            val currentSsid = getCurrentSsid(context)
+        private suspend fun evaluateWiFiSlots(context: Context, wifiState: WiFiState) {
+            val currentSsid = if (wifiState == WiFiState.CONNECTED) getCurrentSsid(context) else null
 
-            Log.i(TAG, "Current Wi-Fi state: $currentState, SSID: $currentSsid")
+            Log.i(TAG, "Evaluating Wi-Fi slots — state: $wifiState, SSID: $currentSsid")
 
             val dao = AppDatabase.get(context).slotDao()
             val allSlots = dao.getAllEnabled()
@@ -130,19 +130,19 @@ class WiFiBroadcastReceiver : BroadcastReceiver() {
 
                 // Check if Wi-Fi state matches
                 val stateMatches = when (triggerConfig.connectionState) {
-                    TriggerConfig.WiFi.ConnectionState.CONNECTED -> currentState == WiFiState.CONNECTED
-                    TriggerConfig.WiFi.ConnectionState.DISCONNECTED -> currentState == WiFiState.DISCONNECTED
+                    TriggerConfig.WiFi.ConnectionState.CONNECTED -> wifiState == WiFiState.CONNECTED
+                    TriggerConfig.WiFi.ConnectionState.DISCONNECTED -> wifiState == WiFiState.DISCONNECTED
                 }
 
                 if (!stateMatches) continue
 
-                // Check SSID if specified
+                // Check SSID if specified (only meaningful when connected)
                 if (triggerConfig.optionalSsid != null && triggerConfig.optionalSsid != currentSsid) {
                     Log.i(TAG, "SSID mismatch: expected ${triggerConfig.optionalSsid}, got $currentSsid")
                     continue
                 }
 
-                Log.i(TAG, "Wi-Fi slot ${slot.id} triggered (state=$currentState, SSID=$currentSsid)")
+                Log.i(TAG, "Wi-Fi slot ${slot.id} triggered (state=$wifiState, SSID=$currentSsid)")
                 SlotExecutor.execute(context, slot.id)
             }
         }
@@ -214,22 +214,34 @@ class WiFiBroadcastReceiver : BroadcastReceiver() {
         val action = intent?.action
         when (action) {
             WifiManager.NETWORK_STATE_CHANGED_ACTION -> {
-                Log.i(TAG, "Network state changed")
-                CoroutineScope(Dispatchers.IO).launch {
-                    evaluateWiFiSlots(context)
+                val currentState = getCurrentWiFiState(context)
+                Log.i(TAG, "Network state changed -> $currentState")
+                if (currentState != lastKnownState) {
+                    lastKnownState = currentState
+                    CoroutineScope(Dispatchers.IO).launch {
+                        evaluateWiFiSlots(context, currentState)
+                    }
                 }
             }
             WifiManager.WIFI_STATE_CHANGED_ACTION -> {
-                Log.i(TAG, "Wi-Fi state changed")
-                CoroutineScope(Dispatchers.IO).launch {
-                    evaluateWiFiSlots(context)
+                val currentState = getCurrentWiFiState(context)
+                Log.i(TAG, "Wi-Fi state changed -> $currentState")
+                if (currentState != lastKnownState) {
+                    lastKnownState = currentState
+                    CoroutineScope(Dispatchers.IO).launch {
+                        evaluateWiFiSlots(context, currentState)
+                    }
                 }
             }
             @Suppress("DEPRECATION")
             ConnectivityManager.CONNECTIVITY_ACTION -> {
-                Log.i(TAG, "Connectivity changed")
-                CoroutineScope(Dispatchers.IO).launch {
-                    evaluateWiFiSlots(context)
+                val currentState = getCurrentWiFiState(context)
+                Log.i(TAG, "Connectivity changed -> $currentState")
+                if (currentState != lastKnownState) {
+                    lastKnownState = currentState
+                    CoroutineScope(Dispatchers.IO).launch {
+                        evaluateWiFiSlots(context, currentState)
+                    }
                 }
             }
         }
