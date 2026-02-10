@@ -13,7 +13,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.automationcompanion"
+        applicationId = "com.autonion.automationcompanion"
         minSdk = 24
         targetSdk = 36
         versionCode = 1
@@ -68,6 +68,7 @@ dependencies {
     //implementation("androidx.compose.material3:material3:1.4.0")
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.ui.tooling.preview)
+    implementation(libs.androidx.work.runtime.ktx)
 
     // Optional: helpful tooling for preview and debug
     debugImplementation(libs.androidx.ui.tooling)

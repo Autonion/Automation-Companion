@@ -10,21 +10,27 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
 
     <uses-permission android:name="android.permission.SEND_SMS"/>
     <uses-permission android:name="android.permission.READ_CONTACTS" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+    <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
-
-
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -50,11 +56,79 @@
             android:launchMode="singleTop" />
 
         <activity
+            android:name=".features.system_context_automation.location.LocationSlotsActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".features.system_context_automation.location.ui.SlotConfigActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:windowSoftInputMode="adjustResize"
-            android:theme="@style/Theme.AutomationCompanion" >
+            android:theme="@style/Theme.AutomationCompanion">
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data
+                    android:scheme="myapp"
+                    android:host="location-picker" />
+            </intent-filter>
+
         </activity>
+
+        <activity
+            android:name=".features.automation.actions.ui.AppPickerActivity"
+            android:exported="false"
+            android:theme="@style/Theme.AppCompat.Light.Dialog" />
+
+        <!-- Battery Trigger Activities -->
+        <activity
+            android:name=".features.system_context_automation.battery.ui.BatterySlotsActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".features.system_context_automation.battery.ui.BatteryConfigActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <service
+            android:name=".features.system_context_automation.battery.engine.BatteryMonitoringService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <!-- Time-of-Day Trigger Activities -->
+        <activity
+            android:name=".features.system_context_automation.timeofday.ui.TimeOfDayActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".features.system_context_automation.timeofday.ui.TimeOfDayConfigActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- Wi-Fi Trigger Activities -->
+        <activity
+            android:name=".features.system_context_automation.wifi.ui.WiFiActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".features.system_context_automation.wifi.ui.WiFiConfigActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- App Specific Trigger Activities -->
+        <activity
+            android:name=".features.system_context_automation.app_specific.ui.AppSpecificActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".features.system_context_automation.app_specific.ui.AppSpecificConfigActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
 
         <service
             android:name=".features.system_context_automation.location.engine.location_receiver.TrackingForegroundService"
@@ -74,8 +148,63 @@
             android:exported="false" />
 
         <receiver
+            android:name=".features.automation.actions.receivers.DelayedNotificationReceiver"
+            android:exported="false" />
+
+        <receiver
             android:name=".features.system_context_automation.location.engine.location_receiver.LocationReminderReceiver"
             android:exported="false"/>
+
+        <receiver
+            android:name=".features.system_context_automation.location.engine.location_receiver.SlotStartAlarmReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".features.system_context_automation.location.engine.location_receiver.MidnightResetReceiver"
+            android:exported="false" />
+        <receiver
+            android:name=".features.system_context_automation.location.engine.location_receiver.BootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".features.system_context_automation.location.engine.time.TimeTickReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.TIME_TICK" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Battery Trigger Receiver -->
+        <receiver
+            android:name=".features.system_context_automation.battery.engine.BatteryBroadcastReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BATTERY_CHANGED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Time-of-Day Trigger Receiver -->
+        <receiver
+            android:name=".features.system_context_automation.timeofday.engine.TimeOfDayReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.autonion.automationcompanion.action.TIME_OF_DAY_ALARM" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Wi-Fi Trigger Receiver (for Android < 7 only, Android 7+ uses NetworkCallback) -->
+        <receiver
+            android:name=".features.system_context_automation.wifi.engine.WiFiBroadcastReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.net.wifi.WIFI_STATE_CHANGED" />
+                <action android:name="android.net.wifi.NETWORK_STATE_CHANGED_ACTION" />
+            </intent-filter>
+        </receiver>
 
         <!-- Overlay Service -->
         <service

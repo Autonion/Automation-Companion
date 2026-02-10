@@ -15,7 +15,7 @@ class StopTrackingReceiver : BroadcastReceiver() {
 
     companion object {
         private const val TAG = "StopTrackingReceiver"
-        const val ACTION_STOP_TRACKING = "com.example.automationcompanion.ACTION_STOP_TRACKING"
+        const val ACTION_STOP_TRACKING = "com.autonion.automationcompanion.ACTION_STOP_TRACKING"
         const val TRACKING_NOTIFICATION_ID = 1
 
         /**

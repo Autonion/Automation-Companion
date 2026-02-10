@@ -13,6 +13,7 @@ import com.autonion.automationcompanion.features.system_context_automation.locat
 import com.autonion.automationcompanion.features.system_context_automation.location.engine.location_receiver.TrackingForegroundService
 import com.autonion.automationcompanion.features.system_context_automation.location.isAccessibilityEnabled
 
+
 @Composable
 fun EnableLocationScreen(
     openLocationPanel: () -> Unit,

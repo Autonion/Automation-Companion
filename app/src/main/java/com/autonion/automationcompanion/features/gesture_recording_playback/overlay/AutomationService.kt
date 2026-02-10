@@ -15,6 +15,7 @@ import com.autonion.automationcompanion.AccessibilityRouter
 import com.autonion.automationcompanion.features.gesture_recording_playback.managers.ActionManager
 import com.autonion.automationcompanion.features.gesture_recording_playback.models.Action
 import com.autonion.automationcompanion.features.gesture_recording_playback.models.ActionType
+import com.autonion.automationcompanion.features.system_context_automation.app_specific.engine.AppSpecificAutomationEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -45,9 +46,17 @@ class AutomationService : AccessibilityService() {
         }
     }
 
+    private var appSpecificEngine: AppSpecificAutomationEngine? = null
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         Log.d("AutomationService", "Service connected")
+        
+        if (appSpecificEngine == null) {
+            appSpecificEngine = AppSpecificAutomationEngine(this)
+            AccessibilityRouter.register(appSpecificEngine!!)
+        }
+        
         AccessibilityRouter.onServiceConnected(this)
         setupBroadcastReceiver()
     }
