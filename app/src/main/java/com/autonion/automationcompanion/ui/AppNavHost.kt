@@ -52,15 +52,10 @@ fun AppNavHost() {
         }
 
         composable(Routes.SCREEN_UNDERSTAND) {
-            PlaceholderScreen(
-                title = "Screen Understanding (On-device ML)",
-                todos = listOf(
-                    "Model: UI element detection & OCR",
-                    "Screenshot capture pipeline",
-                    "Expose element selectors for recorder"
-                ),
-                onBack = {navController.popBackStack()}
-            )
+            val context = androidx.compose.ui.platform.LocalContext.current
+            androidx.compose.runtime.LaunchedEffect(Unit) {
+               context.startActivity(android.content.Intent(context, com.autonion.automationcompanion.features.screen_understanding_ml.ui.PresetDashboardActivity::class.java))
+            }
         }
 
         composable(Routes.SEMANTIC) {
