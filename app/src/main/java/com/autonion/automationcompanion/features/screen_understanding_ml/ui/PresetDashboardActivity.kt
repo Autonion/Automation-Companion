@@ -184,7 +184,17 @@ class PresetDashboardActivity : ComponentActivity() {
                              tint = androidx.compose.ui.graphics.Color.Red
                          )
                      }
-                     androidx.compose.material3.IconButton(onClick = { /* Play */ }) {
+                     androidx.compose.material3.IconButton(onClick = { 
+                          val intent = Intent(this@PresetDashboardActivity, com.autonion.automationcompanion.features.screen_understanding_ml.core.ScreenUnderstandingService::class.java).apply {
+                                action = "PLAY_PRESET"
+                                putExtra("presetId", preset.id)
+                          }
+                          if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                              startForegroundService(intent)
+                          } else {
+                              startService(intent)
+                          }
+                     }) {
                          Icon(
                              imageVector = androidx.compose.material.icons.Icons.Default.PlayArrow,
                              contentDescription = "Run"
@@ -193,7 +203,16 @@ class PresetDashboardActivity : ComponentActivity() {
                 }
             },
             modifier = Modifier.clickable {
-                // TODO: Launch Playback
+                  // Duplicate play
+                  val intent = Intent(this@PresetDashboardActivity, com.autonion.automationcompanion.features.screen_understanding_ml.core.ScreenUnderstandingService::class.java).apply {
+                        action = "PLAY_PRESET"
+                        putExtra("presetId", preset.id)
+                  }
+                  if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                      startForegroundService(intent)
+                  } else {
+                      startService(intent)
+                  }
             }
         )
         androidx.compose.material3.Divider()

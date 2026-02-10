@@ -49,6 +49,15 @@ object ActionExecutor : AccessibilityFeature {
         }
     }
 
+    suspend fun executeClick(point: PointF): Boolean {
+        val s = service
+        if (s == null) {
+            Log.e("ActionExecutor", "AccessibilityService not connected")
+            return false
+        }
+        return dispatchClick(s, point)
+    }
+
     private suspend fun dispatchClick(service: AccessibilityService, point: PointF): Boolean {
         Log.d("ActionExecutor", "Dispatching click at $point")
         val path = Path().apply {

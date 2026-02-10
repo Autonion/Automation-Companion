@@ -88,10 +88,15 @@ class SetupFlowActivity : ComponentActivity() {
             if (resultCode == RESULT_OK && data != null) {
                 // Start Service and pass intent data
                 val presetName = intent.getStringExtra("presetName") ?: ""
+                val playPresetId = intent.getStringExtra("ACTION_REQUEST_PERMISSION_PLAY_PRESET")
+                
                 val serviceIntent = Intent(this, ScreenUnderstandingService::class.java).apply {
                     putExtra("resultCode", resultCode)
                     putExtra("data", data)
                     putExtra("presetName", presetName)
+                    if (playPresetId != null) {
+                        putExtra("playPresetId", playPresetId)
+                    }
                     action = "START_CAPTURE"
                 }
                 

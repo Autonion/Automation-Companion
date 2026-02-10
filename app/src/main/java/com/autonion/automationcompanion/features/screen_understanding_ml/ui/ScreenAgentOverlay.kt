@@ -16,6 +16,7 @@ class ScreenAgentOverlay(
     private val initialName: String? = null,
     private val onAnchorSelected: (UIElement) -> Unit,
     private val onSave: (String, List<Pair<UIElement, Boolean>>) -> Unit, // Name + Element + IsOptional
+    private val onPlay: () -> Unit,
     private val onStop: () -> Unit
 ) {
 
@@ -311,12 +312,22 @@ class ScreenAgentOverlay(
         }
     }
 
+    // fun getOverlayView() = overlayView // Removed to keep OverlayView private
+
+    fun getSelectedElements(): List<UIElement> = overlayView?.getSelectedElements() ?: emptyList()
+    
+    fun getSelectionConfig(): List<Boolean> = overlayView?.getSelectionConfig() ?: emptyList()
+
     fun updateElements(elements: List<UIElement>) {
         if (!isInspectionMode) {
              overlayView?.setElements(elements)
         }
     }
-
+    
+    data class SelectionState(
+         val element: UIElement,
+         var isOptional: Boolean = false
+    )
     private inner class OverlayView(context: Context) : View(context) {
         private val paintBox = Paint().apply {
             color = Color.GREEN
@@ -454,9 +465,8 @@ class ScreenAgentOverlay(
         }
     }
     
+    
     // Moved out of inner class to be safe and clear
-    private data class SelectionState(
-         val element: UIElement,
-         var isOptional: Boolean = false
-    )
+
 }
+
