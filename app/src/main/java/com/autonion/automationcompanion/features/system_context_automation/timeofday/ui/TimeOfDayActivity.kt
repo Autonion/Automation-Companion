@@ -353,18 +353,17 @@ fun TimeOfDayConfigScreen(
                 Spacer(modifier = Modifier.height(8.dp))
                 Row(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .height(64.dp),
+                        .fillMaxWidth(),
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     // Hour
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        IconButton(onClick = { if (hour > 0) hour-- else hour = 23 }) {
+                        IconButton(onClick = { hour = if (hour < 23) hour + 1 else 0 }) {
                             Icon(Icons.Filled.KeyboardArrowUp, contentDescription = null)
                         }
                         Text(String.format("%02d", hour), style = MaterialTheme.typography.titleLarge)
-                        IconButton(onClick = { if (hour < 23) hour++ else hour = 0 }) {
+                        IconButton(onClick = { hour = if (hour > 0) hour - 1 else 23 }) {
                             Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null)
                         }
                     }
@@ -373,11 +372,11 @@ fun TimeOfDayConfigScreen(
 
                     // Minute
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        IconButton(onClick = { if (minute >= 15) minute -= 15 else minute = 45 }) {
+                        IconButton(onClick = { minute = if (minute < 59) minute + 1 else 0 }) {
                             Icon(Icons.Filled.KeyboardArrowUp, contentDescription = null)
                         }
                         Text(String.format("%02d", minute), style = MaterialTheme.typography.titleLarge)
-                        IconButton(onClick = { if (minute < 45) minute += 15 else minute = 0 }) {
+                        IconButton(onClick = { minute = if (minute > 0) minute - 1 else 59 }) {
                             Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null)
                         }
                     }
