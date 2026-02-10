@@ -42,10 +42,19 @@ class TrackingForegroundService : Service() {
 
         private const val CHANNEL_ID = "automationcompanion_tracking"
 
+        private fun hasLocationPermission(context: Context): Boolean {
+            return ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+                   ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        }
+
         /**
          * Generic start without slotId. Starts service in foreground (useful for manual starts).
          */
         fun start(context: Context) {
+            if (!hasLocationPermission(context)) {
+                Log.w("TrackingService", "Missing location permissions. Cannot start service.")
+                return
+            }
             val i = Intent(context, TrackingForegroundService::class.java).apply {
                 action = ACTION_START_FOR_SLOT // reuse action for generic start
             }
@@ -53,6 +62,10 @@ class TrackingForegroundService : Service() {
         }
 
         fun startAll(context: Context) {
+            if (!hasLocationPermission(context)) {
+                Log.w("TrackingService", "Missing location permissions. Cannot start service.")
+                return
+            }
             val i = Intent(context, TrackingForegroundService::class.java).apply {
                 action = ACTION_START_ALL
             }
@@ -74,6 +87,10 @@ class TrackingForegroundService : Service() {
          * Start the service for a specific slot (slotId must be provided so the service can register a geofence).
          */
         fun startForSlot(context: Context, slotId: Long) {
+            if (!hasLocationPermission(context)) {
+                Log.w("TrackingService", "Missing location permissions. Cannot start service.")
+                return
+            }
             val i = Intent(context, TrackingForegroundService::class.java).apply {
                 action = ACTION_START_FOR_SLOT
                 putExtra("slotId", slotId)
@@ -82,6 +99,10 @@ class TrackingForegroundService : Service() {
         }
 
         fun startVolumeChange(context: Context, ring: Int, media: Int, alarm: Int, ringerMode: RingerMode) {
+            if (!hasLocationPermission(context)) {
+                Log.w("TrackingService", "Missing location permissions. Cannot start service.")
+                return
+            }
             val i = Intent(context, TrackingForegroundService::class.java).apply {
                 action = ACTION_PERFORM_VOLUME
                 putExtra("ring", ring)
@@ -113,6 +134,10 @@ class TrackingForegroundService : Service() {
          * Graceful: If WAKE_LOCK permission not granted, logs warning but does not crash.
          */
         fun acquirePartialWakeLock(context: Context) {
+            if (!hasLocationPermission(context)) {
+                Log.w("TrackingService", "Missing location permissions. Cannot start service.")
+                return
+            }
             try {
                 val i = Intent(context, TrackingForegroundService::class.java).apply {
                     action = "ACTION_ACQUIRE_WAKE_LOCK"
@@ -160,9 +185,42 @@ class TrackingForegroundService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
 
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val hasFine = ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
+            val hasCoarse = ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            ) == PackageManager.PERMISSION_GRANTED
 
-        // 🔴 MUST BE FIRST – NO CONDITIONS
-        startForeground(1, buildNotification())
+            if (!hasFine && !hasCoarse) {
+                Log.e(
+                    "TrackingService",
+                    "Missing location permissions in onStartCommand. Stopping service."
+                )
+                stopSelf()
+                return START_NOT_STICKY
+            }
+        }
+
+        try {
+            // 🔴 MUST BE FIRST – NO CONDITIONS
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(
+                    1,
+                    buildNotification(),
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+                )
+            } else {
+                startForeground(1, buildNotification())
+            }
+        } catch (e: Exception) {
+            Log.e("TrackingService", "Failed to start foreground service: ${e.message}")
+            stopSelf()
+            return START_NOT_STICKY
+        }
 
         val action = intent?.action
         val slotId = intent?.getLongExtra("slotId", -1L) ?: -1L
@@ -184,10 +242,13 @@ class TrackingForegroundService : Service() {
                 val ring = intent?.getIntExtra("ring", -1) ?: -1
                 val media = intent?.getIntExtra("media", -1) ?: -1
                 val alarm = intent?.getIntExtra("alarm", 8) ?: 8
-                val ringerModeOrdinal = intent?.getIntExtra("ringerMode", RingerMode.NORMAL.ordinal) ?: RingerMode.NORMAL.ordinal
-                val ringerMode = RingerMode.values().getOrElse(ringerModeOrdinal) { RingerMode.NORMAL }
+                val ringerModeOrdinal =
+                    intent?.getIntExtra("ringerMode", RingerMode.NORMAL.ordinal)
+                        ?: RingerMode.NORMAL.ordinal
+                val ringerMode =
+                    RingerMode.values().getOrElse(ringerModeOrdinal) { RingerMode.NORMAL }
                 if (ring != -1 && media != -1) {
-                    performVolumeChange(ring, media,alarm, ringerMode)
+                    performVolumeChange(ring, media, alarm, ringerMode)
                 } else {
                     Log.w("TrackingService", "Invalid volume extras: ring=$ring media=$media")
                 }
