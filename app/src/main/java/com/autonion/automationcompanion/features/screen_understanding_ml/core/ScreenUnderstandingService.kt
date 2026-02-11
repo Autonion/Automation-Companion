@@ -83,6 +83,8 @@ class ScreenUnderstandingService : Service() {
     override fun onDestroy() {
         Log.d(TAG, "Service onDestroy - Instance Destroyed: $this")
         instance = null
+        isPlaying = false
+        scope.cancel()
         overlay?.dismiss()
         mediaProjectionCore?.stopProjection()
         perceptionLayer?.close()
@@ -120,7 +122,6 @@ class ScreenUnderstandingService : Service() {
         presetRepository?.savePreset(preset)
         Toast.makeText(this, "Preset '$name' saved with ${accumulatedSteps.size} steps!", Toast.LENGTH_LONG).show()
         accumulatedSteps.clear()
-        stopSelf()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -445,12 +446,6 @@ class ScreenUnderstandingService : Service() {
         presetRepository?.savePreset(preset)
         Toast.makeText(this, "Preset '$name' Saved with ${steps.size} steps!", Toast.LENGTH_LONG).show()
     }
-
-//    override fun onDestroy() {
-//        super.onDestroy()
-//        scope.cancel()
-//        mediaProjectionCore?.stopProjection()
-//        perceptionLayer?.close()
-//        overlay?.dismiss()
-//    }
 }
+
+
