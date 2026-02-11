@@ -4,7 +4,8 @@ import android.graphics.PointF
 
 enum class ActionType {
     CLICK,
-    SCROLL,
+    SCROLL_UP,
+    SCROLL_DOWN,
     INPUT_TEXT,
     WAIT,
     FINISH,

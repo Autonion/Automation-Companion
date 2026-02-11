@@ -22,6 +22,8 @@ import com.autonion.automationcompanion.features.screen_understanding_ml.logic.P
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.AutomationPreset
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.AutomationStep
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.ExecutionMode
+import com.autonion.automationcompanion.features.screen_understanding_ml.model.ActionIntent
+import com.autonion.automationcompanion.features.screen_understanding_ml.model.ActionType
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.ScopeType
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.UIElement
 import com.autonion.automationcompanion.features.screen_understanding_ml.ui.CaptureEditorActivity
@@ -329,20 +331,29 @@ class ScreenUnderstandingService : Service() {
                             val centerX = (foundElement.bounds.left + foundElement.bounds.right) / 2
                             val centerY = (foundElement.bounds.top + foundElement.bounds.bottom) / 2
                             val point = PointF(centerX, centerY)
-                            val success = ActionExecutor.executeClick(point)
+                            
+                            val intent = ActionIntent(
+                                type = step.actionType,
+                                targetId = step.id,
+                                targetPoint = point,
+                                inputText = step.inputText,
+                                description = step.label
+                            )
+                            
+                            val success = ActionExecutor.execute(intent)
 
                             if (success) {
-                                Log.d(TAG, "Clicked ${step.label}")
+                                Log.d(TAG, "Executed ${step.actionType} on ${step.label}")
                             } else {
-                                Log.e(TAG, "Click failed for ${step.label} - Accessibility Service not connected?")
+                                Log.e(TAG, "Action ${step.actionType} failed for ${step.label}")
                                 withContext(Dispatchers.Main) {
-                                    Toast.makeText(this@ScreenUnderstandingService, "Click failed. Is Accessibility Service enabled?", Toast.LENGTH_LONG).show()
+                                    Toast.makeText(this@ScreenUnderstandingService, "Action failed. Accessibility enabled?", Toast.LENGTH_LONG).show()
                                 }
                                 isPlaying = false
                                 break
                             }
 
-                            delay(2000) // Wait after click for screen to settle
+                            delay(2000) // Wait after action for screen to settle
                         } else {
                             // Element not found yet — log and keep trying
                             Log.d(TAG, "Step ${step.orderIndex}: ${step.label} not found yet, retrying...")

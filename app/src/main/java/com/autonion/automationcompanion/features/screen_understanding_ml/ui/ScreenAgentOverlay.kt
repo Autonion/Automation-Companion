@@ -9,7 +9,13 @@ import android.os.Build
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
+import android.view.GestureDetector
+import android.view.MotionEvent
+import android.widget.Toast
+import android.app.AlertDialog
+import android.widget.EditText
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.UIElement
+import com.autonion.automationcompanion.features.screen_understanding_ml.model.ActionType
 
 class ScreenAgentOverlay(
     private val context: Context,
@@ -438,6 +444,10 @@ class ScreenAgentOverlay(
     
     fun getSelectionConfig(): List<Boolean> = overlayView?.getSelectionConfig() ?: emptyList()
 
+    fun getSelectionActionTypes(): List<ActionType> = overlayView?.getSelectionActionTypes() ?: emptyList()
+
+    fun getSelectionInputTexts(): List<String?> = overlayView?.getSelectionInputTexts() ?: emptyList()
+
     fun updateElements(elements: List<UIElement>) {
         // Always update the data model so we have the latest elements for playback or when Inspect is toggled.
         // ScreenAgentOverlay logic controls whether they are drawn (via validationMode in onDraw).
@@ -446,7 +456,9 @@ class ScreenAgentOverlay(
     
     data class SelectionState(
          val element: UIElement,
-         var isOptional: Boolean = false
+         var isOptional: Boolean = false,
+         var actionType: ActionType = ActionType.CLICK,
+         var inputText: String? = null
     )
     private inner class OverlayView(context: Context) : View(context) {
         private val paintBox = Paint().apply {
@@ -510,6 +522,10 @@ class ScreenAgentOverlay(
         fun getSelectedElements(): List<UIElement> = selectionStates.map { it.element }
         
         fun getSelectionConfig(): List<Boolean> = selectionStates.map { it.isOptional }
+
+        fun getSelectionActionTypes(): List<ActionType> = selectionStates.map { it.actionType }
+
+        fun getSelectionInputTexts(): List<String?> = selectionStates.map { it.inputText }
         
         fun toggleLastSelectionMode() {
             if (selectionStates.isNotEmpty()) {
@@ -520,28 +536,113 @@ class ScreenAgentOverlay(
             }
         }
 
-        override fun onTouchEvent(event: android.view.MotionEvent): Boolean {
-            if (!validationMode) return super.onTouchEvent(event)
-            
-            if (event.action == android.view.MotionEvent.ACTION_DOWN) {
-                val x = event.x
-                val y = event.y
-                
-                val clicked = elements.find { it.bounds.contains(x, y) }
-                if (clicked != null) {
-                     toggleSelection(clicked)
-                }
+        private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onDown(e: MotionEvent): Boolean {
                 return true
             }
-            return super.onTouchEvent(event)
+
+            override fun onSingleTapUp(e: MotionEvent): Boolean {
+                 val clicked = elements.find { it.bounds.contains(e.x, e.y) }
+                 if (clicked != null) {
+                      toggleSelection(clicked)
+                 }
+                 return true
+            }
+
+            override fun onLongPress(e: MotionEvent) {
+                 val clicked = elements.find { it.bounds.contains(e.x, e.y) }
+                 if (clicked != null) {
+                     val state = selectionStates.find { it.element.id == clicked.id }
+                     if (state != null) {
+                         showActionPicker(state)
+                     }
+                 }
+            }
+        })
+
+        override fun onTouchEvent(event: MotionEvent): Boolean {
+            if (!validationMode) return super.onTouchEvent(event)
+            return gestureDetector.onTouchEvent(event)
         }
         
+        private fun showActionPicker(state: SelectionState) {
+            val element = state.element
+            val isInput = element.label.contains("Input", ignoreCase = true) || 
+                          element.label.contains("Edit", ignoreCase = true)
+            
+            // Options based on user constraints
+            val options = mutableListOf("Click (Default)", "Scroll Up", "Scroll Down", "Wait")
+            val types = mutableListOf(ActionType.CLICK, ActionType.SCROLL_UP, ActionType.SCROLL_DOWN, ActionType.WAIT)
+            
+            if (isInput) {
+                options.add("Input Text")
+                types.add(ActionType.INPUT_TEXT)
+            }
+            
+            val builder = AlertDialog.Builder(context) // Context is Service
+            builder.setTitle("Choose Action for ${element.label}")
+            builder.setItems(options.toTypedArray()) { _, which ->
+                val selectedType = types[which]
+                if (selectedType == ActionType.INPUT_TEXT) {
+                    showInputTextDialog(state)
+                } else {
+                    state.actionType = selectedType
+                    state.inputText = null
+                    invalidate()
+                }
+            }
+            val dialog = builder.create()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                dialog.window?.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+            } else {
+                dialog.window?.setType(WindowManager.LayoutParams.TYPE_PHONE)
+            }
+            dialog.show()
+        }
+
+        private fun showInputTextDialog(state: SelectionState) {
+            val input = EditText(context)
+            input.hint = "Enter text to type..."
+            input.setTextColor(Color.BLACK)
+            state.inputText?.let { input.setText(it) }
+
+            val builder = AlertDialog.Builder(context)
+            builder.setTitle("Input Text")
+            builder.setView(input)
+            builder.setPositiveButton("OK") { _, _ ->
+                state.actionType = ActionType.INPUT_TEXT
+                state.inputText = input.text.toString()
+                invalidate()
+            }
+            builder.setNegativeButton("Cancel", null)
+            
+            val dialog = builder.create()
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                dialog.window?.setType(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY)
+            } else {
+                 dialog.window?.setType(WindowManager.LayoutParams.TYPE_PHONE)
+            }
+            dialog.show()
+        }
+
         private fun toggleSelection(element: UIElement) {
             val existing = selectionStates.find { it.element.id == element.id }
             if (existing != null) {
                 selectionStates.remove(existing)
             } else {
-                selectionStates.add(SelectionState(element, isOptional = false))
+                // Auto-suggest action
+                val isInput = element.label.contains("Input", ignoreCase = true) || 
+                              element.label.contains("Edit", ignoreCase = true)
+                var initialAction = ActionType.CLICK
+                var initialText: String? = null
+                
+                // Note: We don't auto-prompt for text here to avoid interrupting rapid selection.
+                // User can long-press to add text if needed, or we rely on 'Enter Text' badge prompting them?
+                // Actually, if it's input, defaults to CLICK (to focus) is fine.
+                // If user wants to TYPE, they long press.
+                // User said: "Only for input text eiter grey it out cause we cant add input if there is not text box."
+                
+                selectionStates.add(SelectionState(element, isOptional = false, actionType = initialAction))
             }
             invalidate()
             
@@ -567,8 +668,8 @@ class ScreenAgentOverlay(
                 val index = selectionStates.indexOf(state)
                 val isSelected = index != -1
                 
-                if (isSelected) {
-                    val paint = if (state?.isOptional == true) paintDashed else paintSelected
+                if (isSelected && state != null) {
+                    val paint = if (state.isOptional) paintDashed else paintSelected
                     canvas.drawRect(element.bounds, paint)
                     
                     val radius = 25f
@@ -576,8 +677,27 @@ class ScreenAgentOverlay(
                     val cy = element.bounds.top
                     
                     canvas.drawCircle(cx, cy, radius, paintBadge)
+                    
+                    // Draw Index
                     val textY = cy - (paintBadgeText.descent() + paintBadgeText.ascent()) / 2
                     canvas.drawText((index + 1).toString(), cx, textY, paintBadgeText)
+                    
+                    // Draw Action Badge (Right side of index)
+                    // Emoji badges: 👆 (Click), ⬆️ (Scroll Up), ⬇️ (Scroll Down), ⌨️ (Input), ⏱️ (Wait)
+                    val badgeIcon = when (state.actionType) {
+                        ActionType.CLICK -> "👆"
+                        ActionType.SCROLL_UP -> "⬆️"
+                        ActionType.SCROLL_DOWN -> "⬇️"
+                        ActionType.INPUT_TEXT -> "⌨️"
+                        ActionType.WAIT -> "⏱️"
+                        else -> ""
+                    }
+                    if (badgeIcon.isNotEmpty()) {
+                        canvas.drawText(badgeIcon, cx + 60, textY, paintText)
+                        if (state.actionType == ActionType.INPUT_TEXT && state.inputText != null) {
+                             canvas.drawText("\"${state.inputText}\"", cx + 100, textY, paintText)
+                        }
+                    }
                     
                 } else {
                     canvas.drawRect(element.bounds, paintBox)

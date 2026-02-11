@@ -1,20 +1,23 @@
 package com.autonion.automationcompanion.features.screen_understanding_ml.ui
 
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.RectF
+import android.app.AlertDialog
+import android.content.Context
+import android.graphics.*
+import android.os.Build
 import android.os.Bundle
+import android.util.Log
+import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
+import android.view.WindowManager
 import android.widget.Button
+import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.lifecycle.lifecycleScope
 import com.autonion.automationcompanion.features.screen_understanding_ml.core.PerceptionLayer
+import com.autonion.automationcompanion.features.screen_understanding_ml.model.ActionType
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.AutomationStep
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.UIElement
 import kotlinx.coroutines.Dispatchers
@@ -128,21 +131,36 @@ class CaptureEditorActivity : ComponentActivity() {
     }
     
     private fun addToPreset() {
+        // We use ScreenAgentOverlay's methods via accessing the overlay instance indirectly?
+        // Wait, 'editorView' in CaptureEditorActivity is NOT ScreenAgentOverlay instance. 
+        // It is 'com.autonion.automationcompanion.features.screen_understanding_ml.ui.ScreenAgentOverlay.OverlayView'?
+        // No, let's look at Step 1545. 'editorView?.getSelectedElements()'.
+        // If CaptureEditorActivity uses the same OverlayView logic, it must have access to these new methods.
+        // Assuming 'editorView' is the view.
+        
         val selected = editorView?.getSelectedElements() ?: emptyList()
         val configs = editorView?.getSelectionConfig() ?: emptyList() 
+        val actionTypes = editorView?.getSelectionActionTypes() ?: emptyList()
+        val inputTexts = editorView?.getSelectionInputTexts() ?: emptyList()
         
         if (selected.isEmpty()) {
             Toast.makeText(this, "Please select at least one element", Toast.LENGTH_SHORT).show()
             return
         }
         
-        val steps = selected.zip(configs).mapIndexed { index, (element, isOptional) ->
+        // Safety check for list sizes
+        val count = selected.size
+        // Ensure other lists are same size (they should be if logic is correct)
+        
+        val steps = (0 until count).map { i ->
              AutomationStep(
                  id = UUID.randomUUID().toString(),
-                 orderIndex = index,
-                 label = element.label,
-                 anchor = element,
-                 isOptional = isOptional
+                 orderIndex = i,
+                 label = selected[i].label,
+                 anchor = selected[i],
+                 isOptional = configs.getOrElse(i) { false },
+                 actionType = actionTypes.getOrElse(i) { com.autonion.automationcompanion.features.screen_understanding_ml.model.ActionType.CLICK }, // FQN if Import missing
+                 inputText = inputTexts.getOrElse(i) { null }
              )
         }
         
@@ -173,7 +191,12 @@ class CaptureEditorActivity : ComponentActivity() {
         perceptionLayer?.close()
     }
 
-    data class SelectionState(val element: UIElement, var isOptional: Boolean = false)
+    data class SelectionState(
+        val element: UIElement, 
+        var isOptional: Boolean = false,
+        var actionType: ActionType = ActionType.CLICK,
+        var inputText: String? = null
+    )
 
     // Inner class for simple editing view
     private inner class EditorView(context: android.content.Context, val bitmap: Bitmap) : View(context) {
@@ -221,6 +244,97 @@ class CaptureEditorActivity : ComponentActivity() {
         
         fun getSelectedElements() = selectionStates.map { it.element }
         fun getSelectionConfig() = selectionStates.map { it.isOptional }
+        fun getSelectionActionTypes() = selectionStates.map { it.actionType }
+        fun getSelectionInputTexts() = selectionStates.map { it.inputText }
+
+        private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onDown(e: MotionEvent): Boolean {
+                return true
+            }
+
+            override fun onSingleTapUp(e: MotionEvent): Boolean {
+                val touchX = (e.x - offsetX) / scaleFactor
+                val touchY = (e.y - offsetY) / scaleFactor
+                
+                val clicked = elements.find { it.bounds.contains(touchX, touchY) }
+                if (clicked != null) {
+                    toggleSelection(clicked)
+                }
+                return true
+            }
+
+            override fun onLongPress(e: MotionEvent) {
+                val touchX = (e.x - offsetX) / scaleFactor
+                val touchY = (e.y - offsetY) / scaleFactor
+                
+                val clicked = elements.find { it.bounds.contains(touchX, touchY) }
+                if (clicked != null) {
+                    val state = selectionStates.find { it.element.id == clicked.id }
+                    if (state != null) {
+                        showActionPicker(state)
+                    }
+                }
+            }
+        })
+
+        override fun onTouchEvent(event: MotionEvent): Boolean {
+            return gestureDetector.onTouchEvent(event)
+        }
+
+        private fun showActionPicker(state: SelectionState) {
+            val element = state.element
+            val isInput = element.label.contains("Input", ignoreCase = true) || 
+                          element.label.contains("Edit", ignoreCase = true)
+            
+            val options = mutableListOf("Click (Default)", "Scroll Up", "Scroll Down", "Wait")
+            val types = mutableListOf(ActionType.CLICK, ActionType.SCROLL_UP, ActionType.SCROLL_DOWN, ActionType.WAIT)
+            
+            if (isInput) {
+                options.add("Input Text")
+                types.add(ActionType.INPUT_TEXT)
+            }
+            
+            AlertDialog.Builder(this@CaptureEditorActivity)
+                .setTitle("Choose Action for ${element.label}")
+                .setItems(options.toTypedArray()) { _, which ->
+                    val selectedType = types[which]
+                    if (selectedType == ActionType.INPUT_TEXT) {
+                        showInputTextDialog(state)
+                    } else {
+                        state.actionType = selectedType
+                        state.inputText = null
+                        invalidate()
+                    }
+                }
+                .show()
+        }
+
+        private fun showInputTextDialog(state: SelectionState) {
+            val input = EditText(this@CaptureEditorActivity)
+            input.hint = "Enter text to type..."
+            state.inputText?.let { input.setText(it) }
+
+            AlertDialog.Builder(this@CaptureEditorActivity)
+                .setTitle("Input Text")
+                .setView(input)
+                .setPositiveButton("OK") { _, _ ->
+                    state.actionType = ActionType.INPUT_TEXT
+                    state.inputText = input.text.toString()
+                    invalidate()
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
+        }
+
+        private fun toggleSelection(element: UIElement) {
+            val existing = selectionStates.find { it.element.id == element.id }
+            if (existing != null) {
+                selectionStates.remove(existing)
+            } else {
+                selectionStates.add(SelectionState(element))
+            }
+            invalidate()
+        }
 
         override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
             val width = MeasureSpec.getSize(widthMeasureSpec)
@@ -258,47 +372,43 @@ class CaptureEditorActivity : ComponentActivity() {
                 val index = selectionStates.indexOf(state)
                 val isSelected = index != -1
                 
-                if (isSelected) {
-                    val paint = if (state?.isOptional == true) paintDashed else paintSelected
+                if (isSelected && state != null) {
+                    val paint = if (state.isOptional) paintDashed else paintSelected
                     canvas.drawRect(element.bounds, paint)
                     
                     val cx = element.bounds.left
                     val cy = element.bounds.top
                     
-                    canvas.drawCircle(cx, cy, 25f, paintBadge)
+                    canvas.drawCircle(cx, cy, 25f / scaleFactor, paintBadge)
+                    
+                    // Draw Index
+                    paintBadgeText.textSize = 30f / scaleFactor
                     val textY = cy - (paintBadgeText.descent() + paintBadgeText.ascent()) / 2
                     canvas.drawText((index + 1).toString(), cx, textY, paintBadgeText)
+                    
+                    // Draw Action Badge
+                    val badgeIcon = when (state.actionType) {
+                        ActionType.CLICK -> "👆"
+                        ActionType.SCROLL_UP -> "⬆️"
+                        ActionType.SCROLL_DOWN -> "⬇️"
+                        ActionType.INPUT_TEXT -> "⌨️"
+                        ActionType.WAIT -> "⏱️"
+                        else -> ""
+                    }
+                    if (badgeIcon.isNotEmpty()) {
+                        val paintIcon = Paint(paintBadgeText).apply { textAlign = Paint.Align.LEFT }
+                        canvas.drawText(badgeIcon, cx + 60f / scaleFactor, textY, paintIcon)
+                        
+                        if (state.actionType == ActionType.INPUT_TEXT && state.inputText != null) {
+                           canvas.drawText("\"${state.inputText}\"", cx + 100f / scaleFactor, textY, paintIcon)
+                        }
+                    }
                 } else {
                     canvas.drawRect(element.bounds, paintBox)
                 }
             }
             
             canvas.restore()
-        }
-        
-        override fun onTouchEvent(event: MotionEvent): Boolean {
-             if (event.action == MotionEvent.ACTION_DOWN) {
-                 // Inverse transform touch to bitmap coordinates
-                 val touchX = (event.x - offsetX) / scaleFactor
-                 val touchY = (event.y - offsetY) / scaleFactor
-                 
-                 val clicked = elements.find { it.bounds.contains(touchX, touchY) }
-                 if (clicked != null) {
-                      toggleSelection(clicked)
-                 }
-                 return true
-             }
-             return super.onTouchEvent(event)
-        }
-        
-        private fun toggleSelection(element: UIElement) {
-            val existing = selectionStates.find { it.element.id == element.id }
-            if (existing != null) {
-                selectionStates.remove(existing)
-            } else {
-                selectionStates.add(SelectionState(element))
-            }
-            invalidate()
         }
     }
 }
