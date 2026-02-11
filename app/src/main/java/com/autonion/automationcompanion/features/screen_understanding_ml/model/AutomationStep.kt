@@ -6,7 +6,7 @@ import android.graphics.RectF
 
 data class AutomationStep(
     val id: String,
-    val orderIndex: Int,
+    var orderIndex: Int,
     val label: String, // e.g., "Login Button"
     val actionType: ActionType = ActionType.CLICK,
     val anchor: UIElement, // The visual anchor for this step

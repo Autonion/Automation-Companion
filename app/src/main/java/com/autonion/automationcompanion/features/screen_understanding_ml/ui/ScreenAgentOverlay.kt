@@ -27,6 +27,7 @@ class ScreenAgentOverlay(
     private var layoutParams: WindowManager.LayoutParams? = null
     
     private var currentName: String? = initialName
+    private var currentMode: String = "full"
 
     fun setPresetName(name: String) {
         currentName = name
@@ -112,6 +113,12 @@ class ScreenAgentOverlay(
     }
 
     private fun setupControls(mode: String = "full") {
+        currentMode = mode
+        if (controlsView != null) {
+            try { windowManager.removeView(controlsView) } catch (e: Exception) {}
+            controlsView = null
+        }
+
         // Icon-based Compact Control Bar
         val panel = android.widget.LinearLayout(context).apply {
             orientation = android.widget.LinearLayout.HORIZONTAL
@@ -167,7 +174,8 @@ class ScreenAgentOverlay(
              val elements = overlayView?.getSelectedElements() ?: emptyList()
              val configs = overlayView?.getSelectionConfig() ?: emptyList()
              
-             if (elements.isEmpty()) {
+             // In capture mode, we might have 0 selected elements on the overlay (accumulated in service)
+             if (elements.isEmpty() && currentMode != "capture") {
                  android.widget.Toast.makeText(context, "No elements to save", android.widget.Toast.LENGTH_SHORT).show()
                  return@createIconButton
              }
@@ -187,11 +195,12 @@ class ScreenAgentOverlay(
         
         when (mode) {
             "capture" -> {
-                // Capture mode: Snap + Close
+                // Capture mode: Snap + Save + Close
                 val btnSnap = createIconButton(com.autonion.automationcompanion.R.drawable.ic_save, "Snap") {
                     onCapture()
                 }
                 panel.addView(btnSnap)
+                panel.addView(btnSave)
                 panel.addView(btnStop)
             }
             "playback" -> {
@@ -290,12 +299,16 @@ class ScreenAgentOverlay(
                 if (name.isNotBlank()) {
                      val elements = overlayView?.getSelectedElements() ?: emptyList()
                      val configs = overlayView?.getSelectionConfig() ?: emptyList()
-                     
-                     if (elements.size == configs.size) {
+
+                     // In capture mode, valid to save with 0 elements (accumulated in service)
+                     if (currentMode == "capture") {
+                         onSave(name, emptyList())
+                         dismissSaveDialog()
+                     } else if (elements.size == configs.size) {
                          val zipped = elements.zip(configs)
-                         onSave(name, zipped) // Updated signature
+                         onSave(name, zipped)
+                         dismissSaveDialog()
                      }
-                     dismissSaveDialog()
                 } else {
                     android.widget.Toast.makeText(context, "Name cannot be empty", android.widget.Toast.LENGTH_SHORT).show()
                 }

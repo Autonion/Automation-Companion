@@ -22,6 +22,7 @@ import com.autonion.automationcompanion.features.screen_understanding_ml.logic.P
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.AutomationPreset
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.AutomationStep
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.ExecutionMode
+import com.autonion.automationcompanion.features.screen_understanding_ml.model.ScopeType
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.UIElement
 import com.autonion.automationcompanion.features.screen_understanding_ml.ui.CaptureEditorActivity
 import com.autonion.automationcompanion.features.screen_understanding_ml.ui.ScreenAgentOverlay
@@ -44,6 +45,10 @@ class ScreenUnderstandingService : Service() {
         private const val TAG = "ScreenUnderstanding"
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "screen_understanding_channel"
+
+        /** Static reference so the editor can communicate back */
+        @Volatile
+        var instance: ScreenUnderstandingService? = null
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -54,6 +59,9 @@ class ScreenUnderstandingService : Service() {
     private var temporalTracker: TemporalTracker? = null
     private var overlay: ScreenAgentOverlay? = null
     private var presetRepository: PresetRepository? = null
+
+    // Accumulated steps from multiple snaps
+    private val accumulatedSteps: MutableList<AutomationStep> = mutableListOf()
 
     @Volatile
     private var latestElements: List<UIElement> = emptyList()
@@ -67,7 +75,52 @@ class ScreenUnderstandingService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        Log.d(TAG, "Service onCreate - Instance Created: $this")
+        instance = this
         presetRepository = PresetRepository(this)
+    }
+
+    override fun onDestroy() {
+        Log.d(TAG, "Service onDestroy - Instance Destroyed: $this")
+        instance = null
+        overlay?.dismiss()
+        mediaProjectionCore?.stopProjection()
+        perceptionLayer?.close()
+        super.onDestroy()
+    }
+
+    // ... (onStartCommand remains same)
+
+    /** Called by CaptureEditorActivity to add selected elements to the accumulated preset */
+    fun addStepsFromEditor(steps: List<AutomationStep>) {
+        Log.d(TAG, "addStepsFromEditor called with ${steps.size} steps. Current total: ${accumulatedSteps.size}")
+        accumulatedSteps.addAll(steps)
+        // Re-index all steps sequentially
+        accumulatedSteps.forEachIndexed { index, step ->
+            step.orderIndex = index
+        }
+        Log.d(TAG, "Steps added. New total: ${accumulatedSteps.size}")
+        Toast.makeText(this, "Added ${steps.size} elements (Total: ${accumulatedSteps.size})", Toast.LENGTH_SHORT).show()
+    }
+
+    /** Save all accumulated steps as a preset */
+    private fun saveAccumulatedPreset(name: String) {
+        Log.d(TAG, "saveAccumulatedPreset called. Name: $name, Count: ${accumulatedSteps.size}")
+        if (accumulatedSteps.isEmpty()) {
+            Toast.makeText(this, "No elements to save (Count: 0) — snap and select first", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val preset = AutomationPreset(
+            id = UUID.randomUUID().toString(),
+            name = name,
+            scope = ScopeType.GLOBAL,
+            executionMode = ExecutionMode.STRICT,
+            steps = accumulatedSteps.toList()
+        )
+        presetRepository?.savePreset(preset)
+        Toast.makeText(this, "Preset '$name' saved with ${accumulatedSteps.size} steps!", Toast.LENGTH_LONG).show()
+        accumulatedSteps.clear()
+        stopSelf()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -147,11 +200,17 @@ class ScreenUnderstandingService : Service() {
             presetRepository?.getPreset(playPresetId)
         } else null
 
+        // Clear accumulated steps for new capture session
+        accumulatedSteps.clear()
+
         overlay = ScreenAgentOverlay(
             context = this,
             initialName = presetToPlay?.name ?: presetName,
             onAnchorSelected = { /* No-op in capture mode */ },
-            onSave = { _, _ -> /* No-op */ },
+            onSave = { name, _ ->
+                // Save accumulated steps as preset
+                saveAccumulatedPreset(name)
+            },
             onPlay = { _, _ ->
                 // Triggered when user taps Play on overlay in playback mode
                 if (presetToPlay != null) {
@@ -215,8 +274,7 @@ class ScreenUnderstandingService : Service() {
             }
 
             withContext(Dispatchers.Main) {
-                stopSelf()
-
+                // Don't stopSelf — service stays alive for multi-snap
                 val intent = Intent(this@ScreenUnderstandingService, CaptureEditorActivity::class.java).apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     putExtra("IMAGE_PATH", file.absolutePath)
@@ -228,6 +286,8 @@ class ScreenUnderstandingService : Service() {
             Log.e(TAG, "Failed to save snapshot", e)
         }
     }
+
+
 
     private fun stopPlayback() {
         if (isPlaying) {
@@ -386,11 +446,11 @@ class ScreenUnderstandingService : Service() {
         Toast.makeText(this, "Preset '$name' Saved with ${steps.size} steps!", Toast.LENGTH_LONG).show()
     }
 
-    override fun onDestroy() {
-        super.onDestroy()
-        scope.cancel()
-        mediaProjectionCore?.stopProjection()
-        perceptionLayer?.close()
-        overlay?.dismiss()
-    }
+//    override fun onDestroy() {
+//        super.onDestroy()
+//        scope.cancel()
+//        mediaProjectionCore?.stopProjection()
+//        perceptionLayer?.close()
+//        overlay?.dismiss()
+//    }
 }

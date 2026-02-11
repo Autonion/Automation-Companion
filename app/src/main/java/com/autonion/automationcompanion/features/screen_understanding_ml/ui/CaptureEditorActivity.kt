@@ -15,11 +15,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.lifecycle.lifecycleScope
 import com.autonion.automationcompanion.features.screen_understanding_ml.core.PerceptionLayer
-import com.autonion.automationcompanion.features.screen_understanding_ml.logic.PresetRepository
-import com.autonion.automationcompanion.features.screen_understanding_ml.model.AutomationPreset
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.AutomationStep
-import com.autonion.automationcompanion.features.screen_understanding_ml.model.ExecutionMode
-import com.autonion.automationcompanion.features.screen_understanding_ml.model.ScopeType
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.UIElement
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -32,7 +28,6 @@ class CaptureEditorActivity : ComponentActivity() {
     private var sourceBitmap: Bitmap? = null
     private var editorView: EditorView? = null
     private var perceptionLayer: PerceptionLayer? = null
-    private var presetRepository: PresetRepository? = null
     private var presetName: String = "Untitled"
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -56,7 +51,6 @@ class CaptureEditorActivity : ComponentActivity() {
         
         sourceBitmap = BitmapFactory.decodeFile(file.absolutePath)
         perceptionLayer = PerceptionLayer(this)
-        presetRepository = PresetRepository(this)
         
         setupUI()
         runDetection()
@@ -86,19 +80,33 @@ class CaptureEditorActivity : ComponentActivity() {
             text = "Cancel"
             setOnClickListener { finish() }
         }
-        
-        val btnSave = Button(this).apply {
-            text = "Save Preset"
-            setOnClickListener { savePreset() }
+
+        val btnRetake = Button(this).apply {
+            text = "🔄 Retake"
+            setOnClickListener {
+                Toast.makeText(this@CaptureEditorActivity, "Tap Snap again to retake", Toast.LENGTH_SHORT).show()
+                moveTaskToBack(true)
+                finish()
+            }
         }
         
-        val spacer = View(this).apply {
+        val btnAdd = Button(this).apply {
+            text = "✓ Add to Preset"
+            setOnClickListener { addToPreset() }
+        }
+        
+        val spacer1 = View(this).apply {
+             layoutParams = android.widget.LinearLayout.LayoutParams(0, 1, 1f)
+        }
+        val spacer2 = View(this).apply {
              layoutParams = android.widget.LinearLayout.LayoutParams(0, 1, 1f)
         }
         
         panel.addView(btnCancel)
-        panel.addView(spacer)
-        panel.addView(btnSave)
+        panel.addView(spacer1)
+        panel.addView(btnRetake)
+        panel.addView(spacer2)
+        panel.addView(btnAdd)
         
         root.addView(panel)
         setContentView(root)
@@ -106,12 +114,11 @@ class CaptureEditorActivity : ComponentActivity() {
     
     private fun runDetection() {
         Toast.makeText(this, "Detecting UI elements...", Toast.LENGTH_SHORT).show()
-        // B8 fix: Use lifecycleScope instead of manual CoroutineScope
         lifecycleScope.launch(Dispatchers.Default) {
              val elements = perceptionLayer?.detect(sourceBitmap!!) ?: emptyList()
              withContext(Dispatchers.Main) {
                  if (elements.isEmpty()) {
-                     Toast.makeText(this@CaptureEditorActivity, "No elements found", Toast.LENGTH_SHORT).show()
+                     Toast.makeText(this@CaptureEditorActivity, "No elements found — try Retake", Toast.LENGTH_SHORT).show()
                  } else {
                      Toast.makeText(this@CaptureEditorActivity, "Found ${elements.size} elements", Toast.LENGTH_SHORT).show()
                      editorView?.setElements(elements)
@@ -120,7 +127,7 @@ class CaptureEditorActivity : ComponentActivity() {
         }
     }
     
-    private fun savePreset() {
+    private fun addToPreset() {
         val selected = editorView?.getSelectedElements() ?: emptyList()
         val configs = editorView?.getSelectionConfig() ?: emptyList() 
         
@@ -139,17 +146,16 @@ class CaptureEditorActivity : ComponentActivity() {
              )
         }
         
-        val preset = AutomationPreset(
-            id = UUID.randomUUID().toString(),
-            name = presetName,
-            scope = ScopeType.GLOBAL,
-            executionMode = ExecutionMode.STRICT,
-            steps = steps
-        )
-        
-        presetRepository?.savePreset(preset)
-        Toast.makeText(this, "Preset '$presetName' saved!", Toast.LENGTH_LONG).show()
-        finish()
+        // Send steps back to the running service
+        val service = com.autonion.automationcompanion.features.screen_understanding_ml.core.ScreenUnderstandingService.instance
+        if (service != null) {
+            service.addStepsFromEditor(steps)
+            moveTaskToBack(true)
+            finish()
+        } else {
+            Toast.makeText(this, "Error: Service not running! Elements lost.", Toast.LENGTH_LONG).show()
+            android.util.Log.e("CaptureEditor", "Service instance is null")
+        }
     }
     
     override fun onDestroy() {
