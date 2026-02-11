@@ -187,7 +187,7 @@ class ScreenAgentOverlay(
                  btn.setColorFilter(android.graphics.Color.GREEN)
                  btn.animate()
                      .scaleX(1.2f).scaleY(1.2f)
-                     .setDuration(200)
+                     .setDuration(10)
                      .withEndAction {
                          btn.animate().scaleX(1f).scaleY(1f).setDuration(200).start()
                      }.start()
