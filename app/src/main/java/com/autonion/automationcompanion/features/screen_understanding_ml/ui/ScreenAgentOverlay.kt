@@ -120,21 +120,27 @@ class ScreenAgentOverlay(
         }
 
         // Icon-based Compact Control Bar
+        // Icon-based Compact Control Bar
         val panel = android.widget.LinearLayout(context).apply {
             orientation = android.widget.LinearLayout.HORIZONTAL
-            setBackgroundColor(Color.parseColor("#99000000")) 
-            setPadding(8, 8, 8, 8)
+            setBackgroundResource(com.autonion.automationcompanion.R.drawable.rounded_panel_dark)
+            setPadding(0, 0, 0, 0)
         }
         
         fun createIconButton(iconRes: Int, desc: String, onClick: () -> Unit): android.widget.ImageButton {
+            val sizePx = (48 * context.resources.displayMetrics.density).toInt()
+            val paddingPx = (12 * context.resources.displayMetrics.density).toInt()
+            val marginPx = (8 * context.resources.displayMetrics.density).toInt()
+            
             return android.widget.ImageButton(context).apply {
                 setImageResource(iconRes)
                 contentDescription = desc
-                setBackgroundResource(com.autonion.automationcompanion.R.drawable.overlay_button_bg)
-                scaleType = android.widget.ImageView.ScaleType.CENTER_INSIDE
-                setPadding(16, 16, 16, 16)
-                layoutParams = android.widget.LinearLayout.LayoutParams(120, 120).apply {
-                    setMargins(8, 0, 8, 0)
+                setBackgroundResource(com.autonion.automationcompanion.R.drawable.ripple_transparent)
+                setColorFilter(android.graphics.Color.WHITE)
+                scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+                setPadding(paddingPx, paddingPx, paddingPx, paddingPx)
+                layoutParams = android.widget.LinearLayout.LayoutParams(sizePx, sizePx).apply {
+                    setMargins(marginPx, 0, marginPx, 0)
                 }
                 setOnClickListener { 
                     android.util.Log.d("ScreenAgentOverlay", "Button clicked: $desc")
@@ -170,7 +176,27 @@ class ScreenAgentOverlay(
         }
 
         // 4. Save
+        var btnSaveRef: android.widget.ImageButton? = null
         val btnSave = createIconButton(com.autonion.automationcompanion.R.drawable.ic_save, "Save") {
+             // Animate to confirmation state
+             val btn = btnSaveRef
+             if (btn != null) {
+                 btn.setImageResource(com.autonion.automationcompanion.R.drawable.ic_check)
+                 btn.setColorFilter(android.graphics.Color.GREEN)
+                 btn.animate()
+                     .scaleX(1.2f).scaleY(1.2f)
+                     .setDuration(200)
+                     .withEndAction {
+                         btn.animate().scaleX(1f).scaleY(1f).setDuration(200).start()
+                     }.start()
+                 
+                 // Revert after 2 seconds
+                 btn.postDelayed({
+                     btn.setImageResource(com.autonion.automationcompanion.R.drawable.ic_save)
+                     btn.setColorFilter(android.graphics.Color.WHITE)
+                 }, 2000)
+             }
+
              val elements = overlayView?.getSelectedElements() ?: emptyList()
              val configs = overlayView?.getSelectionConfig() ?: emptyList()
              
@@ -196,7 +222,7 @@ class ScreenAgentOverlay(
         when (mode) {
             "capture" -> {
                 // Capture mode: Snap + Save + Close
-                val btnSnap = createIconButton(com.autonion.automationcompanion.R.drawable.ic_save, "Snap") {
+                val btnSnap = createIconButton(com.autonion.automationcompanion.R.drawable.ic_camera, "Snap") {
                     onCapture()
                 }
                 panel.addView(btnSnap)
@@ -217,6 +243,8 @@ class ScreenAgentOverlay(
                 panel.addView(btnStop)
             }
         }
+        
+        btnSaveRef = btnSave
         
         controlsView = panel
         
