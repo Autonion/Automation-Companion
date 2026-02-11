@@ -12,6 +12,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"/>
+    <uses-permission android:name="android.permission.CAPTURE_VIDEO_OUTPUT" tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
@@ -130,11 +132,28 @@
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />
 
+        <!-- Screen Understanding Activities -->
+        <activity
+            android:name=".features.screen_understanding_ml.ui.PresetDashboardActivity"
+            android:exported="false" />
+        <activity
+            android:name=".features.screen_understanding_ml.ui.SetupFlowActivity"
+            android:exported="false" />
+        <activity
+            android:name=".features.screen_understanding_ml.ui.CaptureEditorActivity"
+            android:exported="false" />
+
         <service
             android:name=".features.system_context_automation.location.engine.location_receiver.TrackingForegroundService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="location" />
+
+        <service
+            android:name=".features.screen_understanding_ml.core.ScreenUnderstandingService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
 
         <receiver
             android:name=".features.system_context_automation.location.engine.location_receiver.SlotAlarmReceiver"

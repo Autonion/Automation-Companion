@@ -69,6 +69,7 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.litert.support.api)
 
     // Optional: helpful tooling for preview and debug
     debugImplementation(libs.androidx.ui.tooling)
@@ -101,4 +102,14 @@ dependencies {
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
+
+    // TensorFlow Lite
+    // LiteRT (formerly TensorFlow Lite)
+    implementation(libs.tensorflow.lite)
+    implementation(libs.litert.gpu.api)
+    implementation(libs.litert.gpu)
+    implementation(libs.litert.support.api)
+    
+    // Gson for JSON parsing
+    implementation("com.google.code.gson:gson:2.10.1")
 }

@@ -242,6 +242,7 @@ class AutomationService : AccessibilityService() {
         super.onDestroy()
         stopPlayback()
         scope.cancel()
+        AccessibilityRouter.onServiceDestroyed()
     }
 
     fun setLoopCount(count: Int) {
