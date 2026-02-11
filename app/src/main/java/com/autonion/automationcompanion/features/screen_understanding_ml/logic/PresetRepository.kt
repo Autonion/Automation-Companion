@@ -3,7 +3,6 @@ package com.autonion.automationcompanion.features.screen_understanding_ml.logic
 import android.content.Context
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.AutomationPreset
 import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
 import java.io.File
 import java.io.FileReader
 import java.io.FileWriter
