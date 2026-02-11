@@ -244,49 +244,51 @@ class ScreenUnderstandingService : Service() {
         }
         isPlaying = true
         overlay?.setPlaybackState(true)
-        Toast.makeText(this, "Starting playback: ${preset.name}", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Playing: ${preset.name}", Toast.LENGTH_SHORT).show()
 
         scope.launch {
             try {
-                for (step in preset.steps) {
-                    if (!isPlaying) break
+                // Loop continuously until user clicks Stop
+                while (isPlaying) {
+                    for (step in preset.steps) {
+                        if (!isPlaying) break
 
-                    Log.d(TAG, "Executing step ${step.orderIndex}: ${step.label}")
+                        Log.d(TAG, "Looking for step ${step.orderIndex}: ${step.label}")
 
-                    // B4 fix: Find match using spatial IoU + label, not just label
-                    val foundElement = waitForElement(step)
+                        // Keep searching for this element until found or stopped
+                        val foundElement = waitForElement(step)
 
-                    if (!isPlaying) break
+                        if (!isPlaying) break
 
-                    if (foundElement != null) {
-                        val centerX = (foundElement.bounds.left + foundElement.bounds.right) / 2
-                        val centerY = (foundElement.bounds.top + foundElement.bounds.bottom) / 2
-                        val point = PointF(centerX, centerY)
-                        val success = ActionExecutor.executeClick(point)
+                        if (foundElement != null) {
+                            val centerX = (foundElement.bounds.left + foundElement.bounds.right) / 2
+                            val centerY = (foundElement.bounds.top + foundElement.bounds.bottom) / 2
+                            val point = PointF(centerX, centerY)
+                            val success = ActionExecutor.executeClick(point)
 
-                        if (success) {
-                            Log.d(TAG, "Clicked ${step.label}")
+                            if (success) {
+                                Log.d(TAG, "Clicked ${step.label}")
+                            } else {
+                                Log.e(TAG, "Click failed for ${step.label} - Accessibility Service not connected?")
+                                withContext(Dispatchers.Main) {
+                                    Toast.makeText(this@ScreenUnderstandingService, "Click failed. Is Accessibility Service enabled?", Toast.LENGTH_LONG).show()
+                                }
+                                isPlaying = false
+                                break
+                            }
+
+                            delay(2000) // Wait after click for screen to settle
                         } else {
-                            Log.e(TAG, "Failed to click ${step.label} - Service not connected?")
-                            withContext(Dispatchers.Main) {
-                                Toast.makeText(this@ScreenUnderstandingService, "Click failed. Is Accessibility Service enabled?", Toast.LENGTH_LONG).show()
-                            }
-                            isPlaying = false
-                            break
+                            // Element not found yet — log and keep trying
+                            Log.d(TAG, "Step ${step.orderIndex}: ${step.label} not found yet, retrying...")
+                            delay(1000)
                         }
+                    }
 
-                        delay(2000) // Wait after click for screen to settle
-                    } else {
-                        // Element not found within timeout
-                        Log.w(TAG, "Step ${step.orderIndex}: ${step.label} not found")
-                        if (preset.executionMode == ExecutionMode.STRICT && !step.isOptional) {
-                            withContext(Dispatchers.Main) {
-                                Toast.makeText(this@ScreenUnderstandingService, "Step '${step.label}' not found, stopping.", Toast.LENGTH_SHORT).show()
-                            }
-                            isPlaying = false
-                            break
-                        }
-                        // FLEXIBLE mode or optional step: skip and continue
+                    if (isPlaying) {
+                        // Completed one pass through all steps — wait before restarting
+                        Log.d(TAG, "Completed one pass, restarting scan...")
+                        delay(2000)
                     }
                 }
             } catch (e: Exception) {
@@ -295,7 +297,7 @@ class ScreenUnderstandingService : Service() {
                 isPlaying = false
                 withContext(Dispatchers.Main) {
                     overlay?.setPlaybackState(false)
-                    Toast.makeText(this@ScreenUnderstandingService, "Playback finished", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@ScreenUnderstandingService, "Playback stopped", Toast.LENGTH_SHORT).show()
                 }
             }
         }
