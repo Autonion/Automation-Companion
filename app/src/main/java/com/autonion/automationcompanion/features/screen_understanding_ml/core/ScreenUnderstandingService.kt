@@ -60,6 +60,10 @@ class ScreenUnderstandingService : Service() {
     private var overlay: ScreenAgentOverlay? = null
     private var presetRepository: PresetRepository? = null
 
+    fun setOverlayVisibility(visible: Boolean) {
+        overlay?.setVisibility(visible)
+    }
+
     // Accumulated steps from multiple snaps
     private val accumulatedSteps: MutableList<AutomationStep> = mutableListOf()
 

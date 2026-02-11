@@ -158,6 +158,16 @@ class CaptureEditorActivity : ComponentActivity() {
         }
     }
     
+    override fun onResume() {
+        super.onResume()
+        com.autonion.automationcompanion.features.screen_understanding_ml.core.ScreenUnderstandingService.instance?.setOverlayVisibility(false)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        com.autonion.automationcompanion.features.screen_understanding_ml.core.ScreenUnderstandingService.instance?.setOverlayVisibility(true)
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         perceptionLayer?.close()

@@ -118,6 +118,8 @@ class ScreenAgentOverlay(
             try { windowManager.removeView(controlsView) } catch (e: Exception) {}
             controlsView = null
         }
+        
+
 
         // Icon-based Compact Control Bar
         // Icon-based Compact Control Bar
@@ -422,6 +424,12 @@ class ScreenAgentOverlay(
             windowManager.removeView(controlsView)
             controlsView = null
         }
+    }
+
+    fun setVisibility(visible: Boolean) {
+        val visibility = if (visible) View.VISIBLE else View.GONE
+        controlsView?.visibility = visibility
+        overlayView?.visibility = visibility
     }
 
     // fun getOverlayView() = overlayView // Removed to keep OverlayView private
