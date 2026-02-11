@@ -7,327 +7,386 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.graphics.Bitmap
+import android.graphics.PointF
+import android.graphics.RectF
+import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import com.autonion.automationcompanion.R
+import com.autonion.automationcompanion.features.screen_understanding_ml.logic.ActionExecutor
+import com.autonion.automationcompanion.features.screen_understanding_ml.logic.PresetRepository
+import com.autonion.automationcompanion.features.screen_understanding_ml.model.AutomationPreset
+import com.autonion.automationcompanion.features.screen_understanding_ml.model.AutomationStep
+import com.autonion.automationcompanion.features.screen_understanding_ml.model.ExecutionMode
+import com.autonion.automationcompanion.features.screen_understanding_ml.model.UIElement
+import com.autonion.automationcompanion.features.screen_understanding_ml.ui.CaptureEditorActivity
 import com.autonion.automationcompanion.features.screen_understanding_ml.ui.ScreenAgentOverlay
+import com.autonion.automationcompanion.features.screen_understanding_ml.ui.SetupFlowActivity
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
+import java.util.UUID
 
 class ScreenUnderstandingService : Service() {
 
+    companion object {
+        private const val TAG = "ScreenUnderstanding"
+        private const val NOTIFICATION_ID = 1001
+        private const val CHANNEL_ID = "screen_understanding_channel"
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
-    override fun onCreate() {
-        super.onCreate()
-        // startForegroundService() // Moved to onStartCommand to ensure permission readiness
-        presetRepository = com.autonion.automationcompanion.features.screen_understanding_ml.logic.PresetRepository(this)
-    }
-
-    private fun startForegroundService() {
-        val channelId = "screen_understanding_channel"
-        val channelName = "Screen Undestanding"
-        
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(channelId, channelName, NotificationManager.IMPORTANCE_LOW)
-            notificationManager.createNotificationChannel(channel)
-        }
-
-        val notification: Notification = NotificationCompat.Builder(this, channelId)
-            .setContentTitle("Screen Agent Active")
-            .setContentText("Understanding screen content...")
-            .setSmallIcon(R.mipmap.ic_launcher)
-            .build()
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                1001, 
-                notification, 
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
-            )
-        } else {
-            startForeground(1001, notification)
-        }
-    }
-
-    private var mediaProjectionManager: android.media.projection.MediaProjectionManager? = null
+    private var mediaProjectionManager: MediaProjectionManager? = null
     private var mediaProjectionCore: MediaProjectionCore? = null
     private var perceptionLayer: PerceptionLayer? = null
     private var temporalTracker: TemporalTracker? = null
     private var overlay: ScreenAgentOverlay? = null
-    private var presetRepository: com.autonion.automationcompanion.features.screen_understanding_ml.logic.PresetRepository? = null
-    private var latestElements: List<com.autonion.automationcompanion.features.screen_understanding_ml.model.UIElement> = emptyList()
+    private var presetRepository: PresetRepository? = null
+
+    @Volatile
+    private var latestElements: List<UIElement> = emptyList()
+    @Volatile
+    private var latestBitmap: Bitmap? = null
+    @Volatile
     private var isPlaying = false
 
-    
-    // Coroutine scope
-    private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default + kotlinx.coroutines.SupervisorJob())
+    private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    private var currentPresetId: String? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        presetRepository = PresetRepository(this)
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == "START_CAPTURE") {
-            // Move startForeground here to ensure we have permission context or are about to start
-            // Actually, for MediaProjection type, it must be called *after* we have the result BUT
-            // it must be called within 5 seconds of service start. 
-            // Valid place is here.
-             
-            startForegroundService()
-            
-            val resultCode = intent.getIntExtra("resultCode", 0)
-            val data = intent.getParcelableExtra<Intent>("data")
-            val presetName = intent.getStringExtra("presetName")
-            val playPresetId = intent.getStringExtra("playPresetId")
-            
-            if (resultCode != 0 && data != null) {
-                startCapture(resultCode, data, presetName)
-                
-                // If we were asked to play a preset after starting
-                if (playPresetId != null) {
-                    val preset = presetRepository?.getPreset(playPresetId)
-                    if (preset != null) {
-                        playPreset(preset)
-                    }
-                }
-            }
-        } else if (intent?.action == "PLAY_PRESET") {
-            val presetId = intent.getStringExtra("presetId")
-            if (presetId != null) {
-                val preset = presetRepository?.getPreset(presetId)
-                if (preset != null) {
-                    if (mediaProjectionCore == null) {
-                         // Service not running or no projection. Request permission via Activity.
-                         android.util.Log.d("ScreenUnderstanding", "Requesting permission for playback")
-                         
-                         val permIntent = Intent(this, com.autonion.automationcompanion.features.screen_understanding_ml.ui.SetupFlowActivity::class.java).apply {
-                             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                             putExtra("ACTION_REQUEST_PERMISSION_PLAY_PRESET", presetId)
-                         }
-                         startActivity(permIntent)
-                         
-                    } else {
-                        playPreset(preset)
-                    }
-                }
+        // Always use media projection FGS type — all paths go through SetupFlowActivity first
+        startForegroundNotification(useMediaProjectionType = true)
+
+        when (intent?.action) {
+            "START_CAPTURE" -> handleStartCapture(intent)
+            else -> {
+                Log.w(TAG, "Unknown action: ${intent?.action}, stopping")
+                stopSelf()
             }
         }
         return START_NOT_STICKY
     }
 
-    private fun startCapture(resultCode: Int, data: Intent, presetName: String?) {
-        // Cleanup existing resources if any
-        // ... (cleanup code)
-        
+    private fun startForegroundNotification(useMediaProjectionType: Boolean) {
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                "Screen Understanding",
+                NotificationManager.IMPORTANCE_LOW
+            )
+            notificationManager.createNotificationChannel(channel)
+        }
+
+        val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("Screen Agent Active")
+            .setContentText("Understanding screen content...")
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .build()
+
+        if (useMediaProjectionType && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
+    }
+
+    private fun handleStartCapture(intent: Intent) {
+        val resultCode = intent.getIntExtra("resultCode", 0)
+        val data = intent.getParcelableExtra<Intent>("data")
+        val presetName = intent.getStringExtra("presetName")
+        val playPresetId = intent.getStringExtra("playPresetId")
+
+        Log.d(TAG, "Service received presetName: '$presetName', playPresetId: '$playPresetId'")
+
+        if (resultCode != 0 && data != null) {
+            // Store preset info before startCapture so overlay mode is correct
+            if (playPresetId != null) {
+                currentPresetId = playPresetId
+            }
+            startCapture(resultCode, data, presetName, playPresetId)
+        }
+    }
+
+    private fun startCapture(resultCode: Int, data: Intent, presetName: String?, playPresetId: String?) {
+        // Cleanup existing resources
         overlay?.dismiss()
         mediaProjectionCore?.stopProjection()
         perceptionLayer?.close()
-        
-        // Re-initialize resources...
-        
+
         val metrics = resources.displayMetrics
-        
-        mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as android.media.projection.MediaProjectionManager
+
+        mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         mediaProjectionCore = MediaProjectionCore(this, mediaProjectionManager!!)
         perceptionLayer = PerceptionLayer(this)
         temporalTracker = TemporalTracker()
+
+        // Load preset if in playback mode
+        val presetToPlay = if (playPresetId != null) {
+            presetRepository?.getPreset(playPresetId)
+        } else null
+
         overlay = ScreenAgentOverlay(
             context = this,
-            initialName = presetName, // Pass to overlay
-            onAnchorSelected = { element ->
-                // Handle selection 
-                android.widget.Toast.makeText(this, "Toggled: ${element.label}", android.widget.Toast.LENGTH_SHORT).show()
-            },
-            onSave = { name, selectedElements ->
-                savePreset(name, selectedElements)
-                overlay?.dismiss()
-                stopSelf()
-            },
-            onPlay = {
-                // Play currently selected elements as a temporary preset
-                val elements = overlay?.getSelectedElements() ?: emptyList()
-                val configs = overlay?.getSelectionConfig() ?: emptyList()
-                
-                if (elements.isNotEmpty()) {
-                    val steps = elements.zip(configs).mapIndexed { index, (element, isOptional) ->
-                         com.autonion.automationcompanion.features.screen_understanding_ml.model.AutomationStep(
-                             id = java.util.UUID.randomUUID().toString(),
-                             orderIndex = index,
-                             label = element.label,
-                             anchor = element,
-                             isOptional = isOptional
-                         )
-                    }
-                    val tempPreset = com.autonion.automationcompanion.features.screen_understanding_ml.model.AutomationPreset(
-                        name = "Preview",
-                        scope = com.autonion.automationcompanion.features.screen_understanding_ml.model.ScopeType.GLOBAL,
-                        executionMode = com.autonion.automationcompanion.features.screen_understanding_ml.model.ExecutionMode.STRICT,
-                        steps = steps
-                    )
-                    playPreset(tempPreset)
-                } else {
-                    android.widget.Toast.makeText(this, "Select elements to play", android.widget.Toast.LENGTH_SHORT).show()
+            initialName = presetToPlay?.name ?: presetName,
+            onAnchorSelected = { /* No-op in capture mode */ },
+            onSave = { _, _ -> /* No-op */ },
+            onPlay = { _, _ ->
+                // Triggered when user taps Play on overlay in playback mode
+                if (presetToPlay != null) {
+                    playPreset(presetToPlay)
                 }
             },
-            onStop = {
-                stopSelf() // Stop the service
-            }
+            onCapture = { captureSnapshot() },
+            onPausePlayback = { stopPlayback() },
+            onStop = { stopSelf() }
         )
-        
-        if (android.provider.Settings.canDrawOverlays(this)) {
-            overlay?.show()
-        } else {
-             android.util.Log.e("ScreenUnderstanding", "Overlay permission missing, skipping overlay")
-        }
-        
-        mediaProjectionCore?.startProjection(resultCode, data, metrics.widthPixels, metrics.heightPixels, metrics.densityDpi)
-        
 
+        if (android.provider.Settings.canDrawOverlays(this)) {
+            if (playPresetId != null) {
+                // Playback mode: show Play + Stop buttons
+                overlay?.showPlaybackMode()
+                Toast.makeText(this, "Navigate to the app, then tap Play ▶", Toast.LENGTH_LONG).show()
+            } else {
+                // Capture mode: show Snap + Close buttons
+                overlay?.showCaptureMode()
+            }
+        }
+
+        mediaProjectionCore?.startProjection(resultCode, data, metrics.widthPixels, metrics.heightPixels, metrics.densityDpi)
 
         scope.launch {
             mediaProjectionCore?.screenCaptureFlow?.collect { bitmap ->
-                android.util.Log.d("ScreenUnderstanding", "Frame received: ${bitmap.width}x${bitmap.height}")
+                Log.d(TAG, "Frame received: ${bitmap.width}x${bitmap.height}")
+
+                // Store a copy of the latest bitmap for snap capture
+                latestBitmap = bitmap.copy(bitmap.config ?: Bitmap.Config.ARGB_8888, false)
+
                 val detections = perceptionLayer?.detect(bitmap) ?: emptyList()
-                android.util.Log.d("ScreenUnderstanding", "Detections: ${detections.size}")
                 val tracked = temporalTracker?.update(detections) ?: emptyList()
-                
-                latestElements = tracked // Update for playback loop
-                
-                withContext(kotlinx.coroutines.Dispatchers.Main) {
-                   overlay?.updateElements(tracked)
+
+                latestElements = tracked
+
+                withContext(Dispatchers.Main) {
+                    overlay?.updateElements(tracked)
                 }
             }
         }
     }
 
-    // Removed duplicate onCreate and startCapture
+    private fun captureSnapshot() {
+        Log.d(TAG, "Snap clicked, latestBitmap=${latestBitmap != null}")
+        val bitmap = latestBitmap
+        if (bitmap != null) {
+            Toast.makeText(this, "Capturing Snapshot...", Toast.LENGTH_SHORT).show()
+            scope.launch { saveBitmapAndOpenEditor(bitmap) }
+        } else {
+            Toast.makeText(this, "No frame captured yet, wait a moment...", Toast.LENGTH_SHORT).show()
+        }
+    }
 
-    
-    fun playPreset(preset: com.autonion.automationcompanion.features.screen_understanding_ml.model.AutomationPreset) {
+    private suspend fun saveBitmapAndOpenEditor(bitmap: Bitmap) {
+        try {
+            val filename = "capture_${UUID.randomUUID()}.png"
+            val file = File(cacheDir, filename)
+            FileOutputStream(file).use { stream ->
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
+            }
+
+            withContext(Dispatchers.Main) {
+                stopSelf()
+
+                val intent = Intent(this@ScreenUnderstandingService, CaptureEditorActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    putExtra("IMAGE_PATH", file.absolutePath)
+                    putExtra("PRESET_NAME", overlay?.getCurrentName() ?: "Untitled")
+                }
+                startActivity(intent)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to save snapshot", e)
+        }
+    }
+
+    private fun stopPlayback() {
         if (isPlaying) {
-             android.widget.Toast.makeText(this, "Already playing!", android.widget.Toast.LENGTH_SHORT).show()
-             return
+            isPlaying = false
+            Toast.makeText(this, "Playback Paused", Toast.LENGTH_SHORT).show()
+            overlay?.setPlaybackState(false)
+        }
+    }
+
+    fun playPreset(preset: AutomationPreset) {
+        if (isPlaying) {
+            Toast.makeText(this, "Already playing!", Toast.LENGTH_SHORT).show()
+            return
         }
         isPlaying = true
-        android.widget.Toast.makeText(this, "Starting playback: ${preset.name}", android.widget.Toast.LENGTH_SHORT).show()
-        
+        overlay?.setPlaybackState(true)
+        Toast.makeText(this, "Starting playback: ${preset.name}", Toast.LENGTH_SHORT).show()
+
         scope.launch {
             try {
                 for (step in preset.steps) {
                     if (!isPlaying) break
-                    
-                    android.util.Log.d("ScreenUnderstanding", "Executing step ${step.orderIndex}: ${step.label}")
-                    withContext(kotlinx.coroutines.Dispatchers.Main) {
-                        android.widget.Toast.makeText(this@ScreenUnderstandingService, "Looking for: ${step.label}", android.widget.Toast.LENGTH_SHORT).show()
-                    }
-                    
-                    // 1. Wait for element to appear (Timeout: 5 seconds)
-                    var foundElement: com.autonion.automationcompanion.features.screen_understanding_ml.model.UIElement? = null
-                    val timeout = 5000L
-                    val startTime = System.currentTimeMillis()
-                    
-                    while (System.currentTimeMillis() - startTime < timeout && isPlaying) {
-                        // HACK: I will add a 'latestElements' variable to the Service and update it in the flow.
-                        val currentElements = latestElements
-                        
-                        // Find matching element (label match)
-                        val match = currentElements.find { it.label == step.label } // Simple label match for now
-                        
-                        if (match != null) {
-                            foundElement = match
-                            break
-                        }
-                        
-                        kotlinx.coroutines.delay(200)
-                    }
-                    
+
+                    Log.d(TAG, "Executing step ${step.orderIndex}: ${step.label}")
+
+                    // B4 fix: Find match using spatial IoU + label, not just label
+                    val foundElement = waitForElement(step)
+
                     if (!isPlaying) break
-                    
+
                     if (foundElement != null) {
-                        // 2. Click it
                         val centerX = (foundElement.bounds.left + foundElement.bounds.right) / 2
                         val centerY = (foundElement.bounds.top + foundElement.bounds.bottom) / 2
-                        
-                        val point = android.graphics.PointF(centerX, centerY)
-                        val success = com.autonion.automationcompanion.features.screen_understanding_ml.logic.ActionExecutor.executeClick(point)
-                        
+                        val point = PointF(centerX, centerY)
+                        val success = ActionExecutor.executeClick(point)
+
                         if (success) {
-                            android.util.Log.d("ScreenUnderstanding", "Clicked ${step.label}")
+                            Log.d(TAG, "Clicked ${step.label}")
                         } else {
-                             android.util.Log.e("ScreenUnderstanding", "Failed to click ${step.label} - Service not connected?")
-                             withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                 android.widget.Toast.makeText(this@ScreenUnderstandingService, "Click failed. Is Accessibility Service enabled?", android.widget.Toast.LENGTH_LONG).show()
-                             }
-                             isPlaying = false
-                             break
-                        }
-                        
-                        // 3. Wait after click
-                        kotlinx.coroutines.delay(2000) // Default action wait
-                        
-                    } else {
-                        // Element not found
-                        android.util.Log.w("ScreenUnderstanding", "Element ${step.label} not found within timeout")
-                        if (preset.executionMode == com.autonion.automationcompanion.features.screen_understanding_ml.model.ExecutionMode.STRICT) {
-                             withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                 android.widget.Toast.makeText(this@ScreenUnderstandingService, "Failed: ${step.label} not found", android.widget.Toast.LENGTH_LONG).show()
-                             }
+                            Log.e(TAG, "Failed to click ${step.label} - Service not connected?")
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(this@ScreenUnderstandingService, "Click failed. Is Accessibility Service enabled?", Toast.LENGTH_LONG).show()
+                            }
                             isPlaying = false
                             break
-                        } else {
-                            // Optional/Flexible: skip
-                            withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                 android.widget.Toast.makeText(this@ScreenUnderstandingService, "Skipping ${step.label}", android.widget.Toast.LENGTH_SHORT).show()
-                             }
                         }
+
+                        delay(2000) // Wait after click for screen to settle
+                    } else {
+                        // Element not found within timeout
+                        Log.w(TAG, "Step ${step.orderIndex}: ${step.label} not found")
+                        if (preset.executionMode == ExecutionMode.STRICT && !step.isOptional) {
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(this@ScreenUnderstandingService, "Step '${step.label}' not found, stopping.", Toast.LENGTH_SHORT).show()
+                            }
+                            isPlaying = false
+                            break
+                        }
+                        // FLEXIBLE mode or optional step: skip and continue
                     }
                 }
             } catch (e: Exception) {
-                android.util.Log.e("ScreenUnderstanding", "Playback error", e)
+                Log.e(TAG, "Playback error", e)
             } finally {
                 isPlaying = false
-                withContext(kotlinx.coroutines.Dispatchers.Main) {
-                    android.widget.Toast.makeText(this@ScreenUnderstandingService, "Playback finished", android.widget.Toast.LENGTH_SHORT).show()
+                withContext(Dispatchers.Main) {
+                    overlay?.setPlaybackState(false)
+                    Toast.makeText(this@ScreenUnderstandingService, "Playback finished", Toast.LENGTH_SHORT).show()
                 }
             }
         }
     }
 
-    private fun savePreset(name: String, elementsData: List<Pair<com.autonion.automationcompanion.features.screen_understanding_ml.model.UIElement, Boolean>>) {
-        android.util.Log.d("ScreenUnderstanding", "savePreset called with ${elementsData.size} elements")
+    /**
+     * B4 fix: Wait for an element matching the step using label + spatial IoU
+     * against the saved anchor's bounds, not just the label string.
+     */
+    private suspend fun waitForElement(step: AutomationStep): UIElement? {
+        val timeout = 5000L
+        val startTime = System.currentTimeMillis()
+        val anchorBounds = step.anchor.bounds
+
+        while (System.currentTimeMillis() - startTime < timeout && isPlaying) {
+            val currentElements = latestElements
+
+            // Find best match: same label AND highest IoU with saved anchor bounds
+            val match = currentElements
+                .filter { it.label == step.anchor.label }  // Use anchor's actual label
+                .maxByOrNull { calculateIoU(it.bounds, anchorBounds) }
+
+            // Accept if IoU > 0.1 (lenient since screen may have scrolled slightly)
+            if (match != null && calculateIoU(match.bounds, anchorBounds) > 0.1f) {
+                return match
+            }
+
+            delay(200)
+        }
+        return null
+    }
+
+    private fun calculateIoU(a: RectF, b: RectF): Float {
+        val interLeft = maxOf(a.left, b.left)
+        val interTop = maxOf(a.top, b.top)
+        val interRight = minOf(a.right, b.right)
+        val interBottom = minOf(a.bottom, b.bottom)
+
+        if (interRight < interLeft || interBottom < interTop) return 0f
+
+        val interArea = (interRight - interLeft) * (interBottom - interTop)
+        val aArea = a.width() * a.height()
+        val bArea = b.width() * b.height()
+        val unionArea = aArea + bArea - interArea
+
+        return if (unionArea > 0) interArea / unionArea else 0f
+    }
+
+    private fun savePreset(name: String, elementsData: List<Pair<UIElement, Boolean>>) {
+        Log.d(TAG, "savePreset called with ${elementsData.size} elements")
         if (elementsData.isEmpty()) {
-            android.util.Log.w("ScreenUnderstanding", "Selection list is empty!")
-            android.widget.Toast.makeText(this, "No elements selected to save", android.widget.Toast.LENGTH_SHORT).show()
+            Log.w(TAG, "Selection list is empty!")
+            Toast.makeText(this, "No elements selected to save", Toast.LENGTH_SHORT).show()
             return
         }
-        
+
         val steps = elementsData.mapIndexed { index, (element, isOptional) ->
-             com.autonion.automationcompanion.features.screen_understanding_ml.model.AutomationStep(
-                 id = java.util.UUID.randomUUID().toString(),
-                 orderIndex = index,
-                 label = element.label,
-                 anchor = element,
-                 isOptional = isOptional
-             )
+            AutomationStep(
+                id = UUID.randomUUID().toString(),
+                orderIndex = index,
+                label = element.label,
+                anchor = element,
+                isOptional = isOptional
+            )
         }
-        
-        val preset = com.autonion.automationcompanion.features.screen_understanding_ml.model.AutomationPreset(
+
+        var presetId = UUID.randomUUID().toString()
+
+        if (currentPresetId != null) {
+            val existing = presetRepository?.getPreset(currentPresetId!!)
+            if (existing != null && existing.name == name) {
+                presetId = currentPresetId!!
+                Log.d(TAG, "Overwriting existing preset: $presetId")
+            }
+        }
+
+        val preset = AutomationPreset(
+            id = presetId,
             name = name,
-            scope = com.autonion.automationcompanion.features.screen_understanding_ml.model.ScopeType.GLOBAL, // Default for now
-            executionMode = com.autonion.automationcompanion.features.screen_understanding_ml.model.ExecutionMode.STRICT, // Default
+            scope = com.autonion.automationcompanion.features.screen_understanding_ml.model.ScopeType.GLOBAL,
+            executionMode = ExecutionMode.STRICT,
             steps = steps
         )
-        
+
         presetRepository?.savePreset(preset)
-        android.widget.Toast.makeText(this, "Preset '$name' Saved with ${steps.size} steps!", android.widget.Toast.LENGTH_LONG).show()
+        Toast.makeText(this, "Preset '$name' Saved with ${steps.size} steps!", Toast.LENGTH_LONG).show()
     }
-    
+
     override fun onDestroy() {
         super.onDestroy()
-        // Cancel scope first to stop new processing
         scope.cancel()
-        
         mediaProjectionCore?.stopProjection()
         perceptionLayer?.close()
         overlay?.dismiss()

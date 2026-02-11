@@ -30,6 +30,7 @@ class SetupFlowActivity : ComponentActivity() {
 
     private val MEDIA_PROJECTION_REQUEST_CODE = 100
     private val OVERLAY_PERMISSION_REQUEST_CODE = 101
+    private val ACCESSIBILITY_PERMISSION_REQUEST_CODE = 102
 
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -57,7 +58,25 @@ class SetupFlowActivity : ComponentActivity() {
         }
     }
 
+    private fun isAccessibilityServiceEnabled(): Boolean {
+        val service = packageName + "/" +
+            "com.autonion.automationcompanion.features.gesture_recording_playback.overlay.AutomationService"
+        val enabledServices = android.provider.Settings.Secure.getString(
+            contentResolver,
+            android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        ) ?: return false
+        return enabledServices.contains(service)
+    }
+
     private fun checkPermissionsAndStart() {
+        // Step 1: Accessibility Service
+        if (!isAccessibilityServiceEnabled()) {
+            Toast.makeText(this, "Please enable the Automation Companion accessibility service", Toast.LENGTH_LONG).show()
+            val intent = Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+            startActivityForResult(intent, ACCESSIBILITY_PERMISSION_REQUEST_CODE)
+            return
+        }
+        // Step 2: Overlay permission
         if (!Settings.canDrawOverlays(this)) {
             Toast.makeText(this, "Please allow 'Display over other apps' permission", Toast.LENGTH_LONG).show()
             val intent = Intent(
@@ -65,9 +84,10 @@ class SetupFlowActivity : ComponentActivity() {
                 Uri.parse("package:$packageName")
             )
             startActivityForResult(intent, OVERLAY_PERMISSION_REQUEST_CODE)
-        } else {
-            startMediaProjection()
+            return
         }
+        // Step 3: Media Projection
+        startMediaProjection()
     }
 
     private fun startMediaProjection() {
@@ -78,16 +98,26 @@ class SetupFlowActivity : ComponentActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         
-        if (requestCode == OVERLAY_PERMISSION_REQUEST_CODE) {
+        if (requestCode == ACCESSIBILITY_PERMISSION_REQUEST_CODE) {
+            if (isAccessibilityServiceEnabled()) {
+                // Continue the permission chain
+                checkPermissionsAndStart()
+            } else {
+                Toast.makeText(this, "Accessibility service is required for automation", Toast.LENGTH_SHORT).show()
+                finish()
+            }
+        } else if (requestCode == OVERLAY_PERMISSION_REQUEST_CODE) {
             if (Settings.canDrawOverlays(this)) {
-                startMediaProjection() // Continue flow
+                checkPermissionsAndStart() // Continue chain
             } else {
                 Toast.makeText(this, "Overlay permission is required", Toast.LENGTH_SHORT).show()
+                finish()
             }
         } else if (requestCode == MEDIA_PROJECTION_REQUEST_CODE) {
             if (resultCode == RESULT_OK && data != null) {
                 // Start Service and pass intent data
                 val presetName = intent.getStringExtra("presetName") ?: ""
+                android.util.Log.d("SetupFlow", "Passed presetName: '$presetName'")
                 val playPresetId = intent.getStringExtra("ACTION_REQUEST_PERMISSION_PLAY_PRESET")
                 
                 val serviceIntent = Intent(this, ScreenUnderstandingService::class.java).apply {

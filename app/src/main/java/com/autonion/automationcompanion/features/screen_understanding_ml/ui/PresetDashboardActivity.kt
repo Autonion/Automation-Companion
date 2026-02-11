@@ -25,7 +25,6 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.Divider
 import androidx.compose.material3.ListItem
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -185,15 +184,12 @@ class PresetDashboardActivity : ComponentActivity() {
                          )
                      }
                      androidx.compose.material3.IconButton(onClick = { 
-                          val intent = Intent(this@PresetDashboardActivity, com.autonion.automationcompanion.features.screen_understanding_ml.core.ScreenUnderstandingService::class.java).apply {
-                                action = "PLAY_PRESET"
-                                putExtra("presetId", preset.id)
-                          }
-                          if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                              startForegroundService(intent)
-                          } else {
-                              startService(intent)
-                          }
+                           // Always go through SetupFlowActivity to get fresh MediaProjection token
+                           val intent = Intent(this@PresetDashboardActivity, SetupFlowActivity::class.java).apply {
+                                putExtra("ACTION_REQUEST_PERMISSION_PLAY_PRESET", preset.id)
+                                putExtra("presetName", preset.name)
+                           }
+                           startActivity(intent)
                      }) {
                          Icon(
                              imageVector = androidx.compose.material.icons.Icons.Default.PlayArrow,
@@ -203,18 +199,9 @@ class PresetDashboardActivity : ComponentActivity() {
                 }
             },
             modifier = Modifier.clickable {
-                  // Duplicate play
-                  val intent = Intent(this@PresetDashboardActivity, com.autonion.automationcompanion.features.screen_understanding_ml.core.ScreenUnderstandingService::class.java).apply {
-                        action = "PLAY_PRESET"
-                        putExtra("presetId", preset.id)
-                  }
-                  if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                      startForegroundService(intent)
-                  } else {
-                      startService(intent)
-                  }
+                  // Navigate to preset details or edit (placeholder)
             }
         )
-        androidx.compose.material3.Divider()
+        androidx.compose.material3.HorizontalDivider()
     }
 }

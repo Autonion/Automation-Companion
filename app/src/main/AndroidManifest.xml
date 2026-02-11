@@ -139,6 +139,9 @@
         <activity
             android:name=".features.screen_understanding_ml.ui.SetupFlowActivity"
             android:exported="false" />
+        <activity
+            android:name=".features.screen_understanding_ml.ui.CaptureEditorActivity"
+            android:exported="false" />
 
         <service
             android:name=".features.system_context_automation.location.engine.location_receiver.TrackingForegroundService"

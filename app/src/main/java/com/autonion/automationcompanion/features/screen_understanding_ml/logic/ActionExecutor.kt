@@ -15,19 +15,24 @@ import kotlin.coroutines.suspendCoroutine
 
 object ActionExecutor : AccessibilityFeature {
 
-    private var service: AccessibilityService? = null
+    private var serviceRef: java.lang.ref.WeakReference<AccessibilityService>? = null
 
     init {
         AccessibilityRouter.register(this)
     }
 
     override fun onServiceConnected(service: AccessibilityService) {
-        this.service = service
+        this.serviceRef = java.lang.ref.WeakReference(service)
         Log.d("ActionExecutor", "Connected to AccessibilityService")
     }
 
+    override fun onServiceDisconnected() {
+        this.serviceRef = null
+        Log.d("ActionExecutor", "Disconnected from AccessibilityService")
+    }
+
     suspend fun execute(action: ActionIntent): Boolean {
-        val s = service
+        val s = serviceRef?.get()
         if (s == null) {
             Log.e("ActionExecutor", "AccessibilityService not connected")
             return false
@@ -50,7 +55,7 @@ object ActionExecutor : AccessibilityFeature {
     }
 
     suspend fun executeClick(point: PointF): Boolean {
-        val s = service
+        val s = serviceRef?.get()
         if (s == null) {
             Log.e("ActionExecutor", "AccessibilityService not connected")
             return false

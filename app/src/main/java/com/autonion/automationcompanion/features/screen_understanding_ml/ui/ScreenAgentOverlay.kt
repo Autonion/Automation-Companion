@@ -16,7 +16,9 @@ class ScreenAgentOverlay(
     private val initialName: String? = null,
     private val onAnchorSelected: (UIElement) -> Unit,
     private val onSave: (String, List<Pair<UIElement, Boolean>>) -> Unit, // Name + Element + IsOptional
-    private val onPlay: () -> Unit,
+    private val onPlay: (List<UIElement>, List<Boolean>) -> Unit,
+    private val onCapture: () -> Unit,
+    private val onPausePlayback: () -> Unit,
     private val onStop: () -> Unit
 ) {
 
@@ -24,23 +26,63 @@ class ScreenAgentOverlay(
     private var overlayView: OverlayView? = null
     private var layoutParams: WindowManager.LayoutParams? = null
     
+    private var currentName: String? = initialName
+
+    fun setPresetName(name: String) {
+        currentName = name
+        android.util.Log.d("ScreenAgentOverlay", "Preset name updated to: $name")
+    }
+    fun getCurrentName() = currentName
+    
     // Control Window
     private var controlsView: android.view.ViewGroup? = null
     private var controlsParams: WindowManager.LayoutParams? = null
     
     private var isInspectionMode = false
+    private var isPlaybackActive = false
+    private var btnPlay: android.widget.ImageButton? = null
 
-    // Moved SelectionState here so it is accessible if needed, 
-    // but OverlayView needs it key. 
-    // Actually, let's keep it simple. 
-    // The previous error was likely due to incomplete edits leaving 'class' keyword inside function or similar.
-    // And 'selectionStates' not being visible to 'ScreenAgentOverlay' methods like 'setupControls'.
-    
-    // To fix 'unresolved reference selectionStates' in setupControls (btnSave callback),
-    // we need to expose methods on OverlayView to get the data, which we did (getSelectedElements, getSelectionConfig).
-    // The previous edit likely created a mismatch or syntax error.
+    private fun updatePlayButtonState() {
+        android.util.Log.d("ScreenAgentOverlay", "updatePlayButtonState: isPlaybackActive=$isPlaybackActive, btnPlay=$btnPlay")
+        if (isPlaybackActive) {
+            btnPlay?.setImageResource(com.autonion.automationcompanion.R.drawable.ic_pause)
+            btnPlay?.contentDescription = "Pause"
+        } else {
+            btnPlay?.setImageResource(com.autonion.automationcompanion.R.drawable.ic_play)
+            btnPlay?.contentDescription = "Play"
+        }
+    }
+
+    fun setPlaybackState(isPlaying: Boolean) {
+        if (isPlaybackActive != isPlaying) {
+            isPlaybackActive = isPlaying
+            runOnMainThread {
+                 updatePlayButtonState()
+            }
+        }
+    }
+
+    private fun runOnMainThread(action: () -> Unit) {
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+            action()
+        } else {
+            overlayView?.post(action)
+        }
+    }
     
     fun show() {
+        showOverlay(mode = "full")
+    }
+    
+    fun showCaptureMode() {
+        showOverlay(mode = "capture")
+    }
+
+    fun showPlaybackMode() {
+        showOverlay(mode = "playback")
+    }
+
+    private fun showOverlay(mode: String) {
         if (overlayView != null) return
 
         // 1. Drawing Window (Fullscreen)
@@ -63,20 +105,16 @@ class ScreenAgentOverlay(
             height = WindowManager.LayoutParams.MATCH_PARENT
         }
         windowManager.addView(overlayView, layoutParams)
+        android.util.Log.d("ScreenAgentOverlay", "Overlay shown with initialName: '$initialName', Mode: $mode")
         
         // 2. Control Window (Floating)
-        setupControls()
+        setupControls(mode)
     }
 
-
-    private fun setupControls() {
+    private fun setupControls(mode: String = "full") {
         // Icon-based Compact Control Bar
         val panel = android.widget.LinearLayout(context).apply {
             orientation = android.widget.LinearLayout.HORIZONTAL
-            // Use drag_handle_bg if available, otherwise fallback. 
-            // We'll use a semi-transparent dark background with rounded corners programmatically if needed,
-            // or try standard resource.
-            // setBackgroundResource(com.autonion.automationcompanion.R.drawable.drag_handle_bg) // Assuming this exists or similar
             setBackgroundColor(Color.parseColor("#99000000")) 
             setPadding(8, 8, 8, 8)
         }
@@ -91,7 +129,10 @@ class ScreenAgentOverlay(
                 layoutParams = android.widget.LinearLayout.LayoutParams(120, 120).apply {
                     setMargins(8, 0, 8, 0)
                 }
-                setOnClickListener { onClick() }
+                setOnClickListener { 
+                    android.util.Log.d("ScreenAgentOverlay", "Button clicked: $desc")
+                    onClick() 
+                }
             }
         }
         
@@ -102,12 +143,23 @@ class ScreenAgentOverlay(
         
         // 2. Mode (Strict/Optional)
         val btnMode = createIconButton(com.autonion.automationcompanion.R.drawable.ic_setup, "Mode: Strict") {
-            overlayView?.toggleLastSelectionMode()
+            val selected = overlayView?.getSelectedElements()
+            if (selected.isNullOrEmpty()) {
+                android.widget.Toast.makeText(context, "Select an element to toggle mode", android.widget.Toast.LENGTH_SHORT).show()
+            } else {
+                overlayView?.toggleLastSelectionMode()
+            }
         }
         
         // 3. Play
-        val btnPlay = createIconButton(com.autonion.automationcompanion.R.drawable.ic_play, "Play") {
-             android.widget.Toast.makeText(context, "Playback not implemented yet", android.widget.Toast.LENGTH_SHORT).show()
+        btnPlay = createIconButton(com.autonion.automationcompanion.R.drawable.ic_play, "Play") {
+             if (isPlaybackActive) {
+                 onPausePlayback()
+             } else {
+                 val elements = getSelectedElements()
+                 val configs = getSelectionConfig()
+                 onPlay(elements, configs)
+             }
         }
 
         // 4. Save
@@ -120,11 +172,10 @@ class ScreenAgentOverlay(
                  return@createIconButton
              }
              
-             // If we already have a name from SetupFlow, use it directly
-             if (!initialName.isNullOrBlank()) {
+             if (!currentName.isNullOrBlank()) {
                  if (elements.size == configs.size) {
                      val zipped = elements.zip(configs)
-                     onSave(initialName, zipped)
+                     onSave(currentName!!, zipped)
                  }
              } else {
                  showSaveDialog()
@@ -134,17 +185,37 @@ class ScreenAgentOverlay(
         // 5. Stop
         val btnStop = createIconButton(com.autonion.automationcompanion.R.drawable.ic_close, "Stop/Close") { onStop() }
         
-        panel.addView(btnInspect)
-        panel.addView(btnMode)
-        panel.addView(btnPlay)
-        panel.addView(btnSave)
-        panel.addView(btnStop)
+        when (mode) {
+            "capture" -> {
+                // Capture mode: Snap + Close
+                val btnSnap = createIconButton(com.autonion.automationcompanion.R.drawable.ic_save, "Snap") {
+                    onCapture()
+                }
+                panel.addView(btnSnap)
+                panel.addView(btnStop)
+            }
+            "playback" -> {
+                // Playback mode: Play/Pause + Stop
+                panel.addView(btnPlay!!)
+                panel.addView(btnStop)
+            }
+            else -> {
+                // Full mode: all buttons
+                panel.addView(btnInspect)
+                panel.addView(btnMode)
+                panel.addView(btnPlay!!)
+                panel.addView(btnSave)
+                panel.addView(btnStop)
+            }
+        }
         
         controlsView = panel
         
         // Keep reference to update state
-        btnInspectRef = btnInspect
-        btnModeRef = btnMode
+        if (mode == "full") {
+            btnInspectRef = btnInspect
+            btnModeRef = btnMode
+        }
         
         controlsParams = WindowManager.LayoutParams().apply {
             type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -156,7 +227,7 @@ class ScreenAgentOverlay(
                     WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
             
             format = PixelFormat.TRANSLUCENT
-            gravity = Gravity.TOP or Gravity.START // Changed to Start for manual positioning
+            gravity = Gravity.TOP or Gravity.START
             width = WindowManager.LayoutParams.WRAP_CONTENT
             height = WindowManager.LayoutParams.WRAP_CONTENT
             x = 50
@@ -319,9 +390,9 @@ class ScreenAgentOverlay(
     fun getSelectionConfig(): List<Boolean> = overlayView?.getSelectionConfig() ?: emptyList()
 
     fun updateElements(elements: List<UIElement>) {
-        if (!isInspectionMode) {
-             overlayView?.setElements(elements)
-        }
+        // Always update the data model so we have the latest elements for playback or when Inspect is toggled.
+        // ScreenAgentOverlay logic controls whether they are drawn (via validationMode in onDraw).
+        overlayView?.setElements(elements)
     }
     
     data class SelectionState(
@@ -436,9 +507,11 @@ class ScreenAgentOverlay(
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
             
-            if (validationMode) {
-                 canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paintDim)
-            }
+            // Only draw UI elements if we are in "Inspect" (validation) mode.
+            // If we are just running (passive) or playing, we don't want to clutter the screen.
+            if (!validationMode) return
+
+            canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paintDim)
 
             for (element in elements) {
                 val state = selectionStates.find { it.element.id == element.id }
@@ -459,7 +532,8 @@ class ScreenAgentOverlay(
                     
                 } else {
                     canvas.drawRect(element.bounds, paintBox)
-                    // ... text ...
+                    // Optional: Draw label only if needed to reduce clutter
+                    // canvas.drawText(element.label, element.bounds.left, element.bounds.top, paintText)
                 }
             }
         }
