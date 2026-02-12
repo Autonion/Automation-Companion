@@ -1,0 +1,114 @@
+package com.autonion.automationcompanion.features.cross_device_automation.networking
+
+import android.util.Log
+import com.autonion.automationcompanion.features.cross_device_automation.domain.Device
+import com.autonion.automationcompanion.features.cross_device_automation.domain.DeviceRepository
+import com.autonion.automationcompanion.features.cross_device_automation.domain.RawEvent
+import com.autonion.automationcompanion.features.cross_device_automation.event_pipeline.EventReceiver
+import com.google.gson.Gson
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
+
+class NetworkingManager(
+    private val deviceRepository: DeviceRepository,
+    private val eventReceiver: EventReceiver
+) {
+    private val client = OkHttpClient.Builder()
+        .readTimeout(0, TimeUnit.MILLISECONDS)
+        .build()
+
+    private val activeConnections = ConcurrentHashMap<String, WebSocket>()
+    private val gson = Gson()
+    private val scope = CoroutineScope(Dispatchers.IO)
+
+    fun start() {
+        scope.launch {
+            deviceRepository.getAllDevices().collectLatest { devices ->
+                devices.forEach { device ->
+                    if (!activeConnections.containsKey(device.id)) {
+                        connectToDevice(device)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun connectToDevice(device: Device) {
+        val request = Request.Builder()
+            .url("ws://${device.ipAddress}:${device.port}/automation") // Assuming path
+            .build()
+        
+        Log.d("NetworkingManager", "Connecting to ${device.name} at ${device.ipAddress}")
+
+        val listener = object : WebSocketListener() {
+            override fun onOpen(webSocket: WebSocket, response: Response) {
+                Log.d("NetworkingManager", "Connected to ${device.name}")
+                activeConnections[device.id] = webSocket
+            }
+
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                try {
+                    val event = gson.fromJson(text, RawEvent::class.java)
+                    scope.launch {
+                        eventReceiver.onEventReceived(event)
+                    }
+                } catch (e: Exception) {
+                    Log.e("NetworkingManager", "Failed to parse event: $text", e)
+                }
+            }
+
+            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                Log.d("NetworkingManager", "Closing: $reason")
+                webSocket.close(1000, null)
+                activeConnections.remove(device.id)
+            }
+
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                Log.e("NetworkingManager", "Connection failure: ${t.message}")
+                activeConnections.remove(device.id)
+                // Reconnect logic would go here (e.g., delayed retry)
+            }
+        }
+
+        client.newWebSocket(request, listener)
+    }
+
+    fun sendCommand(deviceId: String, command: Any) {
+        val webSocket = activeConnections[deviceId]
+        if (webSocket != null) {
+            val json = gson.toJson(command)
+            webSocket.send(json)
+        } else {
+            Log.e("NetworkingManager", "No active connection for device $deviceId")
+        }
+    }
+    
+    fun broadcast(event: Any) {
+        val json = gson.toJson(event)
+        val connections = activeConnections.values
+        Log.d("NetworkingManager", "Broadcasting event to ${connections.size} devices: $json")
+        
+        connections.forEach { webSocket ->
+            try {
+                webSocket.send(json)
+            } catch (e: Exception) {
+                Log.e("NetworkingManager", "Failed to broadcast to device", e)
+            }
+        }
+    }
+    
+    fun stop() {
+        activeConnections.values.forEach { it.close(1000, "Shutting down") }
+        activeConnections.clear()
+        client.dispatcher.executorService.shutdown()
+    }
+}

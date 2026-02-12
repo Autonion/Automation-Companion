@@ -11,7 +11,7 @@ import com.autonion.automationcompanion.features.system_context_automation.Syste
 
 private const val ROUTE_HOME = "home"
 
-object Routes {
+object AutomationRoutes {
     const val GESTURE = "feature/gesture_recording_playback"
     const val DYN_UI = "feature/dynamic_ui_path_recording"
     const val SCREEN_UNDERSTAND = "feature/screen_understanding_using_on_device_ml"
@@ -35,11 +35,11 @@ fun AppNavHost() {
             HomeScreen(onOpen = { route -> navController.navigate(route) })
         }
 
-        composable(Routes.GESTURE) {
+        composable(AutomationRoutes.GESTURE) {
             GestureRecordingScreen()
         }
 
-        composable(Routes.DYN_UI) {
+        composable(AutomationRoutes.DYN_UI) {
             PlaceholderScreen(
                 title = "Dynamic UI Path Recording",
                 todos = listOf(
@@ -51,14 +51,14 @@ fun AppNavHost() {
             )
         }
 
-        composable(Routes.SCREEN_UNDERSTAND) {
+        composable(AutomationRoutes.SCREEN_UNDERSTAND) {
             val context = androidx.compose.ui.platform.LocalContext.current
             androidx.compose.runtime.LaunchedEffect(Unit) {
                context.startActivity(android.content.Intent(context, com.autonion.automationcompanion.features.screen_understanding_ml.ui.PresetDashboardActivity::class.java))
             }
         }
 
-        composable(Routes.SEMANTIC) {
+        composable(AutomationRoutes.SEMANTIC) {
             PlaceholderScreen(
                 title = "Semantic Automation",
                 todos = listOf(
@@ -70,7 +70,7 @@ fun AppNavHost() {
             )
         }
 
-        composable(Routes.CONDITIONAL) {
+        composable(AutomationRoutes.CONDITIONAL) {
             PlaceholderScreen(
                 title = "Conditional Macros",
                 todos = listOf(
@@ -82,7 +82,7 @@ fun AppNavHost() {
             )
         }
 
-        composable(Routes.MULTI_APP) {
+        composable(AutomationRoutes.MULTI_APP) {
             PlaceholderScreen(
                 title = "Multi-App Workflow Pipeline",
                 todos = listOf(
@@ -94,7 +94,7 @@ fun AppNavHost() {
             )
         }
 
-        composable(Routes.APP_SPECIFIC) {
+        composable(AutomationRoutes.APP_SPECIFIC) {
             PlaceholderScreen(
                 title = "System Context Automation",
                 todos = listOf(
@@ -106,7 +106,7 @@ fun AppNavHost() {
             )
         }
 
-        composable(Routes.SYSTEM_CONTEXT) {
+        composable(AutomationRoutes.SYSTEM_CONTEXT) {
 //            PlaceholderScreen(
 //                title = "System Context Automation",
 //                todos = listOf(
@@ -125,7 +125,7 @@ fun AppNavHost() {
             )
         }
 
-        composable(Routes.EMERGENCY) {
+        composable(AutomationRoutes.EMERGENCY) {
             PlaceholderScreen(
                 title = "Emergency Trigger",
                 todos = listOf(
@@ -137,7 +137,7 @@ fun AppNavHost() {
             )
         }
 
-        composable(Routes.DEBUGGER) {
+        composable(AutomationRoutes.DEBUGGER) {
             PlaceholderScreen(
                 title = "Automation Debugger",
                 todos = listOf(
@@ -149,19 +149,13 @@ fun AppNavHost() {
             )
         }
 
-        composable(Routes.CROSS_DEVICE) {
-            PlaceholderScreen(
-                title = "Cross-Device Automation",
-                todos = listOf(
-                    "Device pairing (local network/Bluetooth)",
-                    "Sync triggers across devices",
-                    "Security & pairing consent"
-                ),
-                onBack = {navController.popBackStack()}
+        composable(AutomationRoutes.CROSS_DEVICE) {
+            com.autonion.automationcompanion.features.cross_device_automation.presentation.CrossDeviceAutomationScreen(
+                onBack = { navController.popBackStack() }
             )
         }
 
-        composable(Routes.PROFILE_LEARNING) {
+        composable(AutomationRoutes.PROFILE_LEARNING) {
             PlaceholderScreen(
                 title = "Automation Profile Learning",
                 todos = listOf(
