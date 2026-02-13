@@ -28,7 +28,7 @@ class CrossDeviceAutomationManager(private val context: Context) {
     // and EventPipeline needs RuleEngine which needs ActionExecutor which needs NetworkingManager.
     // Solution: Break cycle or use `lateinit` / setter injection.
     
-    private lateinit var networkingManager: NetworkingManager
+    lateinit var networkingManager: NetworkingManager
     private lateinit var actionExecutor: ActionExecutor
     private lateinit var ruleEngine: RuleEngine
     private lateinit var eventPipeline: EventPipeline
@@ -43,19 +43,17 @@ class CrossDeviceAutomationManager(private val context: Context) {
         
         // We defer initialization to avoid 'this' escape in constructor if possible, or build graph here.
         
-        // Circular dependency resolution:
+        // Circular dependency resolution (Decoupled via EventBus):
         // Networking -> needs EventReceiver
-        // EventPipeline (Receiver) -> needs RuleEngine
-        // RuleEngine -> needs ActionExecutor
+        // EventPipeline (Receiver) -> Publishes to EventBus
+        // RuleEngine -> Subscribes to EventBus
         // ActionExecutor -> needs NetworkingManager
 
-        // Construct NetworkingManager with a proxy receiver or defer
-        // Or setter injection.
+        // Correct order:
+        // 1. Repositories (Already created)
+        // 2. Bus (Static object)
         
-        // Let's assume we can construct NetworkingManager without receiver first? No, constructor param.
-        // We can make EventPipeline implement EventReceiver and pass it later? No.
-        
-        // Let's use a forward reference via a lambda or object.
+        // 3. Components
         val eventReceiverProxy = object : com.autonion.automationcompanion.features.cross_device_automation.event_pipeline.EventReceiver {
             override suspend fun onEventReceived(event: com.autonion.automationcompanion.features.cross_device_automation.domain.RawEvent) {
                 if (::eventPipeline.isInitialized) {
@@ -66,8 +64,12 @@ class CrossDeviceAutomationManager(private val context: Context) {
         
         networkingManager = NetworkingManager(deviceRepository, eventReceiverProxy)
         actionExecutor = ActionExecutor(context, networkingManager)
-        ruleEngine = RuleEngine(ruleRepository, actionExecutor)
-        eventPipeline = EventPipeline(enricher, taggingSystem, ruleEngine) { event ->
+        
+        // RuleEngine now self-subscribes to EventBus internally
+        ruleEngine = RuleEngine(ruleRepository, actionExecutor) 
+        
+        // EventPipeline no longer needs RuleEngine
+        eventPipeline = EventPipeline(enricher, taggingSystem) { event ->
             // Broadcast strategy: send local events to all connected devices
             if (::networkingManager.isInitialized) {
                 networkingManager.broadcast(event)
@@ -76,6 +78,9 @@ class CrossDeviceAutomationManager(private val context: Context) {
         
         hostManager = HostManager(context, deviceRepository)
         
+        // Inject State Evaluator (It self-subscribes)
+        val stateEvaluator = com.autonion.automationcompanion.features.cross_device_automation.state.StateEvaluator()
+
         clipboardMonitor = com.autonion.automationcompanion.features.cross_device_automation.event_source.ClipboardMonitor(context, eventPipeline)
         com.autonion.automationcompanion.AccessibilityRouter.register(clipboardMonitor)
     }
@@ -85,7 +90,7 @@ class CrossDeviceAutomationManager(private val context: Context) {
         isStarted = true
         hostManager.startDiscovery()
         networkingManager.start()
-        Log.d("CrossDeviceManager", "Service started")
+        Log.d("CrossDeviceManager", "Service started (EventBus Architecture)")
     }
 
     fun stop() {

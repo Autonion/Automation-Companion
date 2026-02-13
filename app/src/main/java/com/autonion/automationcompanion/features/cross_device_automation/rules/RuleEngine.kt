@@ -4,15 +4,31 @@ import android.util.Log
 import com.autonion.automationcompanion.features.cross_device_automation.actions.ActionExecutor
 import com.autonion.automationcompanion.features.cross_device_automation.domain.EnrichedEvent
 import com.autonion.automationcompanion.features.cross_device_automation.domain.RuleCondition
+import com.autonion.automationcompanion.features.cross_device_automation.event_pipeline.EventBus
+import com.autonion.automationcompanion.features.cross_device_automation.state.StateChangeEvent
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.launch
 
 class RuleEngine(
-    private val ruleRepository: RuleRepository, // Need to define this
-    private val actionExecutor: ActionExecutor
+    private val ruleRepository: RuleRepository, 
+    private val actionExecutor: ActionExecutor,
+    private val scope: CoroutineScope = CoroutineScope(Dispatchers.Default)
 ) {
 
-    suspend fun evaluate(event: EnrichedEvent) {
+    init {
+        scope.launch {
+            EventBus.events.collect { event ->
+                when (event) {
+                    is EnrichedEvent -> evaluate(event)
+                    is StateChangeEvent -> evaluateStateChange(event)
+                }
+            }
+        }
+    }
+
+    private suspend fun evaluate(event: EnrichedEvent) {
         val rules = ruleRepository.getAllRules().first()
         
         rules.filter { it.isEnabled }.forEach { rule ->
@@ -21,13 +37,19 @@ class RuleEngine(
                 // 2. Check Conditions
                 if (checkConditions(rule.conditions, event)) {
                     // 3. Execute Actions
-                    Log.d("RuleEngine", "Rule matched: ${rule.name}")
+                    Log.d("RuleEngine", "Rule matched (Event): ${rule.name}")
                     rule.actions.forEach { action ->
                         actionExecutor.execute(action)
                     }
                 }
             }
         }
+    }
+    
+    private suspend fun evaluateStateChange(stateEvent: StateChangeEvent) {
+        Log.d("RuleEngine", "Evaluating State Change: ${stateEvent.key} -> ${stateEvent.newValue}")
+        // Future: Implement State-based Rules here
+        // e.g. If state.context == "meeting" -> Enable DND
     }
 
     private fun checkConditions(conditions: List<RuleCondition>, event: EnrichedEvent): Boolean {

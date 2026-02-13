@@ -8,18 +8,36 @@ class TaggingSystem {
     // For now, hardcoded built-in patterns.
 
     private val knownPatterns = mapOf(
+        // Meeting
         "meet.google.com" to "meeting",
         "zoom.us" to "meeting",
         "teams.microsoft.com" to "meeting",
+        "webex.com" to "meeting",
+        
+        // Video
         "youtube.com" to "video",
         "netflix.com" to "video",
+        "twitch.tv" to "video",
+        "vimeo.com" to "video",
+        
+        // Coding
         "github.com" to "coding",
+        "gitlab.com" to "coding",
         "stackoverflow.com" to "coding",
+        "jira.com" to "coding",
+        
+        // Works
         "linkedin.com" to "work",
+        "slack.com" to "work",
+        "notion.so" to "work",
+        
+        // Social
         "facebook.com" to "social",
         "instagram.com" to "social",
         "twitter.com" to "social",
-        "x.com" to "social"
+        "x.com" to "social",
+        "tiktok.com" to "social",
+        "reddit.com" to "social"
     )
 
     fun tag(event: EnrichedEvent): EnrichedEvent {

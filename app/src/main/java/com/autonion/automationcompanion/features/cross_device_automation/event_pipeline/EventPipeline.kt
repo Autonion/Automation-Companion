@@ -8,12 +8,14 @@ import com.autonion.automationcompanion.features.cross_device_automation.tagging
 class EventPipeline(
     private val enricher: EventEnricher,
     private val taggingSystem: TaggingSystem,
-    private val ruleEngine: RuleEngine,
     private val broadcastStrategy: ((RawEvent) -> Unit)? = null
 ) : EventReceiver {
 
     override suspend fun onEventReceived(event: RawEvent) {
         Log.d("EventPipeline", "Received event: ${event.type}")
+        
+        // 0. Publish Raw Event
+        EventBus.publish(event)
         
         // Broadcast local events to connected devices
         if (event.sourceDeviceId == "local" && broadcastStrategy != null) {
@@ -27,12 +29,13 @@ class EventPipeline(
         
         // 1. Enrich
         val enrichedEvent = enricher.enrich(event)
+        EventBus.publish(enrichedEvent)
         
         // 2. Tag
         val taggedEvent = taggingSystem.tag(enrichedEvent)
         Log.d("EventPipeline", "Tagged event: ${taggedEvent.detectedTags}")
         
-        // 3. Rule Engine
-        ruleEngine.evaluate(taggedEvent)
+        // 3. Publish Tagged Event (Decoupled from Rule Engine)
+        EventBus.publish(taggedEvent)
     }
 }

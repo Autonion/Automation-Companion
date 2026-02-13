@@ -57,12 +57,28 @@ class NetworkingManager(
 
             override fun onMessage(webSocket: WebSocket, text: String) {
                 try {
+                    // 1. Parse as generic JsonObject first to check message type
+                    val jsonObject = gson.fromJson(text, com.google.gson.JsonObject::class.java)
+                    val type = jsonObject.get("type")?.asString
+
+                    if (type == null) {
+                        Log.w("NetworkingManager", "Received message without type: $text")
+                        return
+                    }
+
+                    // 2. Handle Control Messages
+                    if (type == "connection_ack") {
+                        Log.d("NetworkingManager", "Handshake received from ${device.name}: $text")
+                        return // Don't try to parse as RawEvent
+                    }
+
+                    // 3. Handle Data Events
                     val event = gson.fromJson(text, RawEvent::class.java)
                     scope.launch {
                         eventReceiver.onEventReceived(event)
                     }
                 } catch (e: Exception) {
-                    Log.e("NetworkingManager", "Failed to parse event: $text", e)
+                    Log.e("NetworkingManager", "Failed to parse message: $text", e)
                 }
             }
 
