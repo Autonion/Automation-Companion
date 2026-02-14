@@ -83,6 +83,16 @@ class CrossDeviceAutomationManager(private val context: Context) {
         }
     }
 
+    private val PREF_CLIPBOARD_SYNC_ENABLED = "clipboard_sync_enabled"
+
+    fun isClipboardSyncEnabled(): Boolean {
+        return prefs.getBoolean(PREF_CLIPBOARD_SYNC_ENABLED, true)
+    }
+
+    fun setClipboardSyncEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(PREF_CLIPBOARD_SYNC_ENABLED, enabled).apply()
+    }
+
     fun start() {
         if (isStarted) return
         if (!isFeatureEnabled()) {
@@ -134,12 +144,12 @@ class CrossDeviceAutomationManager(private val context: Context) {
 
     // Called by AutomationService (Accessibility Service) which has permission to read clipboard in background
     fun injectClipboardEvent(text: String) {
-        if (!isStarted) return
+        if (!isStarted || !isClipboardSyncEnabled()) return
         // No-op for now, waiting for implementation
     }
     
     fun syncClipboard(context: Context? = null) {
-        if (::clipboardMonitor.isInitialized && isFeatureEnabled()) {
+        if (::clipboardMonitor.isInitialized && isFeatureEnabled() && isClipboardSyncEnabled()) {
             clipboardMonitor.checkNow(context)
         }
     }

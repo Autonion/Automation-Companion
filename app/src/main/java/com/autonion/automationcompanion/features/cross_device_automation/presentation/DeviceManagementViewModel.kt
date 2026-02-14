@@ -17,6 +17,9 @@ class DeviceManagementViewModel(
     private val _isFeatureEnabled = MutableStateFlow(manager.isFeatureEnabled())
     val isFeatureEnabled: StateFlow<Boolean> = _isFeatureEnabled.asStateFlow()
 
+    private val _isClipboardSyncEnabled = MutableStateFlow<Boolean>(manager.isClipboardSyncEnabled())
+    val isClipboardSyncEnabled: StateFlow<Boolean> = _isClipboardSyncEnabled.asStateFlow()
+
     private val _devices = MutableStateFlow<List<Device>>(emptyList())
     val devices: StateFlow<List<Device>> = _devices.asStateFlow()
 
@@ -31,6 +34,11 @@ class DeviceManagementViewModel(
     fun toggleFeature(enabled: Boolean) {
         manager.setFeatureEnabled(enabled)
         _isFeatureEnabled.value = enabled
+    }
+
+    fun toggleClipboardSync(enabled: Boolean) {
+        manager.setClipboardSyncEnabled(enabled)
+        _isClipboardSyncEnabled.value = enabled
     }
 
     fun updateDeviceRole(deviceId: String, role: DeviceRole) {

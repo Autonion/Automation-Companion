@@ -39,26 +39,55 @@ fun DeviceManagementScreen() {
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         // Feature Toggle
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Cross-Device Automation",
-                    style = MaterialTheme.typography.titleMedium
-                )
-                Text(
-                    text = if (isEnabled) "Enabled (Running in Background)" else "Disabled",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+        Column(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
+            // Main Toggle
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Cross-Device Automation",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        text = if (isEnabled) "Enabled (Running in Background)" else "Disabled",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                androidx.compose.material3.Switch(
+                    checked = isEnabled,
+                    onCheckedChange = viewModel::toggleFeature
                 )
             }
-            androidx.compose.material3.Switch(
-                checked = isEnabled,
-                onCheckedChange = viewModel::toggleFeature
-            )
+
+            // Clipboard Sync Toggle
+            if (isEnabled) {
+                 val isClipboardSyncEnabled by viewModel.isClipboardSyncEnabled.collectAsState()
+                 Row(
+                    modifier = Modifier.fillMaxWidth().padding(start = 16.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Sync Clipboard",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        Text(
+                            text = "Automatically share copied text",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    androidx.compose.material3.Switch(
+                        checked = isClipboardSyncEnabled,
+                        onCheckedChange = viewModel::toggleClipboardSync
+                    )
+                }
+            }
         }
         
         // Text("Connected Devices", style = MaterialTheme.typography.titleLarge) // Removed redundancy if tab implies context, but kept for clarity
