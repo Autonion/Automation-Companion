@@ -88,10 +88,56 @@ fun DeviceManagementScreen() {
                     )
                 }
             }
+            
+            // Battery Optimization Warning / Action
+            if (isEnabled) {
+                val powerManager = context.getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
+                val isIgnoringOptimizations = powerManager.isIgnoringBatteryOptimizations(context.packageName)
+                
+                Column(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                    if (!isIgnoringOptimizations) {
+                        androidx.compose.material3.Button(
+                            onClick = {
+                                val intent = android.content.Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                                    data = android.net.Uri.parse("package:${context.packageName}")
+                                }
+                                context.startActivity(intent)
+                            },
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer,
+                                contentColor = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                        ) {
+                            Text("Disable Battery Optimization")
+                        }
+                    }
+
+                    // Always show App Info shortcut for OEM specific settings (Smart Mode etc)
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = {
+                            val intent = android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                data = android.net.Uri.parse("package:${context.packageName}")
+                            }
+                            context.startActivity(intent)
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(if (isIgnoringOptimizations) "Verify Background Settings (Fix Disconnects)" else "Open App Settings for Manual Fix")
+                    }
+                    
+                    if (isIgnoringOptimizations) {
+                         Text(
+                            text = "Standard optimization disabled. If disconnection persists, check 'App Settings > Battery' and enable 'Allow Background Activity'.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+                }
+            }
         }
         
-        // Text("Connected Devices", style = MaterialTheme.typography.titleLarge) // Removed redundancy if tab implies context, but kept for clarity
-        // Or better, make it a descriptive header
         Text(
             text = "Discovered Devices", 
             style = MaterialTheme.typography.titleMedium,
