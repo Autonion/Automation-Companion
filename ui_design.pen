@@ -1,0 +1,68 @@
+{
+  "id": "root_frame",
+  "type": "frame",
+  "name": "Overlay UI Design",
+  "x": 0,
+  "y": 0,
+  "width": 800,
+  "height": 600,
+  "children": [
+    {
+      "id": "control_panel_bg",
+      "type": "rectangle",
+      "name": "Control Panel Background",
+      "x": 20,
+      "y": 20,
+      "width": 200,
+      "height": 500,
+      "fill": "#1E1E1E",
+      "effect": {
+        "type": "drop-shadow",
+        "blur": 16,
+        "color": "#00000080"
+      },
+      "children": [
+        {
+          "id": "btn_play",
+          "type": "rectangle",
+          "name": "Play Button",
+          "x": 20,
+          "y": 20,
+          "width": 160,
+          "height": 48,
+          "fill": "#BB86FC",
+          "children": [
+            {
+              "id": "text_play",
+              "type": "text",
+              "text": "PLAY",
+              "x": 60,
+              "y": 14,
+              "fill": "#FFFFFF"
+            }
+          ]
+        },
+        {
+          "id": "btn_stop",
+          "type": "rectangle",
+          "name": "Stop Button",
+          "x": 20,
+          "y": 80,
+          "width": 160,
+          "height": 48,
+          "fill": "#03DAC6",
+          "children": [
+            {
+              "id": "text_stop",
+              "type": "text",
+              "text": "STOP",
+              "x": 60,
+              "y": 14,
+              "fill": "#000000"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
