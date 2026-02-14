@@ -31,11 +31,10 @@ fun AuroraBackground(
     // Config for gradients
     val bgBase = if (isDark) Color(0xFF0F1115) else Color(0xFFF3F6FD) // Dark: Rich Black, Light: Pale Blue-White
     
-    // Top Right Orb
-    val topRightColor = if (isDark) Color(0xFF7C4DFF).copy(alpha = 0.2f) else Color(0xFFE1BEE7).copy(alpha = 0.6f) // Dark: Deep Purple, Light: Soft Pink/Purple
-    
+    // Top Right Orb — slightly stronger alpha so motion is more visible
+    val topRightColor = if (isDark) Color(0xFF7C4DFF).copy(alpha = 0.32f) else Color(0xFFE1BEE7).copy(alpha = 0.65f)
     // Top Left Orb
-    val topLeftColor = if (isDark) Color(0xFF00B0FF).copy(alpha = 0.15f) else Color(0xFFD1E4FF).copy(alpha = 0.6f) // Dark: Cyan, Light: Soft Blue
+    val topLeftColor = if (isDark) Color(0xFF00B0FF).copy(alpha = 0.26f) else Color(0xFFD1E4FF).copy(alpha = 0.65f)
 
     val noiseBitmap = remember {
         generateNoiseBitmap(100, 100) 
@@ -44,41 +43,45 @@ fun AuroraBackground(
     // Animation State
     val infiniteTransition = rememberInfiniteTransition(label = "Aurora")
     
-    // Top Right Blob Animation
+    val smoothEasing = FastOutSlowInEasing
+    // Larger movement range and faster duration so the aurora feels clearly in motion
+    val movePx = 120f
+    val durationFast = 2800
+    val durationSlow = 3400
+
     val topRightX by infiniteTransition.animateFloat(
         initialValue = 0f,
-        targetValue = 50f,
+        targetValue = movePx,
         animationSpec = infiniteRepeatable(
-            animation = tween(4000, easing = LinearEasing),
+            animation = tween(durationFast, easing = smoothEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "TR_X"
     )
     val topRightY by infiniteTransition.animateFloat(
         initialValue = 0f,
-        targetValue = 30f,
+        targetValue = movePx * 0.6f,
         animationSpec = infiniteRepeatable(
-            animation = tween(5000, easing = LinearEasing),
+            animation = tween(durationSlow, easing = smoothEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "TR_Y"
     )
 
-    // Top Left Blob Animation (Opposite phase roughly)
     val topLeftX by infiniteTransition.animateFloat(
         initialValue = 0f,
-        targetValue = -40f,
+        targetValue = -movePx * 0.9f,
         animationSpec = infiniteRepeatable(
-            animation = tween(4500, easing = LinearEasing),
+            animation = tween(durationSlow, easing = smoothEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "TL_X"
     )
     val topLeftY by infiniteTransition.animateFloat(
         initialValue = 0f,
-        targetValue = 40f,
+        targetValue = movePx * 0.7f,
         animationSpec = infiniteRepeatable(
-            animation = tween(5500, easing = LinearEasing),
+            animation = tween(durationFast + 200, easing = smoothEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "TL_Y"

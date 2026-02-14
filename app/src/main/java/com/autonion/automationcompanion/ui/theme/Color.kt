@@ -82,6 +82,7 @@ val DarkAccentRedContainer = Color(0xFF5A1A1A) // Muted Red for dark mode
 val DarkAccentGreyContainer = Color(0xFF2A2D35) // Muted Grey for dark mode
 
 val DarkBannerBackground = Color(0xFF1C2235)
+val LightBannerBackground = Color(0xFF2D3A5C)
 
 val AppLightColorScheme = lightColorScheme(
     primary = LightPrimary,

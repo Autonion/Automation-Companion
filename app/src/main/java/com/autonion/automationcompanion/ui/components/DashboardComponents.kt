@@ -23,6 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.autonion.automationcompanion.ui.theme.DarkBannerBackground
+import com.autonion.automationcompanion.ui.theme.LightBannerBackground
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.LaunchedEffect
@@ -84,9 +85,9 @@ fun DashboardHeader(
     ) {
         Column {
             Text(
-                text = "Autonion", 
+                text = title,
                 style = MaterialTheme.typography.headlineMedium.copy(
-                    fontWeight = FontWeight.Bold, 
+                    fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
                 )
             )
@@ -155,7 +156,8 @@ fun HeroCard(
         Column(modifier = Modifier.padding(20.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 Box(
                     modifier = Modifier
@@ -165,6 +167,7 @@ fun HeroCard(
                 ) {
                     Icon(icon, contentDescription = null, tint = iconColor)
                 }
+                Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Spacer(modifier = Modifier.height(16.dp))
             Text(title, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
@@ -303,13 +306,14 @@ fun StatusCard(
     iconColor: Color,
     iconContainerColor: Color,
     backgroundColor: Color,
+    titleColor: Color? = null,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val isDark = isSystemInDarkTheme()
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(targetValue = if (isPressed) 0.95f else 1f, label = "scale")
+    val resolvedTitleColor = titleColor ?: MaterialTheme.colorScheme.onSurface
 
     Card(
         modifier = modifier
@@ -319,9 +323,9 @@ fun StatusCard(
                 scaleY = scale
             }
             .clickable(interactionSource = interactionSource, indication = LocalIndication.current) { onClick() },
-        colors = CardDefaults.cardColors(containerColor = backgroundColor), // Light red/grey
+        colors = CardDefaults.cardColors(containerColor = backgroundColor),
         shape = RoundedCornerShape(20.dp),
-        border = if (isDark) BorderStroke(1.dp, iconContainerColor.copy(alpha = 0.3f)) else BorderStroke(1.dp, iconContainerColor.copy(alpha = 0.1f))
+        border = if (isSystemInDarkTheme()) BorderStroke(1.dp, iconContainerColor.copy(alpha = 0.3f)) else BorderStroke(1.dp, iconContainerColor.copy(alpha = 0.1f))
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -337,17 +341,17 @@ fun StatusCard(
             }
             Spacer(modifier = Modifier.weight(1f))
             Text(
-                title, 
+                title,
                 style = MaterialTheme.typography.titleSmall.copy(
-                    fontWeight = FontWeight.Bold, 
-                    color = if (title.contains("Emergency") && !isSystemInDarkTheme()) Color(0xFFB71C1C) else MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Bold,
+                    color = resolvedTitleColor,
                     fontSize = 13.sp
                 ),
                 maxLines = 1,
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
             )
             Text(
-                subtitle, 
+                subtitle,
                 style = MaterialTheme.typography.bodySmall.copy(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 11.sp
@@ -366,6 +370,8 @@ fun BannerCard(
     icon: ImageVector,
     onClick: () -> Unit
 ) {
+    val isDark = isSystemInDarkTheme()
+    val bannerBg = if (isDark) DarkBannerBackground else LightBannerBackground
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(targetValue = if (isPressed) 0.95f else 1f, label = "scale")
@@ -379,7 +385,7 @@ fun BannerCard(
                 scaleY = scale
             }
             .clickable(interactionSource = interactionSource, indication = LocalIndication.current) { onClick() },
-        colors = CardDefaults.cardColors(containerColor = DarkBannerBackground),
+        colors = CardDefaults.cardColors(containerColor = bannerBg),
         shape = RoundedCornerShape(24.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
@@ -411,17 +417,20 @@ fun StaggeredEntry(
 ) {
     val animAlpha = androidx.compose.runtime.remember { androidx.compose.animation.core.Animatable(0f) }
     val slide = androidx.compose.runtime.remember { androidx.compose.animation.core.Animatable(50f) }
-    
+    val staggerMs = 50L
+    val maxStaggerDelay = 200L
+    val delay = (index * staggerMs).coerceAtMost(maxStaggerDelay)
+
     androidx.compose.runtime.LaunchedEffect(Unit) {
-        kotlinx.coroutines.delay(index * 100L) // Stagger delay
+        kotlinx.coroutines.delay(delay)
         launch {
-            animAlpha.animateTo(1f, androidx.compose.animation.core.tween(500))
+            animAlpha.animateTo(1f, androidx.compose.animation.core.tween(400, easing = androidx.compose.animation.core.FastOutSlowInEasing))
         }
         launch {
-            slide.animateTo(0f, androidx.compose.animation.core.tween(500, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+            slide.animateTo(0f, androidx.compose.animation.core.tween(400, easing = androidx.compose.animation.core.FastOutSlowInEasing))
         }
     }
-    
+
     Box(
         modifier = Modifier
             .graphicsLayer {

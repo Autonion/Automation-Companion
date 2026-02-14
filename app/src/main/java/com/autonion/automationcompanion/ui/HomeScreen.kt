@@ -174,6 +174,7 @@ fun HomeScreen(onOpen: (String) -> Unit) {
                             iconColor = Color.White,
                             iconContainerColor = AccentRed,
                             backgroundColor = if (isDark) DarkAccentRedContainer else AccentRedContainer,
+                            titleColor = if (isDark) MaterialTheme.colorScheme.onSurface else Color(0xFFB71C1C),
                             onClick = { onOpen(AutomationRoutes.EMERGENCY) },
                             modifier = Modifier.weight(1f)
                         )
