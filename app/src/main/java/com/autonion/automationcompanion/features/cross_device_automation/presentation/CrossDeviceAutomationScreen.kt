@@ -37,7 +37,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
     var selectedTab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("Ask", "Devices")
+    val tabs = listOf("Ask", "Automations", "Devices")
 
     val context = LocalContext.current
     var showPermissionDialog by remember { mutableStateOf(false) }
@@ -128,6 +128,11 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
                         }
                     }
                     1 -> {
+                        Column(modifier = Modifier.weight(1f)) {
+                            DesktopAutomationScreen()
+                        }
+                    }
+                    2 -> {
                         Column(modifier = Modifier.weight(1f)) {
                             DeviceManagementScreen()
                         }

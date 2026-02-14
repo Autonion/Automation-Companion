@@ -11,6 +11,15 @@ import com.autonion.automationcompanion.features.automation.actions.models.Confi
 import com.autonion.automationcompanion.features.automation.actions.models.NotificationType
 import com.autonion.automationcompanion.features.automation.actions.models.RingerMode
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import com.autonion.automationcompanion.features.system_context_automation.shared.utils.PermissionUtils
+import android.provider.Settings
+import android.app.NotificationManager
+import android.content.Context
+import android.net.Uri
+import android.content.Intent
+
 @Composable
 fun ActionPicker(
     configuredActions: List<ConfiguredAction>,
@@ -18,8 +27,86 @@ fun ActionPicker(
     onPickContactClicked: (actionIndex: Int) -> Unit,
     onPickAppClicked: (actionIndex: Int) -> Unit, // NEW
     dndDisabledReason: String? = null,
-    context: android.content.Context // NEW: Needed for app picker
+    context: android.content.Context
 ) {
+    // --- Permissions State & Launchers ---
+    var showWriteSettingsRationale by remember { mutableStateOf(false) }
+    var showDndRationale by remember { mutableStateOf(false) }
+    var showSmsRationale by remember { mutableStateOf(false) }
+
+    // Launcher for System Settings (StartActivityForResult doesn't return result for settings, so we just check on return)
+    // We actually just launch the intent, and rely on the user navigating back.
+    // However, to know *which* permission we were asking for to auto-enable, we could track state.
+    // For simplicity, we just launch settings and let the user toggle again.
+
+    val smsPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { permissions ->
+        val granted = permissions[android.Manifest.permission.SEND_SMS] == true &&
+                      permissions[android.Manifest.permission.READ_CONTACTS] == true
+        if (granted) {
+            // Permission granted, user can toggle again to enable
+        }
+    }
+
+    if (showWriteSettingsRationale) {
+        AlertDialog(
+            onDismissRequest = { showWriteSettingsRationale = false },
+            title = { Text("Permission Required") },
+            text = { Text("To control brightness, auto-rotate, or screen timeout, this app needs permission to Modify System Settings.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showWriteSettingsRationale = false
+                    PermissionUtils.requestWriteSettingsPermission(context)
+                }) { Text("Open Settings") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showWriteSettingsRationale = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (showDndRationale) {
+        AlertDialog(
+            onDismissRequest = { showDndRationale = false },
+            title = { Text("Permission Required") },
+            text = { Text("To control Do Not Disturb and Volume, this app needs 'Do Not Disturb Access'.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDndRationale = false
+                    val intent = Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(intent)
+                }) { Text("Open Settings") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDndRationale = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (showSmsRationale) {
+        AlertDialog(
+            onDismissRequest = { showSmsRationale = false },
+            title = { Text("Permission Required") },
+            text = { Text("To send messages, this app needs SMS and Contacts permissions.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showSmsRationale = false
+                    smsPermissionLauncher.launch(
+                        arrayOf(
+                            android.Manifest.permission.SEND_SMS,
+                            android.Manifest.permission.READ_CONTACTS
+                        )
+                    )
+                }) { Text("Grant") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSmsRationale = false }) { Text("Cancel") }
+            }
+        )
+    }
+
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -37,17 +124,22 @@ fun ActionPicker(
             checked = audioAction != null,
             onCheckedChange = { enabled ->
                 if (enabled) {
-                    if (audioAction == null) {
-                        onActionsChanged(
-                            configuredActions + ConfiguredAction.Audio(
-                                ringVolume = 3,
-                                mediaVolume = 8,
-                                alarmVolume = 8,
-                                ringerMode = RingerMode.NORMAL
+                    val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                    if (!nm.isNotificationPolicyAccessGranted) {
+                        showDndRationale = true
+                    } else {
+                        if (audioAction == null) {
+                            onActionsChanged(
+                                configuredActions + ConfiguredAction.Audio(
+                                    ringVolume = 3,
+                                    mediaVolume = 8,
+                                    alarmVolume = 8,
+                                    ringerMode = RingerMode.NORMAL
+                                )
                             )
-                        )
+                        }
+                        audioExpanded = true
                     }
-                    audioExpanded = true
                 } else {
                     onActionsChanged(configuredActions.filterNot { it is ConfiguredAction.Audio })
                     audioExpanded = false
@@ -79,12 +171,16 @@ fun ActionPicker(
             checked = brightnessAction != null,
             onCheckedChange = { enabled ->
                 if (enabled) {
-                    if (brightnessAction == null) {
-                        onActionsChanged(
-                            configuredActions + ConfiguredAction.Brightness(150)
-                        )
+                    if (!PermissionUtils.isWriteSettingsPermissionGranted(context)) {
+                        showWriteSettingsRationale = true
+                    } else {
+                        if (brightnessAction == null) {
+                            onActionsChanged(
+                                configuredActions + ConfiguredAction.Brightness(150)
+                            )
+                        }
+                        brightnessExpanded = true
                     }
-                    brightnessExpanded = true
                 } else {
                     onActionsChanged(configuredActions.filterNot { it is ConfiguredAction.Brightness })
                     brightnessExpanded = false
@@ -116,8 +212,13 @@ fun ActionPicker(
             enabled = !dndDisabled,
             onCheckedChange = { enabled ->
                 if (enabled) {
-                    if (dndAction == null) {
-                        onActionsChanged(configuredActions + ConfiguredAction.Dnd(true))
+                    val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                    if (!nm.isNotificationPolicyAccessGranted) {
+                        showDndRationale = true
+                    } else {
+                        if (dndAction == null) {
+                            onActionsChanged(configuredActions + ConfiguredAction.Dnd(true))
+                        }
                     }
                 } else {
                     onActionsChanged(configuredActions.filterNot { it is ConfiguredAction.Dnd })
@@ -149,12 +250,19 @@ fun ActionPicker(
             checked = smsAction != null,
             onCheckedChange = { enabled ->
                 if (enabled) {
-                    if (smsAction == null) {
-                        onActionsChanged(
-                            configuredActions + ConfiguredAction.SendSms("", "")
-                        )
+                    val hasSms = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.SEND_SMS) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                    val hasContact = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_CONTACTS) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                    
+                    if (!hasSms || !hasContact) {
+                        showSmsRationale = true
+                    } else {
+                        if (smsAction == null) {
+                            onActionsChanged(
+                                configuredActions + ConfiguredAction.SendSms("", "")
+                            )
+                        }
+                        smsExpanded = true
                     }
-                    smsExpanded = true
                 } else {
                     onActionsChanged(configuredActions.filterNot { it is ConfiguredAction.SendSms })
                     smsExpanded = false
@@ -324,8 +432,12 @@ fun ActionPicker(
                 checked = autoRotateAction != null,
                 onCheckedChange = { enabled ->
                     if (enabled) {
-                        if (autoRotateAction == null) {
-                            onActionsChanged(configuredActions + ConfiguredAction.AutoRotate(true))
+                        if (!PermissionUtils.isWriteSettingsPermissionGranted(context)) {
+                            showWriteSettingsRationale = true
+                        } else {
+                            if (autoRotateAction == null) {
+                                onActionsChanged(configuredActions + ConfiguredAction.AutoRotate(true))
+                            }
                         }
                     } else {
                         onActionsChanged(
@@ -359,10 +471,14 @@ fun ActionPicker(
                 checked = screenTimeoutAction != null,
                 onCheckedChange = { enabled ->
                     if (enabled) {
-                        if (screenTimeoutAction == null) {
-                            onActionsChanged(
-                                configuredActions + ConfiguredAction.ScreenTimeout(30_000)
-                            )
+                        if (!PermissionUtils.isWriteSettingsPermissionGranted(context)) {
+                            showWriteSettingsRationale = true
+                        } else {
+                            if (screenTimeoutAction == null) {
+                                onActionsChanged(
+                                    configuredActions + ConfiguredAction.ScreenTimeout(30_000)
+                                )
+                            }
                         }
                     } else {
                         onActionsChanged(

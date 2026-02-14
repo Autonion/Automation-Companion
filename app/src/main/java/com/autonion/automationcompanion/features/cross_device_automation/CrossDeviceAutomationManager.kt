@@ -12,8 +12,9 @@ import com.autonion.automationcompanion.features.cross_device_automation.host_ma
 import com.autonion.automationcompanion.features.cross_device_automation.networking.NetworkingManager
 import com.autonion.automationcompanion.features.cross_device_automation.rules.RuleEngine
 import com.autonion.automationcompanion.features.cross_device_automation.tagging.TaggingSystem
+import kotlinx.coroutines.flow.first
 
-class CrossDeviceAutomationManager(private val context: Context) {
+class CrossDeviceAutomationManager(private val context: Context) : NetworkingManager.NetworkingListener {
     
     // Repositories
     val deviceRepository = InMemoryDeviceRepository()
@@ -51,6 +52,7 @@ class CrossDeviceAutomationManager(private val context: Context) {
         }
         
         networkingManager = NetworkingManager(deviceRepository, eventReceiverProxy)
+        networkingManager.setListener(this)
         actionExecutor = ActionExecutor(context, networkingManager)
         
         ruleEngine = RuleEngine(ruleRepository, actionExecutor) 
@@ -146,13 +148,113 @@ class CrossDeviceAutomationManager(private val context: Context) {
         if (!isStarted || !isClipboardSyncEnabled()) return
         // No-op for now, waiting for implementation
     }
-    
+
+    // --- Rule Sync Logic ---
+
+    private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
+
+    fun syncRulesToDesktop() {
+        // Launch in IO scope to avoid blocking main thread
+        scope.launch {
+            val allRules = ruleRepository.getAllRules().first()
+            val desktopRules = allRules.filter { it.trigger.eventType == "browser.navigation" }
+            
+            val payloadRules = desktopRules.mapNotNull { rule ->
+                // Map the first condition to the criteria
+                val condition = rule.conditions.firstOrNull() as? com.autonion.automationcompanion.features.cross_device_automation.domain.RuleCondition.PayloadContains
+                if (condition != null) {
+                    val criteriaType = if (condition.key == "url") "url_contains" else "category"
+                    mapOf(
+                        "id" to rule.id,
+                        "criteria" to mapOf(
+                            "type" to criteriaType,
+                            "value" to condition.value
+                        )
+                    )
+                } else null
+            }
+
+            if (payloadRules.isNotEmpty()) {
+                val command = mapOf(
+                    "type" to "register_triggers",
+                    "payload" to mapOf("rules" to payloadRules)
+                )
+                
+                Log.d("CrossDeviceManager", "Syncing ${payloadRules.size} rules to desktop")
+                networkingManager.broadcast(command)
+            }
+        }
+    }
+
+    // --- Networking Events ---
+
+    override fun onDeviceConnected(device: com.autonion.automationcompanion.features.cross_device_automation.domain.Device) {
+        Log.d("CrossDeviceManager", "Device connected: ${device.name}")
+        syncRulesToDesktop() // Sync rules immediately on connection
+    }
+
+    override fun onDeviceDisconnected(deviceId: String) {
+        Log.d("CrossDeviceManager", "Device disconnected: $deviceId")
+    }
+
+    override fun onMessageReceived(deviceId: String, message: String) {
+        try {
+            val json = org.json.JSONObject(message)
+            val type = json.optString("type")
+            
+            if (type == "rule_triggered") {
+                val payload = json.optJSONObject("payload")
+                val ruleId = payload?.optString("rule_id")
+                if (ruleId != null) {
+                    Log.d("CrossDeviceManager", "Received remote trigger for rule: $ruleId")
+                    executeRuleById(ruleId)
+                }
+                return
+            }
+
+            // Existing logic for RawEvent/Events
+            // Note: NetworkingManager now tries to parse and send to EventReceiver directly if it looks like an event.
+            // But if we want to handle it here explicitly or if NetworkingManager failed to parse it as an event:
+            if (type.startsWith("clipboard.") || type.contains("event")) {
+                 try {
+                     val event = com.google.gson.Gson().fromJson(message, com.autonion.automationcompanion.features.cross_device_automation.domain.RawEvent::class.java)
+                     if (event != null) {
+                        if (event.type == "clipboard.text_copied") {
+                             onExternalEvent(event) // Special handling for clipboard
+                        } else {
+                             scope.launch {
+                                 eventPipeline.onEventReceived(event)
+                             }
+                        }
+                     }
+                 } catch (e: Exception) {
+                     Log.w("CrossDeviceManager", "Failed to parse as event in onMessageReceived: ${e.message}")
+                 }
+            }
+        } catch (e: Exception) {
+            Log.e("CrossDeviceManager", "Error parsing message", e)
+        }
+    }
+
+    private fun executeRuleById(ruleId: String) {
+         scope.launch {
+             val rule = ruleRepository.getAllRules().first().find { it.id == ruleId }
+             if (rule != null) {
+                 Log.i("CrossDeviceManager", "Executing remote-triggered rule: ${rule.name}")
+                 rule.actions.forEach { action ->
+                     actionExecutor.execute(action)
+                 }
+             } else {
+                 Log.w("CrossDeviceManager", "Rule not found for ID: $ruleId")
+             }
+         }
+    }
     fun syncClipboard(context: Context? = null) {
         if (::clipboardMonitor.isInitialized && isFeatureEnabled() && isClipboardSyncEnabled()) {
             clipboardMonitor.checkNow(context)
         }
     }
-    
+
     fun onExternalEvent(event: com.autonion.automationcompanion.features.cross_device_automation.domain.RawEvent) {
         if (!isStarted || !::eventPipeline.isInitialized) return
         

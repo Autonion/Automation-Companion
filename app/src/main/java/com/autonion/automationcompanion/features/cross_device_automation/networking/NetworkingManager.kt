@@ -35,7 +35,7 @@ class NetworkingManager(
 
     fun start() {
         if (collectionJob?.isActive == true) return
-        
+
         collectionJob = scope.launch {
             deviceRepository.getAllDevices().collectLatest { devices ->
                 devices.forEach { device ->
@@ -47,20 +47,36 @@ class NetworkingManager(
         }
     }
 
+    interface NetworkingListener {
+        fun onDeviceConnected(device: Device)
+        fun onDeviceDisconnected(deviceId: String)
+        fun onMessageReceived(deviceId: String, message: String)
+    }
+
+    private var listener: NetworkingListener? = null
+
+    fun setListener(listener: NetworkingListener) {
+        this.listener = listener
+    }
+
     private fun connectToDevice(device: Device) {
         val request = Request.Builder()
             .url("ws://${device.ipAddress}:${device.port}/automation") // Assuming path
             .build()
-        
+
         Log.d("NetworkingManager", "Connecting to ${device.name} at ${device.ipAddress}")
 
         val listener = object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 Log.d("NetworkingManager", "Connected to ${device.name}")
                 activeConnections[device.id] = webSocket
+                this@NetworkingManager.listener?.onDeviceConnected(device)
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
+                // Forward raw message to listener (e.g. for Rule Triggers)
+                this@NetworkingManager.listener?.onMessageReceived(device.id, text)
+
                 try {
                     // 1. Parse as generic JsonObject first to check message type
                     val jsonObject = gson.fromJson(text, com.google.gson.JsonObject::class.java)
@@ -78,9 +94,13 @@ class NetworkingManager(
                     }
 
                     // 3. Handle Data Events
-                    val event = gson.fromJson(text, RawEvent::class.java)
-                    scope.launch {
-                        eventReceiver.onEventReceived(event)
+                    // Only try to parse as RawEvent if it looks like one, or let the listener handle it exclusively?
+                    // For now, we still try to parse standard events for the eventPipeline.
+                    if (type.startsWith("clipboard.") || type.contains("event")) {
+                        val event = gson.fromJson(text, RawEvent::class.java)
+                        scope.launch {
+                            eventReceiver.onEventReceived(event)
+                        }
                     }
                 } catch (e: Exception) {
                     Log.e("NetworkingManager", "Failed to parse message: $text", e)
@@ -91,11 +111,13 @@ class NetworkingManager(
                 Log.d("NetworkingManager", "Closing: $reason")
                 webSocket.close(1000, null)
                 activeConnections.remove(device.id)
+                this@NetworkingManager.listener?.onDeviceDisconnected(device.id)
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 Log.e("NetworkingManager", "Connection failure: ${t.message}")
                 activeConnections.remove(device.id)
+                this@NetworkingManager.listener?.onDeviceDisconnected(device.id)
             }
         }
 
@@ -111,12 +133,12 @@ class NetworkingManager(
             Log.e("NetworkingManager", "No active connection for device $deviceId")
         }
     }
-    
+
     fun broadcast(event: Any) {
         val json = gson.toJson(event)
         val connections = activeConnections.values
         Log.d("NetworkingManager", "Broadcasting event to ${connections.size} devices: $json")
-        
+
         connections.forEach { webSocket ->
             try {
                 webSocket.send(json)
@@ -125,15 +147,17 @@ class NetworkingManager(
             }
         }
     }
-    
+
     fun stop() {
         collectionJob?.cancel()
         collectionJob = null
-        
+
         activeConnections.values.forEach { it.close(1000, "Shutting down") }
         activeConnections.clear()
-        
+
         // Do NOT shutdown executor as client is reused.
         client.dispatcher.cancelAll()
     }
+
 }
+

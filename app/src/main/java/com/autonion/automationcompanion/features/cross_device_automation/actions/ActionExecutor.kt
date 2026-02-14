@@ -32,10 +32,110 @@ class ActionExecutor(
             "enable_dnd" -> {
                 val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
                 if (notificationManager.isNotificationPolicyAccessGranted) {
-                    notificationManager.setInterruptionFilter(android.app.NotificationManager.INTERRUPTION_FILTER_PRIORITY)
-                    Log.i("ActionExecutor", "DND Enabled")
+                    val enabled = action.parameters["enabled"]?.toBoolean() ?: true
+                    if (enabled) {
+                        notificationManager.setInterruptionFilter(android.app.NotificationManager.INTERRUPTION_FILTER_PRIORITY)
+                    } else {
+                        notificationManager.setInterruptionFilter(android.app.NotificationManager.INTERRUPTION_FILTER_ALL)
+                    }
+                    Log.i("ActionExecutor", "DND set to $enabled")
                 } else {
                     Log.w("ActionExecutor", "DND Permission missing")
+                    showNotification("Action Failed", "Grant DND permission to AutomationCompanion")
+                }
+            }
+            "set_volume" -> {
+                val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+                try {
+                    action.parameters["ring_volume"]?.toIntOrNull()?.let { 
+                        audioManager.setStreamVolume(android.media.AudioManager.STREAM_RING, it, 0)
+                    }
+                    action.parameters["media_volume"]?.toIntOrNull()?.let { 
+                        audioManager.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, it, 0)
+                    }
+                    action.parameters["alarm_volume"]?.toIntOrNull()?.let { 
+                        audioManager.setStreamVolume(android.media.AudioManager.STREAM_ALARM, it, 0)
+                    }
+                    action.parameters["ringer_mode"]?.let { mode ->
+                        when(mode) {
+                            "SILENT" -> audioManager.ringerMode = android.media.AudioManager.RINGER_MODE_SILENT
+                            "VIBRATE" -> audioManager.ringerMode = android.media.AudioManager.RINGER_MODE_VIBRATE
+                            "NORMAL" -> audioManager.ringerMode = android.media.AudioManager.RINGER_MODE_NORMAL
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e("ActionExecutor", "Failed to set volume", e)
+                }
+            }
+            "set_brightness" -> {
+                if (android.provider.Settings.System.canWrite(context)) {
+                    action.parameters["level"]?.toIntOrNull()?.let { level ->
+                        // Clamp to valid range (0-255)
+                        val safeLevel = level.coerceIn(0, 255)
+                        android.provider.Settings.System.putInt(
+                            context.contentResolver,
+                            android.provider.Settings.System.SCREEN_BRIGHTNESS,
+                            safeLevel
+                        )
+                    }
+                } else {
+                    Log.w("ActionExecutor", "Write Settings permission missing for brightness")
+                }
+            }
+            "set_auto_rotate" -> {
+                if (android.provider.Settings.System.canWrite(context)) {
+                    val enabled = action.parameters["enabled"]?.toBoolean() ?: false
+                    android.provider.Settings.System.putInt(
+                        context.contentResolver,
+                        android.provider.Settings.System.ACCELEROMETER_ROTATION,
+                        if (enabled) 1 else 0
+                    )
+                } else {
+                    Log.w("ActionExecutor", "Write Settings permission missing for auto-rotate")
+                }
+            }
+            "set_screen_timeout" -> {
+                if (android.provider.Settings.System.canWrite(context)) {
+                    action.parameters["duration_ms"]?.toIntOrNull()?.let { timeout ->
+                         android.provider.Settings.System.putInt(
+                            context.contentResolver,
+                            android.provider.Settings.System.SCREEN_OFF_TIMEOUT,
+                            timeout
+                        )
+                    }
+                }
+            }
+            "launch_app" -> {
+                val packageName = action.parameters["package_name"]
+                if (!packageName.isNullOrEmpty()) {
+                    try {
+                        val launchIntent = context.packageManager.getLaunchIntentForPackage(packageName)
+                        if (launchIntent != null) {
+                            launchIntent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            context.startActivity(launchIntent)
+                        } else {
+                            Log.w("ActionExecutor", "App not found: $packageName")
+                        }
+                    } catch (e: Exception) {
+                         Log.e("ActionExecutor", "Failed to launch app $packageName", e)
+                    }
+                }
+            }
+            "send_sms" -> {
+                val message = action.parameters["message"]
+                val contacts = action.parameters["contacts_csv"]?.split(";") ?: emptyList()
+                
+                if (!message.isNullOrEmpty() && contacts.isNotEmpty()) {
+                    if (androidx.core.app.ActivityCompat.checkSelfPermission(context, android.Manifest.permission.SEND_SMS) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                         val smsManager = context.getSystemService(android.telephony.SmsManager::class.java)
+                         contacts.forEach { number -> 
+                             if (number.isNotBlank()) {
+                                 smsManager.sendTextMessage(number, null, message, null, null)
+                             }
+                         }
+                    } else {
+                        Log.w("ActionExecutor", "SMS Permission missing")
+                    }
                 }
             }
             "open_url" -> {
@@ -68,6 +168,13 @@ class ActionExecutor(
                         Log.e("ActionExecutor", "Failed to set clipboard", e)
                     }
                 }
+            }
+            "set_battery_saver" -> {
+                // Battery Saver is generally read-only for apps, but we can open settings
+                 val intent = android.content.Intent(android.provider.Settings.ACTION_BATTERY_SAVER_SETTINGS)
+                 intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                 context.startActivity(intent)
+                 showNotification("Automation", "Please toggle Battery Saver manually")
             }
         }
     }
