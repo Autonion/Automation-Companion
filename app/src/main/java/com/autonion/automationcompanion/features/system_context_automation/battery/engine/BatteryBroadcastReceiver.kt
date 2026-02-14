@@ -43,7 +43,21 @@ class BatteryBroadcastReceiver : BroadcastReceiver() {
             Log.i(TAG, "Battery level changed to $batteryPercentage%")
 
             CoroutineScope(Dispatchers.IO).launch {
+                // 1. Maintain existing Slot logic (optional, keep for backward compatibility)
                 evaluateBatterySlots(context, batteryPercentage)
+                
+                // 2. Publish to Cross-Device Event Bus
+                val event = com.autonion.automationcompanion.features.cross_device_automation.domain.RawEvent(
+                    id = java.util.UUID.randomUUID().toString(),
+                    timestamp = System.currentTimeMillis(),
+                    type = "system.battery.changed",
+                    sourceDeviceId = "local",
+                    payload = mapOf(
+                        "level" to batteryPercentage.toString(),
+                        "is_charging" to (intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1) == BatteryManager.BATTERY_STATUS_CHARGING).toString()
+                    )
+                )
+                com.autonion.automationcompanion.features.cross_device_automation.event_pipeline.EventBus.publish(event)
             }
         }
     }

@@ -1,0 +1,188 @@
+package com.autonion.automationcompanion.features.cross_device_automation.presentation
+
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Computer
+import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.Tv
+import androidx.compose.material3.Card
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.autonion.automationcompanion.features.cross_device_automation.CrossDeviceAutomationManager
+import com.autonion.automationcompanion.features.cross_device_automation.domain.Device
+import com.autonion.automationcompanion.features.cross_device_automation.domain.DeviceRole
+import com.autonion.automationcompanion.features.cross_device_automation.domain.DeviceStatus
+
+@Composable
+fun DeviceManagementScreen() {
+    val context = LocalContext.current
+    val manager = CrossDeviceAutomationManager.getInstance(context)
+    val viewModel = viewModel { DeviceManagementViewModel(manager) }
+    val devices by viewModel.devices.collectAsState()
+    val isEnabled by viewModel.isFeatureEnabled.collectAsState()
+
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        // Feature Toggle
+        Column(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
+            // Main Toggle
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Cross-Device Automation",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        text = if (isEnabled) "Enabled (Running in Background)" else "Disabled",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                androidx.compose.material3.Switch(
+                    checked = isEnabled,
+                    onCheckedChange = viewModel::toggleFeature
+                )
+            }
+
+            // Clipboard Sync Toggle
+            if (isEnabled) {
+                 val isClipboardSyncEnabled by viewModel.isClipboardSyncEnabled.collectAsState()
+                 Row(
+                    modifier = Modifier.fillMaxWidth().padding(start = 16.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Sync Clipboard",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        Text(
+                            text = "Automatically share copied text",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    androidx.compose.material3.Switch(
+                        checked = isClipboardSyncEnabled,
+                        onCheckedChange = viewModel::toggleClipboardSync
+                    )
+                }
+            }
+            
+            // Battery Optimization Warning / Action
+            if (isEnabled) {
+                val powerManager = context.getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager
+                val isIgnoringOptimizations = powerManager.isIgnoringBatteryOptimizations(context.packageName)
+                
+                Column(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                    if (!isIgnoringOptimizations) {
+                        androidx.compose.material3.Button(
+                            onClick = {
+                                val intent = android.content.Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                                    data = android.net.Uri.parse("package:${context.packageName}")
+                                }
+                                context.startActivity(intent)
+                            },
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer,
+                                contentColor = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                        ) {
+                            Text("Disable Battery Optimization")
+                        }
+                    }
+
+                    // Always show App Info shortcut for OEM specific settings (Smart Mode etc)
+                    androidx.compose.material3.OutlinedButton(
+                        onClick = {
+                            val intent = android.content.Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                                data = android.net.Uri.parse("package:${context.packageName}")
+                            }
+                            context.startActivity(intent)
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(if (isIgnoringOptimizations) "Verify Background Settings (Fix Disconnects)" else "Open App Settings for Manual Fix")
+                    }
+                    
+                    if (isIgnoringOptimizations) {
+                         Text(
+                            text = "Standard optimization disabled. If disconnection persists, check 'App Settings > Battery' and enable 'Allow Background Activity'.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
+                    }
+                }
+            }
+        }
+        
+        Text(
+            text = "Discovered Devices", 
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+        
+        if (devices.isEmpty()) {
+            Text(
+                "Scanning for devices on local network...",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        
+        LazyColumn {
+            items(devices) { device ->
+                DeviceItem(device)
+            }
+        }
+    }
+}
+
+@Composable
+fun DeviceItem(device: Device) {
+    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = getDeviceIcon(device.role),
+                contentDescription = null,
+                modifier = Modifier.padding(end = 16.dp)
+            )
+            Column {
+                Text(device.name, style = MaterialTheme.typography.titleMedium)
+                Text(device.ipAddress, style = MaterialTheme.typography.bodySmall)
+                Text("Status: ${device.status}", style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+}
+
+fun getDeviceIcon(role: DeviceRole): ImageVector {
+    return when (role) {
+        DeviceRole.CONTROLLER -> Icons.Default.PhoneAndroid
+        DeviceRole.WORK_DEVICE -> Icons.Default.Computer
+        DeviceRole.MEDIA_DEVICE -> Icons.Default.Tv
+        else -> Icons.Default.PhoneAndroid
+    }
+}

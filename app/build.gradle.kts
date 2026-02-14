@@ -1,9 +1,8 @@
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.compose.compiler)
-    id("com.google.devtools.ksp")
     alias(libs.plugins.kotlin.serialization)
+    id("com.google.devtools.ksp")
 }
 
 android {
@@ -37,14 +36,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-
-    kotlin {
-        compilerOptions {
-            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
-        }
-    }
-
-
 
     buildFeatures {
         viewBinding = true
@@ -87,6 +78,7 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     //kapt(libs.androidx.room.compiler)
     ksp(libs.androidx.room.compiler)
+
     implementation(libs.compose.icons)
 
     //Gesture Recording Playback
@@ -112,4 +104,5 @@ dependencies {
     
     // Gson for JSON parsing
     implementation("com.google.code.gson:gson:2.10.1")
+    implementation(libs.okhttp)
 }

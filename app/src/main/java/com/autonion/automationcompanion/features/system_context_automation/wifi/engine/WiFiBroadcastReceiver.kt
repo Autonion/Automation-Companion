@@ -109,6 +109,22 @@ class WiFiBroadcastReceiver : BroadcastReceiver() {
             val currentSsid = if (wifiState == WiFiState.CONNECTED) getCurrentSsid(context) else null
 
             Log.i(TAG, "Evaluating Wi-Fi slots — state: $wifiState, SSID: $currentSsid")
+            
+            // Publish to Cross-Device Event Bus
+            val eventType = if (wifiState == WiFiState.CONNECTED) "system.wifi.connected" else "system.wifi.disconnected"
+            val payload = mutableMapOf<String, String>()
+            if (currentSsid != null) {
+                payload["ssid"] = currentSsid
+            }
+            
+            val event = com.autonion.automationcompanion.features.cross_device_automation.domain.RawEvent(
+                id = java.util.UUID.randomUUID().toString(),
+                timestamp = System.currentTimeMillis(),
+                type = eventType,
+                sourceDeviceId = "local",
+                payload = payload
+            )
+            com.autonion.automationcompanion.features.cross_device_automation.event_pipeline.EventBus.publish(event)
 
             val dao = AppDatabase.get(context).slotDao()
             val allSlots = dao.getAllEnabled()
