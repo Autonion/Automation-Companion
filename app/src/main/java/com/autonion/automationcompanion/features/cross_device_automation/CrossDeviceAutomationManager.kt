@@ -45,9 +45,8 @@ class CrossDeviceAutomationManager(private val context: Context) {
         // 3. Components
         val eventReceiverProxy = object : com.autonion.automationcompanion.features.cross_device_automation.event_pipeline.EventReceiver {
             override suspend fun onEventReceived(event: com.autonion.automationcompanion.features.cross_device_automation.domain.RawEvent) {
-                if (::eventPipeline.isInitialized) {
-                    eventPipeline.onEventReceived(event)
-                }
+                // Route through Manager's handler to catch specific logic (like Clipboard Sync)
+                onExternalEvent(event)
             }
         }
         
@@ -156,6 +155,29 @@ class CrossDeviceAutomationManager(private val context: Context) {
     
     fun onExternalEvent(event: com.autonion.automationcompanion.features.cross_device_automation.domain.RawEvent) {
         if (!isStarted || !::eventPipeline.isInitialized) return
+        
+        // Incoming Clipboard Logic (Desktop -> Android)
+        if (event.type == "clipboard.text_copied" && 
+            isClipboardSyncEnabled() && 
+            event.sourceDeviceId != "local") {
+            
+            val text = event.payload["text"]
+            if (!text.isNullOrEmpty()) {
+                Log.d("CrossDeviceManager", "Received Remote Clipboard Event: $text")
+                // Execute on Main Thread as ClipboardManager requires it (sometimes) or just to be safe
+                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+                    actionExecutor.execute(
+                        com.autonion.automationcompanion.features.cross_device_automation.domain.RuleAction(
+                            type = "set_clipboard",
+                            parameters = mapOf("text" to text),
+                            targetDeviceId = "local"
+                        )
+                    )
+                }
+                return // Stop processing to avoid loops or redundant rule checks
+            }
+        }
+
         kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
              eventPipeline.onEventReceived(event)
         }

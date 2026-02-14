@@ -24,6 +24,7 @@ class NetworkingManager(
 ) {
     private val client = OkHttpClient.Builder()
         .readTimeout(0, TimeUnit.MILLISECONDS)
+        .pingInterval(30, TimeUnit.SECONDS) // Keep-alive for background stability
         .build()
 
     private val activeConnections = ConcurrentHashMap<String, WebSocket>()

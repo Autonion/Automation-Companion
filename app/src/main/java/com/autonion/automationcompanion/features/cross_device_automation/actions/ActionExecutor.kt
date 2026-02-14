@@ -56,6 +56,19 @@ class ActionExecutor(
                 val message = action.parameters["message"] ?: "Action Executed"
                 showNotification(title, message)
             }
+            "set_clipboard" -> {
+                val text = action.parameters["text"]
+                if (!text.isNullOrEmpty()) {
+                    try {
+                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        val clip = android.content.ClipData.newPlainText("Automation", text)
+                        clipboard.setPrimaryClip(clip)
+                        Log.i("ActionExecutor", "Clipboard Updated: $text")
+                    } catch (e: Exception) {
+                        Log.e("ActionExecutor", "Failed to set clipboard", e)
+                    }
+                }
+            }
         }
     }
 
