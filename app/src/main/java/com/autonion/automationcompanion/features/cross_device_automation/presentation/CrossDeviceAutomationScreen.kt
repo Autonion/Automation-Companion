@@ -43,7 +43,7 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
     var showPermissionDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        CrossDeviceAutomationManager.getInstance(context).start()
+        // Manager start is now handled by AutomationService for background persistence.
         if (!com.autonion.automationcompanion.AccessibilityRouter.isServiceConnected()) {
             showPermissionDialog = true
         }

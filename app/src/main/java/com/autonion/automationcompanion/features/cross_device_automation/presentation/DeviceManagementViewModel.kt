@@ -14,6 +14,9 @@ class DeviceManagementViewModel(
     private val manager: CrossDeviceAutomationManager
 ) : ViewModel() {
 
+    private val _isFeatureEnabled = MutableStateFlow(manager.isFeatureEnabled())
+    val isFeatureEnabled: StateFlow<Boolean> = _isFeatureEnabled.asStateFlow()
+
     private val _devices = MutableStateFlow<List<Device>>(emptyList())
     val devices: StateFlow<List<Device>> = _devices.asStateFlow()
 
@@ -23,6 +26,11 @@ class DeviceManagementViewModel(
                 _devices.value = it
             }
         }
+    }
+
+    fun toggleFeature(enabled: Boolean) {
+        manager.setFeatureEnabled(enabled)
+        _isFeatureEnabled.value = enabled
     }
 
     fun updateDeviceRole(deviceId: String, role: DeviceRole) {

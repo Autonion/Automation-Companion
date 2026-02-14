@@ -59,6 +59,9 @@ class AutomationService : AccessibilityService() {
         
         AccessibilityRouter.onServiceConnected(this)
         setupBroadcastReceiver()
+
+        // Start Cross-Device Automation Manager (Background Persistence)
+        com.autonion.automationcompanion.features.cross_device_automation.CrossDeviceAutomationManager.getInstance(this).start()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
@@ -243,6 +246,9 @@ class AutomationService : AccessibilityService() {
         stopPlayback()
         scope.cancel()
         AccessibilityRouter.onServiceDestroyed()
+        
+        // Stop Cross-Device Automation Manager
+        com.autonion.automationcompanion.features.cross_device_automation.CrossDeviceAutomationManager.getInstance(this).stop()
     }
 
     fun setLoopCount(count: Int) {

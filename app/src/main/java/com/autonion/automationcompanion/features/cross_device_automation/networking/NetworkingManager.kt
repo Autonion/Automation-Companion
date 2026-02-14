@@ -30,8 +30,12 @@ class NetworkingManager(
     private val gson = Gson()
     private val scope = CoroutineScope(Dispatchers.IO)
 
+    private var collectionJob: kotlinx.coroutines.Job? = null
+
     fun start() {
-        scope.launch {
+        if (collectionJob?.isActive == true) return
+        
+        collectionJob = scope.launch {
             deviceRepository.getAllDevices().collectLatest { devices ->
                 devices.forEach { device ->
                     if (!activeConnections.containsKey(device.id)) {
@@ -91,7 +95,6 @@ class NetworkingManager(
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 Log.e("NetworkingManager", "Connection failure: ${t.message}")
                 activeConnections.remove(device.id)
-                // Reconnect logic would go here (e.g., delayed retry)
             }
         }
 
@@ -123,8 +126,13 @@ class NetworkingManager(
     }
     
     fun stop() {
+        collectionJob?.cancel()
+        collectionJob = null
+        
         activeConnections.values.forEach { it.close(1000, "Shutting down") }
         activeConnections.clear()
-        client.dispatcher.executorService.shutdown()
+        
+        // Do NOT shutdown executor as client is reused.
+        client.dispatcher.cancelAll()
     }
 }

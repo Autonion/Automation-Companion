@@ -23,11 +23,6 @@ class CrossDeviceAutomationManager(private val context: Context) {
     private val enricher = EventEnricher()
     private val taggingSystem = TaggingSystem()
     
-    // Networking
-    // Creates a circular dependency if NetworkingManager needs EventReceiver (EventPipeline)
-    // and EventPipeline needs RuleEngine which needs ActionExecutor which needs NetworkingManager.
-    // Solution: Break cycle or use `lateinit` / setter injection.
-    
     lateinit var networkingManager: NetworkingManager
     private lateinit var actionExecutor: ActionExecutor
     private lateinit var ruleEngine: RuleEngine
@@ -36,22 +31,16 @@ class CrossDeviceAutomationManager(private val context: Context) {
     private lateinit var clipboardMonitor: com.autonion.automationcompanion.features.cross_device_automation.event_source.ClipboardMonitor
     private var isStarted = false
 
-    fun initialize() {
-        // Initialize components in order
-        // 1. NetworkingManager needs EventReceiver (Pipeline), pass placeholder or use lazy/setter pipeline
-        // Let's create components first
-        
-        // We defer initialization to avoid 'this' escape in constructor if possible, or build graph here.
-        
-        // Circular dependency resolution (Decoupled via EventBus):
-        // Networking -> needs EventReceiver
-        // EventPipeline (Receiver) -> Publishes to EventBus
-        // RuleEngine -> Subscribes to EventBus
-        // ActionExecutor -> needs NetworkingManager
+    // Background Execution Locks
+    private var wakeLock: android.os.PowerManager.WakeLock? = null
+    private var wifiLock: android.net.wifi.WifiManager.WifiLock? = null
 
-        // Correct order:
-        // 1. Repositories (Already created)
-        // 2. Bus (Static object)
+    // Preferences
+    private val prefs = context.getSharedPreferences("cross_device_prefs", Context.MODE_PRIVATE)
+    private val PREF_FEATURE_ENABLED = "feature_enabled"
+
+    fun initialize() {
+        // ... (Existing initialization logic) ...
         
         // 3. Components
         val eventReceiverProxy = object : com.autonion.automationcompanion.features.cross_device_automation.event_pipeline.EventReceiver {
@@ -65,12 +54,9 @@ class CrossDeviceAutomationManager(private val context: Context) {
         networkingManager = NetworkingManager(deviceRepository, eventReceiverProxy)
         actionExecutor = ActionExecutor(context, networkingManager)
         
-        // RuleEngine now self-subscribes to EventBus internally
         ruleEngine = RuleEngine(ruleRepository, actionExecutor) 
         
-        // EventPipeline no longer needs RuleEngine
         eventPipeline = EventPipeline(enricher, taggingSystem) { event ->
-            // Broadcast strategy: send local events to all connected devices
             if (::networkingManager.isInitialized) {
                 networkingManager.broadcast(event)
             }
@@ -78,19 +64,37 @@ class CrossDeviceAutomationManager(private val context: Context) {
         
         hostManager = HostManager(context, deviceRepository)
         
-        // Inject State Evaluator (It self-subscribes)
         val stateEvaluator = com.autonion.automationcompanion.features.cross_device_automation.state.StateEvaluator()
 
         clipboardMonitor = com.autonion.automationcompanion.features.cross_device_automation.event_source.ClipboardMonitor(context, eventPipeline)
         com.autonion.automationcompanion.AccessibilityRouter.register(clipboardMonitor)
     }
 
+    fun isFeatureEnabled(): Boolean {
+        return prefs.getBoolean(PREF_FEATURE_ENABLED, true) // Default true
+    }
+
+    fun setFeatureEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(PREF_FEATURE_ENABLED, enabled).apply()
+        if (enabled) {
+            start()
+        } else {
+            stop()
+        }
+    }
+
     fun start() {
         if (isStarted) return
+        if (!isFeatureEnabled()) {
+            Log.d("CrossDeviceManager", "Feature disabled by user. Not starting.")
+            return
+        }
+
         isStarted = true
+        acquireLocks()
         hostManager.startDiscovery()
         networkingManager.start()
-        Log.d("CrossDeviceManager", "Service started (EventBus Architecture)")
+        Log.d("CrossDeviceManager", "Service started (Background Mode)")
     }
 
     fun stop() {
@@ -98,20 +102,44 @@ class CrossDeviceAutomationManager(private val context: Context) {
         isStarted = false
         hostManager.stopDiscovery()
         networkingManager.stop()
+        releaseLocks()
         Log.d("CrossDeviceManager", "Service stopped")
+    }
+
+    private fun acquireLocks() {
+        try {
+            val powerManager = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+            wakeLock = powerManager.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "AutomationCompanion::CrossDeviceWakeLock")
+            wakeLock?.acquire(10 * 60 * 1000L /*10 minutes timeout just in case*/)
+
+            val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager
+            wifiLock = wifiManager.createWifiLock(android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF, "AutomationCompanion::CrossDeviceWifiLock")
+            wifiLock?.acquire()
+            
+            Log.d("CrossDeviceManager", "Acquired WakeLock and WifiLock")
+        } catch (e: Exception) {
+            Log.e("CrossDeviceManager", "Failed to acquire locks", e)
+        }
+    }
+
+    private fun releaseLocks() {
+        try {
+            if (wakeLock?.isHeld == true) wakeLock?.release()
+            if (wifiLock?.isHeld == true) wifiLock?.release()
+            Log.d("CrossDeviceManager", "Released WakeLock and WifiLock")
+        } catch (e: Exception) {
+            Log.e("CrossDeviceManager", "Failed to release locks", e)
+        }
     }
 
     // Called by AutomationService (Accessibility Service) which has permission to read clipboard in background
     fun injectClipboardEvent(text: String) {
         if (!isStarted) return
-        // We can reconstruct the event here or pass RawEvent? 
-        // Let's reuse the logic if possible, but actually ClipboardMonitor creates the event.
-        // So we can just accept the event if we want, or text.
-        // Let's accept the RawEvent to minimize changes.
+        // No-op for now, waiting for implementation
     }
     
     fun syncClipboard(context: Context? = null) {
-        if (::clipboardMonitor.isInitialized) {
+        if (::clipboardMonitor.isInitialized && isFeatureEnabled()) {
             clipboardMonitor.checkNow(context)
         }
     }

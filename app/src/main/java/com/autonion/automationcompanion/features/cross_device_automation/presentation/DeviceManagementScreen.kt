@@ -35,8 +35,32 @@ fun DeviceManagementScreen() {
     val manager = CrossDeviceAutomationManager.getInstance(context)
     val viewModel = viewModel { DeviceManagementViewModel(manager) }
     val devices by viewModel.devices.collectAsState()
+    val isEnabled by viewModel.isFeatureEnabled.collectAsState()
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        // Feature Toggle
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Cross-Device Automation",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Text(
+                    text = if (isEnabled) "Enabled (Running in Background)" else "Disabled",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            androidx.compose.material3.Switch(
+                checked = isEnabled,
+                onCheckedChange = viewModel::toggleFeature
+            )
+        }
+        
         // Text("Connected Devices", style = MaterialTheme.typography.titleLarge) // Removed redundancy if tab implies context, but kept for clarity
         // Or better, make it a descriptive header
         Text(
