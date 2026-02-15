@@ -118,23 +118,28 @@ fun SystemContextMainScreen(onBack: () -> Unit) {
                 )
             }
 
-            LazyColumn(
-                contentPadding = PaddingValues(top = padding.calculateTopPadding() + 20.dp, bottom = 24.dp, start = 16.dp, end = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                modifier = Modifier.fillMaxSize()
+            // Animate the whole content (header + list) as a group for smoother entrance
+            var contentVisible by remember { mutableStateOf(false) }
+            // Add a small delay before showing the group content for a more relaxed feel
+            LaunchedEffect(Unit) {
+                delay(100L)
+                contentVisible = true
+            }
+            AnimatedVisibility(
+                visible = contentVisible,
+                enter = fadeIn(tween(500)) + slideInVertically(
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                        stiffness = Spring.StiffnessMedium
+                    )
+                ) { it / 3 }
             ) {
-                item {
-                    var headerVisible by remember { mutableStateOf(false) }
-                    LaunchedEffect(Unit) { headerVisible = true }
-                    AnimatedVisibility(
-                        visible = headerVisible,
-                        enter = fadeIn(tween(500)) + slideInVertically(
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioMediumBouncy,
-                                stiffness = Spring.StiffnessLow
-                            )
-                        ) { -it / 2 } // Slide from top slightly
-                    ) {
+                LazyColumn(
+                    contentPadding = PaddingValues(top = padding.calculateTopPadding() + 20.dp, bottom = 24.dp, start = 16.dp, end = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    item {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(
                                 text = "Automations",
@@ -147,39 +152,29 @@ fun SystemContextMainScreen(onBack: () -> Unit) {
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                        Spacer(modifier = Modifier.height(16.dp))
                     }
-                    Spacer(modifier = Modifier.height(16.dp))
-                }
 
-                itemsIndexed(triggerItems) { index, item ->
-                    // Staggered animation state
-                    val visibleState = remember {
-                        MutableTransitionState(false).apply {
-                            // Start invisible
-                            targetState = false
+                    itemsIndexed(triggerItems) { index, item ->
+                        // Smoother: slower stagger, longer fade
+                        var cardVisible by remember { mutableStateOf(false) }
+                        LaunchedEffect(contentVisible) {
+                            if (contentVisible) {
+                                delay(120L + 100L * index) // 120ms initial, 100ms per card
+                                cardVisible = true
+                            }
                         }
-                    }
-
-                    LaunchedEffect(Unit) {
-                        delay(75L * index) // Stagger delay
-                        visibleState.targetState = true
-                    }
-
-                    AnimatedVisibility(
-                        visibleState = visibleState,
-                        enter = fadeIn(tween(400)) + slideInVertically(
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioLowBouncy,
-                                stiffness = Spring.StiffnessLow
-                            ) // Bouncy spring
-                        ) { it / 2 } // Slide up from half height
-                    ) {
-                        FeatureCard(
-                            title = item.title,
-                            description = item.description,
-                            icon = item.icon,
-                            onClick = item.onClick
-                        )
+                        AnimatedVisibility(
+                            visible = cardVisible,
+                            enter = fadeIn(tween(450))
+                        ) {
+                            FeatureCard(
+                                title = item.title,
+                                description = item.description,
+                                icon = item.icon,
+                                onClick = item.onClick
+                            )
+                        }
                     }
                 }
             }
