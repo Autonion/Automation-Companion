@@ -85,7 +85,7 @@ fun AppNavHost() {
         }
 
         composable(AutomationRoutes.GESTURE) {
-            GestureRecordingScreen()
+            GestureRecordingScreen(onBack = { navController.popBackStack() })
         }
 
         composable(AutomationRoutes.DYN_UI) {
