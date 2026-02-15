@@ -62,7 +62,7 @@ fun NewPresetDialog(onCreate: (String) -> Unit, onCancel: () -> Unit) {
     ) {
         Surface(
             shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surface,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
             tonalElevation = 6.dp,
             modifier = Modifier
                 .fillMaxWidth(0.9f)
@@ -140,7 +140,7 @@ fun ConfirmDeleteDialog(presetName: String, onConfirm: () -> Unit, onCancel: () 
     ) {
         Surface(
             shape = RoundedCornerShape(28.dp),
-            color = MaterialTheme.colorScheme.surface,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
             tonalElevation = 6.dp,
             modifier = Modifier
                 .fillMaxWidth(0.9f)

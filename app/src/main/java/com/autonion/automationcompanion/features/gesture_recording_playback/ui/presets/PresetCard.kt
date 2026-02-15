@@ -68,7 +68,7 @@ fun PresetCard(
             .clickable(interactionSource = interactionSource, indication = null, onClick = onClick),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        border = if (isDark) BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)) else null
+        border = if (isDark) BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)) else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
     ) {
         Row(
             modifier = Modifier
