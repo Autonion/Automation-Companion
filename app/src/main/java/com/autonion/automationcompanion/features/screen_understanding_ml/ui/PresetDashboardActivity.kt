@@ -6,9 +6,7 @@ import com.autonion.automationcompanion.ui.components.AuroraBackground
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.*
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.BorderStroke
@@ -300,59 +298,76 @@ private fun PresetDashboardContent(
 
 @Composable
 private fun AgentEmptyState() {
-    var visible by remember { mutableStateOf(false) }
-    val scale = remember { Animatable(0.8f) }
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
 
-    LaunchedEffect(Unit) {
-        visible = true
-        scale.animateTo(1f, tween(500, easing = FastOutSlowInEasing))
-    }
+    // Pulsing glow animation (matches Location pattern)
+    val infiniteTransition = rememberInfiniteTransition(label = "agentPulse")
+    val pulseScale by infiniteTransition.animateFloat(
+        initialValue = 1f, targetValue = 1.12f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1400, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ), label = "pulse"
+    )
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.3f, targetValue = 0.6f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1400, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ), label = "pulseAlpha"
+    )
 
     Box(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().padding(32.dp),
         contentAlignment = Alignment.Center
     ) {
-        AnimatedVisibility(
-            visible = visible,
-            enter = fadeIn(tween(400)) + slideInVertically(tween(400, easing = FastOutSlowInEasing)) { it / 4 }
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(24.dp),
-                modifier = Modifier.padding(32.dp)
-            ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(contentAlignment = Alignment.Center) {
+                // Outer glow ring
                 Box(
                     modifier = Modifier
-                        .scale(scale.value)
+                        .size(120.dp)
+                        .scale(pulseScale)
                         .background(
-                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
+                            MaterialTheme.colorScheme.primary.copy(alpha = pulseAlpha * 0.3f),
                             CircleShape
                         )
-                        .padding(32.dp),
+                )
+                // Inner icon container
+                Box(
+                    modifier = Modifier
+                        .size(88.dp)
+                        .background(
+                            MaterialTheme.colorScheme.primary.copy(
+                                alpha = if (isDark) 0.2f else 0.12f
+                            ),
+                            CircleShape
+                        ),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Default.ViewQuilt,
                         contentDescription = null,
-                        modifier = Modifier.size(64.dp),
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "No agent automations yet",
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = "Tap + Add to create a new screen-understanding automation.",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(top = 8.dp)
+                        modifier = Modifier.size(48.dp),
+                        tint = MaterialTheme.colorScheme.primary
                     )
                 }
             }
+            androidx.compose.foundation.layout.Spacer(modifier = Modifier.size(24.dp))
+            Text(
+                text = "No agent automations yet",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                color = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface
+            )
+            androidx.compose.foundation.layout.Spacer(modifier = Modifier.size(8.dp))
+            Text(
+                text = "Tap + Add to create a new\nscreen-understanding automation",
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (isDark) Color.White.copy(alpha = 0.6f)
+                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                textAlign = TextAlign.Center
+            )
         }
     }
 }
