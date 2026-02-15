@@ -89,30 +89,35 @@ fun SystemContextMainScreen(onBack: () -> Unit) {
                         title = "Location-Based",
                         description = "Trigger on geofence entry/exit",
                         icon = Icons.Default.LocationOn,
+                        accentColor = Color(0xFF4285F4), // Google Blue
                         onClick = { context.startActivity(Intent(context, LocationSlotsActivity::class.java)) }
                     ),
                     TriggerItem(
                         title = "Battery Level",
                         description = "Trigger when battery reaches threshold",
                         icon = Icons.Default.BatteryStd,
+                        accentColor = Color(0xFF34A853), // Green
                         onClick = { context.startActivity(Intent(context, BatterySlotsActivity::class.java)) }
                     ),
                     TriggerItem(
                         title = "Time of Day",
                         description = "Trigger at specific time daily",
                         icon = Icons.Default.Schedule,
+                        accentColor = Color(0xFFF9AB00), // Amber
                         onClick = { context.startActivity(Intent(context, TimeOfDayActivity::class.java)) }
                     ),
                     TriggerItem(
                         title = "Wi-Fi Connectivity",
                         description = "Trigger on Wi-Fi connect/disconnect",
                         icon = Icons.Default.Wifi,
+                        accentColor = Color(0xFF00ACC1), // Cyan
                         onClick = { context.startActivity(Intent(context, WiFiActivity::class.java)) }
                     ),
                     TriggerItem(
                         title = "App Specific",
                         description = "Trigger when app opens/closes",
                         icon = Icons.Default.Apps,
+                        accentColor = Color(0xFF7C4DFF), // Purple
                         onClick = { context.startActivity(Intent(context, AppSpecificActivity::class.java)) }
                     )
                 )
@@ -136,7 +141,7 @@ fun SystemContextMainScreen(onBack: () -> Unit) {
             ) {
                 LazyColumn(
                     contentPadding = PaddingValues(top = padding.calculateTopPadding() + 20.dp, bottom = 24.dp, start = 16.dp, end = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
                     item {
@@ -152,7 +157,7 @@ fun SystemContextMainScreen(onBack: () -> Unit) {
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        Spacer(modifier = Modifier.height(16.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
                     }
 
                     itemsIndexed(triggerItems) { index, item ->
@@ -172,7 +177,8 @@ fun SystemContextMainScreen(onBack: () -> Unit) {
                                 title = item.title,
                                 description = item.description,
                                 icon = item.icon,
-                                onClick = item.onClick
+                                onClick = item.onClick,
+                                accentColor = item.accentColor
                             )
                         }
                     }
@@ -186,5 +192,7 @@ private data class TriggerItem(
     val title: String,
     val description: String,
     val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    val accentColor: Color,
     val onClick: () -> Unit
 )
+
