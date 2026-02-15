@@ -52,11 +52,15 @@ fun SlotConfigScreen(
     radiusMeters: Int,
     startLabel: String,
     endLabel: String,
+    startHour: Int,
+    startMinute: Int,
+    endHour: Int,
+    endMinute: Int,
     onLatitudeChanged: (String) -> Unit,
     onLongitudeChanged: (String) -> Unit,
     onRadiusChanged: (Int) -> Unit,
-    onStartTimeClicked: () -> Unit,
-    onEndTimeClicked: () -> Unit,
+    onStartTimeChanged: (Int, Int) -> Unit,
+    onEndTimeChanged: (Int, Int) -> Unit,
     onSaveClicked: (Int, List<AutomationAction>) -> Unit,
     onPickFromMapClicked: () -> Unit,
     onPickContactClicked: (actionIndex: Int) -> Unit,
@@ -73,6 +77,26 @@ fun SlotConfigScreen(
     val ctx = LocalContext.current
     val scrollState = rememberScrollState()
     val isDark = isSystemInDarkTheme()
+
+    // ── Material 3 Time Picker dialog state ──
+    var showTimePickerFor by remember { mutableStateOf<String?>(null) } // "start" or "end" or null
+
+    if (showTimePickerFor != null) {
+        val isStart = showTimePickerFor == "start"
+        val initHour = if (isStart) (if (startHour >= 0) startHour else 9) else (if (endHour >= 0) endHour else 17)
+        val initMinute = if (isStart) (if (startMinute >= 0) startMinute else 0) else (if (endMinute >= 0) endMinute else 0)
+
+        M3TimePickerDialog(
+            initialHour = initHour,
+            initialMinute = initMinute,
+            accentColor = ScheduleAccent,
+            onConfirm = { h, m ->
+                if (isStart) onStartTimeChanged(h, m) else onEndTimeChanged(h, m)
+                showTimePickerFor = null
+            },
+            onDismiss = { showTimePickerFor = null }
+        )
+    }
 
     // Animated radius text
     val animatedRadius by animateIntAsState(
@@ -202,13 +226,13 @@ fun SlotConfigScreen(
                             TimePickItem(
                                 label = "Start Time",
                                 time = startLabel,
-                                onClick = onStartTimeClicked,
+                                onClick = { showTimePickerFor = "start" },
                                 accentColor = ScheduleAccent
                             )
                             TimePickItem(
                                 label = "End Time",
                                 time = endLabel,
-                                onClick = onEndTimeClicked,
+                                onClick = { showTimePickerFor = "end" },
                                 accentColor = ScheduleAccent
                             )
                         }
@@ -529,16 +553,101 @@ fun TimePickItem(
         Surface(
             onClick = onClick,
             color = if (isDark) accentColor.copy(alpha = 0.32f) else accentColor.copy(alpha = 0.08f),
-            shape = RoundedCornerShape(12.dp)
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, accentColor.copy(alpha = if (isDark) 0.3f else 0.15f))
         ) {
-            Text(
-                time,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
-                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
-                color = if (isDark) Color.White else accentColor
-            )
+            Row(
+                modifier = Modifier.padding(horizontal = 22.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Rounded.Schedule,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = if (isDark) Color.White.copy(alpha = 0.7f) else accentColor
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    time,
+                    style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+                    color = if (isDark) Color.White else accentColor
+                )
+            }
         }
     }
+}
+
+/**
+ * Material 3 Time Picker Dialog — modern replacement for legacy TimePickerDialog.
+ * Features dial/input mode toggle and themed styling.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun M3TimePickerDialog(
+    initialHour: Int,
+    initialMinute: Int,
+    accentColor: Color,
+    onConfirm: (hour: Int, minute: Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val isDark = isSystemInDarkTheme()
+    val state = rememberTimePickerState(
+        initialHour = initialHour,
+        initialMinute = initialMinute,
+        is24Hour = true
+    )
+    var showDial by remember { mutableStateOf(true) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        modifier = Modifier.fillMaxWidth(),
+        containerColor = if (isDark) Color(0xFF1E2128) else MaterialTheme.colorScheme.surface,
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "Select time",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface
+                )
+                IconButton(onClick = { showDial = !showDial }) {
+                    Icon(
+                        imageVector = if (showDial) Icons.Rounded.EditNote else Icons.Rounded.Schedule,
+                        contentDescription = if (showDial) "Switch to input" else "Switch to dial",
+                        tint = accentColor
+                    )
+                }
+            }
+        },
+        text = {
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
+                if (showDial) {
+                    TimePicker(state = state)
+                } else {
+                    TimeInput(state = state)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(state.hour, state.minute) }) {
+                Text("OK", color = accentColor, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(
+                    "Cancel",
+                    color = if (isDark) Color.White.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    )
 }
 
 // Utility extension to lighten a color for dark mode accents
