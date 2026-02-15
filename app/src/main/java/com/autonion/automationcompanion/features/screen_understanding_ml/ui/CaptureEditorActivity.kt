@@ -2,24 +2,42 @@ package com.autonion.automationcompanion.features.screen_understanding_ml.ui
 
 import android.app.AlertDialog
 import android.content.Context
-import android.graphics.*
-import android.os.Build
+import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.DashPathEffect
+import android.graphics.Paint
+import android.graphics.Typeface
 import android.os.Bundle
-import android.util.Log
 import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
-import android.view.WindowManager
-import android.widget.Button
 import android.widget.EditText
-import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.addCallback
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.lifecycleScope
 import com.autonion.automationcompanion.features.screen_understanding_ml.core.PerceptionLayer
+import com.autonion.automationcompanion.features.screen_understanding_ml.core.ScreenUnderstandingService
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.ActionType
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.AutomationStep
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.UIElement
+import com.autonion.automationcompanion.ui.theme.AppTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -29,7 +47,7 @@ import java.util.UUID
 class CaptureEditorActivity : ComponentActivity() {
 
     private var sourceBitmap: Bitmap? = null
-    private var editorView: EditorView? = null
+    private var editorViewInput: EditorView? = null // Reference to AndroidView to get data
     private var perceptionLayer: PerceptionLayer? = null
     private var presetName: String = "Untitled"
 
@@ -55,64 +73,104 @@ class CaptureEditorActivity : ComponentActivity() {
         sourceBitmap = BitmapFactory.decodeFile(file.absolutePath)
         perceptionLayer = PerceptionLayer(this)
         
-        setupUI()
+        // Handle Back Press explicitly
+        onBackPressedDispatcher.addCallback(this) {
+            handleExit()
+        }
+
+        setContent {
+            AppTheme {
+                CaptureEditorScreen()
+            }
+        }
+        
         runDetection()
     }
     
-    private fun setupUI() {
-        val root = FrameLayout(this)
-        root.setBackgroundColor(Color.BLACK)
-        
-        editorView = EditorView(this, sourceBitmap!!)
-        root.addView(editorView)
-        
-        // Control Panel
-        val panel = android.widget.LinearLayout(this).apply {
-            orientation = android.widget.LinearLayout.HORIZONTAL
-            setBackgroundColor(Color.parseColor("#CC000000"))
-            setPadding(16, 16, 16, 16)
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                gravity = android.view.Gravity.BOTTOM
+    @Composable
+    fun CaptureEditorScreen() {
+        // Keep screen black behind image for contrast
+        Scaffold(
+            containerColor = Color.Black,
+            bottomBar = {
+                EditorBottomBar(
+                    onCancel = { handleExit() },
+                    onRetake = { handleRetake() },
+                    onAdd = { addToPreset() }
+                )
+            }
+        ) { padding ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(padding)
+            ) {
+                if (sourceBitmap != null) {
+                    AndroidView(
+                        factory = { context ->
+                            EditorView(context, sourceBitmap!!).also { editorViewInput = it }
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
             }
         }
-        
-        val btnCancel = Button(this).apply {
-            text = "Cancel"
-            setOnClickListener { finish() }
-        }
+    }
 
-        val btnRetake = Button(this).apply {
-            text = "🔄 Retake"
-            setOnClickListener {
-                Toast.makeText(this@CaptureEditorActivity, "Tap Snap again to retake", Toast.LENGTH_SHORT).show()
-                moveTaskToBack(true)
-                finish()
+    @Composable
+    fun EditorBottomBar(
+        onCancel: () -> Unit,
+        onRetake: () -> Unit,
+        onAdd: () -> Unit
+    ) {
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceContainer,
+            tonalElevation = 8.dp
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedButton(
+                    onClick = onCancel,
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurface)
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Cancel")
+                }
+
+                OutlinedButton(
+                    onClick = onRetake,
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Retake")
+                }
+
+                Button(
+                    onClick = onAdd,
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Add Step")
+                }
             }
         }
-        
-        val btnAdd = Button(this).apply {
-            text = "✓ Add to Preset"
-            setOnClickListener { addToPreset() }
-        }
-        
-        val spacer1 = View(this).apply {
-             layoutParams = android.widget.LinearLayout.LayoutParams(0, 1, 1f)
-        }
-        val spacer2 = View(this).apply {
-             layoutParams = android.widget.LinearLayout.LayoutParams(0, 1, 1f)
-        }
-        
-        panel.addView(btnCancel)
-        panel.addView(spacer1)
-        panel.addView(btnRetake)
-        panel.addView(spacer2)
-        panel.addView(btnAdd)
-        
-        root.addView(panel)
-        setContentView(root)
+    }
+
+    private fun handleExit() {
+        finish() 
+    }
+
+    private fun handleRetake() {
+        Toast.makeText(this, "Tap Snap again to retake", Toast.LENGTH_SHORT).show()
+        finish()
     }
     
     private fun runDetection() {
@@ -124,33 +182,26 @@ class CaptureEditorActivity : ComponentActivity() {
                      Toast.makeText(this@CaptureEditorActivity, "No elements found — try Retake", Toast.LENGTH_SHORT).show()
                  } else {
                      Toast.makeText(this@CaptureEditorActivity, "Found ${elements.size} elements", Toast.LENGTH_SHORT).show()
-                     editorView?.setElements(elements)
+                     editorViewInput?.setElements(elements)
                  }
              }
         }
     }
     
     private fun addToPreset() {
-        // We use ScreenAgentOverlay's methods via accessing the overlay instance indirectly?
-        // Wait, 'editorView' in CaptureEditorActivity is NOT ScreenAgentOverlay instance. 
-        // It is 'com.autonion.automationcompanion.features.screen_understanding_ml.ui.ScreenAgentOverlay.OverlayView'?
-        // No, let's look at Step 1545. 'editorView?.getSelectedElements()'.
-        // If CaptureEditorActivity uses the same OverlayView logic, it must have access to these new methods.
-        // Assuming 'editorView' is the view.
+        val view = editorViewInput ?: return
         
-        val selected = editorView?.getSelectedElements() ?: emptyList()
-        val configs = editorView?.getSelectionConfig() ?: emptyList() 
-        val actionTypes = editorView?.getSelectionActionTypes() ?: emptyList()
-        val inputTexts = editorView?.getSelectionInputTexts() ?: emptyList()
+        val selected = view.getSelectedElements()
+        val configs = view.getSelectionConfig()
+        val actionTypes = view.getSelectionActionTypes()
+        val inputTexts = view.getSelectionInputTexts()
         
         if (selected.isEmpty()) {
             Toast.makeText(this, "Please select at least one element", Toast.LENGTH_SHORT).show()
             return
         }
         
-        // Safety check for list sizes
         val count = selected.size
-        // Ensure other lists are same size (they should be if logic is correct)
         
         val steps = (0 until count).map { i ->
              AutomationStep(
@@ -159,16 +210,14 @@ class CaptureEditorActivity : ComponentActivity() {
                  label = selected[i].label,
                  anchor = selected[i],
                  isOptional = configs.getOrElse(i) { false },
-                 actionType = actionTypes.getOrElse(i) { com.autonion.automationcompanion.features.screen_understanding_ml.model.ActionType.CLICK }, // FQN if Import missing
+                 actionType = actionTypes.getOrElse(i) { ActionType.CLICK },
                  inputText = inputTexts.getOrElse(i) { null }
              )
         }
         
-        // Send steps back to the running service
-        val service = com.autonion.automationcompanion.features.screen_understanding_ml.core.ScreenUnderstandingService.instance
+        val service = ScreenUnderstandingService.instance
         if (service != null) {
             service.addStepsFromEditor(steps)
-            moveTaskToBack(true)
             finish()
         } else {
             Toast.makeText(this, "Error: Service not running! Elements lost.", Toast.LENGTH_LONG).show()
@@ -178,12 +227,12 @@ class CaptureEditorActivity : ComponentActivity() {
     
     override fun onResume() {
         super.onResume()
-        com.autonion.automationcompanion.features.screen_understanding_ml.core.ScreenUnderstandingService.instance?.setOverlayVisibility(false)
+        ScreenUnderstandingService.instance?.setOverlayVisibility(false)
     }
 
     override fun onPause() {
         super.onPause()
-        com.autonion.automationcompanion.features.screen_understanding_ml.core.ScreenUnderstandingService.instance?.setOverlayVisibility(true)
+        ScreenUnderstandingService.instance?.setOverlayVisibility(true)
     }
 
     override fun onDestroy() {
@@ -198,41 +247,39 @@ class CaptureEditorActivity : ComponentActivity() {
         var inputText: String? = null
     )
 
-    // Inner class for simple editing view
-    private inner class EditorView(context: android.content.Context, val bitmap: Bitmap) : View(context) {
+    private inner class EditorView(context: Context, val bitmap: Bitmap) : View(context) {
         
         private val paintBox = Paint().apply {
-            color = Color.GREEN
+            color = android.graphics.Color.GREEN
             style = Paint.Style.STROKE
             strokeWidth = 4f
         }
         private val paintSelected = Paint().apply {
-            color = Color.BLUE 
+            color = android.graphics.Color.BLUE 
             style = Paint.Style.STROKE
             strokeWidth = 8f
         }
         private val paintBadge = Paint().apply {
-            color = Color.BLUE
+            color = android.graphics.Color.BLUE
             style = Paint.Style.FILL
         }
         private val paintBadgeText = Paint().apply {
-            color = Color.WHITE
+            color = android.graphics.Color.WHITE
             textSize = 30f
             style = Paint.Style.FILL
             textAlign = Paint.Align.CENTER
-            typeface = android.graphics.Typeface.DEFAULT_BOLD
+            typeface = Typeface.DEFAULT_BOLD
         }
         private val paintDashed = Paint().apply {
-            color = Color.YELLOW
+            color = android.graphics.Color.YELLOW
             style = Paint.Style.STROKE
             strokeWidth = 8f
-            pathEffect = android.graphics.DashPathEffect(floatArrayOf(20f, 20f), 0f)
+            pathEffect = DashPathEffect(floatArrayOf(20f, 20f), 0f)
         }
         
         private var elements: List<UIElement> = emptyList()
         private val selectionStates: MutableList<SelectionState> = mutableListOf()
         
-        // Scale handling
         private var scaleFactor = 1f
         private var offsetX = 0f
         private var offsetY = 0f
@@ -340,7 +387,6 @@ class CaptureEditorActivity : ComponentActivity() {
             val width = MeasureSpec.getSize(widthMeasureSpec)
             val height = MeasureSpec.getSize(heightMeasureSpec)
             
-            // Calculate scale to fit CENTER_INSIDE
             val srcRatio = bitmap.width.toFloat() / bitmap.height.toFloat()
             val dstRatio = width.toFloat() / height.toFloat()
             
@@ -359,14 +405,12 @@ class CaptureEditorActivity : ComponentActivity() {
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
             
-            // Draw Bitmap scaled
             canvas.save()
             canvas.translate(offsetX, offsetY)
             canvas.scale(scaleFactor, scaleFactor)
             
             canvas.drawBitmap(bitmap, 0f, 0f, null)
             
-            // Draw Elements
             for (element in elements) {
                 val state = selectionStates.find { it.element.id == element.id }
                 val index = selectionStates.indexOf(state)
@@ -381,12 +425,10 @@ class CaptureEditorActivity : ComponentActivity() {
                     
                     canvas.drawCircle(cx, cy, 25f / scaleFactor, paintBadge)
                     
-                    // Draw Index
                     paintBadgeText.textSize = 30f / scaleFactor
                     val textY = cy - (paintBadgeText.descent() + paintBadgeText.ascent()) / 2
                     canvas.drawText((index + 1).toString(), cx, textY, paintBadgeText)
                     
-                    // Draw Action Badge
                     val badgeIcon = when (state.actionType) {
                         ActionType.CLICK -> "👆"
                         ActionType.SCROLL_UP -> "⬆️"
