@@ -19,7 +19,7 @@ internal fun AudioActionConfig(
 ) {
     Column(Modifier.padding(start = 12.dp)) {
         // Ring Volume
-        Text("Ring Volume: ${action.ringVolume}")
+        Text("Ring Volume: ${action.ringVolume}", color = MaterialTheme.colorScheme.onSurface)
         Slider(
             value = action.ringVolume.toFloat(),
             onValueChange = { newValue ->
@@ -31,7 +31,7 @@ internal fun AudioActionConfig(
         )
 
         // Media Volume
-        Text("Media Volume: ${action.mediaVolume}")
+        Text("Media Volume: ${action.mediaVolume}", color = MaterialTheme.colorScheme.onSurface)
         Slider(
             value = action.mediaVolume.toFloat(),
             onValueChange = { newValue ->
@@ -43,7 +43,7 @@ internal fun AudioActionConfig(
         )
 
         // Alarm Volume
-        Text("Alarm Volume: ${action.alarmVolume}")
+        Text("Alarm Volume: ${action.alarmVolume}", color = MaterialTheme.colorScheme.onSurface)
         Slider(
             value = action.alarmVolume.toFloat(),
             onValueChange = { newValue ->
@@ -55,7 +55,7 @@ internal fun AudioActionConfig(
         )
 
         // Ringer Mode
-        Text("Ringer Mode", style = MaterialTheme.typography.labelMedium)
+        Text("Ringer Mode", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface)
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -109,7 +109,7 @@ internal fun AppActionConfig(
         if (action.packageName.isNotBlank()) {
             Spacer(modifier = Modifier.height(8.dp))
 
-            Text("Action Type", style = MaterialTheme.typography.labelMedium)
+            Text("Action Type", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface)
             Row(
                 Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -165,7 +165,7 @@ internal fun NotificationActionConfig(
         Spacer(modifier = Modifier.height(8.dp))
 
         // Notification Type
-        Text("Notification Type", style = MaterialTheme.typography.labelMedium)
+        Text("Notification Type", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface)
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -189,7 +189,7 @@ internal fun NotificationActionConfig(
 
         // Delay (only for reminder type)
         if (action.notificationType == NotificationType.REMINDER) {
-            Text("Delay: ${action.delayMinutes} minutes")
+            Text("Delay: ${action.delayMinutes} minutes", color = MaterialTheme.colorScheme.onSurface)
             Slider(
                 value = action.delayMinutes.toFloat(),
                 onValueChange = { newValue ->
@@ -218,7 +218,8 @@ internal fun BatterySaverActionConfig(
         ) {
             Text(
                 if (action.enabled) "Battery Saver: ON" else "Battery Saver: OFF",
-                Modifier.weight(1f)
+                Modifier.weight(1f),
+                color = MaterialTheme.colorScheme.onSurface
             )
             Switch(
                 checked = action.enabled,

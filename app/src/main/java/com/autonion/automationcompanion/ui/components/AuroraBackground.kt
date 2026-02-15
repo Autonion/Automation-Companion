@@ -1,5 +1,6 @@
 package com.autonion.automationcompanion.ui.components
 
+import android.annotation.SuppressLint
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -10,6 +11,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.animation.core.*
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -21,6 +23,7 @@ import android.graphics.Color as AndroidColor
 import kotlin.random.Random
 import com.autonion.automationcompanion.ui.theme.DarkBackground
 
+@SuppressLint("UnrememberedMutableState")
 @Composable
 fun AuroraBackground(
     modifier: Modifier = Modifier,
@@ -40,16 +43,36 @@ fun AuroraBackground(
         generateNoiseBitmap(100, 100) 
     }
     
+    // Battery Saver Optimization
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val powerManager = remember { context.getSystemService(android.content.Context.POWER_SERVICE) as android.os.PowerManager }
+    var isPowerSaveMode by remember { androidx.compose.runtime.mutableStateOf(powerManager.isPowerSaveMode) }
+
+    // Listen for power save mode changes
+    androidx.compose.runtime.DisposableEffect(context) {
+        val receiver = object : android.content.BroadcastReceiver() {
+            override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
+                isPowerSaveMode = powerManager.isPowerSaveMode
+            }
+        }
+        val filter = android.content.IntentFilter(android.os.PowerManager.ACTION_POWER_SAVE_MODE_CHANGED)
+        context.registerReceiver(receiver, filter)
+        onDispose {
+            context.unregisterReceiver(receiver)
+        }
+    }
+
     // Animation State
+    // If power save is on, we stop the infinite transition by not using it for values
     val infiniteTransition = rememberInfiniteTransition(label = "Aurora")
     
     val smoothEasing = FastOutSlowInEasing
-    // Larger movement range and faster duration so the aurora feels clearly in motion
     val movePx = 120f
     val durationFast = 2800
     val durationSlow = 3400
 
-    val topRightX by infiniteTransition.animateFloat(
+    // Use static values if in power save mode
+    val topRightX by if (isPowerSaveMode) androidx.compose.runtime.mutableFloatStateOf(0f) else infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = movePx,
         animationSpec = infiniteRepeatable(
@@ -58,7 +81,7 @@ fun AuroraBackground(
         ),
         label = "TR_X"
     )
-    val topRightY by infiniteTransition.animateFloat(
+    val topRightY by if (isPowerSaveMode) androidx.compose.runtime.mutableFloatStateOf(0f) else infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = movePx * 0.6f,
         animationSpec = infiniteRepeatable(
@@ -68,7 +91,7 @@ fun AuroraBackground(
         label = "TR_Y"
     )
 
-    val topLeftX by infiniteTransition.animateFloat(
+    val topLeftX by if (isPowerSaveMode) androidx.compose.runtime.mutableFloatStateOf(0f) else infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = -movePx * 0.9f,
         animationSpec = infiniteRepeatable(
@@ -77,7 +100,7 @@ fun AuroraBackground(
         ),
         label = "TL_X"
     )
-    val topLeftY by infiniteTransition.animateFloat(
+    val topLeftY by if (isPowerSaveMode) androidx.compose.runtime.mutableFloatStateOf(0f) else infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = movePx * 0.7f,
         animationSpec = infiniteRepeatable(

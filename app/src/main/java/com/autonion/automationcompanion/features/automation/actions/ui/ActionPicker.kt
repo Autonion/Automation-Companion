@@ -1,10 +1,12 @@
 package com.autonion.automationcompanion.features.automation.actions.ui
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.autonion.automationcompanion.features.automation.actions.models.AppActionType
 import com.autonion.automationcompanion.features.automation.actions.models.ConfiguredAction
@@ -17,7 +19,6 @@ import com.autonion.automationcompanion.features.system_context_automation.share
 import android.provider.Settings
 import android.app.NotificationManager
 import android.content.Context
-import android.net.Uri
 import android.content.Intent
 
 @Composable
@@ -25,7 +26,7 @@ fun ActionPicker(
     configuredActions: List<ConfiguredAction>,
     onActionsChanged: (List<ConfiguredAction>) -> Unit,
     onPickContactClicked: (actionIndex: Int) -> Unit,
-    onPickAppClicked: (actionIndex: Int) -> Unit, // NEW
+    onPickAppClicked: (actionIndex: Int) -> Unit,
     dndDisabledReason: String? = null,
     context: android.content.Context
 ) {
@@ -33,11 +34,6 @@ fun ActionPicker(
     var showWriteSettingsRationale by remember { mutableStateOf(false) }
     var showDndRationale by remember { mutableStateOf(false) }
     var showSmsRationale by remember { mutableStateOf(false) }
-
-    // Launcher for System Settings (StartActivityForResult doesn't return result for settings, so we just check on return)
-    // We actually just launch the intent, and rely on the user navigating back.
-    // However, to know *which* permission we were asking for to auto-enable, we could track state.
-    // For simplicity, we just launch settings and let the user toggle again.
 
     val smsPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -49,6 +45,7 @@ fun ActionPicker(
         }
     }
 
+    // --- Permission Rationale Dialogs ---
     if (showWriteSettingsRationale) {
         AlertDialog(
             onDismissRequest = { showWriteSettingsRationale = false },
@@ -107,13 +104,27 @@ fun ActionPicker(
         )
     }
 
+    // --- Accent colors for categories ---
+    val soundColor = Color(0xFF7C4DFF)   // Purple
+    val displayColor = Color(0xFF00B0FF) // Blue
+    val commsColor = Color(0xFF00C853)   // Green
+    val systemColor = Color(0xFFFF6D00)  // Orange
+
     Column(
         modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Text("Automations", style = MaterialTheme.typography.titleMedium)
 
-        /* -------------------- AUDIO (UPDATED) -------------------- */
+        /* ═══════════════════════════════════════════════════
+         * SECTION 1: SOUND & NOTIFICATIONS
+         * ═══════════════════════════════════════════════════ */
+        ActionSectionHeader(
+            title = "Sound & Notifications",
+            icon = Icons.Rounded.VolumeUp,
+            iconTint = soundColor
+        )
+
+        /* ── Volume & Ringer ── */
         val audioAction = configuredActions.filterIsInstance<ConfiguredAction.Audio>().firstOrNull()
         var audioExpanded by remember(configuredActions) {
             mutableStateOf(audioAction != null)
@@ -121,6 +132,9 @@ fun ActionPicker(
 
         ActionRow(
             label = "Set Volume & Ringer",
+            subtitle = "Control ring, media & alarm levels",
+            icon = Icons.Rounded.VolumeUp,
+            iconTint = soundColor,
             checked = audioAction != null,
             onCheckedChange = { enabled ->
                 if (enabled) {
@@ -147,9 +161,9 @@ fun ActionPicker(
             }
         )
 
-        if (audioAction != null && audioExpanded) {
+        AnimatedConfigSection(visible = audioAction != null && audioExpanded) {
             AudioActionConfig(
-                action = audioAction,
+                action = audioAction ?: return@AnimatedConfigSection,
                 onActionChanged = { updated ->
                     onActionsChanged(
                         configuredActions.map { if (it is ConfiguredAction.Audio) updated else it }
@@ -157,57 +171,16 @@ fun ActionPicker(
                 }
             )
         }
-        HorizontalDivider()
 
-        /* -------------------- BRIGHTNESS -------------------- */
-
-        val brightnessAction = configuredActions.filterIsInstance<ConfiguredAction.Brightness>().firstOrNull()
-        var brightnessExpanded by remember(configuredActions) {
-            mutableStateOf(brightnessAction != null)
-        }
-
-        ActionRow(
-            label = "Set Brightness",
-            checked = brightnessAction != null,
-            onCheckedChange = { enabled ->
-                if (enabled) {
-                    if (!PermissionUtils.isWriteSettingsPermissionGranted(context)) {
-                        showWriteSettingsRationale = true
-                    } else {
-                        if (brightnessAction == null) {
-                            onActionsChanged(
-                                configuredActions + ConfiguredAction.Brightness(150)
-                            )
-                        }
-                        brightnessExpanded = true
-                    }
-                } else {
-                    onActionsChanged(configuredActions.filterNot { it is ConfiguredAction.Brightness })
-                    brightnessExpanded = false
-                }
-            }
-        )
-
-        if (brightnessAction != null && brightnessExpanded) {
-            BrightnessActionConfig(
-                action = brightnessAction,
-                onActionChanged = { updated ->
-                    onActionsChanged(
-                        configuredActions.map { if (it is ConfiguredAction.Brightness) updated else it }
-                    )
-                }
-            )
-        }
-
-        HorizontalDivider()
-
-        /* -------------------- DND -------------------- */
-
+        /* ── Do Not Disturb ── */
         val dndAction = configuredActions.filterIsInstance<ConfiguredAction.Dnd>().firstOrNull()
         val dndDisabled = dndDisabledReason != null
 
         ActionRow(
             label = "Do Not Disturb",
+            subtitle = "Mute all calls & notifications",
+            icon = Icons.Rounded.DoNotDisturb,
+            iconTint = soundColor,
             checked = dndAction != null,
             enabled = !dndDisabled,
             onCheckedChange = { enabled ->
@@ -231,106 +204,11 @@ fun ActionPicker(
                 dndDisabledReason,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(start = 12.dp)
+                modifier = Modifier.padding(start = 16.dp)
             )
         }
 
-        HorizontalDivider()
-
-        /* -------------------- SMS -------------------- */
-
-        val smsAction = configuredActions.filterIsInstance<ConfiguredAction.SendSms>().firstOrNull()
-        val smsIndex = configuredActions.indexOfFirst { it is ConfiguredAction.SendSms }
-        var smsExpanded by remember(configuredActions) {
-            mutableStateOf(smsAction != null)
-        }
-
-        ActionRow(
-            label = "Send Message",
-            checked = smsAction != null,
-            onCheckedChange = { enabled ->
-                if (enabled) {
-                    val hasSms = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.SEND_SMS) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                    val hasContact = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_CONTACTS) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                    
-                    if (!hasSms || !hasContact) {
-                        showSmsRationale = true
-                    } else {
-                        if (smsAction == null) {
-                            onActionsChanged(
-                                configuredActions + ConfiguredAction.SendSms("", "")
-                            )
-                        }
-                        smsExpanded = true
-                    }
-                } else {
-                    onActionsChanged(configuredActions.filterNot { it is ConfiguredAction.SendSms })
-                    smsExpanded = false
-                }
-            }
-        )
-
-        if (smsAction != null && smsExpanded && smsIndex >= 0) {
-            SmsActionConfig(
-                action = smsAction,
-                onActionChanged = { updated ->
-                    onActionsChanged(
-                        configuredActions.map { if (it is ConfiguredAction.SendSms) updated else it }
-                    )
-                },
-                onPickContactClicked = {
-                    onPickContactClicked(smsIndex)
-                }
-            )
-        }
-
-        HorizontalDivider()
-        /* -------------------- APP ACTION -------------------- */
-        val appAction = configuredActions.filterIsInstance<ConfiguredAction.AppAction>().firstOrNull()
-        val appActionIndex = configuredActions.indexOfFirst { it is ConfiguredAction.AppAction }
-        var appExpanded by remember(configuredActions) {
-            mutableStateOf(appAction != null)
-        }
-
-        ActionRow(
-            label = "App Action",
-            checked = appAction != null,
-            onCheckedChange = { enabled ->
-                if (enabled) {
-                    if (appAction == null) {
-                        onActionsChanged(
-                            configuredActions + ConfiguredAction.AppAction(
-                                packageName = "",
-                                actionType = AppActionType.LAUNCH
-                            )
-                        )
-                    }
-                    appExpanded = true
-                } else {
-                    onActionsChanged(configuredActions.filterNot { it is ConfiguredAction.AppAction })
-                    appExpanded = false
-                }
-            }
-        )
-
-        if (appAction != null && appExpanded && appActionIndex >= 0) {
-            AppActionConfig(
-                context = context,
-                action = appAction,
-                onActionChanged = { updated ->
-                    onActionsChanged(
-                        configuredActions.map { if (it is ConfiguredAction.AppAction) updated else it }
-                    )
-                },
-                onPickAppClicked = {
-                    onPickAppClicked(appActionIndex)
-                }
-            )
-        }
-
-        HorizontalDivider()
-
-        /* -------------------- NOTIFICATION -------------------- */
+        /* ── Show Notification ── */
         val notificationAction = configuredActions.filterIsInstance<ConfiguredAction.NotificationAction>().firstOrNull()
         var notificationExpanded by remember(configuredActions) {
             mutableStateOf(notificationAction != null)
@@ -338,6 +216,9 @@ fun ActionPicker(
 
         ActionRow(
             label = "Show Notification",
+            subtitle = "Display a custom notification",
+            icon = Icons.Rounded.Notifications,
+            iconTint = soundColor,
             checked = notificationAction != null,
             onCheckedChange = { enabled ->
                 if (enabled) {
@@ -358,9 +239,9 @@ fun ActionPicker(
             }
         )
 
-        if (notificationAction != null && notificationExpanded) {
+        AnimatedConfigSection(visible = notificationAction != null && notificationExpanded) {
             NotificationActionConfig(
-                action = notificationAction,
+                action = notificationAction ?: return@AnimatedConfigSection,
                 onActionChanged = { updated ->
                     onActionsChanged(
                         configuredActions.map { if (it is ConfiguredAction.NotificationAction) updated else it }
@@ -369,13 +250,321 @@ fun ActionPicker(
             )
         }
 
-        HorizontalDivider()
+        /* ═══════════════════════════════════════════════════
+         * SECTION 2: DISPLAY
+         * ═══════════════════════════════════════════════════ */
+        ActionSectionHeader(
+            title = "Display",
+            icon = Icons.Rounded.Brightness6,
+            iconTint = displayColor
+        )
 
-        /* -------------------- BATTERY SAVER -------------------- */
+        /* ── Brightness ── */
+        val brightnessAction = configuredActions.filterIsInstance<ConfiguredAction.Brightness>().firstOrNull()
+        var brightnessExpanded by remember(configuredActions) {
+            mutableStateOf(brightnessAction != null)
+        }
+
+        ActionRow(
+            label = "Set Brightness",
+            subtitle = "Adjust screen brightness level",
+            icon = Icons.Rounded.Brightness6,
+            iconTint = displayColor,
+            checked = brightnessAction != null,
+            onCheckedChange = { enabled ->
+                if (enabled) {
+                    if (!PermissionUtils.isWriteSettingsPermissionGranted(context)) {
+                        showWriteSettingsRationale = true
+                    } else {
+                        if (brightnessAction == null) {
+                            onActionsChanged(
+                                configuredActions + ConfiguredAction.Brightness(150)
+                            )
+                        }
+                        brightnessExpanded = true
+                    }
+                } else {
+                    onActionsChanged(configuredActions.filterNot { it is ConfiguredAction.Brightness })
+                    brightnessExpanded = false
+                }
+            }
+        )
+
+        AnimatedConfigSection(visible = brightnessAction != null && brightnessExpanded) {
+            BrightnessActionConfig(
+                action = brightnessAction ?: return@AnimatedConfigSection,
+                onActionChanged = { updated ->
+                    onActionsChanged(
+                        configuredActions.map { if (it is ConfiguredAction.Brightness) updated else it }
+                    )
+                }
+            )
+        }
+
+        /* ── Display Group (Auto-rotate, Screen Timeout, Keep Awake) ── */
+        val hasAnyDisplayAction = configuredActions.any {
+            it is ConfiguredAction.AutoRotate ||
+            it is ConfiguredAction.ScreenTimeout ||
+            it is ConfiguredAction.KeepScreenAwake
+        }
+
+        var displayExpanded by remember(configuredActions) {
+            mutableStateOf(hasAnyDisplayAction)
+        }
+
+        ActionRow(
+            label = "Display Controls",
+            subtitle = "Auto-rotate, timeout & sleep settings",
+            icon = Icons.Rounded.ScreenRotation,
+            iconTint = displayColor,
+            checked = hasAnyDisplayAction,
+            onCheckedChange = { enabled ->
+                displayExpanded = enabled
+            }
+        )
+
+        AnimatedConfigSection(visible = displayExpanded) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                // ── Auto-rotate ──
+                val autoRotateAction =
+                    configuredActions.filterIsInstance<ConfiguredAction.AutoRotate>().firstOrNull()
+
+                ActionRow(
+                    label = "Auto-rotate",
+                    icon = Icons.Rounded.ScreenRotation,
+                    iconTint = displayColor,
+                    checked = autoRotateAction != null,
+                    onCheckedChange = { enabled ->
+                        if (enabled) {
+                            if (!PermissionUtils.isWriteSettingsPermissionGranted(context)) {
+                                showWriteSettingsRationale = true
+                            } else {
+                                if (autoRotateAction == null) {
+                                    onActionsChanged(configuredActions + ConfiguredAction.AutoRotate(true))
+                                }
+                            }
+                        } else {
+                            onActionsChanged(
+                                configuredActions.filterNot { it is ConfiguredAction.AutoRotate }
+                            )
+                        }
+                    }
+                )
+
+                AnimatedConfigSection(visible = autoRotateAction != null) {
+                    AutoRotateActionConfig(
+                        action = autoRotateAction ?: return@AnimatedConfigSection,
+                        onActionChanged = { updated ->
+                            onActionsChanged(
+                                configuredActions.map {
+                                    if (it is ConfiguredAction.AutoRotate) updated else it
+                                }
+                            )
+                        }
+                    )
+                }
+
+                // ── Screen Timeout ──
+                val screenTimeoutAction =
+                    configuredActions.filterIsInstance<ConfiguredAction.ScreenTimeout>().firstOrNull()
+
+                ActionRow(
+                    label = "Screen Timeout",
+                    icon = Icons.Rounded.Timer,
+                    iconTint = displayColor,
+                    checked = screenTimeoutAction != null,
+                    onCheckedChange = { enabled ->
+                        if (enabled) {
+                            if (!PermissionUtils.isWriteSettingsPermissionGranted(context)) {
+                                showWriteSettingsRationale = true
+                            } else {
+                                if (screenTimeoutAction == null) {
+                                    onActionsChanged(
+                                        configuredActions + ConfiguredAction.ScreenTimeout(30_000)
+                                    )
+                                }
+                            }
+                        } else {
+                            onActionsChanged(
+                                configuredActions.filterNot { it is ConfiguredAction.ScreenTimeout }
+                            )
+                        }
+                    }
+                )
+
+                AnimatedConfigSection(visible = screenTimeoutAction != null) {
+                    ScreenTimeoutActionConfig(
+                        action = screenTimeoutAction ?: return@AnimatedConfigSection,
+                        onActionChanged = { updated ->
+                            onActionsChanged(
+                                configuredActions.map {
+                                    if (it is ConfiguredAction.ScreenTimeout) updated else it
+                                }
+                            )
+                        }
+                    )
+                }
+
+                // ── Prevent Sleep ──
+                val keepAwakeAction =
+                    configuredActions.filterIsInstance<ConfiguredAction.KeepScreenAwake>().firstOrNull()
+
+                ActionRow(
+                    label = "Prevent Sleep",
+                    icon = Icons.Rounded.Visibility,
+                    iconTint = displayColor,
+                    checked = keepAwakeAction != null,
+                    onCheckedChange = { enabled ->
+                        if (enabled) {
+                            if (keepAwakeAction == null) {
+                                onActionsChanged(
+                                    configuredActions + ConfiguredAction.KeepScreenAwake(true)
+                                )
+                            }
+                        } else {
+                            onActionsChanged(
+                                configuredActions.filterNot { it is ConfiguredAction.KeepScreenAwake }
+                            )
+                        }
+                    }
+                )
+
+                AnimatedConfigSection(visible = keepAwakeAction != null) {
+                    KeepScreenAwakeActionConfig(
+                        action = keepAwakeAction ?: return@AnimatedConfigSection,
+                        onActionChanged = { updated ->
+                            onActionsChanged(
+                                configuredActions.map {
+                                    if (it is ConfiguredAction.KeepScreenAwake) updated else it
+                                }
+                            )
+                        }
+                    )
+                }
+            }
+        }
+
+        /* ═══════════════════════════════════════════════════
+         * SECTION 3: COMMUNICATION
+         * ═══════════════════════════════════════════════════ */
+        ActionSectionHeader(
+            title = "Communication",
+            icon = Icons.Rounded.Message,
+            iconTint = commsColor
+        )
+
+        /* ── Send SMS ── */
+        val smsAction = configuredActions.filterIsInstance<ConfiguredAction.SendSms>().firstOrNull()
+        val smsIndex = configuredActions.indexOfFirst { it is ConfiguredAction.SendSms }
+        var smsExpanded by remember(configuredActions) {
+            mutableStateOf(smsAction != null)
+        }
+
+        ActionRow(
+            label = "Send Message",
+            subtitle = "Auto-send SMS to a contact",
+            icon = Icons.Rounded.Message,
+            iconTint = commsColor,
+            checked = smsAction != null,
+            onCheckedChange = { enabled ->
+                if (enabled) {
+                    val hasSms = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.SEND_SMS) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                    val hasContact = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_CONTACTS) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+                    if (!hasSms || !hasContact) {
+                        showSmsRationale = true
+                    } else {
+                        if (smsAction == null) {
+                            onActionsChanged(
+                                configuredActions + ConfiguredAction.SendSms("", "")
+                            )
+                        }
+                        smsExpanded = true
+                    }
+                } else {
+                    onActionsChanged(configuredActions.filterNot { it is ConfiguredAction.SendSms })
+                    smsExpanded = false
+                }
+            }
+        )
+
+        AnimatedConfigSection(visible = smsAction != null && smsExpanded && smsIndex >= 0) {
+            SmsActionConfig(
+                action = smsAction ?: return@AnimatedConfigSection,
+                onActionChanged = { updated ->
+                    onActionsChanged(
+                        configuredActions.map { if (it is ConfiguredAction.SendSms) updated else it }
+                    )
+                },
+                onPickContactClicked = {
+                    onPickContactClicked(smsIndex)
+                }
+            )
+        }
+
+        /* ═══════════════════════════════════════════════════
+         * SECTION 4: SYSTEM
+         * ═══════════════════════════════════════════════════ */
+        ActionSectionHeader(
+            title = "System",
+            icon = Icons.Rounded.Settings,
+            iconTint = systemColor
+        )
+
+        /* ── App Action ── */
+        val appAction = configuredActions.filterIsInstance<ConfiguredAction.AppAction>().firstOrNull()
+        val appActionIndex = configuredActions.indexOfFirst { it is ConfiguredAction.AppAction }
+        var appExpanded by remember(configuredActions) {
+            mutableStateOf(appAction != null)
+        }
+
+        ActionRow(
+            label = "App Action",
+            subtitle = "Launch or control an app",
+            icon = Icons.Rounded.Apps,
+            iconTint = systemColor,
+            checked = appAction != null,
+            onCheckedChange = { enabled ->
+                if (enabled) {
+                    if (appAction == null) {
+                        onActionsChanged(
+                            configuredActions + ConfiguredAction.AppAction(
+                                packageName = "",
+                                actionType = AppActionType.LAUNCH
+                            )
+                        )
+                    }
+                    appExpanded = true
+                } else {
+                    onActionsChanged(configuredActions.filterNot { it is ConfiguredAction.AppAction })
+                    appExpanded = false
+                }
+            }
+        )
+
+        AnimatedConfigSection(visible = appAction != null && appExpanded && appActionIndex >= 0) {
+            AppActionConfig(
+                context = context,
+                action = appAction ?: return@AnimatedConfigSection,
+                onActionChanged = { updated ->
+                    onActionsChanged(
+                        configuredActions.map { if (it is ConfiguredAction.AppAction) updated else it }
+                    )
+                },
+                onPickAppClicked = {
+                    onPickAppClicked(appActionIndex)
+                }
+            )
+        }
+
+        /* ── Battery Saver ── */
         val batterySaverAction = configuredActions.filterIsInstance<ConfiguredAction.BatterySaver>().firstOrNull()
 
         ActionRow(
             label = "Battery Saver",
+            subtitle = "Toggle battery saving mode",
+            icon = Icons.Rounded.BatterySaver,
+            iconTint = systemColor,
             checked = batterySaverAction != null,
             onCheckedChange = { enabled ->
                 if (enabled) {
@@ -388,9 +577,9 @@ fun ActionPicker(
             }
         )
 
-        if (batterySaverAction != null) {
+        AnimatedConfigSection(visible = batterySaverAction != null) {
             BatterySaverActionConfig(
-                action = batterySaverAction,
+                action = batterySaverAction ?: return@AnimatedConfigSection,
                 onActionChanged = { updated ->
                     onActionsChanged(
                         configuredActions.map { if (it is ConfiguredAction.BatterySaver) updated else it }
@@ -398,148 +587,6 @@ fun ActionPicker(
                 }
             )
         }
-
-        HorizontalDivider()
-
-        /* -------------------- DISPLAY (GROUP) -------------------- */
-
-        val hasAnyDisplayAction = configuredActions.any {
-                    it is ConfiguredAction.AutoRotate ||
-                    it is ConfiguredAction.ScreenTimeout ||
-                    it is ConfiguredAction.KeepScreenAwake
-        }
-
-        var displayExpanded by remember(configuredActions) {
-            mutableStateOf(hasAnyDisplayAction)
-        }
-
-        ActionRow(
-            label = "Display",
-            checked = hasAnyDisplayAction,
-            onCheckedChange = { enabled ->
-                displayExpanded = enabled
-            }
-        )
-
-        if (displayExpanded) {
-
-            // ───── Auto-rotate ─────
-            val autoRotateAction =
-                configuredActions.filterIsInstance<ConfiguredAction.AutoRotate>().firstOrNull()
-
-            ActionRow(
-                label = "Auto-rotate",
-                checked = autoRotateAction != null,
-                onCheckedChange = { enabled ->
-                    if (enabled) {
-                        if (!PermissionUtils.isWriteSettingsPermissionGranted(context)) {
-                            showWriteSettingsRationale = true
-                        } else {
-                            if (autoRotateAction == null) {
-                                onActionsChanged(configuredActions + ConfiguredAction.AutoRotate(true))
-                            }
-                        }
-                    } else {
-                        onActionsChanged(
-                            configuredActions.filterNot { it is ConfiguredAction.AutoRotate }
-                        )
-                    }
-                }
-            )
-
-            if (autoRotateAction != null) {
-                AutoRotateActionConfig(
-                    action = autoRotateAction,
-                    onActionChanged = { updated ->
-                        onActionsChanged(
-                            configuredActions.map {
-                                if (it is ConfiguredAction.AutoRotate) updated else it
-                            }
-                        )
-                    }
-                )
-            }
-
-            Spacer(Modifier.height(8.dp))
-
-            // ───── Screen Timeout ─────
-            val screenTimeoutAction =
-                configuredActions.filterIsInstance<ConfiguredAction.ScreenTimeout>().firstOrNull()
-
-            ActionRow(
-                label = "Screen Timeout",
-                checked = screenTimeoutAction != null,
-                onCheckedChange = { enabled ->
-                    if (enabled) {
-                        if (!PermissionUtils.isWriteSettingsPermissionGranted(context)) {
-                            showWriteSettingsRationale = true
-                        } else {
-                            if (screenTimeoutAction == null) {
-                                onActionsChanged(
-                                    configuredActions + ConfiguredAction.ScreenTimeout(30_000)
-                                )
-                            }
-                        }
-                    } else {
-                        onActionsChanged(
-                            configuredActions.filterNot { it is ConfiguredAction.ScreenTimeout }
-                        )
-                    }
-                }
-            )
-
-            if (screenTimeoutAction != null) {
-                ScreenTimeoutActionConfig(
-                    action = screenTimeoutAction,
-                    onActionChanged = { updated ->
-                        onActionsChanged(
-                            configuredActions.map {
-                                if (it is ConfiguredAction.ScreenTimeout) updated else it
-                            }
-                        )
-                    }
-                )
-            }
-
-            Spacer(Modifier.height(8.dp))
-
-            // ───── Prevent Sleep ─────
-            val keepAwakeAction =
-                configuredActions.filterIsInstance<ConfiguredAction.KeepScreenAwake>().firstOrNull()
-
-            ActionRow(
-                label = "Prevent Sleep",
-                checked = keepAwakeAction != null,
-                onCheckedChange = { enabled ->
-                    if (enabled) {
-                        if (keepAwakeAction == null) {
-                            onActionsChanged(
-                                configuredActions + ConfiguredAction.KeepScreenAwake(true)
-                            )
-                        }
-                    } else {
-                        onActionsChanged(
-                            configuredActions.filterNot { it is ConfiguredAction.KeepScreenAwake }
-                        )
-                    }
-                }
-            )
-
-            if (keepAwakeAction != null) {
-                KeepScreenAwakeActionConfig(
-                    action = keepAwakeAction,
-                    onActionChanged = { updated ->
-                        onActionsChanged(
-                            configuredActions.map {
-                                if (it is ConfiguredAction.KeepScreenAwake) updated else it
-                            }
-                        )
-                    }
-                )
-            }
-        }
-
-
     }
 }
 

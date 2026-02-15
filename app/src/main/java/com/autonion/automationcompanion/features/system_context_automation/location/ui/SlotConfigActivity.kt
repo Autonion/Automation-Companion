@@ -14,7 +14,7 @@ import android.widget.TimePicker
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.compose.material3.MaterialTheme
+import com.autonion.automationcompanion.ui.theme.AppTheme
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -209,7 +209,7 @@ class SlotConfigActivity : AppCompatActivity() {
 
 
         setContent {
-            MaterialTheme {
+            AppTheme {
                 SlotConfigScreen(
                     title = if (editingSlotId == null) "Create Slot" else "Edit Slot",
                     latitude = lat,

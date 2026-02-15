@@ -11,10 +11,10 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.material3.MaterialTheme
 import androidx.core.content.ContextCompat
 import com.autonion.automationcompanion.features.system_context_automation.location.engine.accessibility.isAutomationAccessibilityEnabled
 import com.autonion.automationcompanion.features.system_context_automation.location.ui.SlotConfigActivity
+import com.autonion.automationcompanion.ui.theme.AppTheme
 
 class LocationSlotsActivity : ComponentActivity() {
     private var waitingForAccessibility = false
@@ -38,7 +38,7 @@ class LocationSlotsActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         setContent {
-            MaterialTheme {
+            AppTheme {
                 LocationSlotsScreen(
                     onAddClicked = {
                         onAddSlotClicked()
