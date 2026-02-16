@@ -165,12 +165,31 @@ fun BatterySlotsScreen(
                                         scope.launch {
                                             dao.delete(slot)
                                             recentlyDeleted = slot
+
+                                            // Log deletion
+                                            com.autonion.automationcompanion.features.automation_debugger.DebugLogger.info(
+                                                context, com.autonion.automationcompanion.features.automation_debugger.data.LogCategory.SYSTEM_CONTEXT,
+                                                "Battery automation deleted",
+                                                "Deleted slot ${slot.id}",
+                                                "BatterySlotsScreen"
+                                            )
+
                                             val result = snackbarHostState.showSnackbar(
                                                 message = "Slot deleted",
                                                 actionLabel = "Undo"
                                             )
                                             if (result == SnackbarResult.ActionPerformed) {
-                                                recentlyDeleted?.let { dao.insert(it.copy(id = 0)) }
+                                                recentlyDeleted?.let { 
+                                                    val newId = dao.insert(it.copy(id = 0)) 
+                                                    
+                                                    // Log undo
+                                                    com.autonion.automationcompanion.features.automation_debugger.DebugLogger.success(
+                                                        context, com.autonion.automationcompanion.features.automation_debugger.data.LogCategory.SYSTEM_CONTEXT,
+                                                        "Battery automation restored",
+                                                        "Restored slot ${slot.id} as $newId",
+                                                        "BatterySlotsScreen"
+                                                    )
+                                                }
                                             }
                                         }
                                     }

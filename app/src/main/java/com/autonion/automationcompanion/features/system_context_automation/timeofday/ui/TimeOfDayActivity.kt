@@ -185,12 +185,31 @@ fun TimeOfDaySlotsScreen(
                                             dao.delete(slot)
                                             TimeOfDayReceiver.cancelAlarm(context, slot.id)
                                             recentlyDeleted = slot
+
+                                            // Log deletion
+                                            com.autonion.automationcompanion.features.automation_debugger.DebugLogger.info(
+                                                context, com.autonion.automationcompanion.features.automation_debugger.data.LogCategory.SYSTEM_CONTEXT,
+                                                "Time-of-Day automation deleted",
+                                                "Deleted slot ${slot.id}",
+                                                "TimeOfDaySlotsScreen"
+                                            )
+
                                             val result = snackbarHostState.showSnackbar(
                                                 message = "Slot deleted",
                                                 actionLabel = "Undo"
                                             )
                                             if (result == SnackbarResult.ActionPerformed) {
-                                                recentlyDeleted?.let { dao.insert(it.copy(id = 0)) }
+                                                recentlyDeleted?.let { 
+                                                    val newId = dao.insert(it.copy(id = 0)) 
+                                                    
+                                                    // Log undo
+                                                    com.autonion.automationcompanion.features.automation_debugger.DebugLogger.success(
+                                                        context, com.autonion.automationcompanion.features.automation_debugger.data.LogCategory.SYSTEM_CONTEXT,
+                                                        "Time-of-Day automation restored",
+                                                        "Restored slot ${slot.id} as $newId",
+                                                        "TimeOfDaySlotsScreen"
+                                                    )
+                                                }
                                             }
                                         }
                                     }

@@ -41,6 +41,8 @@ import com.autonion.automationcompanion.features.system_context_automation.share
 import com.autonion.automationcompanion.ui.components.AuroraBackground
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
+import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
 
 class AppSpecificActivity : AppCompatActivity() {
 
@@ -164,13 +166,31 @@ fun AppSpecificSlotsScreen(
                                     onDelete = {
                                         scope.launch {
                                             dao.delete(slot)
+                                            
+                                            // Log deletion
+                                            DebugLogger.info(
+                                                context, LogCategory.SYSTEM_CONTEXT,
+                                                "App automation deleted",
+                                                "Deleted slot ${slot.id}",
+                                                "AppSpecificConfig"
+                                            )
+
                                             recentlyDeleted = slot
                                             val result = snackbarHostState.showSnackbar(
                                                 message = "Slot deleted",
                                                 actionLabel = "Undo"
                                             )
                                             if (result == SnackbarResult.ActionPerformed) {
-                                                recentlyDeleted?.let { dao.insert(it.copy(id = 0)) }
+                                                recentlyDeleted?.let { 
+                                                    val newId = dao.insert(it.copy(id = 0)) 
+                                                    // Log undo
+                                                    DebugLogger.success(
+                                                        context, LogCategory.SYSTEM_CONTEXT,
+                                                        "App automation restored",
+                                                        "Restored slot ${slot.id} as $newId",
+                                                        "AppSpecificConfig"
+                                                    )
+                                                }
                                             }
                                         }
                                     }

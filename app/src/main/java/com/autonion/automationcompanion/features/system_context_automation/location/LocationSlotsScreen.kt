@@ -219,13 +219,30 @@ fun LocationSlotsScreen(
                                                 recentlyDeleted = slot
                                                 scope.launch {
                                                     dao.delete(slot)
+                                                    
+                                                    // Log deletion
+                                                    com.autonion.automationcompanion.features.automation_debugger.DebugLogger.info(
+                                                        context, com.autonion.automationcompanion.features.automation_debugger.data.LogCategory.SYSTEM_CONTEXT,
+                                                        "Location automation deleted",
+                                                        "Deleted slot ${slot.id}",
+                                                        "LocationSlotsScreen"
+                                                    )
+
                                                     val result = snackbarHostState.showSnackbar(
                                                         message = "Slot deleted",
                                                         actionLabel = "Undo"
                                                     )
                                                     if (result == SnackbarResult.ActionPerformed) {
                                                         recentlyDeleted?.let {
-                                                            dao.insert(it.copy(id = 0))
+                                                            val newId = dao.insert(it.copy(id = 0))
+                                                            
+                                                            // Log undo
+                                                            com.autonion.automationcompanion.features.automation_debugger.DebugLogger.success(
+                                                                context, com.autonion.automationcompanion.features.automation_debugger.data.LogCategory.SYSTEM_CONTEXT,
+                                                                "Location automation restored",
+                                                                "Restored slot ${slot.id} as $newId",
+                                                                "LocationSlotsScreen"
+                                                            )
                                                         }
                                                     }
                                                 }
