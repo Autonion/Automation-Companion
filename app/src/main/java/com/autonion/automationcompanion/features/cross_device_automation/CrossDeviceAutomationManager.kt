@@ -74,7 +74,7 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
     }
 
     fun isFeatureEnabled(): Boolean {
-        return prefs.getBoolean(PREF_FEATURE_ENABLED, true) // Default true
+        return prefs.getBoolean(PREF_FEATURE_ENABLED, false) // Default false
     }
 
     fun setFeatureEnabled(enabled: Boolean) {
