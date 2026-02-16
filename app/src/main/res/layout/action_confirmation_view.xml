@@ -43,7 +43,7 @@
             android:backgroundTint="#80FFFFFF"
             android:visibility="gone"
             tools:ignore="LabelFor" />
-            
+
         <TextView
              android:id="@+id/tvDurationUnit"
              android:layout_width="wrap_content"
@@ -161,6 +161,7 @@
             android:padding="4dp"
             android:contentDescription="@string/cancel"
             android:tint="#FF5252"
+            tools:ignore="UseAppTint"
             xmlns:app="http://schemas.android.com/apk/res-auto"/>
 
         <ImageView
@@ -173,6 +174,7 @@
             android:padding="4dp"
             android:contentDescription="@string/ok"
             android:tint="#69F0AE"
+            tools:ignore="UseAppTint"
             xmlns:app="http://schemas.android.com/apk/res-auto"/>
 
     </LinearLayout>
