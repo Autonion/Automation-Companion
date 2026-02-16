@@ -376,7 +376,10 @@ private fun saveAppSlot(
 
     CoroutineScope(Dispatchers.IO).launch {
         try {
-            val json = kotlinx.serialization.json.Json { classDiscriminator = "type" }
+            val json = kotlinx.serialization.json.Json { 
+                classDiscriminator = "type" 
+                encodeDefaults = true 
+            }
 
             val triggerConfig = TriggerConfig.App(
                 packageName = packageName,
@@ -399,11 +402,20 @@ private fun saveAppSlot(
             )
 
             val dao = AppDatabase.get(context).slotDao()
-            if (slotId != -1L) {
+            val finalId = if (slotId != -1L) {
                 dao.update(slot)
+                slotId
             } else {
                 dao.insert(slot)
             }
+
+            // Log success to Debugger so user verifies it was saved
+            com.autonion.automationcompanion.features.automation_debugger.DebugLogger.success(
+                context, com.autonion.automationcompanion.features.automation_debugger.data.LogCategory.SYSTEM_CONTEXT,
+                "App automation saved",
+                "New App Automation for $packageName (Slot $finalId)",
+                "AppSpecificConfig"
+            )
 
             android.os.Handler(android.os.Looper.getMainLooper()).post {
                 Toast.makeText(context, "Automation saved", Toast.LENGTH_SHORT).show()
@@ -413,6 +425,12 @@ private fun saveAppSlot(
             android.os.Handler(android.os.Looper.getMainLooper()).post {
                 Toast.makeText(context, "Error saving: ${e.message}", Toast.LENGTH_SHORT).show()
             }
+            com.autonion.automationcompanion.features.automation_debugger.DebugLogger.error(
+                context, com.autonion.automationcompanion.features.automation_debugger.data.LogCategory.SYSTEM_CONTEXT,
+                "Error saving app automation",
+                "${e.message}",
+                "AppSpecificConfig"
+            )
         }
     }
 }

@@ -38,30 +38,45 @@ class AppSpecificAutomationEngine(private val context: Context) : AccessibilityF
             try {
                 val dao = AppDatabase.get(context).slotDao()
                 val allSlots = dao.getAllEnabled()
+                
+                // Debug log to see if we satisfy the query
+                Log.d(TAG, "Evaluating ${allSlots.size} enabled slots for package: $currentPackageName")
 
                 for (slot in allSlots) {
                     if (slot.triggerType != "APP") continue
 
                     val config = try {
                         slot.triggerConfigJson?.let {
-                            json.decodeFromString<TriggerConfig.App>(it)
+                            // Decode as polymorphic TriggerConfig first, then check type
+                            json.decodeFromString<TriggerConfig>(it) as? TriggerConfig.App
                         }
                     } catch (e: Exception) {
                         Log.e(TAG, "Error parsing config for slot ${slot.id}", e)
+                        DebugLogger.error(
+                            context, LogCategory.SYSTEM_CONTEXT,
+                            "App slot parsing error",
+                            "Slot ${slot.id}: ${e.message}",
+                            TAG
+                        )
                         null
                     } ?: continue
 
-                    if (config.triggerOn == TriggerConfig.App.TriggerOn.OPEN && 
-                        config.packageName == currentPackageName) {
-                        
+                    // Debug log for matching logic
+                    val isPackageMatch = config.packageName == currentPackageName
+                    val isTriggerMatch = config.triggerOn == TriggerConfig.App.TriggerOn.OPEN
+                    
+                    if (isPackageMatch && isTriggerMatch) {
                         Log.i(TAG, "Triggering App Automation for $currentPackageName")
                         DebugLogger.success(
                             context, LogCategory.SYSTEM_CONTEXT,
-                            "App trigger: $currentPackageName",
-                            "Slot ${slot.id} triggered by app open event",
+                            "App trigger executed",
+                            "App: $currentPackageName",
                             TAG
                         )
                         SlotExecutor.execute(context, slot.id)
+                    } else if (isPackageMatch) {
+                        // Log mismatch for debugging
+                         Log.d(TAG, "Package matched but trigger condition failed. Config: ${config.triggerOn}, Event: OPEN")
                     }
                 }
             } catch (e: Exception) {
