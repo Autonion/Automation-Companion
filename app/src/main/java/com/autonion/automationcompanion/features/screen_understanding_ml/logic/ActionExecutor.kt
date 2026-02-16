@@ -33,10 +33,17 @@ object ActionExecutor : AccessibilityFeature {
         Log.d("ActionExecutor", "Disconnected from AccessibilityService")
     }
 
-    suspend fun execute(action: ActionIntent): Boolean {
+    suspend fun execute(context: android.content.Context, action: ActionIntent): Boolean {
         val s = serviceRef?.get()
         if (s == null) {
             Log.e("ActionExecutor", "AccessibilityService not connected")
+            DebugLogger.error(
+                context, 
+                LogCategory.SYSTEM_CONTEXT,
+                "Accessibility Service permission required skipping",
+                "Action ${action.type} failed - Service not connected",
+                "ActionExecutor"
+            )
             return false
         }
 

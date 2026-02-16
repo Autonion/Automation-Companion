@@ -85,6 +85,22 @@ fun AppSpecificSlotsScreen(
     val allSlots by dao.getAllFlow().collectAsState(initial = emptyList())
     val slots = allSlots.filter { it.triggerType == "APP" }
 
+    // Accessibility Service State
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    var isAccessibilityEnabled by remember { mutableStateOf(false) }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                isAccessibilityEnabled = com.autonion.automationcompanion.features.system_context_automation.shared.utils.PermissionUtils.isAccessibilityServiceEnabled(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
     // FAB entrance animation
     val fabScale = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
@@ -127,9 +143,23 @@ fun AppSpecificSlotsScreen(
             snackbarHost = { SnackbarHost(snackbarHostState) },
             floatingActionButton = {
                 ExtendedFloatingActionButton(
-                    onClick = onAddClicked,
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    onClick = {
+                        if (isAccessibilityEnabled) {
+                            onAddClicked()
+                        } else {
+                            DebugLogger.warning(
+                                context,
+                                LogCategory.SYSTEM_CONTEXT,
+                                "Accessibility Service permission required skipping",
+                                "App specific automation requires accessibility service",
+                                "AppSpecificActivity"
+                            )
+                            android.widget.Toast.makeText(context, "Accessibility Service is required", android.widget.Toast.LENGTH_LONG).show()
+                            com.autonion.automationcompanion.features.system_context_automation.shared.utils.PermissionUtils.requestAccessibilityPermission(context)
+                        }
+                    },
+                    containerColor = if (isAccessibilityEnabled) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+                    contentColor = if (isAccessibilityEnabled) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                     shape = RoundedCornerShape(16.dp),
                     modifier = Modifier.scale(fabScale.value)
                 ) {
@@ -145,6 +175,19 @@ fun AppSpecificSlotsScreen(
                     .padding(padding)
                     .fillMaxSize()
             ) {
+                if (!isAccessibilityEnabled) {
+                    Box(modifier = Modifier.padding(16.dp)) {
+                        com.autonion.automationcompanion.features.system_context_automation.shared.ui.PermissionWarningCard(
+                            title = "Accessibility Service Required",
+                            description = "App automation requires Accessibility Service to detect app launches.",
+                            buttonText = "Enable Service",
+                            onClick = {
+                                com.autonion.automationcompanion.features.system_context_automation.shared.utils.PermissionUtils.requestAccessibilityPermission(context)
+                            }
+                        )
+                    }
+                }
+
                 if (slots.isEmpty()) {
                     AppEmptyState()
                 } else {
@@ -160,7 +203,23 @@ fun AppSpecificSlotsScreen(
                                 AppSpecificSlotCard(
                                     slot = slot,
                                     onToggleEnabled = { enabled ->
-                                        scope.launch { dao.setEnabled(slot.id, enabled) }
+                                        if (enabled && !isAccessibilityEnabled) {
+                                            DebugLogger.warning(
+                                                context,
+                                                LogCategory.SYSTEM_CONTEXT,
+                                                "Accessibility Service permission required skipping",
+                                                "Cannot enable app automation without accessibility service",
+                                                "AppSpecificActivity"
+                                            )
+                                            android.widget.Toast.makeText(
+                                                context,
+                                                "Accessibility Service permission required to enable automation",
+                                                android.widget.Toast.LENGTH_LONG
+                                            ).show()
+                                            com.autonion.automationcompanion.features.system_context_automation.shared.utils.PermissionUtils.requestAccessibilityPermission(context)
+                                        } else {
+                                            scope.launch { dao.setEnabled(slot.id, enabled) }
+                                        }
                                     },
                                     onEdit = { onEditClicked(slot.id) },
                                     onDelete = {

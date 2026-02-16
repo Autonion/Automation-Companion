@@ -348,7 +348,7 @@ class ScreenUnderstandingService : Service() {
                                 description = step.label
                             )
                             
-                            val success = ActionExecutor.execute(intent)
+                            val success = ActionExecutor.execute(this@ScreenUnderstandingService, intent)
 
                             if (success) {
                             Log.d(TAG, "Executed ${step.actionType} on ${step.label}")
