@@ -20,6 +20,7 @@ import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.LinearLayout
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
@@ -51,6 +52,7 @@ class OverlayService : Service() {
     private var isPlaying = false
     private var currentLoopCount = 1
     private var isSetupMode = false
+    private var isCompactMode = false
 
     private val playbackReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -84,6 +86,11 @@ class OverlayService : Service() {
         super.onCreate()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         createNotificationChannel()
+        
+        // Load settings
+        currentLoopCount = SettingsManager.getLoopCount(this)
+        isCompactMode = SettingsManager.isCompactMode(this)
+        
         setupOverlay()
 //        startForeground(1, NotificationHelper.createNotification(this))
 
@@ -96,8 +103,6 @@ class OverlayService : Service() {
             IntentFilter(ACTION_STOP)
         )
 
-        // Load settings
-        currentLoopCount = SettingsManager.getLoopCount(this)
         setFocusListener()
     }
 
@@ -331,9 +336,100 @@ class OverlayService : Service() {
         binding.layoutLoopCount.setOnClickListener {
             showLoopCountDialog()
         }
+        
+        binding.btnToggleLayout.setOnClickListener {
+            isCompactMode = !isCompactMode
+            SettingsManager.saveCompactMode(this, isCompactMode)
+            updateCompactMode()
+        }
+        
+        // Apply initial state
+        updateCompactMode()
     }
 
+    private fun updateCompactMode() {
+        val visibility = if (isCompactMode) View.GONE else View.VISIBLE
+        // 1. Force Vertical Orientation (User request: "Also make it vertical")
+        val orientation = LinearLayout.VERTICAL
+        binding.mainControls.orientation = orientation
+        binding.addControls.orientation = orientation
+        
+        // 2. Stats/Loop are VISIBLE (Short form in compact)
+        binding.tvActionCount.visibility = View.VISIBLE
+        binding.layoutLoopCount.visibility = View.VISIBLE
 
+        // 3. Update Background (Pill shape for compact)
+        if (isCompactMode) {
+            binding.controlPanel.setBackgroundResource(R.drawable.rounded_panel_dark)
+            // Reduce vertical footprint
+            binding.layoutLoopCount.minimumHeight = 0
+            binding.layoutLoopCount.setPadding(0, dpToPx(2), 0, dpToPx(2)) // Minimal padding
+        } else {
+            // Revert to default rectangular-ish background color
+            binding.controlPanel.setBackgroundColor(android.graphics.Color.parseColor("#CC1C1C1C"))
+            binding.layoutLoopCount.minimumHeight = dpToPx(48)
+            binding.layoutLoopCount.setPadding(dpToPx(4), dpToPx(4), dpToPx(4), dpToPx(4))
+        }
+        
+        // Hide divider in Add Controls in Compact Mode for cleaner look
+        if (binding.addControls.childCount > 3) {
+             binding.addControls.getChildAt(3).visibility = visibility
+        }
+
+        // List of buttons (LinearLayouts)
+        val buttons = listOf(
+            binding.btnPlay, binding.btnStop, binding.btnRestart, 
+            binding.btnToggleInput, binding.btnAdd, binding.btnSave, 
+            binding.btnClear, binding.btnClose,
+            binding.btnAddClick, binding.btnAddLongClick, binding.btnAddSwipe, 
+            binding.btnBack, binding.btnToggleLayout
+        )
+        
+        val marginCompact = dpToPx(2) // Tight vertical spacing
+        val marginFull = dpToPx(6)    // Standard vertical spacing
+
+        buttons.forEach { layout ->
+            // Toggle Text (Index 1)
+            // ... existing loop body ...
+            if (layout.childCount > 1) {
+                layout.getChildAt(1).visibility = visibility
+            }
+            
+            // Update Styling
+            val params = layout.layoutParams as android.widget.LinearLayout.LayoutParams
+            if (isCompactMode) {
+                // Transparent background, tight margins
+                layout.setBackgroundResource(R.drawable.btn_overlay_transparent_ripple)
+                params.width = android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+                params.setMargins(0, marginCompact, 0, marginCompact)
+            } else {
+                // Original background, standard margins
+                layout.setBackgroundResource(R.drawable.btn_overlay_primary_ripple)
+                params.width = android.widget.LinearLayout.LayoutParams.MATCH_PARENT
+                params.setMargins(0, marginFull, 0, marginFull)
+            }
+            layout.layoutParams = params
+        }
+
+        // Specific handling for Toggle button icon
+        binding.tvToggleLayout.visibility = visibility
+        if (isCompactMode) {
+            binding.ivToggleLayout.setImageResource(R.drawable.ic_view_full)
+        } else {
+            binding.ivToggleLayout.setImageResource(R.drawable.ic_view_compact)
+        }
+        
+        // Refresh Stats Display
+        updateActionCount()
+        updateLoopCountDisplay()
+        
+        updateControlLayout()
+    }
+
+    private fun dpToPx(dp: Int): Int {
+        return (dp * resources.displayMetrics.density).toInt()
+    }
+    
     private fun showLoopCountDialog() {
         val view = LayoutInflater.from(this).inflate(R.layout.loop_input_dialog, markersView, false)
         val etLoopCount = view.findViewById<EditText>(R.id.etLoopCount)
@@ -519,12 +615,36 @@ class OverlayService : Service() {
 
     private fun updateActionCount() {
         val count = ActionManager.getActions().size
-        binding.tvActionCount.text = "Actions: $count"
+        if (isCompactMode) {
+            binding.tvActionCount.text = "$count"
+            binding.tvActionCount.setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_stat_action, 0, 0, 0)
+            binding.tvActionCount.compoundDrawablePadding = dpToPx(4)
+        } else {
+            binding.tvActionCount.text = "Actions: $count"
+            binding.tvActionCount.setCompoundDrawablesWithIntrinsicBounds(0, 0, 0, 0)
+        }
     }
 
     private fun updateLoopCountDisplay() {
-        val text = if (currentLoopCount <= 0) "Loop: ∞" else "Loop: $currentLoopCount"
-        binding.tvLoopCount.text = text
+        val countText = if (currentLoopCount <= 0) "∞" else "$currentLoopCount"
+        
+        if (isCompactMode) {
+            binding.tvLoopCount.text = countText
+            binding.tvLoopCount.setCompoundDrawablesWithIntrinsicBounds(R.drawable.ic_stat_loop, 0, 0, 0)
+            binding.tvLoopCount.compoundDrawablePadding = dpToPx(4)
+            // Hide edit icon (index 1)
+            if (binding.layoutLoopCount.childCount > 1) {
+                binding.layoutLoopCount.getChildAt(1).visibility = View.GONE
+            }
+        } else {
+            val fullText = if (currentLoopCount <= 0) "Loop: ∞" else "Loop: $currentLoopCount"
+            binding.tvLoopCount.text = fullText
+            binding.tvLoopCount.setCompoundDrawablesWithIntrinsicBounds(0, 0, 0, 0)
+            // Show edit icon
+            if (binding.layoutLoopCount.childCount > 1) {
+                binding.layoutLoopCount.getChildAt(1).visibility = View.VISIBLE
+            }
+        }
     }
 
 
