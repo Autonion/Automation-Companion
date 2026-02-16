@@ -485,16 +485,12 @@
         </LinearLayout>
     </LinearLayout>
 
-    <TextView
-        android:id="@+id/tvSaveConfirmation"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
+    <ImageView
+        android:id="@+id/ivSaveStatus"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
         android:layout_gravity="center"
-        android:background="#B2000000"
-        android:padding="16dp"
-        android:text="@string/preset_saved"
-        android:textColor="@android:color/white"
-        android:textSize="16sp"
+        android:src="@drawable/ic_success"
         android:visibility="gone"
         android:elevation="20dp"/>
 

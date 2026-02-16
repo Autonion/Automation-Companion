@@ -278,14 +278,15 @@ class OverlayService : Service() {
             }
 
             currentPresetName?.let {
-                PresetManager.savePreset(this, it, ActionManager.getActions())
-                // Show toast inside controls view
-                binding.tvSaveConfirmation.visibility = View.VISIBLE
-                binding.root.postDelayed({
-                    binding.tvSaveConfirmation.visibility = View.GONE
-                }, 2000)
-                broadcastIntent(ACTION_PRESET_SAVED)
-            } ?: Toast.makeText(this, "No preset selected", Toast.LENGTH_SHORT).show()
+                try {
+                    PresetManager.savePreset(this, it, ActionManager.getActions())
+                    showStatusAnimation(true)
+                    broadcastIntent(ACTION_PRESET_SAVED)
+                } catch (e: Exception) {
+                    showStatusAnimation(false)
+                    android.widget.Toast.makeText(this, "Error saving: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            } ?: android.widget.Toast.makeText(this, "No preset selected", android.widget.Toast.LENGTH_SHORT).show()
         }
 
         binding.btnClear.setOnClickListener {
@@ -645,6 +646,39 @@ class OverlayService : Service() {
                 binding.layoutLoopCount.getChildAt(1).visibility = View.VISIBLE
             }
         }
+    }
+
+    private fun showStatusAnimation(isSuccess: Boolean) {
+        val icon = if (isSuccess) R.drawable.ic_success else R.drawable.ic_error
+        binding.ivSaveStatus.setImageResource(icon)
+        binding.ivSaveStatus.visibility = View.VISIBLE
+        binding.ivSaveStatus.alpha = 0f
+        binding.ivSaveStatus.scaleX = 0f
+        binding.ivSaveStatus.scaleY = 0f
+        
+        binding.ivSaveStatus.animate().cancel()
+
+        binding.ivSaveStatus.animate()
+            .alpha(1f)
+            .scaleX(1f)
+            .scaleY(1f)
+            .setDuration(400)
+            .setStartDelay(0)
+            .setInterpolator(android.view.animation.OvershootInterpolator(2f))
+            .withEndAction {
+                 binding.ivSaveStatus.animate()
+                     .alpha(0f)
+                     .scaleX(0.5f)
+                     .scaleY(0.5f)
+                     .setStartDelay(1500)
+                     .setDuration(300)
+                     .setInterpolator(android.view.animation.AccelerateInterpolator())
+                     .withEndAction {
+                         binding.ivSaveStatus.visibility = View.GONE
+                     }
+                     .start()
+            }
+            .start()
     }
 
 
