@@ -1,4 +1,4 @@
-package com.autonion.automationcompanion.features.automation.actions.ui
+package com.autonion.automationcompanion.automation.actions.ui
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
@@ -27,7 +27,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.autonion.automationcompanion.features.automation.actions.models.ConfiguredAction
+import com.autonion.automationcompanion.automation.actions.models.ConfiguredAction
 
 /**
  * Redesigned action row with icon, title, subtitle, and a styled switch.

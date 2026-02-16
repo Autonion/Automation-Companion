@@ -1,5 +1,6 @@
-package com.autonion.automationcompanion.features.automation.actions.ui
+package com.autonion.automationcompanion.automation.actions.ui
 
+import android.Manifest
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.*
@@ -8,10 +9,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import com.autonion.automationcompanion.features.automation.actions.models.AppActionType
-import com.autonion.automationcompanion.features.automation.actions.models.ConfiguredAction
-import com.autonion.automationcompanion.features.automation.actions.models.NotificationType
-import com.autonion.automationcompanion.features.automation.actions.models.RingerMode
+import com.autonion.automationcompanion.automation.actions.models.AppActionType
+import com.autonion.automationcompanion.automation.actions.models.ConfiguredAction
+import com.autonion.automationcompanion.automation.actions.models.NotificationType
+import com.autonion.automationcompanion.automation.actions.models.RingerMode
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -20,6 +21,10 @@ import android.provider.Settings
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import androidx.compose.material.icons.automirrored.rounded.Message
+import androidx.compose.material.icons.automirrored.rounded.VolumeUp
+import androidx.core.content.ContextCompat
 
 @Composable
 fun ActionPicker(
@@ -28,7 +33,7 @@ fun ActionPicker(
     onPickContactClicked: (actionIndex: Int) -> Unit,
     onPickAppClicked: (actionIndex: Int) -> Unit,
     dndDisabledReason: String? = null,
-    context: android.content.Context
+    context: Context
 ) {
     // --- Permissions State & Launchers ---
     var showWriteSettingsRationale by remember { mutableStateOf(false) }
@@ -38,8 +43,8 @@ fun ActionPicker(
     val smsPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        val granted = permissions[android.Manifest.permission.SEND_SMS] == true &&
-                      permissions[android.Manifest.permission.READ_CONTACTS] == true
+        val granted = permissions[Manifest.permission.SEND_SMS] == true &&
+                      permissions[Manifest.permission.READ_CONTACTS] == true
         if (granted) {
             // Permission granted, user can toggle again to enable
         }
@@ -92,8 +97,8 @@ fun ActionPicker(
                     showSmsRationale = false
                     smsPermissionLauncher.launch(
                         arrayOf(
-                            android.Manifest.permission.SEND_SMS,
-                            android.Manifest.permission.READ_CONTACTS
+                            Manifest.permission.SEND_SMS,
+                            Manifest.permission.READ_CONTACTS
                         )
                     )
                 }) { Text("Grant") }
@@ -120,7 +125,7 @@ fun ActionPicker(
          * ═══════════════════════════════════════════════════ */
         ActionSectionHeader(
             title = "Sound & Notifications",
-            icon = Icons.Rounded.VolumeUp,
+            icon = Icons.AutoMirrored.Rounded.VolumeUp,
             iconTint = soundColor
         )
 
@@ -133,7 +138,7 @@ fun ActionPicker(
         ActionRow(
             label = "Set Volume & Ringer",
             subtitle = "Control ring, media & alarm levels",
-            icon = Icons.Rounded.VolumeUp,
+            icon = Icons.AutoMirrored.Rounded.VolumeUp,
             iconTint = soundColor,
             checked = audioAction != null,
             onCheckedChange = { enabled ->
@@ -449,7 +454,7 @@ fun ActionPicker(
          * ═══════════════════════════════════════════════════ */
         ActionSectionHeader(
             title = "Communication",
-            icon = Icons.Rounded.Message,
+            icon = Icons.AutoMirrored.Rounded.Message,
             iconTint = commsColor
         )
 
@@ -463,13 +468,13 @@ fun ActionPicker(
         ActionRow(
             label = "Send Message",
             subtitle = "Auto-send SMS to a contact",
-            icon = Icons.Rounded.Message,
+            icon = Icons.AutoMirrored.Rounded.Message,
             iconTint = commsColor,
             checked = smsAction != null,
             onCheckedChange = { enabled ->
                 if (enabled) {
-                    val hasSms = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.SEND_SMS) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                    val hasContact = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.READ_CONTACTS) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                    val hasSms = ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS) == PackageManager.PERMISSION_GRANTED
+                    val hasContact = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
 
                     if (!hasSms || !hasContact) {
                         showSmsRationale = true

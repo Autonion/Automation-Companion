@@ -1,9 +1,7 @@
 package com.autonion.automationcompanion.features.system_context_automation.location.data.db
 
 import androidx.room.TypeConverter
-import com.autonion.automationcompanion.features.automation.actions.models.AutomationAction
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.decodeFromString
+import com.autonion.automationcompanion.automation.actions.models.AutomationAction
 import kotlinx.serialization.json.Json
 
 class AutomationActionConverter {

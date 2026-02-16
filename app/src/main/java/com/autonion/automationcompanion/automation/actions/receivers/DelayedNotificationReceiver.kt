@@ -1,11 +1,12 @@
-package com.autonion.automationcompanion.features.automation.actions.receivers
+package com.autonion.automationcompanion.automation.actions.receivers
 
+import android.R
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.app.NotificationManager
 import androidx.core.app.NotificationCompat
-import com.autonion.automationcompanion.features.automation.actions.models.NotificationType
+import com.autonion.automationcompanion.automation.actions.models.NotificationType
 
 class DelayedNotificationReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -20,7 +21,7 @@ class DelayedNotificationReceiver : BroadcastReceiver() {
         }
 
         val notification = NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setSmallIcon(R.drawable.ic_dialog_info)
             .setContentTitle(title)
             .setContentText(text)
             .setAutoCancel(true)

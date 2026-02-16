@@ -1,12 +1,16 @@
-package com.autonion.automationcompanion.features.automation.actions.ui
+package com.autonion.automationcompanion.automation.actions.ui
 
+import android.content.Context
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.autonion.automationcompanion.features.automation.actions.models.*
+import com.autonion.automationcompanion.automation.actions.models.AppActionType
+import com.autonion.automationcompanion.automation.actions.models.ConfiguredAction
+import com.autonion.automationcompanion.automation.actions.models.NotificationType
+import com.autonion.automationcompanion.automation.actions.models.RingerMode
 
 /**
  * Updated Audio (Volume) action configuration UI.
@@ -82,7 +86,7 @@ internal fun AudioActionConfig(
  */
 @Composable
 internal fun AppActionConfig(
-    context: android.content.Context,
+    context: Context,
     action: ConfiguredAction.AppAction,
     onActionChanged: (ConfiguredAction.AppAction) -> Unit,
     onPickAppClicked: () -> Unit

@@ -15,6 +15,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material.icons.automirrored.filled.CallSplit
+import androidx.compose.material.icons.automirrored.filled.ViewQuilt
 import com.autonion.automationcompanion.ui.components.*
 import com.autonion.automationcompanion.ui.components.AuroraBackground
 import com.autonion.automationcompanion.ui.theme.*
@@ -110,7 +112,7 @@ fun HomeScreen(onOpen: (String) -> Unit) {
                         GridCard(
                             title = "Screen Context AI",
                             description = "Detect UI elements, OCR & contextualize screen content.",
-                            icon = Icons.Default.ViewQuilt,
+                            icon = Icons.AutoMirrored.Filled.ViewQuilt,
                             iconColor = Color.White,
                             iconContainerColor = AccentBlue,
                             onClick = { onOpen(AutomationRoutes.SCREEN_UNDERSTAND) },
@@ -136,7 +138,7 @@ fun HomeScreen(onOpen: (String) -> Unit) {
                     ListCard(
                         title = "Conditional Macros",
                         description = "Add logic, conditions and guards to your workflow.",
-                        icon = Icons.Default.CallSplit,
+                        icon = Icons.AutoMirrored.Filled.CallSplit,
                         iconColor = Color.White,
                         iconContainerColor = AccentOrange,
                         onClick = { onOpen(AutomationRoutes.CONDITIONAL) }

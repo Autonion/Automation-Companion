@@ -34,9 +34,9 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import com.autonion.automationcompanion.features.automation.actions.ui.AppPickerActivity
-import com.autonion.automationcompanion.features.automation.actions.models.ConfiguredAction
-import com.autonion.automationcompanion.features.automation.actions.ui.ActionPicker
+import com.autonion.automationcompanion.automation.actions.ui.AppPickerActivity
+import com.autonion.automationcompanion.automation.actions.models.ConfiguredAction
+import com.autonion.automationcompanion.automation.actions.ui.ActionPicker
 import com.autonion.automationcompanion.features.cross_device_automation.CrossDeviceAutomationManager
 import com.autonion.automationcompanion.features.cross_device_automation.domain.AutomationRule
 import android.content.Intent

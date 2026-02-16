@@ -1,6 +1,8 @@
-package com.autonion.automationcompanion.features.automation.actions.builders
+package com.autonion.automationcompanion.automation.actions.builders
 
-import com.autonion.automationcompanion.features.automation.actions.models.*
+import android.content.Context
+import com.autonion.automationcompanion.automation.actions.models.AutomationAction
+import com.autonion.automationcompanion.automation.actions.models.ConfiguredAction
 
 /**
  * ActionBuilder converts user-configured actions (ConfiguredAction) into executable actions (AutomationAction).
@@ -137,7 +139,7 @@ object ActionBuilder {
      * @param actions List of executable actions
      * @return List of UI configuration models
      */
-    fun toConfiguredActions(context: android.content.Context, actions: List<AutomationAction>): List<ConfiguredAction> {
+    fun toConfiguredActions(context: Context, actions: List<AutomationAction>): List<ConfiguredAction> {
         return actions.map { action ->
             when (action) {
                 is AutomationAction.SetVolume -> ConfiguredAction.Audio(

@@ -4,7 +4,7 @@ import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.provider.Settings
-import com.autonion.automationcompanion.features.automation.actions.models.AutomationAction
+import com.autonion.automationcompanion.automation.actions.models.AutomationAction
 
 
 

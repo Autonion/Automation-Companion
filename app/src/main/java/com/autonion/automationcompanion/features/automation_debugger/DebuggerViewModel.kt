@@ -2,6 +2,8 @@ package com.autonion.automationcompanion.features.automation_debugger
 
 import android.app.Application
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.CallSplit
+import androidx.compose.material.icons.automirrored.filled.ViewQuilt
 import androidx.compose.material.icons.filled.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -39,7 +41,7 @@ val ALL_CATEGORIES = listOf(
         category = LogCategory.SCREEN_CONTEXT_AI,
         displayName = "Screen Context AI",
         description = "UI detection & OCR",
-        icon = Icons.Default.ViewQuilt,
+        icon = Icons.AutoMirrored.Filled.ViewQuilt,
         accentColor = AccentBlue
     ),
     CategorySummary(
@@ -53,7 +55,7 @@ val ALL_CATEGORIES = listOf(
         category = LogCategory.CONDITIONAL_MACROS,
         displayName = "Conditional Macros",
         description = "Logic & guard conditions",
-        icon = Icons.Default.CallSplit,
+        icon = Icons.AutoMirrored.Filled.CallSplit,
         accentColor = AccentOrange
     ),
     CategorySummary(
@@ -79,6 +81,7 @@ val ALL_CATEGORIES = listOf(
     )
 )
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class DebuggerViewModel(application: Application) : AndroidViewModel(application) {
 
     private val dao = AppDatabase.get(application).executionLogDao()

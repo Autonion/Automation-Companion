@@ -1,7 +1,4 @@
-package com.autonion.automationcompanion.features.automation.actions.models
-
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
+package com.autonion.automationcompanion.automation.actions.models
 
 /**
  * ConfiguredAction represents the configuration state of an action as the user builds it.
