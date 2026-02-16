@@ -304,57 +304,77 @@ object ActionManager {
         removeConfirmation(container)
         val view = LayoutInflater.from(container.context).inflate(R.layout.action_confirmation_view, container, false)
         view.tag = CONFIRMATION_VIEW_TAG
-        val btnConfirm = view.findViewById<Button>(R.id.btnConfirm)
-        val btnCancel = view.findViewById<Button>(R.id.btnCancel)
-        val etActionDelay = view.findViewById<EditText>(R.id.etActionDelay)
-
-        val etActionDuration = view.findViewById<EditText>(R.id.etActionDuration)
-//        val tvDelay = view.findViewById<android.widget.TextView>(R.id.tvDelay)
         val tvHoldTime = view.findViewById<android.widget.TextView>(R.id.tvHoldTime)
+        
+        // Duration inputs (Long Click)
+        val etActionDuration = view.findViewById<EditText>(R.id.etActionDuration)
+        val tvDurationUnit = view.findViewById<android.widget.TextView>(R.id.tvDurationUnit)
+
+        // Delay inputs (Split)
+        val etDelayMin = view.findViewById<EditText>(R.id.etDelayMin)
+        val etDelaySec = view.findViewById<EditText>(R.id.etDelaySec)
+        val etDelayMs = view.findViewById<EditText>(R.id.etDelayMs)
+
+        // Populate values
+        val currentDelay = action?.delayAfter ?: 500L
+        val min = currentDelay / 60000
+        val sec = (currentDelay % 60000) / 1000
+        val ms = currentDelay % 1000
+
+        etDelayMin.setText(min.toString())
+        etDelaySec.setText(sec.toString())
+        etDelayMs.setText(ms.toString())
 
         // For LONG_CLICK, show both duration and delay
         if (action?.type == ActionType.LONG_CLICK) {
             tvHoldTime.visibility = View.VISIBLE
             etActionDuration.visibility = View.VISIBLE
+            tvDurationUnit.visibility = View.VISIBLE
             etActionDuration.setText(action.duration.toString())
-            etActionDelay.setText(action.delayAfter.toString())
         } else {
             tvHoldTime.visibility = View.GONE
             etActionDuration.visibility = View.GONE
-            etActionDelay.setText(action?.delayAfter?.toString() ?: "500")
+            tvDurationUnit.visibility = View.GONE
         }
 
         // Make sure the EditTexts can receive focus
-        etActionDelay.isFocusable = true
-        etActionDelay.isFocusableInTouchMode = true
-
-        etActionDuration.isFocusable = true
-        etActionDuration.isFocusableInTouchMode = true
+        val focusableInputs = listOf(etDelayMin, etDelaySec, etDelayMs, etActionDuration)
+        focusableInputs.forEach { input ->
+            input.isFocusable = true
+            input.isFocusableInTouchMode = true
+        }
 
         // Ask the host (OverlayService) to make the overlay window focusable so IME can show
         focusListener?.onFocusRequired()
 
-        // Request focus and IME via the focus listener (do it after the view is attached)
+        // Request focus and IME via the focus listener (start with minutes usually, or seconds if minutes are 0?)
+        // Let's focus seconds by default as it's most common
         view.post {
-            focusListener?.onRequestFocus(etActionDelay)
+            focusListener?.onRequestFocus(if (min > 0) etDelayMin else etDelaySec)
         }
 
-        btnConfirm.setOnClickListener {
-            val delayText = etActionDelay.text.toString()
-            val delayValue = delayText.toLongOrNull() ?: 500L
+        view.findViewById<View>(R.id.btnConfirm).setOnClickListener {
+            val minVal = etDelayMin.text.toString().toLongOrNull() ?: 0L
+            val secVal = etDelaySec.text.toString().toLongOrNull() ?: 0L
+            val msVal = etDelayMs.text.toString().toLongOrNull() ?: 0L
+
+            val totalDelayMs = (minVal * 60000) + (secVal * 1000) + msVal
+            // Ensure at least some delay if 0 is entered? Or allow 0. 
+            // Default was 500, but user might want 0. Let's allow what they typed, but maybe min 0.
+            val finalDelay = if (totalDelayMs < 0) 0 else totalDelayMs
 
             if (action?.type == ActionType.LONG_CLICK) {
                 val durationText = etActionDuration.text.toString()
                 val durationValue = durationText.toLongOrNull() ?: 1500L
-                pendingAction = pendingAction?.copy(duration = durationValue, delayAfter = delayValue)
+                pendingAction = pendingAction?.copy(duration = durationValue, delayAfter = finalDelay)
             } else {
-                pendingAction = pendingAction?.copy(delayAfter = delayValue)
+                pendingAction = pendingAction?.copy(delayAfter = finalDelay)
             }
             // release focus after confirming (host will revert window flags)
             onConfirm()
             focusListener?.onFocusReleased()
         }
-        btnCancel.setOnClickListener {
+        view.findViewById<View>(R.id.btnCancel).setOnClickListener {
             cancelPending(container)
             if (action?.id != -1) { // existing action
                 pendingAction = null

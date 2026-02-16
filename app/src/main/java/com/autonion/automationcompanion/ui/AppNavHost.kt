@@ -1,6 +1,19 @@
 package com.autonion.automationcompanion.ui
 
+import android.app.Activity
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
@@ -8,8 +21,8 @@ import com.autonion.automationcompanion.features.PlaceholderScreen
 import com.autonion.automationcompanion.features.gesture_recording_playback.GestureRecordingScreen
 import com.autonion.automationcompanion.features.system_context_automation.SystemContextMainScreen
 
-
 private const val ROUTE_HOME = "home"
+private const val NAV_ANIM_DURATION = 300
 
 object AutomationRoutes {
     const val GESTURE = "feature/gesture_recording_playback"
@@ -30,13 +43,49 @@ object AutomationRoutes {
 @Composable
 fun AppNavHost() {
     val navController = rememberNavController()
-    NavHost(navController = navController, startDestination = ROUTE_HOME) {
+    val currentRoute = navController.currentBackStackEntry?.destination?.route
+    val view = LocalView.current
+    val activity = view.context as? Activity
+    val colorScheme = MaterialTheme.colorScheme
+    val isDark = isSystemInDarkTheme()
+
+    SideEffect {
+        activity?.let { act ->
+            val window = act.window
+            if (currentRoute == ROUTE_HOME) {
+                WindowCompat.setDecorFitsSystemWindows(window, false)
+                window.statusBarColor = Color.Transparent.toArgb()
+                WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !isDark
+            } else {
+                WindowCompat.setDecorFitsSystemWindows(window, true)
+                window.statusBarColor = colorScheme.primary.toArgb()
+                WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = isDark
+            }
+        }
+    }
+
+    NavHost(
+        navController = navController,
+        startDestination = ROUTE_HOME,
+        enterTransition = {
+            slideInHorizontally(animationSpec = tween(NAV_ANIM_DURATION)) { fullWidth -> fullWidth } + fadeIn(animationSpec = tween(NAV_ANIM_DURATION))
+        },
+        exitTransition = {
+            slideOutHorizontally(animationSpec = tween(NAV_ANIM_DURATION)) { fullWidth -> -fullWidth } + fadeOut(animationSpec = tween(NAV_ANIM_DURATION))
+        },
+        popEnterTransition = {
+            slideInHorizontally(animationSpec = tween(NAV_ANIM_DURATION)) { fullWidth -> -fullWidth } + fadeIn(animationSpec = tween(NAV_ANIM_DURATION))
+        },
+        popExitTransition = {
+            slideOutHorizontally(animationSpec = tween(NAV_ANIM_DURATION)) { fullWidth -> fullWidth } + fadeOut(animationSpec = tween(NAV_ANIM_DURATION))
+        }
+    ) {
         composable(ROUTE_HOME) {
             HomeScreen(onOpen = { route -> navController.navigate(route) })
         }
 
         composable(AutomationRoutes.GESTURE) {
-            GestureRecordingScreen()
+            GestureRecordingScreen(onBack = { navController.popBackStack() })
         }
 
         composable(AutomationRoutes.DYN_UI) {
@@ -55,6 +104,7 @@ fun AppNavHost() {
             val context = androidx.compose.ui.platform.LocalContext.current
             androidx.compose.runtime.LaunchedEffect(Unit) {
                context.startActivity(android.content.Intent(context, com.autonion.automationcompanion.features.screen_understanding_ml.ui.PresetDashboardActivity::class.java))
+               navController.popBackStack()
             }
         }
 

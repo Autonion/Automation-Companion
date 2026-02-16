@@ -14,7 +14,7 @@ import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import com.autonion.automationcompanion.features.system_context_automation.location.engine.location_receiver.TrackingForegroundService
 import java.util.concurrent.Executor
-import androidx.compose.material3.MaterialTheme
+import com.autonion.automationcompanion.ui.theme.AppTheme
 import com.autonion.automationcompanion.features.system_context_automation.location.engine.accessibility.TileToggleFeature
 import com.autonion.automationcompanion.features.system_context_automation.location.isAccessibilityEnabled
 
@@ -36,7 +36,7 @@ class EnableLocationActivity : AppCompatActivity() {
 
         // Compose UI host (call your composable here)
         setContent {
-            MaterialTheme {
+            AppTheme {
                 EnableLocationScreen(
                     openLocationPanel = { openLocationPanel() },
                     onFinishSuccess = {

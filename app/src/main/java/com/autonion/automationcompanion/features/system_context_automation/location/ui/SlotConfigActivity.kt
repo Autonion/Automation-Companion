@@ -14,7 +14,7 @@ import android.widget.TimePicker
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.compose.material3.MaterialTheme
+import com.autonion.automationcompanion.ui.theme.AppTheme
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -209,7 +209,7 @@ class SlotConfigActivity : AppCompatActivity() {
 
 
         setContent {
-            MaterialTheme {
+            AppTheme {
                 SlotConfigScreen(
                     title = if (editingSlotId == null) "Create Slot" else "Edit Slot",
                     latitude = lat,
@@ -217,12 +217,23 @@ class SlotConfigActivity : AppCompatActivity() {
                     radiusMeters = radius,
                     startLabel = startLabel,
                     endLabel = endLabel,
-
+                    startHour = startHour,
+                    startMinute = startMinute,
+                    endHour = endHour,
+                    endMinute = endMinute,
                     onLatitudeChanged = { lat = it },
                     onLongitudeChanged = { lng = it },
                     onRadiusChanged = { radius = it },
-                    onStartTimeClicked = { showTimePicker(true) },
-                    onEndTimeClicked = { showTimePicker(false) },
+                    onStartTimeChanged = { h, m ->
+                        startHour = h
+                        startMinute = m
+                        startLabel = "%02d:%02d".format(h, m)
+                    },
+                    onEndTimeChanged = { h, m ->
+                        endHour = h
+                        endMinute = m
+                        endLabel = "%02d:%02d".format(h, m)
+                    },
                     onPickFromMapClicked = { openMapPickerWebsite() },
                     onPickContactClicked = { actionIndex ->
                         contactPickerActionIndex = actionIndex
@@ -420,29 +431,7 @@ class SlotConfigActivity : AppCompatActivity() {
         return number
     }
 
-    private fun showTimePicker(isStart: Boolean) {
-        val c = java.util.Calendar.getInstance()
-        val hour = c.get(java.util.Calendar.HOUR_OF_DAY)
-        val minute = c.get(java.util.Calendar.MINUTE)
 
-        // create a listener that only updates state
-        val listener = android.app.TimePickerDialog.OnTimeSetListener { _: TimePicker, h: Int, m: Int ->
-            if (isStart) {
-                startHour = h
-                startMinute = m
-                startLabel = "%02d:%02d".format(h, m) // mutableState change -> Compose will recompose
-            } else {
-                endHour = h
-                endMinute = m
-                endLabel = "%02d:%02d".format(h, m)
-            }
-            // Do NOT call setContent() or finish() here
-        }
-
-        // Use the Activity context (this) and show the dialog
-        val tpd = android.app.TimePickerDialog(this@SlotConfigActivity, listener, hour, minute, true)
-        tpd.show()
-    }
 
 //    fun scheduleReminderForSlot(context: Context, slotId: Long, remindAtMillis: Long) {
 //        val am = context.getSystemService(android.app.AlarmManager::class.java)

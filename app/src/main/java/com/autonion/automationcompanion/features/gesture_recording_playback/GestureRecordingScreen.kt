@@ -20,7 +20,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import android.content.Intent as AndroidIntent
 
 @Composable
-fun GestureRecordingScreen() {
+fun GestureRecordingScreen(onBack: () -> Unit = {}) {
     val context = LocalContext.current
     val permissionHelper = remember { PermissionHelper(context) }
 
@@ -76,11 +76,10 @@ fun GestureRecordingScreen() {
 
     PresetsScreen(
         presets = presetsState,
+        onBack = onBack,
         onAddNewClicked = { showNewDialog = true },
-        onPlay = { startOverlayIfAllowed(it)},
-        onDelete = { presetName ->
-            confirmDeleteFor = presetName
-        },
+        onPlay = { startOverlayIfAllowed(it) },
+        onDelete = { presetName -> confirmDeleteFor = presetName },
         onItemClicked = { /* optional: navigate to edit screen */ }
     )
 

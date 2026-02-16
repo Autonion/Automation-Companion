@@ -7,24 +7,42 @@ import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.autonion.automationcompanion.features.automation.actions.builders.ActionBuilder
 import com.autonion.automationcompanion.features.automation.actions.models.ConfiguredAction
 import com.autonion.automationcompanion.features.automation.actions.ui.ActionPicker
@@ -33,17 +51,22 @@ import com.autonion.automationcompanion.features.system_context_automation.locat
 import com.autonion.automationcompanion.features.system_context_automation.location.data.models.Slot
 import com.autonion.automationcompanion.features.system_context_automation.shared.models.TriggerConfig
 import com.autonion.automationcompanion.features.system_context_automation.timeofday.engine.TimeOfDayReceiver
+import com.autonion.automationcompanion.ui.components.AuroraBackground
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import androidx.compose.foundation.clickable
+
+// ═══════════════════════════════════════════════════
+// TimeOfDayActivity — Slots list
+// ═══════════════════════════════════════════════════
 
 class TimeOfDayActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme {
+            com.autonion.automationcompanion.ui.theme.AppTheme {
                 TimeOfDaySlotsScreen(
                     onBack = { finish() },
                     onAddClicked = { startTimeOfDayConfig() },
@@ -54,7 +77,7 @@ class TimeOfDayActivity : AppCompatActivity() {
     }
 
     private fun startTimeOfDayConfig(slotId: Long = -1L) {
-        val intent = android.content.Intent(this, TimeOfDayConfigActivity::class.java)
+        val intent = Intent(this, TimeOfDayConfigActivity::class.java)
         if (slotId != -1L) {
             intent.putExtra("slotId", slotId)
         }
@@ -79,70 +102,191 @@ fun TimeOfDaySlotsScreen(
     val allSlots by dao.getAllFlow().collectAsState(initial = emptyList())
     val slots = allSlots.filter { it.triggerType == "TIME_OF_DAY" }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Time-of-Day Automations") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                }
+    // FAB entrance animation
+    val fabScale = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        delay(300)
+        fabScale.animateTo(
+            1f,
+            animationSpec = spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessLow
             )
-        },
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        floatingActionButton = {
-            FloatingActionButton(onClick = onAddClicked) {
-                Icon(Icons.Default.Add, contentDescription = "Add")
-            }
-        }
-    ) { padding ->
-        if (slots.isEmpty()) {
-            Box(
+        )
+    }
+
+    AuroraBackground {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Column {
+                            Text("Time-of-Day Automations", fontWeight = FontWeight.Bold)
+                            Text(
+                                "Scheduled triggers",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            )
+                        }
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = Color.Transparent,
+                        titleContentColor = MaterialTheme.colorScheme.onSurface,
+                        navigationIconContentColor = MaterialTheme.colorScheme.onSurface
+                    )
+                )
+            },
+            snackbarHost = { SnackbarHost(snackbarHostState) },
+            floatingActionButton = {
+                ExtendedFloatingActionButton(
+                    onClick = onAddClicked,
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.scale(fabScale.value)
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("New Automation", fontWeight = FontWeight.SemiBold)
+                }
+            },
+            containerColor = Color.Transparent
+        ) { padding ->
+            Column(
                 modifier = Modifier
                     .padding(padding)
-                    .fillMaxSize(),
-                contentAlignment = Alignment.Center
+                    .fillMaxSize()
             ) {
-                Text("No time-of-day automations yet")
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .padding(padding)
-                    .fillMaxSize(),
-                contentPadding = PaddingValues(12.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                items(slots, key = { it.id }) { slot ->
-                    TimeOfDaySlotCard(
-                        slot = slot,
-                        onToggleEnabled = { enabled ->
-                            scope.launch {
-                                dao.setEnabled(slot.id, enabled)
-                            }
-                        },
-                        onEdit = { onEditClicked(slot.id) },
-                        onDelete = {
-                            scope.launch {
-                                dao.delete(slot)
-                                TimeOfDayReceiver.cancelAlarm(context, slot.id)
-                                recentlyDeleted = slot
-                                val result = snackbarHostState.showSnackbar(
-                                    message = "Slot deleted",
-                                    actionLabel = "Undo"
+                if (slots.isEmpty()) {
+                    TimeOfDayEmptyState()
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        contentPadding = PaddingValues(bottom = 80.dp, top = 8.dp, start = 16.dp, end = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        itemsIndexed(slots, key = { _, slot -> slot.id }) { index, slot ->
+                            StaggeredEntry(index = index) {
+                                TimeOfDaySlotCard(
+                                    slot = slot,
+                                    onToggleEnabled = { enabled ->
+                                        scope.launch { dao.setEnabled(slot.id, enabled) }
+                                    },
+                                    onEdit = { onEditClicked(slot.id) },
+                                    onDelete = {
+                                        scope.launch {
+                                            dao.delete(slot)
+                                            TimeOfDayReceiver.cancelAlarm(context, slot.id)
+                                            recentlyDeleted = slot
+                                            val result = snackbarHostState.showSnackbar(
+                                                message = "Slot deleted",
+                                                actionLabel = "Undo"
+                                            )
+                                            if (result == SnackbarResult.ActionPerformed) {
+                                                recentlyDeleted?.let { dao.insert(it.copy(id = 0)) }
+                                            }
+                                        }
+                                    }
                                 )
-                                if (result == SnackbarResult.ActionPerformed) {
-                                    recentlyDeleted?.let { dao.insert(it.copy(id = 0)) }
-                                }
                             }
                         }
-                    )
+                    }
                 }
             }
         }
     }
 }
+
+// ── Pulsing empty state ──
+
+@Composable
+private fun TimeOfDayEmptyState() {
+    val infiniteTransition = rememberInfiniteTransition(label = "todPulse")
+    val pulseScale by infiniteTransition.animateFloat(
+        initialValue = 1f, targetValue = 1.12f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1200, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ), label = "pulse"
+    )
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.4f, targetValue = 0.7f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1200, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ), label = "pulseAlpha"
+    )
+
+    val isDark = isSystemInDarkTheme()
+    Box(
+        modifier = Modifier.fillMaxSize().padding(32.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(contentAlignment = Alignment.Center) {
+                Box(
+                    modifier = Modifier
+                        .size(120.dp).scale(pulseScale).clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = pulseAlpha * 0.2f))
+                )
+                Box(
+                    modifier = Modifier
+                        .size(88.dp).clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = if (isDark) 0.15f else 0.08f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Rounded.Schedule,
+                        contentDescription = null,
+                        modifier = Modifier.size(44.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(24.dp))
+            Text(
+                "No automations yet",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                "Tap + to schedule a time-based trigger",
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (isDark) Color.White.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+            )
+        }
+    }
+}
+
+// ── Stagger animation wrapper ──
+
+@Composable
+private fun StaggeredEntry(index: Int, content: @Composable () -> Unit) {
+    val animAlpha = remember { Animatable(0f) }
+    val slide = remember { Animatable(40f) }
+    val entryDelay = (index * 60L).coerceAtMost(300L)
+
+    LaunchedEffect(Unit) {
+        delay(entryDelay)
+        launch { animAlpha.animateTo(1f, tween(400, easing = FastOutSlowInEasing)) }
+        launch { slide.animateTo(0f, tween(400, easing = FastOutSlowInEasing)) }
+    }
+
+    Box(modifier = Modifier.graphicsLayer { alpha = animAlpha.value; translationY = slide.value }) {
+        content()
+    }
+}
+
+// ── Glassmorphic Slot Card ──
 
 @Composable
 private fun TimeOfDaySlotCard(
@@ -151,49 +295,109 @@ private fun TimeOfDaySlotCard(
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
-    val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
-    val config = try {
-        slot.triggerConfigJson?.let { json.decodeFromString<TriggerConfig.TimeOfDay>(it) }
-    } catch (e: Exception) {
-        null
+    val isDark = isSystemInDarkTheme()
+    val json = remember { kotlinx.serialization.json.Json { ignoreUnknownKeys = true } }
+    val config = remember(slot.triggerConfigJson) {
+        try {
+            slot.triggerConfigJson?.let { json.decodeFromString<TriggerConfig.TimeOfDay>(it) }
+        } catch (e: Exception) { null }
     }
+
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val animScale by animateFloatAsState(
+        targetValue = if (isPressed) 0.97f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
+        label = "cardScale"
+    )
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onEdit() },
-        elevation = CardDefaults.cardElevation(4.dp)
+            .scale(animScale)
+            .clickable(interactionSource = interactionSource, indication = null) { onEdit() },
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isDark) Color(0xFF1A1D21).copy(alpha = 0.95f)
+            else MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+            contentColor = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface
+        ),
+        border = if (isDark) BorderStroke(1.dp, Color.White.copy(alpha = 0.10f))
+        else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.15f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isDark) 6.dp else 2.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
+            // Header
             Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFF7C4DFF).copy(alpha = if (isDark) 0.18f else 0.1f),
+                    modifier = Modifier.size(42.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                        Icon(
+                            Icons.Default.Schedule,
+                            contentDescription = null,
+                            tint = Color(0xFF7C4DFF),
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+                Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         String.format("%02d:%02d", config?.hour ?: 0, config?.minute ?: 0),
-                        style = MaterialTheme.typography.titleMedium
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
                     )
                     Text(
-                        if (config?.repeatDaily == true) "Daily" else "Once",
-                        style = MaterialTheme.typography.bodySmall
+                        if (config?.repeatDaily == true) "Repeats daily" else "One-time",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Checkbox(
-                    checked = slot.enabled,
-                    onCheckedChange = onToggleEnabled
+                Switch(checked = slot.enabled, onCheckedChange = onToggleEnabled)
+            }
+
+            Spacer(Modifier.height(14.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f), thickness = 0.5.dp)
+            Spacer(Modifier.height(14.dp))
+
+            // Actions row
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    shape = CircleShape,
+                    color = Color(0xFFFF6D00).copy(alpha = if (isDark) 0.15f else 0.08f),
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                        Icon(Icons.Default.Bolt, contentDescription = null, modifier = Modifier.size(15.dp), tint = Color(0xFFFF6D00))
+                    }
+                }
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    slot.actions.joinToString { it.javaClass.simpleName.replace("Action", "") },
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
             }
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TextButton(onClick = onDelete) {
-                    Text("Delete")
+
+            Spacer(Modifier.height(6.dp))
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                IconButton(onClick = onDelete) {
+                    Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f))
                 }
             }
         }
     }
 }
+
+// ═══════════════════════════════════════════════════
+// TimeOfDayConfigActivity — Config screen
+// ═══════════════════════════════════════════════════
 
 class TimeOfDayConfigActivity : AppCompatActivity() {
 
@@ -205,15 +409,12 @@ class TimeOfDayConfigActivity : AppCompatActivity() {
     ) { result ->
         if (result.resultCode == RESULT_OK && result.data != null) {
             val packageName = result.data?.getStringExtra("selected_package_name")
-            packageName?.let { pkg ->
-                updateAppAction(pkg)
-            }
+            packageName?.let { pkg -> updateAppAction(pkg) }
         }
     }
 
     private var configuredActionsState by mutableStateOf<List<ConfiguredAction>>(emptyList())
 
-    // State for the config values
     private var loadedHour by mutableIntStateOf(8)
     private var loadedMinute by mutableIntStateOf(0)
     private var loadedRepeatDaily by mutableStateOf(true)
@@ -223,11 +424,7 @@ class TimeOfDayConfigActivity : AppCompatActivity() {
             val appAction = configuredActionsState.getOrNull(appPickerActionIndex)
             if (appAction is ConfiguredAction.AppAction) {
                 configuredActionsState = configuredActionsState.mapIndexed { idx, action ->
-                    if (idx == appPickerActionIndex) {
-                        appAction.copy(packageName = packageName)
-                    } else {
-                        action
-                    }
+                    if (idx == appPickerActionIndex) appAction.copy(packageName = packageName) else action
                 }
                 appPickerActionIndex = -1
             }
@@ -242,29 +439,12 @@ class TimeOfDayConfigActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
+
         slotId = intent.getLongExtra("slotId", -1L)
-        if (slotId != -1L) {
-            loadSlotData(slotId)
-        }
+        if (slotId != -1L) { loadSlotData(slotId) }
 
         setContent {
-            MaterialTheme {
-                // Pass loaded values as initial values if we have them, creating a key to reset state when they change
-                // But Composable state initialization happens once.
-                // We need to pass the state down or initialize the composable with them.
-                // Better: Hoist the state to Activity or use a ViewModel. 
-                // Given the current structure, I'll pass the state objects to the screen.
-                // Or I can just pass the values and let the screen initialize its state, 
-                // BUT if I update the values asynchronously (from DB), the screen state won't update unless I key it or pass mutable state.
-                
-                // Let's refactor ConfigScreen to accept initial values
-                // Since I can't easily refactor the whole screen signature without changing its internal state handling,
-                // I will use a key to force recomposition when data loads. Or I can pass the state objects.
-                
-                // Keying by slotId might not be enough if data loads later.
-                // Let's make the screen state observable from here.
-                
+            com.autonion.automationcompanion.ui.theme.AppTheme {
                 TimeOfDayConfigScreen(
                     onBack = { finish() },
                     configuredActions = configuredActionsState,
@@ -275,9 +455,7 @@ class TimeOfDayConfigActivity : AppCompatActivity() {
                     initialRepeatDaily = loadedRepeatDaily,
                     isEditing = slotId != -1L,
                     onSave = { h, m, r, actions ->
-                         saveTimeOfDaySlot(this, slotId, h, m, r, actions) {
-                             finish()
-                         }
+                        saveTimeOfDaySlot(this, slotId, h, m, r, actions) { finish() }
                     }
                 )
             }
@@ -290,10 +468,9 @@ class TimeOfDayConfigActivity : AppCompatActivity() {
             val slot = dao.getById(id) ?: return@launch
 
             val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
-             val config = slot.triggerConfigJson?.let {
+            val config = slot.triggerConfigJson?.let {
                 try { json.decodeFromString<TriggerConfig.TimeOfDay>(it) } catch (e: Exception) { null }
             }
-
             val loadedActions = ActionBuilder.toConfiguredActions(this@TimeOfDayConfigActivity, slot.actions)
 
             CoroutineScope(Dispatchers.Main).launch {
@@ -308,6 +485,11 @@ class TimeOfDayConfigActivity : AppCompatActivity() {
     }
 }
 
+// ── Accent colors ──
+private val TimeAccent = Color(0xFF7C4DFF)    // Purple
+private val RepeatAccent = Color(0xFF00BCD4)  // Teal
+private val ActionsAccent = Color(0xFFFF6D00) // Orange
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TimeOfDayConfigScreen(
@@ -319,122 +501,276 @@ fun TimeOfDayConfigScreen(
     initialMinute: Int = 0,
     initialRepeatDaily: Boolean = true,
     isEditing: Boolean = false,
-    onSave: (Int, Int, Boolean, List<ConfiguredAction>) -> Unit = { _, _, _, _ -> } // Modified signature
+    onSave: (Int, Int, Boolean, List<ConfiguredAction>) -> Unit = { _, _, _, _ -> }
 ) {
     val context = LocalContext.current
+    val isDark = isSystemInDarkTheme()
 
-    // Use current values if they change (from loading)
     var hour by remember(initialHour) { mutableIntStateOf(initialHour) }
     var minute by remember(initialMinute) { mutableIntStateOf(initialMinute) }
     var repeatDaily by remember(initialRepeatDaily) { mutableStateOf(initialRepeatDaily) }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(if (isEditing) "Edit Time-of-Day Automation" else "Create Time-of-Day Automation") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                }
-            )
-        }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .padding(padding)
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            // Time picker
-            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                Text("Time", style = MaterialTheme.typography.labelMedium)
-                Spacer(modifier = Modifier.height(8.dp))
+    // ── Material 3 Time Picker dialog state ──
+    var showTimePicker by remember { mutableStateOf(false) }
+
+    if (showTimePicker) {
+        val state = rememberTimePickerState(initialHour = hour, initialMinute = minute, is24Hour = true)
+        var showDial by remember { mutableStateOf(true) }
+
+        AlertDialog(
+            onDismissRequest = { showTimePicker = false },
+            modifier = Modifier.fillMaxWidth(),
+            containerColor = if (isDark) Color(0xFF1E2128) else MaterialTheme.colorScheme.surface,
+            title = {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // Hour
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        IconButton(onClick = { hour = if (hour < 23) hour + 1 else 0 }) {
-                            Icon(Icons.Filled.KeyboardArrowUp, contentDescription = null)
-                        }
-                        Text(String.format("%02d", hour), style = MaterialTheme.typography.titleLarge)
-                        IconButton(onClick = { hour = if (hour > 0) hour - 1 else 23 }) {
-                            Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null)
-                        }
+                    Text(
+                        "Select time",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface
+                    )
+                    IconButton(onClick = { showDial = !showDial }) {
+                        Icon(
+                            imageVector = if (showDial) Icons.Rounded.EditNote else Icons.Rounded.Schedule,
+                            contentDescription = if (showDial) "Switch to input" else "Switch to dial",
+                            tint = TimeAccent
+                        )
                     }
+                }
+            },
+            text = {
+                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    if (showDial) TimePicker(state = state) else TimeInput(state = state)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    hour = state.hour; minute = state.minute; showTimePicker = false
+                }) {
+                    Text("OK", color = TimeAccent, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showTimePicker = false }) {
+                    Text(
+                        "Cancel",
+                        color = if (isDark) Color.White.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        )
+    }
 
-                    Text(":", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(horizontal = 8.dp))
-
-                    // Minute
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        IconButton(onClick = { minute = if (minute < 59) minute + 1 else 0 }) {
-                            Icon(Icons.Filled.KeyboardArrowUp, contentDescription = null)
+    AuroraBackground {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = {
+                        Column {
+                            Text(
+                                if (isEditing) "Edit Time-of-Day" else "Create Time-of-Day",
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                "Configure schedule trigger",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            )
                         }
-                        Text(String.format("%02d", minute), style = MaterialTheme.typography.titleLarge)
-                        IconButton(onClick = { minute = if (minute > 0) minute - 1 else 59 }) {
-                            Icon(Icons.Filled.KeyboardArrowDown, contentDescription = null)
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = Color.Transparent,
+                        titleContentColor = MaterialTheme.colorScheme.onSurface,
+                        navigationIconContentColor = MaterialTheme.colorScheme.onSurface
+                    )
+                )
+            },
+            containerColor = Color.Transparent
+        ) { padding ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(padding)
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Spacer(modifier = Modifier.height(4.dp))
+
+                // ═══ Section 1: Time ═══
+                ConfigSectionEntry(index = 0) {
+                    ConfigGlassCard(isDark = isDark) {
+                        ConfigSectionHeader(title = "Time", icon = Icons.Rounded.Schedule, iconTint = TimeAccent)
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Surface(
+                            onClick = { showTimePicker = true },
+                            color = if (isDark) TimeAccent.copy(alpha = 0.22f) else TimeAccent.copy(alpha = 0.08f),
+                            shape = RoundedCornerShape(16.dp),
+                            border = BorderStroke(1.dp, TimeAccent.copy(alpha = if (isDark) 0.3f else 0.15f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp).fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    Icons.Rounded.Schedule, contentDescription = null,
+                                    modifier = Modifier.size(20.dp),
+                                    tint = if (isDark) Color.White.copy(alpha = 0.7f) else TimeAccent
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    String.format("%02d:%02d", hour, minute),
+                                    style = MaterialTheme.typography.displaySmall.copy(fontWeight = FontWeight.Bold),
+                                    color = if (isDark) Color.White else TimeAccent
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    "Tap to change",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (isDark) Color.White.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
                 }
+
+                // ═══ Section 2: Repeat ═══
+                ConfigSectionEntry(index = 1) {
+                    ConfigGlassCard(isDark = isDark) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier.size(34.dp).clip(CircleShape)
+                                        .background(if (isDark) RepeatAccent.copy(alpha = 0.38f) else RepeatAccent.copy(alpha = 0.1f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(Icons.Rounded.Repeat, contentDescription = null,
+                                        tint = if (isDark) Color.White else RepeatAccent, modifier = Modifier.size(18.dp))
+                                }
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    "Repeat Daily",
+                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = if (isDark) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(checked = repeatDaily, onCheckedChange = { repeatDaily = it })
+                        }
+                    }
+                }
+
+                // ═══ Section 3: Actions ═══
+                ConfigSectionEntry(index = 2) {
+                    ConfigGlassCard(isDark = isDark) {
+                        ConfigSectionHeader(title = "Automations", icon = Icons.Rounded.Bolt, iconTint = ActionsAccent)
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        ActionPicker(
+                            context = context,
+                            configuredActions = configuredActions,
+                            onActionsChanged = onActionsChanged,
+                            onPickContactClicked = { _ -> },
+                            onPickAppClicked = onPickAppClicked
+                        )
+                    }
+                }
+
+                // ═══ Save Button ═══
+                ConfigSectionEntry(index = 3) {
+                    Button(
+                        onClick = { onSave(hour, minute, repeatDaily, configuredActions) },
+                        modifier = Modifier.fillMaxWidth().height(54.dp),
+                        shape = RoundedCornerShape(25.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                    ) {
+                        Icon(Icons.Rounded.Save, contentDescription = null, modifier = Modifier.size(20.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Save Automation", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(32.dp))
             }
-
-            Divider()
-
-            // Repeat toggle
-            Row(
-                modifier = Modifier
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-                    .fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Repeat Daily", style = MaterialTheme.typography.labelMedium)
-                Switch(
-                    checked = repeatDaily,
-                    onCheckedChange = { repeatDaily = it }
-                )
-            }
-
-            Divider()
-
-            // Action picker
-            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
-                Text("Actions", style = MaterialTheme.typography.labelMedium)
-                Spacer(modifier = Modifier.height(8.dp))
-                ActionPicker(
-                    context = context,
-                    configuredActions = configuredActions,
-                    onActionsChanged = onActionsChanged,
-                    onPickContactClicked = { _ ->
-                        // Handle contact picker
-                    },
-                    onPickAppClicked = onPickAppClicked
-                )
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Save button
-            Button(
-                onClick = {
-                    onSave(hour, minute, repeatDaily, configuredActions)
-                },
-                modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-            ) {
-                Text("Save Automation")
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }
+
+// ── Reusable composables ──
+
+@Composable
+private fun ConfigGlassCard(isDark: Boolean, content: @Composable ColumnScope.() -> Unit) {
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isDark) Color(0xFF23272A).copy(alpha = 0.92f)
+            else MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)
+        ),
+        border = if (isDark) BorderStroke(1.5.dp, Color.White.copy(alpha = 0.18f))
+        else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.15f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isDark) 6.dp else 0.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(18.dp),
+            content = {
+                CompositionLocalProvider(LocalContentColor provides if (isDark) Color.White else MaterialTheme.colorScheme.onSurface) {
+                    content()
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun ConfigSectionHeader(title: String, icon: ImageVector, iconTint: Color) {
+    val isDark = isSystemInDarkTheme()
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier.size(34.dp).clip(CircleShape)
+                .background(if (isDark) iconTint.copy(alpha = 0.38f) else iconTint.copy(alpha = 0.1f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, contentDescription = null, tint = if (isDark) Color.White else iconTint, modifier = Modifier.size(18.dp))
+        }
+        Spacer(modifier = Modifier.width(10.dp))
+        Text(title, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+            color = if (isDark) Color.White else MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun ConfigSectionEntry(index: Int, content: @Composable ColumnScope.() -> Unit) {
+    val animAlpha = remember { Animatable(0f) }
+    val slide = remember { Animatable(35f) }
+    val delayMs = (index * 80L).coerceAtMost(400L)
+
+    LaunchedEffect(Unit) {
+        delay(delayMs)
+        launch { animAlpha.animateTo(1f, tween(400, easing = FastOutSlowInEasing)) }
+        launch { slide.animateTo(0f, tween(400, easing = FastOutSlowInEasing)) }
+    }
+
+    Column(
+        modifier = Modifier.graphicsLayer { alpha = animAlpha.value; translationY = slide.value },
+        content = content
+    )
+}
+
+// ── Save logic ──
 
 private fun saveTimeOfDaySlot(
     context: Context,
@@ -479,7 +815,6 @@ private fun saveTimeOfDaySlot(
                 dao.insert(slot)
             }
 
-            // Schedule alarm
             TimeOfDayReceiver.scheduleAlarm(context, finalSlotId, hour, minute)
 
             android.os.Handler(android.os.Looper.getMainLooper()).post {

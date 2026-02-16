@@ -18,20 +18,23 @@ class ActionMarker @JvmOverloads constructor(
     private var text: String = ""
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
+        setShadowLayer(10f, 0f, 4f, Color.parseColor("#40000000"))
     }
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
-        textSize = 24f
+        textSize = 32f // Slightly larger text
+        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         textAlign = Paint.Align.CENTER
+        setShadowLayer(4f, 0f, 2f, Color.parseColor("#80000000"))
     }
-    private var circleRadius = 60f // Increased radius for easier selection
+    private var circleRadius = 60f // Increased size for better text fit
     private var lastTouchX = 0f
     private var lastTouchY = 0f
     private var originalElevation = 0f
 
     // Configs
-    private val TOUCH_PADDING = 8f    // reduce effective touch area slightly (pixels)
-    private val DRAG_ELEVATION = 200f // elevation while dragging to be top-most
+    private val TOUCH_PADDING = 8f
+    private val DRAG_ELEVATION = 200f
     var isDraggable = true
     var isVisible = true
         set(value) {
@@ -40,18 +43,40 @@ class ActionMarker @JvmOverloads constructor(
         }
 
     private var positionChangedListener: ((Float, Float) -> Unit)? = null
-    private var originalColor: Int = try {
-        ContextCompat.getColor(context, R.color.marker_color)
-    } catch (_: Exception) {
-        Color.RED
-    }
+    // Dynamic colors based on action type
+    private val TYPE_CLICK_COLOR = Color.parseColor("#4CAF50") // Green
+    private val TYPE_SWIPE_COLOR = Color.parseColor("#2196F3") // Blue
+    private val TYPE_LONG_PREFIX_COLOR = Color.parseColor("#FF5722") // Deep Orange for Long Press
+    
+    // Restore missing variable (default to Blue)
+    private var originalColor: Int = TYPE_SWIPE_COLOR
 
     init {
         paint.color = originalColor
+        setLayerType(LAYER_TYPE_SOFTWARE, paint)
     }
 
     fun setText(text: String) {
-        this.text = text
+        var processed = text
+        
+        // 1. Determine Color & clean text
+        when {
+            processed.contains("SWIPE", ignoreCase = true) -> {
+                originalColor = TYPE_SWIPE_COLOR
+                processed = processed.replace("SWIPE ", "", ignoreCase = true)
+            }
+            processed.contains("LONG_CLICK", ignoreCase = true) -> {
+                originalColor = TYPE_LONG_PREFIX_COLOR
+                processed = processed.replace("LONG_CLICK", "Hold", ignoreCase = true)
+            }
+            processed.contains("CLICK", ignoreCase = true) -> {
+                originalColor = TYPE_CLICK_COLOR
+                // Keep "Click" word
+            }
+        }
+        
+        this.text = processed.trim()
+        paint.color = originalColor
         invalidate()
     }
 
@@ -60,7 +85,8 @@ class ActionMarker @JvmOverloads constructor(
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val desiredSize = (circleRadius * 2 + 10).toInt()
+        // Add padding for shadow and border
+        val desiredSize = (circleRadius * 2 + 24).toInt()
         val width = resolveSize(desiredSize, widthMeasureSpec)
         val height = resolveSize(desiredSize, heightMeasureSpec)
         setMeasuredDimension(width, height)
@@ -73,23 +99,38 @@ class ActionMarker @JvmOverloads constructor(
         val cx = width / 2f
         val cy = height / 2f
 
-        // 1. Draw main colored circle
-        paint.color = originalColor
+        // 1. Draw main colored circle with shadow
         paint.style = Paint.Style.FILL
+        paint.color = originalColor
         canvas.drawCircle(cx, cy, circleRadius, paint)
 
-        // 2. Draw text
-        canvas.drawText(text, cx, cy - (textPaint.descent() + textPaint.ascent()) / 2, textPaint)
-
-        // 3. Draw border (and restore paint state)
+        // 2. Draw border
         paint.style = Paint.Style.STROKE
-        paint.strokeWidth = 3f
+        paint.strokeWidth = 6f
         paint.color = Color.WHITE
+        paint.clearShadowLayer()
         canvas.drawCircle(cx, cy, circleRadius, paint)
+        paint.setShadowLayer(10f, 0f, 4f, Color.parseColor("#40000000"))
 
-        // **Crucial Fix**: Restore paint to its original state for the next draw call
-        paint.style = Paint.Style.FILL
-        paint.color = originalColor
+        // 3. Draw text (Multi-line support)
+        val lines = text.split(" ")
+        if (lines.size > 1) {
+            val totalHeight = lines.size * textPaint.textSize
+            var startY = cy - (totalHeight / 2) + textPaint.textSize / 2 // Approximate centering
+            
+            // Adjust spacing slightly
+            val lineHeight = textPaint.textSize * 1.1f
+            startY = cy - (lines.size * lineHeight) / 2 + lineHeight * 0.75f
+
+            lines.forEachIndexed { index, line ->
+                canvas.drawText(line, cx, startY + (index * lineHeight), textPaint)
+            }
+        } else {
+            // Single line centering
+            val textHeight = textPaint.descent() - textPaint.ascent()
+            val textOffset = (textHeight / 2) - textPaint.descent()
+            canvas.drawText(text, cx, cy + textOffset, textPaint)
+        }
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {

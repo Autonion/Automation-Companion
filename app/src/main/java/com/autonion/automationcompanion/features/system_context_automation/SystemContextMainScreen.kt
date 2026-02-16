@@ -1,239 +1,198 @@
 package com.autonion.automationcompanion.features.system_context_automation
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import android.content.Intent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material3.*
+import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.BatteryStd
+import androidx.compose.material.icons.filled.LocationOn
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import android.content.Intent
-import com.autonion.automationcompanion.features.system_context_automation.location.LocationSlotsActivity
+import com.autonion.automationcompanion.features.system_context_automation.app_specific.ui.AppSpecificActivity
 import com.autonion.automationcompanion.features.system_context_automation.battery.ui.BatterySlotsActivity
+import com.autonion.automationcompanion.features.system_context_automation.location.LocationSlotsActivity
 import com.autonion.automationcompanion.features.system_context_automation.timeofday.ui.TimeOfDayActivity
 import com.autonion.automationcompanion.features.system_context_automation.wifi.ui.WiFiActivity
-import com.autonion.automationcompanion.features.system_context_automation.app_specific.ui.AppSpecificActivity
-
+import com.autonion.automationcompanion.ui.components.AuroraBackground
+import com.autonion.automationcompanion.ui.components.FeatureCard
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SystemContextMainScreen(
-    onBack: () -> Unit
-) {
+fun SystemContextMainScreen(onBack: () -> Unit) {
     val context = LocalContext.current
-    var showTriggerDialog by remember { mutableStateOf(false) }
 
-    if (showTriggerDialog) {
-        TriggerSelectionDialog(
-            onDismiss = { showTriggerDialog = false },
-            onLocationSelected = {
-                showTriggerDialog = false
-                context.startActivity(Intent(context, LocationSlotsActivity::class.java))
+    AuroraBackground {
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text("System Context Automation") },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = "Back"
+                            )
+                        }
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = Color.Transparent,
+                        titleContentColor = MaterialTheme.colorScheme.onSurface,
+                        navigationIconContentColor = MaterialTheme.colorScheme.onSurface
+                    )
+                )
             },
-            onBatterySelected = {
-                showTriggerDialog = false
-                context.startActivity(Intent(context, BatterySlotsActivity::class.java))
-            },
-            onTimeOfDaySelected = {
-                showTriggerDialog = false
-                context.startActivity(Intent(context, TimeOfDayActivity::class.java))
-            },
-            onWiFiSelected = {
-                showTriggerDialog = false
-                context.startActivity(Intent(context, WiFiActivity::class.java))
-            },
-            onAppSpecificSelected = {
-                showTriggerDialog = false
-                context.startActivity(Intent(context, AppSpecificActivity::class.java))
+            containerColor = Color.Transparent,
+            modifier = Modifier.fillMaxSize()
+        ) { padding ->
+            
+            val triggerItems = remember {
+                listOf(
+                    TriggerItem(
+                        title = "Location-Based",
+                        description = "Trigger on geofence entry/exit",
+                        icon = Icons.Default.LocationOn,
+                        accentColor = Color(0xFF4285F4), // Google Blue
+                        onClick = { context.startActivity(Intent(context, LocationSlotsActivity::class.java)) }
+                    ),
+                    TriggerItem(
+                        title = "Battery Level",
+                        description = "Trigger when battery reaches threshold",
+                        icon = Icons.Default.BatteryStd,
+                        accentColor = Color(0xFF34A853), // Green
+                        onClick = { context.startActivity(Intent(context, BatterySlotsActivity::class.java)) }
+                    ),
+                    TriggerItem(
+                        title = "Time of Day",
+                        description = "Trigger at specific time daily",
+                        icon = Icons.Default.Schedule,
+                        accentColor = Color(0xFFF9AB00), // Amber
+                        onClick = { context.startActivity(Intent(context, TimeOfDayActivity::class.java)) }
+                    ),
+                    TriggerItem(
+                        title = "Wi-Fi Connectivity",
+                        description = "Trigger on Wi-Fi connect/disconnect",
+                        icon = Icons.Default.Wifi,
+                        accentColor = Color(0xFF00ACC1), // Cyan
+                        onClick = { context.startActivity(Intent(context, WiFiActivity::class.java)) }
+                    ),
+                    TriggerItem(
+                        title = "App Specific",
+                        description = "Trigger when app opens/closes",
+                        icon = Icons.Default.Apps,
+                        accentColor = Color(0xFF7C4DFF), // Purple
+                        onClick = { context.startActivity(Intent(context, AppSpecificActivity::class.java)) }
+                    )
+                )
             }
-        )
-    }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("System Context Automation") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back"
-                        )
+            // Animate the whole content (header + list) as a group for smoother entrance
+            var contentVisible by remember { mutableStateOf(false) }
+            // Add a small delay before showing the group content for a more relaxed feel
+            LaunchedEffect(Unit) {
+                delay(100L)
+                contentVisible = true
+            }
+            AnimatedVisibility(
+                visible = contentVisible,
+                enter = fadeIn(tween(500)) + slideInVertically(
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioMediumBouncy,
+                        stiffness = Spring.StiffnessMedium
+                    )
+                ) { it / 3 }
+            ) {
+                LazyColumn(
+                    contentPadding = PaddingValues(top = padding.calculateTopPadding() + 20.dp, bottom = 24.dp, start = 16.dp, end = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = "Automations",
+                                style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Choose a trigger type to get started.",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+
+                    itemsIndexed(triggerItems) { index, item ->
+                        // Smoother: slower stagger, longer fade
+                        var cardVisible by remember { mutableStateOf(false) }
+                        LaunchedEffect(contentVisible) {
+                            if (contentVisible) {
+                                delay(120L + 100L * index) // 120ms initial, 100ms per card
+                                cardVisible = true
+                            }
+                        }
+                        AnimatedVisibility(
+                            visible = cardVisible,
+                            enter = fadeIn(tween(450))
+                        ) {
+                            FeatureCard(
+                                title = item.title,
+                                description = item.description,
+                                icon = item.icon,
+                                onClick = item.onClick,
+                                accentColor = item.accentColor
+                            )
+                        }
                     }
                 }
-            )
-        },
-        floatingActionButton = {
-            FloatingActionButton(onClick = { showTriggerDialog = true }) {
-                Icon(Icons.Default.Add, contentDescription = "Add Automation")
             }
         }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .padding(padding)
-                .padding(16.dp)
-                .fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Text(
-                text = "Automations",
-                style = MaterialTheme.typography.titleMedium
-            )
-
-            // All trigger types can be accessed via FAB
-            Text(
-                text = "Tap the '+' button to add a new automation trigger",
-                style = MaterialTheme.typography.bodyMedium
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Quick reference cards
-            FeatureCard(
-                title = "Location-Based",
-                description = "Trigger on geofence entry/exit",
-                onClick = { /* Info only */ }
-            )
-
-            FeatureCard(
-                title = "Battery Level",
-                description = "Trigger when battery reaches threshold",
-                onClick = { /* Info only */ }
-            )
-
-            FeatureCard(
-                title = "Time of Day",
-                description = "Trigger at specific time daily",
-                onClick = { /* Info only */ }
-            )
-
-            FeatureCard(
-                title = "Wi-Fi Connectivity",
-                description = "Trigger on Wi-Fi connect/disconnect",
-                onClick = { /* Info only */ }
-            )
-
-            FeatureCard(
-                title = "App Specific",
-                description = "Trigger when app opens/closes",
-                onClick = { /* Info only */ }
-            )
-        }
     }
 }
 
-@Composable
-private fun TriggerSelectionDialog(
-    onDismiss: () -> Unit,
-    onLocationSelected: () -> Unit,
-    onBatterySelected: () -> Unit,
-    onTimeOfDaySelected: () -> Unit,
-    onWiFiSelected: () -> Unit,
-    onAppSpecificSelected: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Select Trigger Type") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                TriggerOption(
-                    label = "Location",
-                    description = "Geofence-based trigger",
-                    onClick = onLocationSelected
-                )
-                TriggerOption(
-                    label = "Battery",
-                    description = "Battery threshold trigger",
-                    onClick = onBatterySelected
-                )
-                TriggerOption(
-                    label = "Time of Day",
-                    description = "Scheduled time trigger",
-                    onClick = onTimeOfDaySelected
-                )
-                TriggerOption(
-                    label = "Wi-Fi",
-                    description = "Wi-Fi connectivity trigger",
-                    onClick = onWiFiSelected
-                )
-                TriggerOption(
-                    label = "App Specific",
-                    description = "Trigger when app opens",
-                    onClick = onAppSpecificSelected
-                )
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        }
-    )
-}
+private data class TriggerItem(
+    val title: String,
+    val description: String,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    val accentColor: Color,
+    val onClick: () -> Unit
+)
 
-@Composable
-private fun TriggerOption(
-    label: String,
-    description: String,
-    onClick: () -> Unit
-) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        shape = MaterialTheme.shapes.small
-    ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Text(label, style = MaterialTheme.typography.labelMedium)
-            Text(description, style = MaterialTheme.typography.bodySmall)
-        }
-    }
-}
-//fun isAccessibilityEnabled(context: Context): Boolean {
-//    val am = Settings.Secure.getInt(
-//        context.contentResolver,
-//        Settings.Secure.ACCESSIBILITY_ENABLED, 0
-//    )
-//    return am == 1
-//}
-
-//fun openAccessibilitySettings(context: Context) {
-//    val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-//    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-//    context.startActivity(intent)
-//}
-
-@Composable
-private fun FeatureCard(title: String, description: String, onClick: () -> Unit) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(6.dp))
-            Text(description, style = MaterialTheme.typography.bodyMedium)
-        }
-    }
-}
-
-@Composable
-private fun TodoItem(label: String) {
-    Row(modifier = Modifier.fillMaxWidth()) {
-        Text("• $label", style = MaterialTheme.typography.bodyMedium)
-    }
-}
