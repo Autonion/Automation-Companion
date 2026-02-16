@@ -10,6 +10,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.util.UUID
 
+data class ChatMessage(
+    val id: String = UUID.randomUUID().toString(),
+    val text: String,
+    val isUser: Boolean,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
 class PromptViewModel(
     private val manager: CrossDeviceAutomationManager
 ) : ViewModel() {
@@ -17,8 +24,8 @@ class PromptViewModel(
     private val _inputQuery = MutableStateFlow("")
     val inputQuery: StateFlow<String> = _inputQuery.asStateFlow()
 
-    private val _logs = MutableStateFlow<List<String>>(emptyList())
-    val logs: StateFlow<List<String>> = _logs.asStateFlow()
+    private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
+    val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
 
     fun onQueryChanged(newQuery: String) {
         _inputQuery.value = newQuery
@@ -35,22 +42,23 @@ class PromptViewModel(
                 timestamp = System.currentTimeMillis()
             )
 
-            // Log locally
-            appendLog("Sent: $promptText")
-            
+            // Add user message
+            addMessage(ChatMessage(text = promptText, isUser = true))
+
             // Broadcast to all connected devices (Desktop Agent)
-            // We use 'broadcast' because we don't strictly know which device is the "agent" yet, 
-            // and we want to reach any listeners.
             manager.networkingManager.broadcast(prompt)
             
+            // Add system acknowledgment
+            addMessage(ChatMessage(text = "Sent to connected devices", isUser = false))
+
             // Clear input
             _inputQuery.value = ""
         }
     }
     
-    private fun appendLog(message: String) {
-        val currentLogs = _logs.value.toMutableList()
-        currentLogs.add(0, message) // Add to top
-        _logs.value = currentLogs
+    private fun addMessage(message: ChatMessage) {
+        val current = _messages.value.toMutableList()
+        current.add(0, message) // Add to top (for reverseLayout)
+        _messages.value = current
     }
 }
