@@ -168,11 +168,15 @@ class CaptureEditorActivity : ComponentActivity() {
     }
 
     private fun handleExit() {
+        // Stop service (overlay + projection) on Cancel
+        ScreenUnderstandingService.instance?.stopSelf()
         finish() 
     }
 
     private fun handleRetake() {
         Toast.makeText(this, "Tap Snap again to retake", Toast.LENGTH_SHORT).show()
+        // Improve UX: Minimize app to go back to target app immediately, then close this activity
+        moveTaskToBack(true)
         finish()
     }
     
@@ -221,6 +225,8 @@ class CaptureEditorActivity : ComponentActivity() {
         val service = ScreenUnderstandingService.instance
         if (service != null) {
             service.addStepsFromEditor(steps)
+            // Go back to target app to continue capturing, then close this activity
+            moveTaskToBack(true)
             finish()
         } else {
             Toast.makeText(this, "Error: Service not running! Elements lost.", Toast.LENGTH_LONG).show()
