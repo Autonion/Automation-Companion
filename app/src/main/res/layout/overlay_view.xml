@@ -14,6 +14,17 @@
         android:layout_margin="8dp"
         android:padding="12dp">
 
+        <ImageView
+            android:id="@+id/ivDragHandle"
+            android:layout_width="match_parent"
+            android:layout_height="12dp"
+            android:layout_marginBottom="4dp"
+            android:src="@drawable/ic_drag_handle_rounded"
+            android:scaleType="center"
+            android:contentDescription="Drag Handle"
+            android:alpha="0.7" />
+
+
         <LinearLayout
             android:id="@+id/mainControls"
             android:layout_width="match_parent"
