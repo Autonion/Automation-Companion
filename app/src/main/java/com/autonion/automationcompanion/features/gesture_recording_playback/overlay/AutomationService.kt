@@ -50,9 +50,20 @@ class AutomationService : AccessibilityService() {
 
     private var appSpecificEngine: AppSpecificAutomationEngine? = null
 
+    private var defaultFlags: Int = 0
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         Log.d("AutomationService", "Service connected")
+        
+        // Initialize ExclusionManager
+        com.autonion.automationcompanion.core.settings.ExclusionManager.initialize(this)
+        
+        // Store default flags
+        serviceInfo?.let {
+            defaultFlags = it.flags
+            Log.d("AutomationService", "Default flags stored: $defaultFlags")
+        }
         
         if (appSpecificEngine == null) {
             appSpecificEngine = AppSpecificAutomationEngine(this)
@@ -67,7 +78,77 @@ class AutomationService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
+        // Intercept Window State Changed to check for excluded apps
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            event.packageName?.toString()?.let { packageName ->
+                checkExclusion(packageName)
+            }
+        }
         AccessibilityRouter.onEvent(this, event)
+    }
+
+    private fun checkExclusion(packageName: String) {
+        val isExcluded = com.autonion.automationcompanion.core.settings.ExclusionManager.isExcluded(packageName)
+        val isStrictMode = com.autonion.automationcompanion.core.settings.ExclusionManager.isStrictMode.value
+        val info = serviceInfo ?: return
+        
+        if (isExcluded) {
+            if (isStrictMode) {
+                Log.w("AutomationService", "Strict Mode: Disabling service due to excluded app $packageName")
+                // Notify user
+                showDisabledNotification(packageName)
+                // Disable service
+                disableSelf()
+                return
+            }
+
+            // Remove flags that might trigger detection
+            val newFlags = info.flags and 
+                    (android.accessibilityservice.AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS.inv()) and
+                    (android.accessibilityservice.AccessibilityServiceInfo.FLAG_REQUEST_TOUCH_EXPLORATION_MODE.inv())
+            
+            if (info.flags != newFlags) {
+                Log.i("AutomationService", "Entering restricted mode for excluded app: $packageName")
+                info.flags = newFlags
+                serviceInfo = info
+            }
+        } else {
+            // Restore default flags if needed
+            if (info.flags != defaultFlags) {
+                Log.i("AutomationService", "Restoring full access from $packageName")
+                info.flags = defaultFlags
+                serviceInfo = info
+            }
+        }
+    }
+
+    private fun showDisabledNotification(triggerPackage: String) {
+        // We warn the user that the service killed itself
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        val channelId = "automation_status_channel"
+        
+        // Ensure channel exists (re-using checking code usually in App)
+        val channel = android.app.NotificationChannel(
+            channelId,
+            "Automation Status",
+            android.app.NotificationManager.IMPORTANCE_HIGH
+        )
+        notificationManager.createNotificationChannel(channel)
+
+        val intent = Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+        val pendingIntent = android.app.PendingIntent.getActivity(
+            this, 0, intent, android.app.PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = android.app.Notification.Builder(this, channelId)
+            .setContentTitle("Automation Service Disabled")
+            .setContentText("Disabled for security ($triggerPackage). Tap to re-enable.")
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .build()
+
+        notificationManager.notify(999, notification)
     }
 
     private fun setupBroadcastReceiver() {

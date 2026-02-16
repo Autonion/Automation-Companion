@@ -41,7 +41,8 @@ fun HomeScreen(onOpen: (String) -> Unit) {
                     DashboardHeader(
                         title = "Autonion", 
                         subtitle = null,
-                        onNotificationClick = null
+                        onNotificationClick = null,
+                        onExclusionClick = { onOpen("settings/exclusion") }
                     )
                 }
             }

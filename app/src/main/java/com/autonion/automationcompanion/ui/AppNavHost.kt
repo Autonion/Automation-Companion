@@ -224,6 +224,12 @@ fun AppNavHost() {
             )
         }
 
+        composable("settings/exclusion") {
+            com.autonion.automationcompanion.features.settings.ExclusionListScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+
     }
 
 }

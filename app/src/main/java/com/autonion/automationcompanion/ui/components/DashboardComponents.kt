@@ -11,6 +11,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -76,7 +78,8 @@ fun SecondaryButton(text: String, icon: ImageVector, onClick: () -> Unit, modifi
 fun DashboardHeader(
     title: String,
     subtitle: String? = null,
-    onNotificationClick: (() -> Unit)? = null
+    onNotificationClick: (() -> Unit)? = null,
+    onExclusionClick: () -> Unit = {}
 ) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 24.dp), // Increased top/bottom padding slightly
@@ -97,28 +100,59 @@ fun DashboardHeader(
             }
         }
         
-        if (onNotificationClick != null) {
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            // Exclusion List Icon
+            val interactionSource = remember { MutableInteractionSource() }
+            val isPressed by interactionSource.collectIsPressedAsState()
+            val scale by animateFloatAsState(targetValue = if (isPressed) 0.85f else 1f, label = "scale")
+
             Surface(
-                onClick = onNotificationClick,
+                onClick = onExclusionClick,
                 shape = CircleShape,
                 color = MaterialTheme.colorScheme.surface,
                 shadowElevation = 2.dp,
-                modifier = Modifier.size(48.dp)
+                modifier = Modifier
+                    .size(40.dp)
+                    .graphicsLayer {
+                        scaleX = scale
+                        scaleY = scale
+                    },
+                interactionSource = interactionSource,
+                // indication = LocalIndication.current // Removed as Surface handles indication internally
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
-                        imageVector = Icons.Default.Add, // Placeholder for Bell
-                        contentDescription = "Notifications", 
-                        tint = MaterialTheme.colorScheme.onSurface 
+                        imageVector = Icons.Default.Security,
+                        contentDescription = "App Exclusion",
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(20.dp)
                     )
-                    // Red dot
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(12.dp)
-                            .size(8.dp)
-                            .background(Color.Red, CircleShape)
-                    )
+                }
+            }
+
+            if (onNotificationClick != null) {
+                Surface(
+                    onClick = onNotificationClick,
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surface,
+                    shadowElevation = 2.dp,
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.Notifications,
+                            contentDescription = "Notifications",
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                        // Red dot
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(12.dp)
+                                .size(8.dp)
+                                .background(Color.Red, CircleShape)
+                        )
+                    }
                 }
             }
         }
