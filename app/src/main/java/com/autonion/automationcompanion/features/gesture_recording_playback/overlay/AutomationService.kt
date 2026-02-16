@@ -8,10 +8,12 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Path
 import android.graphics.PointF
+import android.os.Build
 import android.util.Log
 import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
 import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
 import android.view.accessibility.AccessibilityEvent
+import androidx.annotation.RequiresApi
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.autonion.automationcompanion.AccessibilityRouter
 import com.autonion.automationcompanion.features.gesture_recording_playback.managers.ActionManager
@@ -96,7 +98,9 @@ class AutomationService : AccessibilityService() {
             if (isStrictMode) {
                 Log.w("AutomationService", "Strict Mode: Disabling service due to excluded app $packageName")
                 // Notify user
-                showDisabledNotification(packageName)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    showDisabledNotification(packageName)
+                }
                 // Disable service
                 disableSelf()
                 return
@@ -122,6 +126,7 @@ class AutomationService : AccessibilityService() {
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.O)
     private fun showDisabledNotification(triggerPackage: String) {
         // We warn the user that the service killed itself
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
