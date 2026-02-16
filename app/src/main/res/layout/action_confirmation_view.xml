@@ -4,13 +4,15 @@
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:background="#CC1C1C1C"
+    android:background="@drawable/rounded_panel_dark"
+    android:backgroundTint="#CC202020"
     android:padding="16dp"
     android:elevation="20dp"
     android:gravity="center"
     android:clickable="true"
     android:focusable="true">
 
+    <!-- Duration Section (Long Click only) -->
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -19,28 +21,51 @@
         android:layout_marginBottom="12dp">
 
         <TextView
+            android:id="@+id/tvHoldTime"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/hold_time_ms"
-            android:textColor="#FFFFFF"
+            android:text="Duration:"
+            android:textColor="#BBBBBB"
+            android:textSize="12sp"
             android:layout_marginEnd="8dp"
-            android:id="@+id/tvHoldTime"
             android:visibility="gone"/>
 
         <EditText
             android:id="@+id/etActionDuration"
-            android:layout_width="100dp"
+            android:layout_width="60dp"
             android:layout_height="wrap_content"
-            android:textColorHint="#FFFFFF"
+            android:textColorHint="#80FFFFFF"
             android:textColor="#FFFFFF"
-            android:autofillHints=""
+            android:textSize="14sp"
             android:inputType="number"
             android:maxLines="1"
+            android:gravity="center"
+            android:backgroundTint="#80FFFFFF"
             android:visibility="gone"
             tools:ignore="LabelFor" />
+            
+        <TextView
+             android:id="@+id/tvDurationUnit"
+             android:layout_width="wrap_content"
+             android:layout_height="wrap_content"
+             android:text="ms"
+             android:textSize="12sp"
+             android:textColor="#80FFFFFF"
+             android:layout_marginStart="4dp"
+             android:visibility="gone"/>
 
     </LinearLayout>
 
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Delay After Action"
+        android:textColor="#BBBBBB"
+        android:textSize="12sp"
+        android:gravity="center_horizontal"
+        android:layout_marginBottom="8dp"/>
+
+    <!-- Delay Input Section (Min / Sec / Ms) -->
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
@@ -48,53 +73,107 @@
         android:gravity="center_vertical"
         android:layout_marginBottom="16dp">
 
+        <!-- Minutes -->
+        <EditText
+            android:id="@+id/etDelayMin"
+            android:layout_width="40dp"
+            android:layout_height="wrap_content"
+            android:hint="0"
+            android:inputType="number"
+            android:maxLength="2"
+            android:gravity="center"
+            android:textColor="#FFFFFF"
+            android:textColorHint="#60FFFFFF"
+            android:textSize="14sp"
+            android:backgroundTint="#80FFFFFF"
+            tools:ignore="LabelFor" />
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/delay_ms"
-            android:textColor="#FFFFFF"
-            android:layout_marginEnd="8dp"
-            android:id="@+id/tvDelay"/>
+            android:text="m"
+            android:textColor="#AAAAAA"
+            android:textSize="12sp"
+            android:layout_marginStart="2dp"
+            android:layout_marginEnd="8dp"/>
 
+        <!-- Seconds -->
         <EditText
-            android:id="@+id/etActionDelay"
-            android:layout_width="100dp"
+            android:id="@+id/etDelaySec"
+            android:layout_width="40dp"
             android:layout_height="wrap_content"
-            android:autofillHints=""
+            android:hint="0"
             android:inputType="number"
-            android:maxLines="1"
+            android:maxLength="2"
+            android:gravity="center"
             android:textColor="#FFFFFF"
-            android:textColorHint="#FFFFFF"
-            tools:ignore="LabelFor,TouchTargetSizeCheck,SpeakableTextPresentCheck" />
+            android:textColorHint="#60FFFFFF"
+            android:textSize="14sp"
+            android:backgroundTint="#80FFFFFF"
+            tools:ignore="LabelFor" />
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="s"
+            android:textColor="#AAAAAA"
+            android:textSize="12sp"
+            android:layout_marginStart="2dp"
+            android:layout_marginEnd="8dp"/>
+
+        <!-- Milliseconds -->
+        <EditText
+            android:id="@+id/etDelayMs"
+            android:layout_width="50dp"
+            android:layout_height="wrap_content"
+            android:hint="0"
+            android:inputType="number"
+            android:maxLength="4"
+            android:gravity="center"
+            android:textColor="#FFFFFF"
+            android:textColorHint="#60FFFFFF"
+            android:textSize="14sp"
+            android:backgroundTint="#80FFFFFF"
+            tools:ignore="LabelFor" />
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="ms"
+            android:textColor="#AAAAAA"
+            android:textSize="12sp"
+            android:layout_marginStart="2dp"/>
 
     </LinearLayout>
 
     <LinearLayout
-        style="?android:attr/buttonBarStyle"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:gravity="center">
+        android:gravity="center"
+        android:paddingTop="4dp">
 
-        <Button
+        <ImageView
             android:id="@+id/btnCancel"
-            style="?android:attr/buttonBarButtonStyle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginEnd="5sp"
-            android:background="@drawable/overlay_button_bg"
-            android:text="@string/cancel"
-            android:textColor="#9FA8DA" />
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:layout_marginEnd="24dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_close"
+            android:backgroundTint="#FF5252"
+            android:padding="4dp"
+            android:contentDescription="@string/cancel"
+            android:tint="#FF5252"
+            xmlns:app="http://schemas.android.com/apk/res-auto"/>
 
-        <Button
+        <ImageView
             android:id="@+id/btnConfirm"
-            style="?android:attr/buttonBarButtonStyle"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:background="@drawable/overlay_button_bg"
-            android:text="@string/ok"
-            android:textColor="#9FA8DA" />
+            android:layout_width="32dp"
+            android:layout_height="32dp"
+            android:layout_marginStart="24dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_check"
+            android:padding="4dp"
+            android:contentDescription="@string/ok"
+            android:tint="#69F0AE"
+            xmlns:app="http://schemas.android.com/apk/res-auto"/>
 
     </LinearLayout>
 </LinearLayout>
