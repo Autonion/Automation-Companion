@@ -1,6 +1,10 @@
 package com.autonion.automationcompanion.features.cross_device_automation.networking
 
+import android.content.Context
+
 import android.util.Log
+import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
+import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
 import com.autonion.automationcompanion.features.cross_device_automation.domain.Device
 import com.autonion.automationcompanion.features.cross_device_automation.domain.DeviceRepository
 import com.autonion.automationcompanion.features.cross_device_automation.domain.RawEvent
@@ -19,9 +23,13 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 class NetworkingManager(
+    private val context: Context,
     private val deviceRepository: DeviceRepository,
     private val eventReceiver: EventReceiver
 ) {
+    companion object {
+        private const val TAG = "NetworkingManager"
+    }
     private val client = OkHttpClient.Builder()
         .readTimeout(0, TimeUnit.MILLISECONDS)
         .pingInterval(30, TimeUnit.SECONDS) // Keep-alive for background stability
@@ -64,11 +72,23 @@ class NetworkingManager(
             .url("ws://${device.ipAddress}:${device.port}/automation") // Assuming path
             .build()
 
-        Log.d("NetworkingManager", "Connecting to ${device.name} at ${device.ipAddress}")
+        Log.d(TAG, "Connecting to ${device.name} at ${device.ipAddress}")
+        DebugLogger.info(
+            context, LogCategory.CROSS_DEVICE_SYNC,
+            "WebSocket connection attempt",
+            "Attempting to connect to ${device.name} at ws://${device.ipAddress}:${device.port}",
+            TAG
+        )
 
         val listener = object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
-                Log.d("NetworkingManager", "Connected to ${device.name}")
+                Log.d(TAG, "Connected to ${device.name}")
+                DebugLogger.success(
+                    context, LogCategory.CROSS_DEVICE_SYNC,
+                    "WebSocket connected",
+                    "Connected to ${device.name} at ws://${device.ipAddress}:${device.port}",
+                    TAG
+                )
                 activeConnections[device.id] = webSocket
                 this@NetworkingManager.listener?.onDeviceConnected(device)
             }
@@ -76,6 +96,12 @@ class NetworkingManager(
             override fun onMessage(webSocket: WebSocket, text: String) {
                 // Forward raw message to listener (e.g. for Rule Triggers)
                 this@NetworkingManager.listener?.onMessageReceived(device.id, text)
+                DebugLogger.info(
+                    context, LogCategory.CROSS_DEVICE_SYNC,
+                    "Message received",
+                    "From ${device.name}: $text",
+                    TAG
+                )
 
                 try {
                     // 1. Parse as generic JsonObject first to check message type
@@ -83,13 +109,25 @@ class NetworkingManager(
                     val type = jsonObject.get("type")?.asString
 
                     if (type == null) {
-                        Log.w("NetworkingManager", "Received message without type: $text")
+                        Log.w(TAG, "Received message without type: $text")
+                        DebugLogger.warning(
+                            context, LogCategory.CROSS_DEVICE_SYNC,
+                            "Message without type",
+                            "Received message from ${device.name} without a 'type' field: $text",
+                            TAG
+                        )
                         return
                     }
 
                     // 2. Handle Control Messages
                     if (type == "connection_ack") {
-                        Log.d("NetworkingManager", "Handshake received from ${device.name}: $text")
+                        Log.d(TAG, "Handshake received from ${device.name}: $text")
+                        DebugLogger.info(
+                            context, LogCategory.CROSS_DEVICE_SYNC,
+                            "Connection Acknowledged",
+                            "Handshake received from ${device.name}: $text",
+                            TAG
+                        )
                         return // Don't try to parse as RawEvent
                     }
 
@@ -103,19 +141,37 @@ class NetworkingManager(
                         }
                     }
                 } catch (e: Exception) {
-                    Log.e("NetworkingManager", "Failed to parse message: $text", e)
+                    Log.e(TAG, "Failed to parse message: $text", e)
+                    DebugLogger.error(
+                        context, LogCategory.CROSS_DEVICE_SYNC,
+                        "Message parsing failed",
+                        "Failed to parse message from ${device.name}: $text. Error: ${e.message}",
+                        TAG
+                    )
                 }
             }
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
-                Log.d("NetworkingManager", "Closing: $reason")
+                Log.d(TAG, "Closing: $reason")
+                DebugLogger.warning(
+                    context, LogCategory.CROSS_DEVICE_SYNC,
+                    "WebSocket closing",
+                    "Connection to ${device.name} closing. Code: $code, Reason: $reason",
+                    TAG
+                )
                 webSocket.close(1000, null)
                 activeConnections.remove(device.id)
                 this@NetworkingManager.listener?.onDeviceDisconnected(device.id)
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                Log.e("NetworkingManager", "Connection failure: ${t.message}")
+                Log.e(TAG, "Connection failure: ${t.message}")
+                DebugLogger.error(
+                    context, LogCategory.CROSS_DEVICE_SYNC,
+                    "WebSocket failure",
+                    "Connection to ${device.name} failed: ${t.message}",
+                    TAG
+                )
                 activeConnections.remove(device.id)
                 this@NetworkingManager.listener?.onDeviceDisconnected(device.id)
             }

@@ -1,11 +1,15 @@
 package com.autonion.automationcompanion.features.cross_device_automation.event_pipeline
 
+import android.content.Context
 import android.util.Log
+import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
+import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
 import com.autonion.automationcompanion.features.cross_device_automation.domain.RawEvent
 import com.autonion.automationcompanion.features.cross_device_automation.rules.RuleEngine
 import com.autonion.automationcompanion.features.cross_device_automation.tagging.TaggingSystem
 
 class EventPipeline(
+    private val context: Context,
     private val enricher: EventEnricher,
     private val taggingSystem: TaggingSystem,
     private val broadcastStrategy: ((RawEvent) -> Unit)? = null
@@ -13,6 +17,12 @@ class EventPipeline(
 
     override suspend fun onEventReceived(event: RawEvent) {
         Log.d("EventPipeline", "Received event: ${event.type}")
+        DebugLogger.info(
+            context, LogCategory.CROSS_DEVICE_SYNC,
+            "Event: ${event.type}",
+            "Processing from ${event.sourceDeviceId}",
+            "EventPipeline"
+        )
         
         // 0. Publish Raw Event
         EventBus.publish(event)
@@ -39,3 +49,4 @@ class EventPipeline(
         EventBus.publish(taggedEvent)
     }
 }
+

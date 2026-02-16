@@ -3,6 +3,9 @@ package com.autonion.automationcompanion.features.screen_understanding_ml.core
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.RectF
+import android.util.Log
+import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
+import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.UIElement
 import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.gpu.GpuDelegate
@@ -13,6 +16,10 @@ import org.tensorflow.lite.support.image.ops.ResizeOp
 import java.util.UUID
 
 class PerceptionLayer(private val context: Context) {
+
+    private companion object {
+        private const val TAG = "PerceptionLayer"
+    }
 
     private var interpreter: Interpreter? = null
     private val modelFilename = "best_float16.tflite"
@@ -38,9 +45,22 @@ class PerceptionLayer(private val context: Context) {
             val modelFile = loadModelFile(context, modelFilename)
             interpreter = Interpreter(modelFile, gpuOptions)
             gpuDelegate = delegate
-            android.util.Log.d("PerceptionLayer", "Model loaded with GPU delegate")
+            Log.i(TAG, "Model loaded and interpreter created")
+            DebugLogger.success(
+                context, LogCategory.SCREEN_CONTEXT_AI,
+                "ML model loaded",
+                "TFLite interpreter ready for UI detection",
+                "PerceptionLayer"
+            )
         } catch (e: Exception) {
-            android.util.Log.w("PerceptionLayer", "GPU delegate failed, falling back to CPU", e)
+            Log.e(TAG, "Failed to load model", e)
+            DebugLogger.error(
+                context, LogCategory.SCREEN_CONTEXT_AI,
+                "ML model load failed",
+                "${e.message}",
+                "PerceptionLayer"
+            )
+            Log.w("PerceptionLayer", "GPU delegate failed, falling back to CPU", e)
             gpuDelegate?.close()
             gpuDelegate = null
             try {

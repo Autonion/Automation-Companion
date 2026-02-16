@@ -14,10 +14,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.autonion.automationcompanion.features.PlaceholderScreen
+import com.autonion.automationcompanion.features.automation_debugger.DebuggerViewModel
+import com.autonion.automationcompanion.features.automation_debugger.ui.DebuggerScreen
+import com.autonion.automationcompanion.features.automation_debugger.ui.LogDetailScreen
 import com.autonion.automationcompanion.features.gesture_recording_playback.GestureRecordingScreen
 import com.autonion.automationcompanion.features.system_context_automation.SystemContextMainScreen
 
@@ -36,6 +42,7 @@ object AutomationRoutes {
     const val LOCATION_AUTOMATION = "feature/system_context/location"
     const val EMERGENCY = "feature/emergency_trigger"
     const val DEBUGGER = "feature/automation_debugger"
+    const val DEBUGGER_DETAIL = "feature/automation_debugger/{category}"
     const val CROSS_DEVICE = "feature/cross_device_automation"
     const val PROFILE_LEARNING = "feature/automation_profile_learning"
 }
@@ -63,6 +70,9 @@ fun AppNavHost() {
             }
         }
     }
+
+    // Shared ViewModel for Debugger screens
+    val debuggerViewModel: DebuggerViewModel = viewModel()
 
     NavHost(
         navController = navController,
@@ -157,21 +167,8 @@ fun AppNavHost() {
         }
 
         composable(AutomationRoutes.SYSTEM_CONTEXT) {
-//            PlaceholderScreen(
-//                title = "System Context Automation",
-//                todos = listOf(
-//                    "Location/time/battery/WIFI triggers",
-//                    "Settings Panel & permission flows",
-//                    "Fallbacks when services are disabled"
-//                ),
-//                onBack = {navController.popBackStack()}
-//            )
-
             SystemContextMainScreen(
                 onBack = {navController.popBackStack()},
-//                onLocationAutomationClick = {
-//                    navController.navigate(Routes.LOCATION_AUTOMATION)
-//                }
             )
         }
 
@@ -188,14 +185,24 @@ fun AppNavHost() {
         }
 
         composable(AutomationRoutes.DEBUGGER) {
-            PlaceholderScreen(
-                title = "Automation Debugger",
-                todos = listOf(
-                    "Step-through automation runs",
-                    "Inspect runtime variables & logs",
-                    "Save reproducable failing macros"
-                ),
-                onBack = {navController.popBackStack()}
+            DebuggerScreen(
+                viewModel = debuggerViewModel,
+                onBack = { navController.popBackStack() },
+                onCategoryClick = { category ->
+                    navController.navigate("feature/automation_debugger/$category")
+                }
+            )
+        }
+
+        composable(
+            route = AutomationRoutes.DEBUGGER_DETAIL,
+            arguments = listOf(navArgument("category") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val category = backStackEntry.arguments?.getString("category") ?: return@composable
+            LogDetailScreen(
+                viewModel = debuggerViewModel,
+                category = category,
+                onBack = { navController.popBackStack() }
             )
         }
 
@@ -220,3 +227,4 @@ fun AppNavHost() {
     }
 
 }
+

@@ -5,6 +5,8 @@ import android.content.Context
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import com.autonion.automationcompanion.AccessibilityFeature
+import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
+import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
 import com.autonion.automationcompanion.features.system_context_automation.location.data.db.AppDatabase
 import com.autonion.automationcompanion.features.system_context_automation.shared.executor.SlotExecutor
 import com.autonion.automationcompanion.features.system_context_automation.shared.models.TriggerConfig
@@ -53,11 +55,23 @@ class AppSpecificAutomationEngine(private val context: Context) : AccessibilityF
                         config.packageName == currentPackageName) {
                         
                         Log.i(TAG, "Triggering App Automation for $currentPackageName")
+                        DebugLogger.success(
+                            context, LogCategory.SYSTEM_CONTEXT,
+                            "App trigger: $currentPackageName",
+                            "Slot ${slot.id} triggered by app open event",
+                            TAG
+                        )
                         SlotExecutor.execute(context, slot.id)
                     }
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error evaluating app slots", e)
+                DebugLogger.error(
+                    context, LogCategory.SYSTEM_CONTEXT,
+                    "App slot evaluation error",
+                    "${e.message}",
+                    TAG
+                )
             }
         }
     }

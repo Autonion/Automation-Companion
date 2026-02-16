@@ -9,6 +9,8 @@ import android.content.IntentFilter
 import android.graphics.Path
 import android.graphics.PointF
 import android.util.Log
+import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
+import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
 import android.view.accessibility.AccessibilityEvent
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.autonion.automationcompanion.AccessibilityRouter
@@ -84,6 +86,12 @@ class AutomationService : AccessibilityService() {
     private fun startPlayback() {
         if (isPlaying) return
         Log.d("AutomationService", "Starting playback")
+        DebugLogger.info(
+            this, LogCategory.GESTURE_RECORDING,
+            "Playback started",
+            "Starting gesture playback (loops=${if (infiniteLoop) "∞" else loopCount.toString()})",
+            "AutomationService"
+        )
 
         isPlaying = true
         currentLoop = 0
@@ -111,6 +119,12 @@ class AutomationService : AccessibilityService() {
     private fun stopPlayback() {
         isPlaying = false
         Log.d("AutomationService", "Playback stopped")
+        DebugLogger.info(
+            this, LogCategory.GESTURE_RECORDING,
+            "Playback stopped",
+            "Completed $currentLoop loop(s)",
+            "AutomationService"
+        )
         scope.coroutineContext.cancelChildren()
         broadcastPlaybackState(false)
     }
@@ -119,6 +133,12 @@ class AutomationService : AccessibilityService() {
         // Ensure we are getting a list of actions
         val actions = ActionManager.getActions()
         Log.d("AutomationService", "Executing ${actions.size} actions")
+        DebugLogger.info(
+            this@AutomationService, LogCategory.GESTURE_RECORDING,
+            "Executing ${actions.size} actions",
+            "Loop ${currentLoop + 1}: running ${actions.count { it.isEnabled }} enabled actions",
+            "AutomationService"
+        )
 
         // Iterate over the list manually or use standard loop to avoid ambiguity if any
         for (i in actions.indices) {
@@ -221,10 +241,22 @@ class AutomationService : AccessibilityService() {
 
                 if (!dispatched) {
                     Log.e("AutomationService", "Gesture dispatch failed immediately")
+                    DebugLogger.error(
+                        this@AutomationService, LogCategory.GESTURE_RECORDING,
+                        "Gesture dispatch failed",
+                        "Gesture could not be dispatched to accessibility service",
+                        "AutomationService"
+                    )
                     continuation.resume(false)
                 }
             } catch (e: Exception) {
                 Log.e("AutomationService", "Error dispatching gesture", e)
+                DebugLogger.error(
+                    this@AutomationService, LogCategory.GESTURE_RECORDING,
+                    "Gesture error",
+                    "Exception: ${e.message}",
+                    "AutomationService"
+                )
                 continuation.resume(false)
             }
         }
