@@ -5,6 +5,8 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
+import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
+import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
@@ -305,15 +307,21 @@ class ScreenUnderstandingService : Service() {
     }
 
     fun playPreset(preset: AutomationPreset) {
-        if (isPlaying) {
-            Toast.makeText(this, "Already playing!", Toast.LENGTH_SHORT).show()
-            return
-        }
-        isPlaying = true
-        overlay?.setPlaybackState(true)
-        Toast.makeText(this, "Playing: ${preset.name}", Toast.LENGTH_SHORT).show()
+    if (isPlaying) {
+        Toast.makeText(this, "Already playing!", Toast.LENGTH_SHORT).show()
+        return
+    }
+    isPlaying = true
+    overlay?.setPlaybackState(true)
+    Toast.makeText(this, "Playing: ${preset.name}", Toast.LENGTH_SHORT).show()
+    DebugLogger.info(
+        this, LogCategory.SCREEN_CONTEXT_AI,
+        "Preset started: ${preset.name}",
+        "Playing ${preset.steps.size} steps (mode=${preset.executionMode})",
+        "ScreenUnderstandingService"
+    )
 
-        scope.launch {
+    scope.launch {
             try {
                 // Loop continuously until user clicks Stop
                 while (isPlaying) {
@@ -340,13 +348,25 @@ class ScreenUnderstandingService : Service() {
                                 description = step.label
                             )
                             
-                            val success = ActionExecutor.execute(intent)
+                            val success = ActionExecutor.execute(this@ScreenUnderstandingService, intent)
 
                             if (success) {
-                                Log.d(TAG, "Executed ${step.actionType} on ${step.label}")
-                            } else {
-                                Log.e(TAG, "Action ${step.actionType} failed for ${step.label}")
-                                withContext(Dispatchers.Main) {
+                            Log.d(TAG, "Executed ${step.actionType} on ${step.label}")
+                            DebugLogger.success(
+                                this@ScreenUnderstandingService, LogCategory.SCREEN_CONTEXT_AI,
+                                "Step ${step.orderIndex}: ${step.label}",
+                                "${step.actionType} executed successfully",
+                                "ScreenUnderstandingService"
+                            )
+                        } else {
+                            Log.e(TAG, "Action ${step.actionType} failed for ${step.label}")
+                            DebugLogger.error(
+                                this@ScreenUnderstandingService, LogCategory.SCREEN_CONTEXT_AI,
+                                "Step ${step.orderIndex} failed: ${step.label}",
+                                "${step.actionType} failed — check accessibility",
+                                "ScreenUnderstandingService"
+                            )
+                            withContext(Dispatchers.Main) {
                                     Toast.makeText(this@ScreenUnderstandingService, "Action failed. Accessibility enabled?", Toast.LENGTH_LONG).show()
                                 }
                                 isPlaying = false
@@ -368,8 +388,14 @@ class ScreenUnderstandingService : Service() {
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Playback error", e)
-            } finally {
+            Log.e(TAG, "Playback error", e)
+            DebugLogger.error(
+                this@ScreenUnderstandingService, LogCategory.SCREEN_CONTEXT_AI,
+                "Playback error: ${preset.name}",
+                "${e.javaClass.simpleName}: ${e.message}",
+                "ScreenUnderstandingService"
+            )
+        } finally {
                 isPlaying = false
                 withContext(Dispatchers.Main) {
                     overlay?.setPlaybackState(false)

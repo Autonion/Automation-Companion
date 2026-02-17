@@ -12,6 +12,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Rule
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Devices
@@ -164,7 +165,7 @@ private data class TabItem(val title: String, val icon: ImageVector)
 private fun StyledTabRow(selectedTab: Int, onTabSelected: (Int) -> Unit) {
     val tabs = listOf(
         TabItem("Ask", Icons.Default.SmartToy),
-        TabItem("Rules", Icons.Default.Rule),
+        TabItem("Rules", Icons.AutoMirrored.Filled.Rule),
         TabItem("Devices", Icons.Default.Devices)
     )
 

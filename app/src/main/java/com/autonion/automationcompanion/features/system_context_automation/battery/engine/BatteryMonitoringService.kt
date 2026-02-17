@@ -4,8 +4,11 @@ import android.app.*
 import android.content.*
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.autonion.automationcompanion.R
+import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
+import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -14,9 +17,17 @@ class BatteryMonitoringService : Service() {
     private lateinit var batteryReceiver: BatteryBroadcastReceiver
     private val NOTIFICATION_ID = 1001
     private val CHANNEL_ID = "battery_monitoring_channel"
+    private val TAG = "BatteryMonitoringService"
 
     override fun onCreate() {
         super.onCreate()
+        Log.d(TAG, "BatteryMonitoringService: onCreate")
+        DebugLogger.info(
+            this, LogCategory.SYSTEM_CONTEXT,
+            "Battery Monitoring Service",
+            "Service created",
+            TAG
+        )
         createNotificationChannel()
         startForegroundService()
         registerBatteryReceiver()
@@ -70,6 +81,12 @@ class BatteryMonitoringService : Service() {
         } catch (e: Exception) {
             // Receiver was not registered
         }
+        DebugLogger.info(
+            this, LogCategory.SYSTEM_CONTEXT,
+            "Battery monitoring stopped",
+            "Receiver unregistered, service destroyed",
+            TAG
+        )
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

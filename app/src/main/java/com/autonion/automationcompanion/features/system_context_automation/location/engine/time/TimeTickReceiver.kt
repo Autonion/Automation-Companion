@@ -4,6 +4,8 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
+import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
 import com.autonion.automationcompanion.features.system_context_automation.location.data.db.AppDatabase
 import com.autonion.automationcompanion.features.system_context_automation.location.helpers.SendHelper
 import kotlinx.coroutines.CoroutineScope
@@ -38,6 +40,12 @@ class TimeTickReceiver : BroadcastReceiver() {
                 if (slot.lastExecutedDay == todayKey) continue
 
                 Log.i("TimeTick", "Triggering slot ${slot.id}")
+                DebugLogger.success(
+                    context, LogCategory.SYSTEM_CONTEXT,
+                    "Time slot ${slot.id} triggered",
+                    "Geofence+day+time conditions met, executing actions",
+                    "TimeTickReceiver"
+                )
 
                 // ✅ Delegate execution
                 SendHelper.startSendIfNeeded(context, slot.id)

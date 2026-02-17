@@ -1,4 +1,4 @@
-package com.autonion.automationcompanion.features.automation.actions.models
+package com.autonion.automationcompanion.automation.actions.models
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable

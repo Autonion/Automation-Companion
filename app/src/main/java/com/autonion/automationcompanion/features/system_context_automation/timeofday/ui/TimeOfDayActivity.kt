@@ -43,10 +43,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.autonion.automationcompanion.features.automation.actions.builders.ActionBuilder
-import com.autonion.automationcompanion.features.automation.actions.models.ConfiguredAction
-import com.autonion.automationcompanion.features.automation.actions.ui.ActionPicker
-import com.autonion.automationcompanion.features.automation.actions.ui.AppPickerActivity
+import com.autonion.automationcompanion.automation.actions.builders.ActionBuilder
+import com.autonion.automationcompanion.automation.actions.models.ConfiguredAction
+import com.autonion.automationcompanion.automation.actions.ui.ActionPicker
+import com.autonion.automationcompanion.automation.actions.ui.AppPickerActivity
 import com.autonion.automationcompanion.features.system_context_automation.location.data.db.AppDatabase
 import com.autonion.automationcompanion.features.system_context_automation.location.data.models.Slot
 import com.autonion.automationcompanion.features.system_context_automation.shared.models.TriggerConfig
@@ -185,12 +185,31 @@ fun TimeOfDaySlotsScreen(
                                             dao.delete(slot)
                                             TimeOfDayReceiver.cancelAlarm(context, slot.id)
                                             recentlyDeleted = slot
+
+                                            // Log deletion
+                                            com.autonion.automationcompanion.features.automation_debugger.DebugLogger.info(
+                                                context, com.autonion.automationcompanion.features.automation_debugger.data.LogCategory.SYSTEM_CONTEXT,
+                                                "Time-of-Day automation deleted",
+                                                "Deleted slot ${slot.id}",
+                                                "TimeOfDaySlotsScreen"
+                                            )
+
                                             val result = snackbarHostState.showSnackbar(
                                                 message = "Slot deleted",
                                                 actionLabel = "Undo"
                                             )
                                             if (result == SnackbarResult.ActionPerformed) {
-                                                recentlyDeleted?.let { dao.insert(it.copy(id = 0)) }
+                                                recentlyDeleted?.let { 
+                                                    val newId = dao.insert(it.copy(id = 0)) 
+                                                    
+                                                    // Log undo
+                                                    com.autonion.automationcompanion.features.automation_debugger.DebugLogger.success(
+                                                        context, com.autonion.automationcompanion.features.automation_debugger.data.LogCategory.SYSTEM_CONTEXT,
+                                                        "Time-of-Day automation restored",
+                                                        "Restored slot ${slot.id} as $newId",
+                                                        "TimeOfDaySlotsScreen"
+                                                    )
+                                                }
                                             }
                                         }
                                     }

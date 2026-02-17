@@ -17,12 +17,11 @@ import android.os.Build
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.autonion.automationcompanion.R
-import com.autonion.automationcompanion.features.automation.actions.models.RingerMode
+import com.autonion.automationcompanion.automation.actions.models.RingerMode
 import com.autonion.automationcompanion.features.system_context_automation.location.helpers.FallbackFlow
 import com.autonion.automationcompanion.features.system_context_automation.location.helpers.SendHelper
 import com.autonion.automationcompanion.features.system_context_automation.location.data.db.AppDatabase
 import com.autonion.automationcompanion.features.system_context_automation.location.data.models.Slot
-import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofencingClient
 import com.google.android.gms.location.GeofencingRequest

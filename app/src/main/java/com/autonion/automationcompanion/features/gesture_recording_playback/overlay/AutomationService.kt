@@ -8,8 +8,12 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Path
 import android.graphics.PointF
+import android.os.Build
 import android.util.Log
+import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
+import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
 import android.view.accessibility.AccessibilityEvent
+import androidx.annotation.RequiresApi
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.autonion.automationcompanion.AccessibilityRouter
 import com.autonion.automationcompanion.features.gesture_recording_playback.managers.ActionManager
@@ -48,9 +52,20 @@ class AutomationService : AccessibilityService() {
 
     private var appSpecificEngine: AppSpecificAutomationEngine? = null
 
+    private var defaultFlags: Int = 0
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         Log.d("AutomationService", "Service connected")
+        
+        // Initialize ExclusionManager
+        com.autonion.automationcompanion.core.settings.ExclusionManager.initialize(this)
+        
+        // Store default flags
+        serviceInfo?.let {
+            defaultFlags = it.flags
+            Log.d("AutomationService", "Default flags stored: $defaultFlags")
+        }
         
         if (appSpecificEngine == null) {
             appSpecificEngine = AppSpecificAutomationEngine(this)
@@ -65,7 +80,80 @@ class AutomationService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
+        // Intercept Window State Changed to check for excluded apps
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            event.packageName?.toString()?.let { packageName ->
+                checkExclusion(packageName)
+            }
+        }
         AccessibilityRouter.onEvent(this, event)
+    }
+
+    private fun checkExclusion(packageName: String) {
+        val isExcluded = com.autonion.automationcompanion.core.settings.ExclusionManager.isExcluded(packageName)
+        val isStrictMode = com.autonion.automationcompanion.core.settings.ExclusionManager.isStrictMode.value
+        val info = serviceInfo ?: return
+        
+        if (isExcluded) {
+            if (isStrictMode) {
+                Log.w("AutomationService", "Strict Mode: Disabling service due to excluded app $packageName")
+                // Notify user
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    showDisabledNotification(packageName)
+                }
+                // Disable service
+                disableSelf()
+                return
+            }
+
+            // Remove flags that might trigger detection
+            val newFlags = info.flags and 
+                    (android.accessibilityservice.AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS.inv()) and
+                    (android.accessibilityservice.AccessibilityServiceInfo.FLAG_REQUEST_TOUCH_EXPLORATION_MODE.inv())
+            
+            if (info.flags != newFlags) {
+                Log.i("AutomationService", "Entering restricted mode for excluded app: $packageName")
+                info.flags = newFlags
+                serviceInfo = info
+            }
+        } else {
+            // Restore default flags if needed
+            if (info.flags != defaultFlags) {
+                Log.i("AutomationService", "Restoring full access from $packageName")
+                info.flags = defaultFlags
+                serviceInfo = info
+            }
+        }
+    }
+
+    @RequiresApi(Build.VERSION_CODES.O)
+    private fun showDisabledNotification(triggerPackage: String) {
+        // We warn the user that the service killed itself
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+        val channelId = "automation_status_channel"
+        
+        // Ensure channel exists (re-using checking code usually in App)
+        val channel = android.app.NotificationChannel(
+            channelId,
+            "Automation Status",
+            android.app.NotificationManager.IMPORTANCE_HIGH
+        )
+        notificationManager.createNotificationChannel(channel)
+
+        val intent = Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+        val pendingIntent = android.app.PendingIntent.getActivity(
+            this, 0, intent, android.app.PendingIntent.FLAG_IMMUTABLE
+        )
+
+        val notification = android.app.Notification.Builder(this, channelId)
+            .setContentTitle("Automation Service Disabled")
+            .setContentText("Disabled for security ($triggerPackage). Tap to re-enable.")
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setContentIntent(pendingIntent)
+            .setAutoCancel(true)
+            .build()
+
+        notificationManager.notify(999, notification)
     }
 
     private fun setupBroadcastReceiver() {
@@ -84,6 +172,12 @@ class AutomationService : AccessibilityService() {
     private fun startPlayback() {
         if (isPlaying) return
         Log.d("AutomationService", "Starting playback")
+        DebugLogger.info(
+            this, LogCategory.GESTURE_RECORDING,
+            "Playback started",
+            "Starting gesture playback (loops=${if (infiniteLoop) "∞" else loopCount.toString()})",
+            "AutomationService"
+        )
 
         isPlaying = true
         currentLoop = 0
@@ -111,6 +205,12 @@ class AutomationService : AccessibilityService() {
     private fun stopPlayback() {
         isPlaying = false
         Log.d("AutomationService", "Playback stopped")
+        DebugLogger.info(
+            this, LogCategory.GESTURE_RECORDING,
+            "Playback stopped",
+            "Completed $currentLoop loop(s)",
+            "AutomationService"
+        )
         scope.coroutineContext.cancelChildren()
         broadcastPlaybackState(false)
     }
@@ -119,6 +219,12 @@ class AutomationService : AccessibilityService() {
         // Ensure we are getting a list of actions
         val actions = ActionManager.getActions()
         Log.d("AutomationService", "Executing ${actions.size} actions")
+        DebugLogger.info(
+            this@AutomationService, LogCategory.GESTURE_RECORDING,
+            "Executing ${actions.size} actions",
+            "Loop ${currentLoop + 1}: running ${actions.count { it.isEnabled }} enabled actions",
+            "AutomationService"
+        )
 
         // Iterate over the list manually or use standard loop to avoid ambiguity if any
         for (i in actions.indices) {
@@ -221,10 +327,22 @@ class AutomationService : AccessibilityService() {
 
                 if (!dispatched) {
                     Log.e("AutomationService", "Gesture dispatch failed immediately")
+                    DebugLogger.error(
+                        this@AutomationService, LogCategory.GESTURE_RECORDING,
+                        "Gesture dispatch failed",
+                        "Gesture could not be dispatched to accessibility service",
+                        "AutomationService"
+                    )
                     continuation.resume(false)
                 }
             } catch (e: Exception) {
                 Log.e("AutomationService", "Error dispatching gesture", e)
+                DebugLogger.error(
+                    this@AutomationService, LogCategory.GESTURE_RECORDING,
+                    "Gesture error",
+                    "Exception: ${e.message}",
+                    "AutomationService"
+                )
                 continuation.resume(false)
             }
         }

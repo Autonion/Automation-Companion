@@ -1,6 +1,8 @@
 package com.autonion.automationcompanion.features.gesture_recording_playback.managers
 
 import android.content.Context
+import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
+import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
 import com.autonion.automationcompanion.features.gesture_recording_playback.models.Action
 import kotlinx.serialization.json.Json
 import java.io.File
@@ -19,6 +21,12 @@ object PresetManager {
         val json = Json.encodeToString(actions)
         val file = File(getPresetsDir(context), "$presetName.json")
         file.writeText(json)
+        DebugLogger.success(
+            context, LogCategory.GESTURE_RECORDING,
+            "Preset saved: $presetName",
+            "Saved ${actions.size} actions to file",
+            "PresetManager"
+        )
     }
 
     fun loadPreset(context: Context, presetName: String): List<Action> {
@@ -33,6 +41,12 @@ object PresetManager {
         val file = File(getPresetsDir(context), "$presetName.json")
         if (file.exists()) {
             file.delete()
+            DebugLogger.info(
+                context, LogCategory.GESTURE_RECORDING,
+                "Preset deleted: $presetName",
+                "Removed preset file from storage",
+                "PresetManager"
+            )
         }
     }
 

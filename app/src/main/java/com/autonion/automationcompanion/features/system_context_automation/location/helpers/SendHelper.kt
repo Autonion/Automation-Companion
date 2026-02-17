@@ -1,28 +1,26 @@
 package com.autonion.automationcompanion.features.system_context_automation.location.helpers
 
 import android.Manifest
-import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.media.AudioManager
 import android.os.Build
-import android.os.PowerManager
 import android.provider.Settings
 import android.telephony.SmsManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
-import com.autonion.automationcompanion.features.automation.actions.models.AppActionType
+import com.autonion.automationcompanion.automation.actions.models.AppActionType
 import com.autonion.automationcompanion.features.system_context_automation.location.data.db.AppDatabase
-import com.autonion.automationcompanion.features.automation.actions.models.AutomationAction
-import com.autonion.automationcompanion.features.automation.actions.models.NotificationType
-import com.autonion.automationcompanion.features.automation.actions.receivers.DelayedNotificationReceiver
+import com.autonion.automationcompanion.automation.actions.models.AutomationAction
+import com.autonion.automationcompanion.automation.actions.models.NotificationType
+import com.autonion.automationcompanion.automation.actions.receivers.DelayedNotificationReceiver
+import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
+import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
 import com.autonion.automationcompanion.features.system_context_automation.location.engine.location_receiver.TrackingForegroundService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -48,6 +46,13 @@ object SendHelper {
         val slot = dao.getById(slotId) ?: return
 
         if (!slot.enabled) return
+
+        DebugLogger.info(
+            context, LogCategory.SYSTEM_CONTEXT,
+            "Executing slot $slotId",
+            "Running ${slot.actions.size} configured actions",
+            TAG
+        )
 
         ensureChannel(context)
 
@@ -164,8 +169,20 @@ object SendHelper {
                 action.ringerMode
             )
             Log.i(TAG, "Delegated volume change with ringer mode: ${action.ringerMode}")
+            DebugLogger.success(
+                context, LogCategory.SYSTEM_CONTEXT,
+                "Volume set",
+                "Ring=${action.ring}, Media=${action.media}, Alarm=${action.alarm}, Ringer=${action.ringerMode}",
+                TAG
+            )
         } catch (e: Exception) {
             Log.e(TAG, "Failed to delegate volume change", e)
+            DebugLogger.error(
+                context, LogCategory.SYSTEM_CONTEXT,
+                "Volume change failed",
+                "${e.message}",
+                TAG
+            )
         }
     }
 
@@ -180,9 +197,21 @@ object SendHelper {
                 brightness
             )
             Log.i(TAG, "Brightness set to $brightness")
+            DebugLogger.success(
+                context, LogCategory.SYSTEM_CONTEXT,
+                "Brightness set to $brightness",
+                "Screen brightness adjusted",
+                TAG
+            )
             notifySuccess(context, "Brightness set to $brightness")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to set brightness", e)
+            DebugLogger.error(
+                context, LogCategory.SYSTEM_CONTEXT,
+                "Brightness change failed",
+                "${e.message}",
+                TAG
+            )
         }
     }
 
@@ -199,9 +228,21 @@ object SendHelper {
             )
             val status = if (action.enabled) "enabled" else "disabled"
             Log.i(TAG, "DND $status")
+            DebugLogger.success(
+                context, LogCategory.SYSTEM_CONTEXT,
+                "DND $status",
+                "Do Not Disturb toggled",
+                TAG
+            )
             notifySuccess(context, "Do Not Disturb $status")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to set DND", e)
+            DebugLogger.error(
+                context, LogCategory.SYSTEM_CONTEXT,
+                "DND change failed",
+                "${e.message}",
+                TAG
+            )
         }
     }
 

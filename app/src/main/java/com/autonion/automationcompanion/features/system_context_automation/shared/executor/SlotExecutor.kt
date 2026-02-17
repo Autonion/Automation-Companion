@@ -2,6 +2,8 @@ package com.autonion.automationcompanion.features.system_context_automation.shar
 
 import android.content.Context
 import android.util.Log
+import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
+import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
 import com.autonion.automationcompanion.features.system_context_automation.location.data.db.AppDatabase
 import com.autonion.automationcompanion.features.system_context_automation.location.helpers.SendHelper
 import kotlinx.coroutines.CoroutineScope
@@ -40,6 +42,12 @@ object SlotExecutor {
 
         if (!slot.enabled) {
             Log.i(TAG, "Slot $slotId disabled, skipping")
+            DebugLogger.warning(
+                context, LogCategory.SYSTEM_CONTEXT,
+                "Slot #$slotId skipped",
+                "Slot is disabled (type=${slot.triggerType})",
+                TAG
+            )
             return
         }
 
@@ -50,6 +58,12 @@ object SlotExecutor {
             val today = getTodayKey()
             if (slot.lastExecutedDay == today) {
                 Log.i(TAG, "Slot $slotId already executed today, skipping")
+                DebugLogger.info(
+                    context, LogCategory.SYSTEM_CONTEXT,
+                    "Slot #$slotId already ran",
+                    "Already executed today (${slot.triggerType}), skipping duplicate",
+                    TAG
+                )
                 return
             }
              // Update execution lock
@@ -57,6 +71,12 @@ object SlotExecutor {
         }
 
         Log.i(TAG, "Executing slot $slotId (type=${slot.triggerType})")
+        DebugLogger.success(
+            context, LogCategory.SYSTEM_CONTEXT,
+            "Slot #$slotId executed",
+            "Trigger type: ${slot.triggerType}, actions: ${slot.actions.size}",
+            TAG
+        )
 
         // Delegate to SendHelper which reuses the existing action executor logic
         SendHelper.startSendIfNeeded(context, slotId)
@@ -70,3 +90,4 @@ object SlotExecutor {
         return String.format("%04d-%02d-%02d", year, month, day)
     }
 }
+

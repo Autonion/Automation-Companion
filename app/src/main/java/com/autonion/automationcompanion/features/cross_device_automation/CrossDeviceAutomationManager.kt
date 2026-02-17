@@ -2,6 +2,8 @@ package com.autonion.automationcompanion.features.cross_device_automation
 
 import android.content.Context
 import android.util.Log
+import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
+import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
 import kotlinx.coroutines.launch
 import com.autonion.automationcompanion.features.cross_device_automation.actions.ActionExecutor
 import com.autonion.automationcompanion.features.cross_device_automation.data.InMemoryDeviceRepository
@@ -51,13 +53,13 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
             }
         }
         
-        networkingManager = NetworkingManager(deviceRepository, eventReceiverProxy)
+        networkingManager = NetworkingManager(context, deviceRepository, eventReceiverProxy)
         networkingManager.setListener(this)
         actionExecutor = ActionExecutor(context, networkingManager)
         
-        ruleEngine = RuleEngine(ruleRepository, actionExecutor) 
+        ruleEngine = RuleEngine(context, ruleRepository, actionExecutor) 
         
-        eventPipeline = EventPipeline(enricher, taggingSystem) { event ->
+        eventPipeline = EventPipeline(context, enricher, taggingSystem) { event ->
             if (::networkingManager.isInitialized) {
                 networkingManager.broadcast(event)
             }
@@ -72,7 +74,7 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
     }
 
     fun isFeatureEnabled(): Boolean {
-        return prefs.getBoolean(PREF_FEATURE_ENABLED, true) // Default true
+        return prefs.getBoolean(PREF_FEATURE_ENABLED, false) // Default false
     }
 
     fun setFeatureEnabled(enabled: Boolean) {
@@ -97,24 +99,42 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
     fun start() {
         if (isStarted) return
         if (!isFeatureEnabled()) {
-            Log.d("CrossDeviceManager", "Feature disabled by user. Not starting.")
+            Log.d(TAG, "Feature disabled by user. Not starting.")
+            DebugLogger.info(
+                context, LogCategory.CROSS_DEVICE_SYNC,
+                "Cross-device manager not started",
+                "Feature disabled by user.",
+                TAG
+            )
             return
         }
 
         isStarted = true
+        Log.i(TAG, "CrossDeviceAutomationManager started")
+        DebugLogger.info(
+            context, LogCategory.CROSS_DEVICE_SYNC,
+            "Cross-device manager started",
+            "Initializing networking, event pipeline, and rule engine",
+            TAG
+        )
         acquireLocks()
         hostManager.startDiscovery()
         networkingManager.start()
-        Log.d("CrossDeviceManager", "Service started (Background Mode)")
     }
 
     fun stop() {
         if (!isStarted) return
         isStarted = false
+        Log.i(TAG, "CrossDeviceAutomationManager stopped")
+        DebugLogger.info(
+            context, LogCategory.CROSS_DEVICE_SYNC,
+            "Cross-device manager stopped",
+            "Shutting down networking and event pipeline",
+            TAG
+        )
         hostManager.stopDiscovery()
         networkingManager.stop()
         releaseLocks()
-        Log.d("CrossDeviceManager", "Service stopped")
     }
 
     private fun acquireLocks() {
@@ -127,9 +147,21 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
             wifiLock = wifiManager.createWifiLock(android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF, "AutomationCompanion::CrossDeviceWifiLock")
             wifiLock?.acquire()
             
-            Log.d("CrossDeviceManager", "Acquired WakeLock and WifiLock")
+            Log.d(TAG, "Acquired WakeLock and WifiLock")
+            DebugLogger.info(
+                context, LogCategory.CROSS_DEVICE_SYNC,
+                "Acquired background execution locks",
+                "WakeLock and WifiLock obtained to ensure continuous operation.",
+                TAG
+            )
         } catch (e: Exception) {
-            Log.e("CrossDeviceManager", "Failed to acquire locks", e)
+            Log.e(TAG, "Failed to acquire locks", e)
+            DebugLogger.error(
+                context, LogCategory.CROSS_DEVICE_SYNC,
+                "Failed to acquire background execution locks",
+                "Error: ${e.message}",
+                TAG
+            )
         }
     }
 
@@ -137,9 +169,21 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
         try {
             if (wakeLock?.isHeld == true) wakeLock?.release()
             if (wifiLock?.isHeld == true) wifiLock?.release()
-            Log.d("CrossDeviceManager", "Released WakeLock and WifiLock")
+            Log.d(TAG, "Released WakeLock and WifiLock")
+            DebugLogger.info(
+                context, LogCategory.CROSS_DEVICE_SYNC,
+                "Released background execution locks",
+                "WakeLock and WifiLock released.",
+                TAG
+            )
         } catch (e: Exception) {
-            Log.e("CrossDeviceManager", "Failed to release locks", e)
+            Log.e(TAG, "Failed to release locks", e)
+            DebugLogger.error(
+                context, LogCategory.CROSS_DEVICE_SYNC,
+                "Failed to release background execution locks",
+                "Error: ${e.message}",
+                TAG
+            )
         }
     }
 
@@ -180,7 +224,13 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
                     "payload" to mapOf("rules" to payloadRules)
                 )
                 
-                Log.d("CrossDeviceManager", "Syncing ${payloadRules.size} rules to desktop")
+                Log.i(TAG, "Synchronizing ${payloadRules.size} rules to desktop")
+                DebugLogger.info(
+                    context, LogCategory.CROSS_DEVICE_SYNC,
+                    "Syncing ${payloadRules.size} rules to desktop",
+                    "Rule synchronization triggered",
+                    TAG
+                )
                 networkingManager.broadcast(command)
             }
         }
@@ -286,6 +336,7 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
     }
     
     companion object {
+        private const val TAG = "CrossDeviceManager"
         @Volatile
         private var instance: CrossDeviceAutomationManager? = null
 

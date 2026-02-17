@@ -1,5 +1,6 @@
-package com.autonion.automationcompanion.features.automation.actions.ui
+package com.autonion.automationcompanion.automation.actions.ui
 
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
@@ -8,25 +9,21 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -34,6 +31,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.autonion.automationcompanion.ui.components.AuroraBackground
+import com.autonion.automationcompanion.ui.theme.AppTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -44,7 +42,7 @@ class AppPickerActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         setContent {
-            com.autonion.automationcompanion.ui.theme.AppTheme {
+            AppTheme {
                 AppPickerScreen(
                     onAppSelected = { packageName ->
                         val result = Intent().apply {
@@ -315,7 +313,7 @@ data class AppInfo(
     val packageName: String
 )
 
-suspend fun loadInstalledApps(context: android.content.Context): List<AppInfo> =
+suspend fun loadInstalledApps(context: Context): List<AppInfo> =
     withContext(Dispatchers.IO) {
         val pm = context.packageManager
         val packages = pm.getInstalledApplications(PackageManager.GET_META_DATA)

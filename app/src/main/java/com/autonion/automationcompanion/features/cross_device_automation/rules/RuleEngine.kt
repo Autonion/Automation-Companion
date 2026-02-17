@@ -1,6 +1,10 @@
 package com.autonion.automationcompanion.features.cross_device_automation.rules
 
+import android.content.Context
+
 import android.util.Log
+import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
+import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
 import com.autonion.automationcompanion.features.cross_device_automation.actions.ActionExecutor
 import com.autonion.automationcompanion.features.cross_device_automation.domain.EnrichedEvent
 import com.autonion.automationcompanion.features.cross_device_automation.domain.RuleCondition
@@ -12,10 +16,15 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class RuleEngine(
+    private val context: Context,
     private val ruleRepository: RuleRepository, 
     private val actionExecutor: ActionExecutor,
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.Default)
 ) {
+
+    companion object {
+        private const val TAG = "RuleEngine"
+    }
 
     init {
         scope.launch {
@@ -37,7 +46,13 @@ class RuleEngine(
                 // 2. Check Conditions
                 if (checkConditions(rule.conditions, event)) {
                     // 3. Execute Actions
-                    Log.d("RuleEngine", "Rule matched (Event): ${rule.name}")
+                    Log.i(TAG, "Rule '${rule.name}' matched — executing ${rule.actions.size} actions")
+                    DebugLogger.success(
+                        context, LogCategory.CROSS_DEVICE_SYNC,
+                        "Rule matched: ${rule.name}",
+                        "Executing ${rule.actions.size} actions",
+                        "RuleEngine"
+                    )
                     rule.actions.forEach { action ->
                         actionExecutor.execute(action)
                     }

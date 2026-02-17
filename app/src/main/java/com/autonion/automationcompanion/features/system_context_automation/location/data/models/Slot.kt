@@ -2,7 +2,7 @@ package com.autonion.automationcompanion.features.system_context_automation.loca
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
-import com.autonion.automationcompanion.features.automation.actions.models.AutomationAction
+import com.autonion.automationcompanion.automation.actions.models.AutomationAction
 
 @Entity(tableName = "slots")
 data class Slot(

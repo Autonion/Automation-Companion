@@ -10,7 +10,6 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.ContactsContract
 import android.provider.Settings
-import android.widget.TimePicker
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -26,7 +25,6 @@ import androidx.core.content.ContextCompat
 import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
-import androidx.compose.material3.Text
 import androidx.compose.runtime.mutableIntStateOf
 import com.autonion.automationcompanion.features.system_context_automation.location.data.db.AppDatabase
 import com.autonion.automationcompanion.features.system_context_automation.location.data.models.Slot
@@ -36,10 +34,9 @@ import androidx.core.net.toUri
 import com.autonion.automationcompanion.features.system_context_automation.location.engine.location_receiver.MidnightResetReceiver
 import com.autonion.automationcompanion.features.system_context_automation.location.engine.location_receiver.SlotStartAlarmReceiver
 import com.autonion.automationcompanion.features.system_context_automation.location.helpers.AppInitManager
-import com.autonion.automationcompanion.features.automation.actions.models.AutomationAction
-import com.autonion.automationcompanion.features.automation.actions.models.ConfiguredAction
-import com.autonion.automationcompanion.features.automation.actions.builders.ActionBuilder
-import com.autonion.automationcompanion.features.automation.actions.ui.AppPickerActivity
+import com.autonion.automationcompanion.automation.actions.models.AutomationAction
+import com.autonion.automationcompanion.automation.actions.models.ConfiguredAction
+import com.autonion.automationcompanion.automation.actions.ui.AppPickerActivity
 import com.autonion.automationcompanion.features.system_context_automation.location.permissions.PermissionPreflight
 import com.google.android.gms.location.LocationServices
 

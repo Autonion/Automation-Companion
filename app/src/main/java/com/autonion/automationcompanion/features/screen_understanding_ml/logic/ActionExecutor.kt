@@ -7,6 +7,8 @@ import android.graphics.PointF
 import android.util.Log
 import com.autonion.automationcompanion.AccessibilityFeature
 import com.autonion.automationcompanion.AccessibilityRouter
+import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
+import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.ActionIntent
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.ActionType
 import kotlinx.coroutines.delay
@@ -31,10 +33,17 @@ object ActionExecutor : AccessibilityFeature {
         Log.d("ActionExecutor", "Disconnected from AccessibilityService")
     }
 
-    suspend fun execute(action: ActionIntent): Boolean {
+    suspend fun execute(context: android.content.Context, action: ActionIntent): Boolean {
         val s = serviceRef?.get()
         if (s == null) {
             Log.e("ActionExecutor", "AccessibilityService not connected")
+            DebugLogger.error(
+                context, 
+                LogCategory.SYSTEM_CONTEXT,
+                "Accessibility Service permission required skipping",
+                "Action ${action.type} failed - Service not connected",
+                "ActionExecutor"
+            )
             return false
         }
 
@@ -93,10 +102,30 @@ object ActionExecutor : AccessibilityFeature {
              args.putCharSequence(android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
              val success = focused.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SET_TEXT, args)
              Log.d("ActionExecutor", "Set text on focused node: $success")
+             if (success) {
+                 DebugLogger.success(
+                     s.baseContext, LogCategory.SCREEN_CONTEXT_AI,
+                     "Text input success",
+                     "Set text '$text' on focused input node",
+                     "ActionExecutor"
+                 )
+             } else {
+                 DebugLogger.warning(
+                     s.baseContext, LogCategory.SCREEN_CONTEXT_AI,
+                     "Text input failed",
+                     "performAction(SET_TEXT) returned false for '$text'",
+                     "ActionExecutor"
+                 )
+             }
              return success
         } else {
              Log.w("ActionExecutor", "Could not find focused input node to set text")
-             // TODO: Fallback to pasting?
+             DebugLogger.warning(
+                 s.baseContext, LogCategory.SCREEN_CONTEXT_AI,
+                 "No focused input node",
+                 "Cannot set text — no focused input node found after click",
+                 "ActionExecutor"
+             )
              return false
         }
     }

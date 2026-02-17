@@ -2,7 +2,7 @@ package com.autonion.automationcompanion.features.cross_device_automation.presen
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.autonion.automationcompanion.features.automation.actions.models.ConfiguredAction
+import com.autonion.automationcompanion.automation.actions.models.ConfiguredAction
 import com.autonion.automationcompanion.features.cross_device_automation.CrossDeviceAutomationManager
 import com.autonion.automationcompanion.features.cross_device_automation.domain.AutomationRule
 import com.autonion.automationcompanion.features.cross_device_automation.domain.RuleAction

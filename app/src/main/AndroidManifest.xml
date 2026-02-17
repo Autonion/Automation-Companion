@@ -84,7 +84,7 @@
         </activity>
 
         <activity
-            android:name=".features.automation.actions.ui.AppPickerActivity"
+            android:name=".automation.actions.ui.AppPickerActivity"
             android:exported="false"
             android:theme="@style/Theme.AppCompat.Light.Dialog" />
 
@@ -169,7 +169,7 @@
             android:exported="false" />
 
         <receiver
-            android:name=".features.automation.actions.receivers.DelayedNotificationReceiver"
+            android:name=".automation.actions.receivers.DelayedNotificationReceiver"
             android:exported="false" />
 
         <receiver

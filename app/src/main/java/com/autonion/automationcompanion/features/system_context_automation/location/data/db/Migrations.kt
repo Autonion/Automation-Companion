@@ -3,7 +3,7 @@ package com.autonion.automationcompanion.features.system_context_automation.loca
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.serialization.json.Json
-import com.autonion.automationcompanion.features.automation.actions.models.AutomationAction
+import com.autonion.automationcompanion.automation.actions.models.AutomationAction
 import kotlinx.serialization.builtins.ListSerializer
 
 val MIGRATION_1_2 = object : Migration(1, 2) {

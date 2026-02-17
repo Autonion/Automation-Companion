@@ -7,6 +7,8 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
 import android.util.Log
+import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
+import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
 import com.autonion.automationcompanion.features.system_context_automation.location.data.db.AppDatabase
 import com.autonion.automationcompanion.features.system_context_automation.shared.models.TriggerConfig
 import com.autonion.automationcompanion.features.system_context_automation.shared.executor.SlotExecutor
@@ -41,6 +43,12 @@ class BatteryBroadcastReceiver : BroadcastReceiver() {
 
             val batteryPercentage = (level * 100 / scale.toFloat()).toInt()
             Log.i(TAG, "Battery level changed to $batteryPercentage%")
+            DebugLogger.info(
+                context, LogCategory.SYSTEM_CONTEXT,
+                "Battery: $batteryPercentage%",
+                "Battery level changed",
+                TAG
+            )
 
             CoroutineScope(Dispatchers.IO).launch {
                 // 1. Maintain existing Slot logic (optional, keep for backward compatibility)
@@ -78,6 +86,12 @@ class BatteryBroadcastReceiver : BroadcastReceiver() {
                 slot.triggerConfigJson?.let { json.decodeFromString<TriggerConfig.Battery>(it) }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to deserialize battery config for slot ${slot.id}", e)
+                DebugLogger.error(
+                    context, LogCategory.SYSTEM_CONTEXT,
+                    "Bad battery config",
+                    "Slot ${slot.id}: ${e.message}",
+                    TAG
+                )
                 null
             } ?: continue
 
@@ -89,6 +103,12 @@ class BatteryBroadcastReceiver : BroadcastReceiver() {
 
             if (shouldTrigger) {
                 Log.i(TAG, "Battery slot ${slot.id} triggered (level=$currentLevel, threshold=${triggerConfig.batteryPercentage})")
+                DebugLogger.success(
+                    context, LogCategory.SYSTEM_CONTEXT,
+                    "Battery slot ${slot.id} triggered",
+                    "Level=$currentLevel%, threshold=${triggerConfig.batteryPercentage}% (${triggerConfig.thresholdType})",
+                    TAG
+                )
                 SlotExecutor.execute(context, slot.id)
             }
         }
