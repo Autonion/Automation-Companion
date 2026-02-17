@@ -1,6 +1,7 @@
 #include "vision_engine.h"
 #include <android/bitmap.h>
 #include <android/log.h>
+#include <mutex>
 
 #define LOG_TAG "VisionEngineNative"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
@@ -8,8 +9,10 @@
 
 // Global state — store grayscale templates
 std::map<int, cv::Mat> g_templates;
+std::mutex g_mutex; // Protects g_templates from concurrent access
 
 void vision_init() {
+  std::lock_guard<std::mutex> lock(g_mutex);
   g_templates.clear();
   LOGD("Vision Engine Initialized (Template Matching)");
 }
@@ -25,19 +28,20 @@ void vision_add_template(int id, const cv::Mat &templ) {
   } else {
     gray = templ.clone();
   }
+  std::lock_guard<std::mutex> lock(g_mutex);
   g_templates[id] = gray;
   LOGD("Added template ID=%d: %dx%d", id, gray.cols, gray.rows);
 }
 
 void vision_clear_templates() {
+  std::lock_guard<std::mutex> lock(g_mutex);
   g_templates.clear();
   LOGD("Cleared all templates");
 }
 
-// Template matching with optional multi-scale
-// Returns: matched, score (0-1.0), and bounding rect in screen coords
-bool match_one(const cv::Mat &screen_gray, const cv::Mat &templ_gray,
-               cv::Rect &out_rect, float &out_score, int id) {
+// Template matching: pixel correlation, perfect for UI elements
+static bool match_one(const cv::Mat &screen_gray, const cv::Mat &templ_gray,
+                      cv::Rect &out_rect, float &out_score, int id) {
 
   if (screen_gray.empty() || templ_gray.empty())
     return false;
@@ -45,7 +49,7 @@ bool match_one(const cv::Mat &screen_gray, const cv::Mat &templ_gray,
   // Template must be smaller than screen
   if (templ_gray.cols > screen_gray.cols ||
       templ_gray.rows > screen_gray.rows) {
-    LOGD("ID=%d: template (%dx%d) larger than screen (%dx%d), skipping", id,
+    LOGD("ID=%d: template (%dx%d) larger than screen (%dx%d), skip", id,
          templ_gray.cols, templ_gray.rows, screen_gray.cols, screen_gray.rows);
     return false;
   }
@@ -54,8 +58,7 @@ bool match_one(const cv::Mat &screen_gray, const cv::Mat &templ_gray,
   cv::Point best_loc;
   float best_scale = 1.0f;
 
-  // Try multiple scales to handle slight DPI/resolution differences
-  // Scales: 0.8, 0.9, 1.0, 1.1, 1.2
+  // Multi-scale: handles slight DPI differences
   float scales[] = {1.0f, 0.95f, 1.05f, 0.9f, 1.1f, 0.85f, 1.15f};
   int num_scales = 7;
 
@@ -87,7 +90,7 @@ bool match_one(const cv::Mat &screen_gray, const cv::Mat &templ_gray,
       best_scale = scale;
     }
 
-    // Early exit if we find a very good match at scale 1.0
+    // Early exit on strong match at native scale
     if (s == 0 && best_score > 0.90f)
       break;
   }
@@ -98,7 +101,6 @@ bool match_one(const cv::Mat &screen_gray, const cv::Mat &templ_gray,
   int h = (int)(templ_gray.rows * best_scale);
   out_rect = cv::Rect(best_loc.x, best_loc.y, w, h);
 
-  // Threshold for considering a match valid
   const float MATCH_THRESHOLD = 0.75f;
   bool matched = best_score >= MATCH_THRESHOLD;
 
@@ -111,11 +113,20 @@ bool match_one(const cv::Mat &screen_gray, const cv::Mat &templ_gray,
 
 std::vector<MatchResult> vision_match_all(const cv::Mat &screen) {
   std::vector<MatchResult> results;
-  if (screen.empty() || g_templates.empty())
+  if (screen.empty())
     return results;
 
+  // Take a snapshot of templates under lock — then match without holding lock
+  std::map<int, cv::Mat> templates_snapshot;
+  {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    if (g_templates.empty())
+      return results;
+    templates_snapshot = g_templates; // deep copy of map (Mat uses refcount)
+  }
+
   LOGD("vision_match_all: screen=%dx%d ch=%d, templates=%zu", screen.cols,
-       screen.rows, screen.channels(), g_templates.size());
+       screen.rows, screen.channels(), templates_snapshot.size());
 
   cv::Mat screen_gray;
   if (screen.channels() == 4) {
@@ -126,7 +137,7 @@ std::vector<MatchResult> vision_match_all(const cv::Mat &screen) {
     screen_gray = screen;
   }
 
-  for (const auto &pair : g_templates) {
+  for (const auto &pair : templates_snapshot) {
     int id = pair.first;
     const cv::Mat &tmpl = pair.second;
 
@@ -209,7 +220,6 @@ Java_com_autonion_automationcompanion_core_vision_VisionNativeBridge_nativeMatch
   if (!cls)
     return nullptr;
 
-  // Constructor: (IZFIIII)V  -> id, matched, score, x, y, w, h
   jmethodID ctor = env->GetMethodID(cls, "<init>", "(IZFIIII)V");
   if (!ctor)
     return nullptr;

@@ -3,6 +3,7 @@
 
 #include <jni.h>
 #include <map>
+#include <mutex>
 #include <opencv2/opencv.hpp>
 #include <string>
 #include <vector>
@@ -27,19 +28,19 @@ extern "C" {
 
 JNIEXPORT jstring JNICALL
 Java_com_autonion_automationcompanion_core_vision_VisionNativeBridge_nativeInit(
-    JNIEnv *env, jobject);
+    JNIEnv *env, jobject thiz);
 
 JNIEXPORT void JNICALL
 Java_com_autonion_automationcompanion_core_vision_VisionNativeBridge_nativeAddTemplate(
-    JNIEnv *env, jobject, jint id, jobject bitmap);
+    JNIEnv *env, jobject thiz, jint id, jobject bitmap);
 
 JNIEXPORT void JNICALL
 Java_com_autonion_automationcompanion_core_vision_VisionNativeBridge_nativeClearTemplates(
-    JNIEnv *env, jobject);
+    JNIEnv *env, jobject thiz);
 
 JNIEXPORT jobjectArray JNICALL
 Java_com_autonion_automationcompanion_core_vision_VisionNativeBridge_nativeMatch(
-    JNIEnv *env, jobject, jobject bitmap);
+    JNIEnv *env, jobject thiz, jobject bitmap);
 }
 
 #endif // VISION_ENGINE_H

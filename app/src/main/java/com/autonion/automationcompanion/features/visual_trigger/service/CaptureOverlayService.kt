@@ -77,11 +77,15 @@ class CaptureOverlayService : Service() {
 
     private fun startForegroundServiceNotification() {
         val channelId = "vision_capture_channel"
-        val channel = NotificationChannel(
-            channelId,
-            "Vision Capture",
-            NotificationManager.IMPORTANCE_LOW
-        )
+        val channel = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel(
+                channelId,
+                "Vision Capture",
+                NotificationManager.IMPORTANCE_LOW
+            )
+        } else {
+            TODO("VERSION.SDK_INT < O")
+        }
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
 
         val notification = NotificationCompat.Builder(this, channelId)

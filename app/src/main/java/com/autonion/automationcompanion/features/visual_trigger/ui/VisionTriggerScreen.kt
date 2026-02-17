@@ -1,14 +1,19 @@
 package com.autonion.automationcompanion.features.visual_trigger.ui
 
-import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.*
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -20,9 +25,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -41,13 +49,32 @@ fun VisionTriggerScreen(
 ) {
     val presets by viewModel.presets.collectAsState()
     val isDark = isSystemInDarkTheme()
+    val primary = MaterialTheme.colorScheme.primary
+
+    // Auto-refresh presets every time the screen resumes
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                viewModel.refresh()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     // Delete confirmation state
     var presetToDelete by remember { mutableStateOf<VisionPreset?>(null) }
 
-    // Name dialog state (shown on FAB click)
+    // Name dialog state
     var showNameDialog by remember { mutableStateOf(false) }
-    var newPresetName by remember { mutableStateOf("New Automation") }
+    var newPresetName by remember { mutableStateOf("") }
+
+    // FAB entrance animation
+    val fabScale = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        fabScale.animateTo(1f, tween(300, easing = FastOutSlowInEasing))
+    }
 
     AuroraBackground {
         Scaffold(
@@ -58,7 +85,7 @@ fun VisionTriggerScreen(
                         Text(
                             "Visual Triggers",
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onBackground
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                     },
                     navigationIcon = {
@@ -66,86 +93,70 @@ fun VisionTriggerScreen(
                             Icon(
                                 Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = "Back",
-                                tint = MaterialTheme.colorScheme.onBackground
+                                tint = MaterialTheme.colorScheme.onSurface
                             )
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Color.Transparent
+                        containerColor = Color.Transparent,
+                        titleContentColor = MaterialTheme.colorScheme.onSurface,
+                        navigationIconContentColor = MaterialTheme.colorScheme.onSurface
                     )
                 )
             },
             floatingActionButton = {
-                FloatingActionButton(
+                ExtendedFloatingActionButton(
                     onClick = { showNameDialog = true },
-                    containerColor = Color(0xFF00C853),
-                    contentColor = Color.White,
-                    shape = RoundedCornerShape(16.dp),
-                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 6.dp)
-                ) {
-                    Icon(Icons.Default.Add, contentDescription = "Add Automation")
-                }
+                    icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                    text = { Text("Add") },
+                    modifier = Modifier.scale(fabScale.value),
+                    containerColor = primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                )
             }
         ) { padding ->
             if (presets.isEmpty()) {
-                // Beautiful empty state
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(padding),
                     contentAlignment = Alignment.Center
                 ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.padding(48.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Visibility,
-                            contentDescription = null,
-                            modifier = Modifier.size(72.dp),
-                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
-                        )
-                        Spacer(modifier = Modifier.height(20.dp))
-                        Text(
-                            text = "No Visual Triggers Yet",
-                            style = MaterialTheme.typography.titleLarge.copy(
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onBackground
-                            )
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = "Capture a screenshot and mark regions\nto automate. Tap + to get started.",
-                            style = MaterialTheme.typography.bodyMedium.copy(
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                lineHeight = 22.sp
-                            ),
-                            modifier = Modifier.padding(horizontal = 16.dp),
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                        )
-                    }
+                    GlowingEyeEmptyState(primary, isDark)
                 }
             } else {
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(padding),
-                    contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(presets) { preset ->
-                        VisionPresetCard(
-                            preset = preset,
-                            isDark = isDark,
-                            onClick = { onEditPreset(preset.id) },
-                            onRun = { onRunPreset(preset.id) },
-                            onDelete = { presetToDelete = preset },
-                            onToggleActive = { viewModel.togglePresetActive(preset.id) }
-                        )
+                    itemsIndexed(presets) { index, preset ->
+                        var visible by remember { mutableStateOf(false) }
+                        LaunchedEffect(Unit) {
+                            kotlinx.coroutines.delay(index * 50L)
+                            visible = true
+                        }
+
+                        AnimatedVisibility(
+                            visible = visible,
+                            enter = fadeIn(tween(300)) +
+                                    slideInVertically(tween(300, easing = FastOutSlowInEasing)) { it / 4 }
+                        ) {
+                            VisionPresetCard(
+                                preset = preset,
+                                isDark = isDark,
+                                primary = primary,
+                                onClick = { onEditPreset(preset.id) },
+                                onRun = { onRunPreset(preset.id) },
+                                onDelete = { presetToDelete = preset },
+                                onToggleActive = { viewModel.togglePresetActive(preset.id) }
+                            )
+                        }
                     }
 
-                    // Bottom spacer for FAB
-                    item { Spacer(modifier = Modifier.height(72.dp)) }
+                    item { Spacer(modifier = Modifier.height(88.dp)) }
                 }
             }
         }
@@ -189,7 +200,7 @@ fun VisionTriggerScreen(
         )
     }
 
-    // Name preset dialog (shown on FAB click)
+    // Name preset dialog
     if (showNameDialog) {
         AlertDialog(
             onDismissRequest = { showNameDialog = false },
@@ -208,8 +219,8 @@ fun VisionTriggerScreen(
                     label = { Text("Preset Name") },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = Color(0xFF00C853),
-                        focusedLabelColor = Color(0xFF00C853),
+                        focusedBorderColor = primary,
+                        focusedLabelColor = primary,
                         unfocusedBorderColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
                         unfocusedLabelColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
                         focusedTextColor = MaterialTheme.colorScheme.onSurface,
@@ -225,7 +236,7 @@ fun VisionTriggerScreen(
                         onAddClicked(newPresetName)
                         newPresetName = "New Automation"
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00C853)),
+                    colors = ButtonDefaults.buttonColors(containerColor = primary),
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Text("Continue", fontWeight = FontWeight.Bold)
@@ -241,9 +252,78 @@ fun VisionTriggerScreen(
 }
 
 @Composable
+private fun GlowingEyeEmptyState(primary: Color, isDark: Boolean) {
+    // Pulsing glow animation (matches Gesture Recording pattern)
+    val infiniteTransition = rememberInfiniteTransition(label = "visionPulse")
+    val pulseScale by infiniteTransition.animateFloat(
+        initialValue = 1f, targetValue = 1.12f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1400, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ), label = "pulse"
+    )
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.3f, targetValue = 0.6f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1400, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ), label = "pulseAlpha"
+    )
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.padding(32.dp)
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            // Outer glow ring
+            Box(
+                modifier = Modifier
+                    .size(120.dp)
+                    .scale(pulseScale)
+                    .clip(CircleShape)
+                    .background(primary.copy(alpha = pulseAlpha * 0.3f))
+            )
+            // Inner icon container
+            Box(
+                modifier = Modifier
+                    .size(88.dp)
+                    .clip(CircleShape)
+                    .background(primary.copy(alpha = if (isDark) 0.2f else 0.12f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Visibility,
+                    contentDescription = null,
+                    modifier = Modifier.size(48.dp),
+                    tint = primary
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        Text(
+            "No Visual Triggers Yet",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            "Capture a screenshot and mark regions\nto automate. Tap + Add to get started.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (isDark) Color.White.copy(alpha = 0.6f)
+            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+@Composable
 fun VisionPresetCard(
     preset: VisionPreset,
     isDark: Boolean,
+    primary: Color = MaterialTheme.colorScheme.primary,
     onClick: () -> Unit,
     onRun: () -> Unit,
     onDelete: () -> Unit,
@@ -299,7 +379,7 @@ fun VisionPresetCard(
                     onCheckedChange = { onToggleActive() },
                     colors = SwitchDefaults.colors(
                         checkedThumbColor = Color.White,
-                        checkedTrackColor = Color(0xFF00C853),
+                        checkedTrackColor = primary,
                         uncheckedThumbColor = Color.Gray,
                         uncheckedTrackColor = Color.Gray.copy(alpha = 0.2f)
                     )
@@ -319,8 +399,8 @@ fun VisionPresetCard(
                     onClick = onRun,
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.filledTonalButtonColors(
-                        containerColor = Color(0xFF00C853).copy(alpha = 0.12f),
-                        contentColor = Color(0xFF00C853)
+                        containerColor = primary.copy(alpha = 0.12f),
+                        contentColor = primary
                     ),
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
                 ) {

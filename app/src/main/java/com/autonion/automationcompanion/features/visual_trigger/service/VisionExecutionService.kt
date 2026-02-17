@@ -30,7 +30,7 @@ import com.autonion.automationcompanion.features.visual_trigger.models.Execution
 import com.autonion.automationcompanion.features.visual_trigger.models.VisionPreset
 import com.autonion.automationcompanion.features.visual_trigger.models.VisionRegion
 import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.collect
 
 class VisionExecutionService : Service() {
 
@@ -50,7 +50,7 @@ class VisionExecutionService : Service() {
     // Overlay
     private var windowManager: WindowManager? = null
     private var overlayView: View? = null
-    private var isPaused = false
+    private var isPaused = true  // Start paused — user taps play to begin
     private var playPauseIcon: ImageView? = null
 
     @Volatile
@@ -89,7 +89,11 @@ class VisionExecutionService : Service() {
     }
 
     private fun startForegroundServiceNotification() {
-        val channel = NotificationChannel(CHANNEL_ID, "Vision Execution", NotificationManager.IMPORTANCE_LOW)
+        val channel = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel(CHANNEL_ID, "Vision Execution", NotificationManager.IMPORTANCE_LOW)
+        } else {
+            TODO("VERSION.SDK_INT < O")
+        }
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
 
         val stopIntent = Intent(this, VisionExecutionService::class.java).apply {
@@ -149,12 +153,10 @@ class VisionExecutionService : Service() {
         }
 
         val playPauseBtn = ImageView(this).apply {
-            setImageResource(android.R.drawable.ic_media_pause)
+            setImageResource(android.R.drawable.ic_media_play)  // Start paused → show play icon
             setColorFilter(0xFF00C853.toInt())
             setPadding((8 * dp).toInt(), (8 * dp).toInt(), (8 * dp).toInt(), (8 * dp).toInt())
-            isClickable = true; isFocusable = true
             background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0x2200C853) }
-            setOnClickListener { togglePause() }
         }
         playPauseBtn.layoutParams = LinearLayout.LayoutParams((40 * dp).toInt(), (40 * dp).toInt())
         playPauseIcon = playPauseBtn
@@ -166,9 +168,7 @@ class VisionExecutionService : Service() {
             setImageResource(android.R.drawable.ic_menu_close_clear_cancel)
             setColorFilter(0xFFFF1744.toInt())
             setPadding((8 * dp).toInt(), (8 * dp).toInt(), (8 * dp).toInt(), (8 * dp).toInt())
-            isClickable = true; isFocusable = true
             background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0x22FF1744) }
-            setOnClickListener { stopSelf() }
         }
         exitBtn.layoutParams = LinearLayout.LayoutParams((40 * dp).toInt(), (40 * dp).toInt())
 
@@ -176,18 +176,43 @@ class VisionExecutionService : Service() {
         container.addView(spacer)
         container.addView(exitBtn)
 
-        // Draggable
+        // Draggable — handle ALL touch events at container level
         var initialX = 0; var initialY = 0; var touchX = 0f; var touchY = 0f; var isDragging = false
-        container.setOnTouchListener { _, event ->
+        container.setOnTouchListener { view, event ->
             when (event.action) {
-                MotionEvent.ACTION_DOWN -> { initialX = lp.x; initialY = lp.y; touchX = event.rawX; touchY = event.rawY; isDragging = false; true }
-                MotionEvent.ACTION_MOVE -> {
-                    val dx = event.rawX - touchX; val dy = event.rawY - touchY
-                    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) isDragging = true
-                    if (isDragging) { lp.x = initialX + dx.toInt(); lp.y = initialY + dy.toInt(); windowManager?.updateViewLayout(container, lp) }
+                MotionEvent.ACTION_DOWN -> {
+                    initialX = lp.x; initialY = lp.y
+                    touchX = event.rawX; touchY = event.rawY
+                    isDragging = false
                     true
                 }
-                MotionEvent.ACTION_UP -> isDragging
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = event.rawX - touchX; val dy = event.rawY - touchY
+                    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) isDragging = true
+                    if (isDragging) {
+                        lp.x = initialX + dx.toInt()
+                        lp.y = initialY + dy.toInt()
+                        windowManager?.updateViewLayout(container, lp)
+                    }
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    if (!isDragging) {
+                        // It was a tap — find which child was hit
+                        val x = event.x.toInt()
+                        val y = event.y.toInt()
+                        val playRect = android.graphics.Rect()
+                        playPauseBtn.getHitRect(playRect)
+                        val exitRect = android.graphics.Rect()
+                        exitBtn.getHitRect(exitRect)
+
+                        when {
+                            playRect.contains(x, y) -> togglePause()
+                            exitRect.contains(x, y) -> stopSelf()
+                        }
+                    }
+                    true
+                }
                 else -> false
             }
         }
@@ -242,13 +267,15 @@ class VisionExecutionService : Service() {
 
             var frameCount = 0
 
-            visionProjection?.screenCaptureFlow?.collectLatest { bitmap ->
+            visionProjection?.screenCaptureFlow?.collect { bitmap ->
                 frameCount++
                 if (!isPaused && isRunning) {
                     if (frameCount <= 5 || frameCount % 20 == 0) {
                         Log.d(TAG, "Frame #$frameCount: ${bitmap.width}x${bitmap.height}")
                     }
                     processFrame(bitmap)
+                } else if (isPaused && frameCount % 50 == 0) {
+                    Log.d(TAG, "Skipping frame #$frameCount (paused)")
                 }
                 delay(500)
             }
@@ -329,13 +356,15 @@ class VisionExecutionService : Service() {
         super.onDestroy()
         Log.d(TAG, "Service destroying...")
 
-        // 1. Signal coroutines to stop — no more native calls
+        // 1. Pause first so the loop stops calling native match
+        isPaused = true
         isRunning = false
 
         // 2. Stop projection so no more frames arrive
         visionProjection?.stopProjection()
+        visionProjection = null
 
-        // 3. Cancel coroutines
+        // 3. Cancel coroutines and wait for them to finish
         job.cancel()
 
         // 4. Remove overlay
@@ -344,9 +373,12 @@ class VisionExecutionService : Service() {
             overlayView = null
         }
 
-        // 5. Release native resources after safety delay
+        // 5. Release native resources after delay (let any in-flight JNI call finish)
+        //    The C++ side now uses a mutex, so this is safe as long as
+        //    the match call finishes before clear is called.
         Handler(Looper.getMainLooper()).postDelayed({
             try { VisionNativeBridge.release() } catch (_: Exception) {}
-        }, 500)
+            Log.d(TAG, "Native resources released")
+        }, 1000)
     }
 }

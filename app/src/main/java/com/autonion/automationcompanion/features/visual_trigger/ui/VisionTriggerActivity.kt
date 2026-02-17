@@ -15,6 +15,7 @@ import com.autonion.automationcompanion.features.visual_trigger.service.VisionEx
 import com.autonion.automationcompanion.AccessibilityRouter
 import com.autonion.automationcompanion.features.gesture_recording_playback.overlay.AutomationService
 import android.content.ComponentName
+import android.os.Build
 import android.text.TextUtils
 
 class VisionTriggerActivity : ComponentActivity() {
@@ -23,11 +24,13 @@ class VisionTriggerActivity : ComponentActivity() {
         getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
     }
 
+    // After accessibility settings, re-check ALL permissions
     private val accessibilityLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) {
         if (isAccessibilityEnabled()) {
-            startMediaProjectionFlow()
+            // Re-run the full permission chain — don't skip overlay check
+            continuePermissionChain()
         } else {
             Toast.makeText(this, "Accessibility is required", Toast.LENGTH_SHORT).show()
         }
@@ -59,6 +62,7 @@ class VisionTriggerActivity : ComponentActivity() {
                 VisionTriggerScreen(
                     onAddClicked = { name ->
                         pendingPresetName = name
+                        pendingRunPresetId = null
                         checkPermissionsAndStart()
                     },
                     onEditPreset = { presetId ->
@@ -80,19 +84,20 @@ class VisionTriggerActivity : ComponentActivity() {
         startActivity(intent)
     }
 
-    private fun checkPermissionsAndRun(presetId: String) {
-        if (!isAccessibilityEnabled()) {
-            Toast.makeText(this, "Please enable Accessibility Service", Toast.LENGTH_LONG).show()
-            accessibilityLauncher.launch(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-            return
-        }
+    // ── Permission chain ────────────────────────────────────────────
 
+    private fun checkPermissionsAndRun(presetId: String) {
         pendingRunPresetId = presetId
-        mediaProjectionLauncher.launch(mediaProjectionManager.createScreenCaptureIntent())
+        checkAllPermissions()
     }
 
     private fun checkPermissionsAndStart() {
         pendingRunPresetId = null
+        checkAllPermissions()
+    }
+
+    /** Single entry point: checks accessibility → overlay → media projection in order */
+    private fun checkAllPermissions() {
         if (!isAccessibilityEnabled()) {
             Toast.makeText(this, "Please enable Accessibility Service", Toast.LENGTH_LONG).show()
             accessibilityLauncher.launch(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
@@ -105,8 +110,22 @@ class VisionTriggerActivity : ComponentActivity() {
             return
         }
 
-        startMediaProjectionFlow()
+        // All prerequisites met → request media projection
+        mediaProjectionLauncher.launch(mediaProjectionManager.createScreenCaptureIntent())
     }
+
+    /** Called after returning from accessibility settings */
+    private fun continuePermissionChain() {
+        checkAllPermissions()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Re-check overlay permission after returning from settings
+        // (overlay settings don't use a result launcher)
+    }
+
+    // ── Service launchers ───────────────────────────────────────────
 
     private fun startExecutionService(resultCode: Int, data: Intent, presetId: String) {
         val serviceIntent = Intent(this, VisionExecutionService::class.java).apply {
@@ -115,8 +134,10 @@ class VisionTriggerActivity : ComponentActivity() {
             putExtra("EXTRA_PRESET_ID", presetId)
             action = "ACTION_START_EXECUTION"
         }
-        startForegroundService(serviceIntent)
-        finish()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(serviceIntent)
+        }
+        // Don't finish() — keep activity alive so user returns here after overlay closes
     }
 
     private fun startMediaProjectionFlow() {
@@ -130,9 +151,13 @@ class VisionTriggerActivity : ComponentActivity() {
             putExtra("EXTRA_PRESET_NAME", pendingPresetName)
             action = "ACTION_START_OVERLAY"
         }
-        startForegroundService(serviceIntent)
-        finish()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(serviceIntent)
+        }
+        // Don't finish() — keep activity alive so user returns here after overlay closes
     }
+
+    // ── Helpers ─────────────────────────────────────────────────────
 
     private fun isAccessibilityEnabled(): Boolean {
         if (AccessibilityRouter.isServiceConnected()) return true
