@@ -1,69 +1,45 @@
 #ifndef VISION_ENGINE_H
 #define VISION_ENGINE_H
 
-#include <opencv2/opencv.hpp>
-#include <vector>
 #include <jni.h>
+#include <map>
+#include <opencv2/opencv.hpp>
+#include <string>
+#include <vector>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
+// Helper to convert Bitmap to Mat
+bool bitmap_to_mat(JNIEnv *env, jobject bitmap, cv::Mat &dst);
 
-/**
- * Initialize the vision engine.
- * Call once when app starts.
- */
 void vision_init();
+void vision_add_template(int id, const cv::Mat &templ);
+void vision_clear_templates();
 
-/**
- * Release all native resources.
- * Call when app is shutting down.
- */
-void vision_release();
+struct MatchResult {
+  int id;
+  bool matched;
+  float score;
+  cv::Rect rect;
+};
 
-/**
- * Store a template image for later matching.
- *
- * @param templateMat   Grayscale template image
- */
-void vision_set_template(const cv::Mat& templateMat);
-
-/**
- * Match the stored template against a screen image.
- *
- * @param screenMat     Grayscale screen image
- * @param outRect       Output bounding box of match
- * @param outScore      Output confidence score (0.0 - 1.0)
- *
- * @return true if match found above threshold
- */
-bool vision_match_template(
-        const cv::Mat& screenMat,
-        cv::Rect& outRect,
-        float& outScore
-);
+std::vector<MatchResult> vision_match_all(const cv::Mat &screen);
 
 extern "C" {
+
+JNIEXPORT jstring JNICALL
+Java_com_autonion_automationcompanion_core_vision_VisionNativeBridge_nativeInit(
+    JNIEnv *env, jobject);
 
 JNIEXPORT void JNICALL
-Java_com_example_screenunderstaingusingml_ndk_VisionBridge_nativeSetTemplate(
-        JNIEnv* env,
-jobject thiz,
-        jobject bitmap
-);
+Java_com_autonion_automationcompanion_core_vision_VisionNativeBridge_nativeAddTemplate(
+    JNIEnv *env, jobject, jint id, jobject bitmap);
 
-JNIEXPORT jobject JNICALL
-        Java_com_example_screenunderstaingusingml_ndk_VisionBridge_nativeMatch(
-        JNIEnv* env,
-        jobject thiz,
-jobject bitmap,
-        jfloat threshold
-);
+JNIEXPORT void JNICALL
+Java_com_autonion_automationcompanion_core_vision_VisionNativeBridge_nativeClearTemplates(
+    JNIEnv *env, jobject);
 
+JNIEXPORT jobjectArray JNICALL
+Java_com_autonion_automationcompanion_core_vision_VisionNativeBridge_nativeMatch(
+    JNIEnv *env, jobject, jobject bitmap);
 }
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif // VISION_ENGINE_H

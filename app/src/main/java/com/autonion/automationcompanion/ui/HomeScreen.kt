@@ -120,12 +120,12 @@ fun HomeScreen(onOpen: (String) -> Unit) {
                             modifier = Modifier.weight(1f)
                         )
                         GridCard(
-                            title = "Semantic Automation",
-                            description = "Create complex automations via natural language.",
+                            title = "Visual Triggers",
+                            description = "Automate actions based on detected visual regions.",
                             icon = Icons.Default.ChatBubble,
                             iconColor = Color.White,
                             iconContainerColor = AccentGreen,
-                            onClick = { onOpen(AutomationRoutes.SEMANTIC) },
+                            onClick = { onOpen(AutomationRoutes.VISUAL_TRIGGER) },
                             modifier = Modifier.weight(1f)
                         )
                     }

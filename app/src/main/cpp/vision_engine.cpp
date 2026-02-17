@@ -1,270 +1,232 @@
-// =======================
-// JNI + Android
-// =======================
-#include <jni.h>
-#include <android/log.h>
+#include "vision_engine.h"
 #include <android/bitmap.h>
+#include <android/log.h>
 
-// =======================
-// OpenCV
-// =======================
-#include <opencv2/core.hpp>
-#include <opencv2/imgproc.hpp>
-#include <opencv2/features2d.hpp>
-#include <opencv2/calib3d.hpp>
-
-// =======================
-// Logging
-// =======================
-#define LOG_TAG "VISION_ENGINE"
+#define LOG_TAG "VisionEngineNative"
 #define LOGD(...) __android_log_print(ANDROID_LOG_DEBUG, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
-// =======================
-// Global Engine State
-// =======================
-static bool g_initialized = false;
+// Global state — store grayscale templates
+std::map<int, cv::Mat> g_templates;
 
-// Template data
-static cv::Mat g_templateGray;
-static std::vector<cv::KeyPoint> g_templateKeypoints;
-static cv::Mat g_templateDescriptors;
-static cv::Ptr<cv::ORB> g_orb;
-
-// =======================
-// Utility: Bitmap → cv::Mat
-// =======================
-static bool bitmap_to_mat(JNIEnv* env, jobject bitmap, cv::Mat& outMat) {
-    AndroidBitmapInfo info;
-    void* pixels = nullptr;
-
-    if (AndroidBitmap_getInfo(env, bitmap, &info) != ANDROID_BITMAP_RESULT_SUCCESS) {
-        LOGE("Failed to get bitmap info");
-        return false;
-    }
-
-    if (info.format != ANDROID_BITMAP_FORMAT_RGBA_8888) {
-        LOGE("Unsupported bitmap format");
-        return false;
-    }
-
-    if (AndroidBitmap_lockPixels(env, bitmap, &pixels) != ANDROID_BITMAP_RESULT_SUCCESS) {
-        LOGE("Failed to lock bitmap pixels");
-        return false;
-    }
-
-    cv::Mat rgba(info.height, info.width, CV_8UC4, pixels);
-    outMat = rgba.clone(); // copy before unlock
-
-    AndroidBitmap_unlockPixels(env, bitmap);
-    return true;
-}
-
-// =======================
-// Engine Lifecycle
-// =======================
 void vision_init() {
-    if (g_initialized) return;
-
-    g_orb = cv::ORB::create(
-            800,        // nfeatures
-            1.2f,       // scaleFactor
-            8,          // nlevels
-            31,         // edgeThreshold
-            0,          // firstLevel
-            2,          // WTA_K
-            cv::ORB::HARRIS_SCORE,
-            31,
-            20
-    );
-
-    g_initialized = true;
-    LOGD("Vision engine initialized (ORB)");
+  g_templates.clear();
+  LOGD("Vision Engine Initialized (Template Matching)");
 }
 
-void vision_release() {
-    g_templateGray.release();
-    g_templateKeypoints.clear();
-    g_templateDescriptors.release();
-    g_initialized = false;
-    LOGD("Vision engine released");
+void vision_add_template(int id, const cv::Mat &templ) {
+  if (templ.empty())
+    return;
+  cv::Mat gray;
+  if (templ.channels() == 4) {
+    cv::cvtColor(templ, gray, cv::COLOR_RGBA2GRAY);
+  } else if (templ.channels() == 3) {
+    cv::cvtColor(templ, gray, cv::COLOR_RGB2GRAY);
+  } else {
+    gray = templ.clone();
+  }
+  g_templates[id] = gray;
+  LOGD("Added template ID=%d: %dx%d", id, gray.cols, gray.rows);
 }
 
-// =======================
-// Template Setup (ORB)
-// =======================
-void vision_set_template(const cv::Mat& templateMat) {
-    if (!g_initialized || templateMat.empty()) return;
-
-    cv::cvtColor(templateMat, g_templateGray, cv::COLOR_RGBA2GRAY);
-
-    g_orb->detectAndCompute(
-            g_templateGray,
-            cv::noArray(),
-            g_templateKeypoints,
-            g_templateDescriptors
-    );
-
-    LOGD("Template ORB ready: keypoints=%zu",
-         g_templateKeypoints.size());
+void vision_clear_templates() {
+  g_templates.clear();
+  LOGD("Cleared all templates");
 }
 
-// =======================
-// ORB + Homography Matching
-// =======================
-bool vision_match_orb(
-        const cv::Mat& screenRGBA,
-        cv::Rect& outRect,
-        float& outScore
-) {
-    if (g_templateDescriptors.empty()) return false;
+// Template matching with optional multi-scale
+// Returns: matched, score (0-1.0), and bounding rect in screen coords
+bool match_one(const cv::Mat &screen_gray, const cv::Mat &templ_gray,
+               cv::Rect &out_rect, float &out_score, int id) {
 
-    // Convert to gray
-    cv::Mat gray;
-    cv::cvtColor(screenRGBA, gray, cv::COLOR_RGBA2GRAY);
+  if (screen_gray.empty() || templ_gray.empty())
+    return false;
 
-    // Detect ORB features
-    std::vector<cv::KeyPoint> frameKeypoints;
-    cv::Mat frameDescriptors;
+  // Template must be smaller than screen
+  if (templ_gray.cols > screen_gray.cols ||
+      templ_gray.rows > screen_gray.rows) {
+    LOGD("ID=%d: template (%dx%d) larger than screen (%dx%d), skipping", id,
+         templ_gray.cols, templ_gray.rows, screen_gray.cols, screen_gray.rows);
+    return false;
+  }
 
-    g_orb->detectAndCompute(
-            gray,
-            cv::noArray(),
-            frameKeypoints,
-            frameDescriptors
-    );
+  float best_score = -1.0f;
+  cv::Point best_loc;
+  float best_scale = 1.0f;
 
-    if (frameDescriptors.empty()) return false;
+  // Try multiple scales to handle slight DPI/resolution differences
+  // Scales: 0.8, 0.9, 1.0, 1.1, 1.2
+  float scales[] = {1.0f, 0.95f, 1.05f, 0.9f, 1.1f, 0.85f, 1.15f};
+  int num_scales = 7;
 
-    // Match descriptors
-    cv::BFMatcher matcher(cv::NORM_HAMMING);
-    std::vector<std::vector<cv::DMatch>> knnMatches;
-    matcher.knnMatch(
-            g_templateDescriptors,
-            frameDescriptors,
-            knnMatches,
-            2
-    );
+  for (int s = 0; s < num_scales; s++) {
+    float scale = scales[s];
 
-    // Lowe ratio filter
-    std::vector<cv::DMatch> goodMatches;
-    for (const auto& m : knnMatches) {
-        if (m.size() == 2 && m[0].distance < 0.75f * m[1].distance) {
-            goodMatches.push_back(m[0]);
-        }
+    cv::Mat scaled_templ;
+    if (scale == 1.0f) {
+      scaled_templ = templ_gray;
+    } else {
+      int new_w = (int)(templ_gray.cols * scale);
+      int new_h = (int)(templ_gray.rows * scale);
+      if (new_w <= 0 || new_h <= 0 || new_w > screen_gray.cols ||
+          new_h > screen_gray.rows)
+        continue;
+      cv::resize(templ_gray, scaled_templ, cv::Size(new_w, new_h));
     }
 
-    if (goodMatches.size() < 8) return false;
+    cv::Mat result;
+    cv::matchTemplate(screen_gray, scaled_templ, result, cv::TM_CCOEFF_NORMED);
 
-    // Build point sets
-    std::vector<cv::Point2f> objPts, scenePts;
-    for (const auto& m : goodMatches) {
-        objPts.push_back(g_templateKeypoints[m.queryIdx].pt);
-        scenePts.push_back(frameKeypoints[m.trainIdx].pt);
+    double minVal, maxVal;
+    cv::Point minLoc, maxLoc;
+    cv::minMaxLoc(result, &minVal, &maxVal, &minLoc, &maxLoc);
+
+    if ((float)maxVal > best_score) {
+      best_score = (float)maxVal;
+      best_loc = maxLoc;
+      best_scale = scale;
     }
 
-    // Homography
-    cv::Mat inlierMask;
-    cv::Mat H = cv::findHomography(
-            objPts,
-            scenePts,
-            cv::RANSAC,
-            3.0,
-            inlierMask
-    );
+    // Early exit if we find a very good match at scale 1.0
+    if (s == 0 && best_score > 0.90f)
+      break;
+  }
 
-    if (H.empty()) return false;
+  out_score = best_score;
 
-    int inliers = cv::countNonZero(inlierMask);
-    outScore = static_cast<float>(inliers);
+  int w = (int)(templ_gray.cols * best_scale);
+  int h = (int)(templ_gray.rows * best_scale);
+  out_rect = cv::Rect(best_loc.x, best_loc.y, w, h);
 
+  // Threshold for considering a match valid
+  const float MATCH_THRESHOLD = 0.75f;
+  bool matched = best_score >= MATCH_THRESHOLD;
 
+  LOGD("ID=%d: score=%.3f (threshold=%.2f) scale=%.2f at=(%d,%d) %dx%d %s", id,
+       best_score, MATCH_THRESHOLD, best_scale, best_loc.x, best_loc.y, w, h,
+       matched ? "MATCHED" : "no match");
 
-// ---- HARD SUCCESS GATE (THIS IS THE FIX) ----
-    constexpr int MIN_INLIERS = 12;   // start with 12 (you already see 10–30 in logs)
-
-    if (inliers < MIN_INLIERS) {
-        return false;
-    }
-
-    // Project template corners
-    std::vector<cv::Point2f> corners = {
-            {0, 0},
-            {(float)g_templateGray.cols, 0},
-            {(float)g_templateGray.cols, (float)g_templateGray.rows},
-            {0, (float)g_templateGray.rows}
-    };
-
-    std::vector<cv::Point2f> projected;
-    cv::perspectiveTransform(corners, projected, H);
-
-    outRect = cv::boundingRect(projected);
-
-    LOGD("Homography match: inliers=%d score=%.2f rect=(%d,%d)",
-         inliers, outScore, outRect.x, outRect.y);
-
-    return true;
+  return matched;
 }
 
-// =======================
-// JNI BRIDGE
-// =======================
-extern "C"
+std::vector<MatchResult> vision_match_all(const cv::Mat &screen) {
+  std::vector<MatchResult> results;
+  if (screen.empty() || g_templates.empty())
+    return results;
+
+  LOGD("vision_match_all: screen=%dx%d ch=%d, templates=%zu", screen.cols,
+       screen.rows, screen.channels(), g_templates.size());
+
+  cv::Mat screen_gray;
+  if (screen.channels() == 4) {
+    cv::cvtColor(screen, screen_gray, cv::COLOR_RGBA2GRAY);
+  } else if (screen.channels() == 3) {
+    cv::cvtColor(screen, screen_gray, cv::COLOR_RGB2GRAY);
+  } else {
+    screen_gray = screen;
+  }
+
+  for (const auto &pair : g_templates) {
+    int id = pair.first;
+    const cv::Mat &tmpl = pair.second;
+
+    cv::Rect r;
+    float score = 0;
+    bool found = match_one(screen_gray, tmpl, r, score, id);
+
+    MatchResult res;
+    res.id = id;
+    res.matched = found;
+    res.score = score;
+    res.rect = r;
+    results.push_back(res);
+  }
+  return results;
+}
+
+// ── JNI Helpers ───────────────────────────────────────────────────────
+
+bool bitmap_to_mat(JNIEnv *env, jobject bitmap, cv::Mat &dst) {
+  AndroidBitmapInfo info;
+  void *pixels = 0;
+
+  if (AndroidBitmap_getInfo(env, bitmap, &info) < 0)
+    return false;
+  if (info.format != ANDROID_BITMAP_FORMAT_RGBA_8888)
+    return false;
+  if (AndroidBitmap_lockPixels(env, bitmap, &pixels) < 0)
+    return false;
+  if (!pixels)
+    return false;
+
+  // Deep copy so we can safely unlock
+  cv::Mat view(info.height, info.width, CV_8UC4, pixels);
+  view.copyTo(dst);
+
+  AndroidBitmap_unlockPixels(env, bitmap);
+  return true;
+}
+
+// ── JNI Exports ───────────────────────────────────────────────────────
+
+extern "C" {
+
 JNIEXPORT jstring JNICALL
-Java_com_example_screenunderstaingusingml_ndk_VisionBridge_nativeInit(
-        JNIEnv* env,
-        jobject
-) {
-    vision_init();
-    return env->NewStringUTF("Vision engine ready");
+Java_com_autonion_automationcompanion_core_vision_VisionNativeBridge_nativeInit(
+    JNIEnv *env, jobject) {
+  vision_init();
+  return env->NewStringUTF("Vision Engine Initialized (Template Matching)");
 }
 
-extern "C"
 JNIEXPORT void JNICALL
-Java_com_example_screenunderstaingusingml_ndk_VisionBridge_nativeSetTemplate(
-        JNIEnv* env,
-        jobject,
-        jobject bitmap
-) {
-    cv::Mat mat;
-    if (!bitmap_to_mat(env, bitmap, mat)) return;
-    vision_set_template(mat);
+Java_com_autonion_automationcompanion_core_vision_VisionNativeBridge_nativeAddTemplate(
+    JNIEnv *env, jobject, jint id, jobject bitmap) {
+  cv::Mat mat;
+  if (!bitmap_to_mat(env, bitmap, mat))
+    return;
+  vision_add_template((int)id, mat);
 }
 
-extern "C"
-JNIEXPORT jobject JNICALL
-Java_com_example_screenunderstaingusingml_ndk_VisionBridge_nativeMatch(
-        JNIEnv* env,
-        jobject,
-        jobject bitmap,
-        jfloat /*threshold - unused now*/
-) {
-    cv::Mat screen;
-    if (!bitmap_to_mat(env, bitmap, screen)) return nullptr;
+JNIEXPORT void JNICALL
+Java_com_autonion_automationcompanion_core_vision_VisionNativeBridge_nativeClearTemplates(
+    JNIEnv *env, jobject) {
+  vision_clear_templates();
+}
 
-    cv::Rect rect;
-    float score = 0.f;
-    bool matched = vision_match_orb(screen, rect, score);
+JNIEXPORT jobjectArray JNICALL
+Java_com_autonion_automationcompanion_core_vision_VisionNativeBridge_nativeMatch(
+    JNIEnv *env, jobject, jobject bitmap) {
 
-    jclass cls = env->FindClass(
-            "com/example/screenunderstaingusingml/ndk/MatchResultNative"
-    );
+  cv::Mat screen;
+  if (!bitmap_to_mat(env, bitmap, screen))
+    return nullptr;
 
-    jmethodID ctor = env->GetMethodID(cls, "<init>", "(ZFIIII)V");
+  std::vector<MatchResult> results = vision_match_all(screen);
 
-    if (!ctor) {
-        env->ExceptionClear();
-        return env->NewObject(cls, env->GetMethodID(cls, "<init>", "()V"));
-    }
+  // Create Java Array of MatchResultNative
+  jclass cls = env->FindClass(
+      "com/autonion/automationcompanion/core/vision/MatchResultNative");
+  if (!cls)
+    return nullptr;
 
-    return env->NewObject(
-            cls,
-            ctor,
-            matched ? JNI_TRUE : JNI_FALSE,
-            score,
-            rect.x,
-            rect.y,
-            rect.width,
-            rect.height
-    );
+  // Constructor: (IZFIIII)V  -> id, matched, score, x, y, w, h
+  jmethodID ctor = env->GetMethodID(cls, "<init>", "(IZFIIII)V");
+  if (!ctor)
+    return nullptr;
+
+  jobjectArray jobjArray =
+      env->NewObjectArray((jsize)results.size(), cls, nullptr);
+
+  for (size_t i = 0; i < results.size(); ++i) {
+    jobject obj = env->NewObject(
+        cls, ctor, (jint)results[i].id,
+        results[i].matched ? JNI_TRUE : JNI_FALSE, (jfloat)results[i].score,
+        (jint)results[i].rect.x, (jint)results[i].rect.y,
+        (jint)results[i].rect.width, (jint)results[i].rect.height);
+    env->SetObjectArrayElement(jobjArray, (jsize)i, obj);
+    env->DeleteLocalRef(obj);
+  }
+
+  return jobjArray;
+}
 }

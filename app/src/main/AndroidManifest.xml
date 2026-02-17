@@ -236,7 +236,6 @@
             <property android:name="android.app.property.FOREGROUND_SERVICE_TYPE" android:value="specialUse" />
         </service>
 
-        <!-- Accessibility Service for Automation -->
         <service
             android:name=".features.gesture_recording_playback.overlay.AutomationService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
@@ -248,6 +247,32 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config" />
         </service>
+
+        <!-- Vision Trigger Feature -->
+        <activity
+            android:name=".features.visual_trigger.ui.VisionTriggerActivity"
+            android:exported="true"
+            android:label="Vision Automation" />
+
+        <activity
+            android:name=".features.visual_trigger.ui.VisionEditorActivity"
+            android:exported="false"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.AutomationCompanion"/>
+
+        <service
+            android:name=".features.visual_trigger.service.CaptureOverlayService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+
+        <service
+            android:name=".features.visual_trigger.service.VisionExecutionService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+
 
 
     </application>
