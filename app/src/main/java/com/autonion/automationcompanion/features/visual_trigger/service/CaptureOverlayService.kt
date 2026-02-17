@@ -31,6 +31,7 @@ import com.autonion.automationcompanion.R
 import com.autonion.automationcompanion.features.visual_trigger.ui.VisionEditorActivity
 import java.io.File
 import java.io.FileOutputStream
+import kotlin.math.abs
 
 class CaptureOverlayService : Service() {
 
@@ -213,7 +214,7 @@ class CaptureOverlayService : Service() {
                 MotionEvent.ACTION_MOVE -> {
                     val dx = event.rawX - touchX
                     val dy = event.rawY - touchY
-                    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) isDragging = true
+                    if (abs(dx) > 5 || abs(dy) > 5) isDragging = true
                     if (isDragging) {
                         lp.x = initialX + dx.toInt()
                         lp.y = initialY + dy.toInt()
