@@ -34,7 +34,7 @@ object AutomationRoutes {
     const val GESTURE = "feature/gesture_recording_playback"
     const val DYN_UI = "feature/dynamic_ui_path_recording"
     const val SCREEN_UNDERSTAND = "feature/screen_understanding_using_on_device_ml"
-    const val SEMANTIC = "feature/semantic_automation"
+    const val VISUAL_TRIGGER = "feature/visual_trigger"
     const val CONDITIONAL = "feature/conditional_macros"
     const val MULTI_APP = "feature/multi_app_workflow_pipeline"
     const val APP_SPECIFIC = "feature/app_specific_automation"
@@ -118,16 +118,12 @@ fun AppNavHost() {
             }
         }
 
-        composable(AutomationRoutes.SEMANTIC) {
-            PlaceholderScreen(
-                title = "Semantic Automation",
-                todos = listOf(
-                    "NLP intent parser (on-device or template-based)",
-                    "Map natural language -> automation graph",
-                    "Explain suggestion to user"
-                ),
-                onBack = {navController.popBackStack()}
-            )
+        composable(AutomationRoutes.VISUAL_TRIGGER) {
+            val context = androidx.compose.ui.platform.LocalContext.current
+            androidx.compose.runtime.LaunchedEffect(Unit) {
+               context.startActivity(android.content.Intent(context, com.autonion.automationcompanion.features.visual_trigger.ui.VisionTriggerActivity::class.java))
+               navController.popBackStack()
+            }
         }
 
         composable(AutomationRoutes.CONDITIONAL) {
