@@ -16,6 +16,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material.icons.automirrored.filled.CallSplit
+import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.automirrored.filled.ViewQuilt
 import com.autonion.automationcompanion.ui.components.*
 import com.autonion.automationcompanion.ui.components.AuroraBackground
@@ -86,15 +87,30 @@ fun HomeScreen(onOpen: (String) -> Unit) {
                 }
             }
 
-            // Hero Card: Gesture Recording
+            // Hero Card: Flow Builder
             item {
                 StaggeredEntry(index = 2) {
+                    HeroCard(
+                        title = "Flow Builder",
+                        description = "Build visual automation flows with a node-based graph editor.",
+                        icon = Icons.Default.AccountTree,
+                        iconColor = Color.White,
+                        iconContainerColor = AccentPurple,
+                        onClick = { onOpen(AutomationRoutes.FLOW_BUILDER) }
+                    )
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            // Hero Card: Gesture Recording
+            item {
+                StaggeredEntry(index = 3) {
                     HeroCard(
                         title = "Gesture Recording",
                         description = "Record gestures across apps and replay as macros seamlessly.",
                         icon = Icons.Default.TouchApp,
                         iconColor = Color.White,
-                        iconContainerColor = AccentPurple,
+                        iconContainerColor = AccentBlue,
                         onClick = { onOpen(AutomationRoutes.GESTURE) }
                     )
                 }
@@ -103,7 +119,7 @@ fun HomeScreen(onOpen: (String) -> Unit) {
 
             // Grid Row: Screen AI & Semantic
             item {
-                StaggeredEntry(index = 3) {
+                StaggeredEntry(index = 4) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -135,10 +151,10 @@ fun HomeScreen(onOpen: (String) -> Unit) {
 
             // List Cards: Conditional & System
             item {
-                StaggeredEntry(index = 4) {
+                StaggeredEntry(index = 5) {
                     ListCard(
-                        title = "Conditional Macros",
-                        description = "Add logic, conditions and guards to your workflow.",
+                        title = "Conditional Flows",
+                        description = "Add logic, conditions, and guards to your workflow.",
                         icon = Icons.AutoMirrored.Filled.CallSplit,
                         iconColor = Color.White,
                         iconContainerColor = AccentOrange,
@@ -147,7 +163,7 @@ fun HomeScreen(onOpen: (String) -> Unit) {
                 }
             }
             item {
-                StaggeredEntry(index = 5) {
+                StaggeredEntry(index = 6) {
                     ListCard(
                         title = "System Context",
                         description = "Triggers based on location, time, battery level.",
@@ -162,7 +178,7 @@ fun HomeScreen(onOpen: (String) -> Unit) {
 
             // Grid Row: Emergency & Debugger
             item {
-                StaggeredEntry(index = 6) {
+                StaggeredEntry(index = 7) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -200,7 +216,7 @@ fun HomeScreen(onOpen: (String) -> Unit) {
 
             // Banner: Cross-Device
             item {
-                StaggeredEntry(index = 7) {
+                StaggeredEntry(index = 8) {
                     BannerCard(
                         title = "Cross-Device Sync",
                         description = "Coordinate automations across ecosystem.",
