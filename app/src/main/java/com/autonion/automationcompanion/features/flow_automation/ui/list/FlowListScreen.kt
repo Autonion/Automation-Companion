@@ -44,6 +44,7 @@ fun FlowListScreen(
     onBack: () -> Unit
 ) {
     val flows by viewModel.flows.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     // Import picker
     val importLauncher = rememberLauncherForActivityResult(
@@ -138,7 +139,14 @@ fun FlowListScreen(
                         Spacer(Modifier.height(24.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             Button(
-                                onClick = onCreateNew,
+                                onClick = {
+                                    if (!com.autonion.automationcompanion.AccessibilityRouter.isServiceConnected()) {
+                                        android.widget.Toast.makeText(context, "Please enable Accessibility Service to create flows", android.widget.Toast.LENGTH_SHORT).show()
+                                        context.startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                                    } else {
+                                        onCreateNew()
+                                    }
+                                },
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = NodeColors.VisualTriggerPurple
                                 ),
@@ -189,7 +197,14 @@ fun FlowListScreen(
         // FAB for creating new flow
         if (flows.isNotEmpty()) {
             FloatingActionButton(
-                onClick = onCreateNew,
+                onClick = {
+                    if (!com.autonion.automationcompanion.AccessibilityRouter.isServiceConnected()) {
+                        android.widget.Toast.makeText(context, "Please enable Accessibility Service to create flows", android.widget.Toast.LENGTH_SHORT).show()
+                        context.startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                    } else {
+                        onCreateNew()
+                    }
+                },
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(16.dp)
@@ -213,6 +228,7 @@ private fun FlowCard(
 ) {
     var showDeleteConfirm by remember { mutableStateOf(false) }
     val dateFormat = remember { SimpleDateFormat("MMM d, yyyy HH:mm", Locale.getDefault()) }
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     Card(
         modifier = Modifier
@@ -272,7 +288,14 @@ private fun FlowCard(
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     // Run button
                     IconButton(
-                        onClick = onRun,
+                        onClick = {
+                            if (!com.autonion.automationcompanion.AccessibilityRouter.isServiceConnected()) {
+                                android.widget.Toast.makeText(context, "Please enable Accessibility Service to run flows", android.widget.Toast.LENGTH_SHORT).show()
+                                context.startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                            } else {
+                                onRun()
+                            }
+                        },
                         modifier = Modifier.size(36.dp)
                     ) {
                         Icon(

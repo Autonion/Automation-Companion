@@ -273,11 +273,21 @@ fun FlowEditorScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
             horizontalAlignment = Alignment.End
         ) {
+            val context = androidx.compose.ui.platform.LocalContext.current
+
             // Execute / Stop
             FloatingActionButton(
                 onClick = {
-                    if (isExecuting) viewModel.stopExecution()
-                    else viewModel.executeFlow()
+                    if (isExecuting) {
+                        viewModel.stopExecution()
+                    } else {
+                        if (!com.autonion.automationcompanion.AccessibilityRouter.isServiceConnected()) {
+                            android.widget.Toast.makeText(context, "Please enable Accessibility Service to run flows", android.widget.Toast.LENGTH_SHORT).show()
+                            context.startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                        } else {
+                            viewModel.executeFlow()
+                        }
+                    }
                 },
                 containerColor = if (isExecuting) Color(0xFFEF5350) else Color(0xFF2E7D32),
                 shape = CircleShape
@@ -291,7 +301,14 @@ fun FlowEditorScreen(
 
             // Add node
             FloatingActionButton(
-                onClick = { viewModel.toggleNodePalette() },
+                onClick = { 
+                    if (!com.autonion.automationcompanion.AccessibilityRouter.isServiceConnected()) {
+                        android.widget.Toast.makeText(context, "Please enable Accessibility Service to add nodes", android.widget.Toast.LENGTH_SHORT).show()
+                        context.startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                    } else {
+                        viewModel.toggleNodePalette() 
+                    }
+                },
                 containerColor = Color(0xFF7B1FA2),
                 shape = CircleShape
             ) {
