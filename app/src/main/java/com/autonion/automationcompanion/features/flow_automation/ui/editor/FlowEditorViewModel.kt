@@ -50,15 +50,24 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
     private val overlayReceiver = object : android.content.BroadcastReceiver() {
         override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
             intent ?: return
+            Log.d(TAG, "overlayReceiver received action: ${intent.action}")
             val action = intent.action ?: return
-            val nodeId = intent.getStringExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_RESULT_NODE_ID) ?: return
-            val filePath = intent.getStringExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_RESULT_FILE_PATH) ?: return
+            val nodeId = intent.getStringExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_RESULT_NODE_ID)
+            val filePath = intent.getStringExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_RESULT_FILE_PATH)
+            Log.d(TAG, "overlayReceiver nodeId=$nodeId, filePath=$filePath")
+            if (nodeId == null || filePath == null) return
             
             try {
-                val json = java.io.File(filePath).readText()
+                val file = java.io.File(filePath)
+                if (!file.exists()) {
+                    Log.e(TAG, "Result file DOES NOT EXIST: $filePath")
+                    return
+                }
+                val json = file.readText()
+                Log.d(TAG, "Read json from result file length: ${json.length}")
                 handleOverlayResult(nodeId, action, json, intent)
                 // Clean up temp file
-                java.io.File(filePath).delete()
+                file.delete()
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to read flow result file", e)
             }

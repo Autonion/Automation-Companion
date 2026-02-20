@@ -603,7 +603,7 @@ class OverlayService : Service() {
     }
 
     private fun updateSaveButtonState() {
-        binding.btnSave.isEnabled = !currentPresetName.isNullOrEmpty()
+        binding.btnSave.isEnabled = isFlowMode || !currentPresetName.isNullOrEmpty()
     }
 
     private fun updateToggleState(isEditing: Boolean) {
@@ -706,22 +706,27 @@ class OverlayService : Service() {
      * broadcast the result back to the flow editor ViewModel, then close.
      */
     private fun saveForFlowMode() {
+        android.util.Log.d("OverlayService", "saveForFlowMode called. isFlowMode=$isFlowMode, flowNodeId=$flowNodeId")
         try {
             val actions = ActionManager.getActions()
+            android.util.Log.d("OverlayService", "saveForFlowMode: Actions count = ${actions.size}")
             val json = Json.encodeToString(actions)
             val tempFile = File(cacheDir, "flow_gesture_${flowNodeId}.json")
             tempFile.writeText(json)
+            android.util.Log.d("OverlayService", "saveForFlowMode: JSON written to ${tempFile.absolutePath} (length: ${json.length})")
 
             val resultIntent = Intent(FlowOverlayContract.ACTION_FLOW_GESTURE_DONE).apply {
                 putExtra(FlowOverlayContract.EXTRA_RESULT_NODE_ID, flowNodeId)
                 putExtra(FlowOverlayContract.EXTRA_RESULT_FILE_PATH, tempFile.absolutePath)
             }
-            LocalBroadcastManager.getInstance(this).sendBroadcast(resultIntent)
+            val broadcastResult = LocalBroadcastManager.getInstance(this).sendBroadcast(resultIntent)
+            android.util.Log.d("OverlayService", "saveForFlowMode: local broadcast sent. Result (has receivers) = $broadcastResult")
 
             showStatusAnimation(true)
             // Auto-close after a brief delay so user sees the success animation
             binding.root.postDelayed({ stopSelf() }, 800)
         } catch (e: Exception) {
+            android.util.Log.e("OverlayService", "Error in saveForFlowMode", e)
             showStatusAnimation(false)
             Toast.makeText(this, "Error saving for flow: ${e.message}", Toast.LENGTH_SHORT).show()
         }
