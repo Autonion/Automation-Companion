@@ -1,8 +1,11 @@
 package com.autonion.automationcompanion.features.flow_automation.engine.executors
 
+import android.graphics.BitmapFactory
 import android.util.Log
+import com.autonion.automationcompanion.core.vision.VisionNativeBridge
 import com.autonion.automationcompanion.features.flow_automation.engine.NodeExecutor
 import com.autonion.automationcompanion.features.flow_automation.engine.NodeResult
+import com.autonion.automationcompanion.features.flow_automation.engine.ScreenCaptureProvider
 import com.autonion.automationcompanion.features.flow_automation.model.FlowContext
 import com.autonion.automationcompanion.features.flow_automation.model.FlowNode
 import com.autonion.automationcompanion.features.flow_automation.model.VisualTriggerNode
@@ -11,12 +14,14 @@ private const val TAG = "VisualTriggerExecutor"
 
 /**
  * Executor for [VisualTriggerNode].
- * Uses OpenCV template matching to find a reference image on screen.
  *
- * For Pass 1, this is a placeholder that writes a simulated result to FlowContext.
- * Full integration with VisionMediaProjection + native matching comes in Pass 2.
+ * Captures the current screen via [ScreenCaptureProvider], loads the template
+ * image, and runs native OpenCV template matching through [VisionNativeBridge].
+ * Writes match coordinates to [FlowContext] on success.
  */
-class VisualTriggerNodeExecutor : NodeExecutor {
+class VisualTriggerNodeExecutor(
+    private val screenCaptureProvider: ScreenCaptureProvider? = null
+) : NodeExecutor {
 
     override suspend fun execute(node: FlowNode, context: FlowContext): NodeResult {
         val vtNode = node as? VisualTriggerNode
@@ -26,21 +31,58 @@ class VisualTriggerNodeExecutor : NodeExecutor {
             return NodeResult.Failure("No template image configured")
         }
 
-        Log.d(TAG, "Visual trigger: searching for template at ${vtNode.templateImagePath}")
-        Log.d(TAG, "Threshold: ${vtNode.threshold}, Region: (${vtNode.searchRegionX}, ${vtNode.searchRegionY}, ${vtNode.searchRegionWidth}x${vtNode.searchRegionHeight})")
+        val provider = screenCaptureProvider
+            ?: return NodeResult.Failure("Screen capture not available — MediaProjection not started")
 
-        // TODO (Pass 2): Integrate with VisionMediaProjection + native OpenCV
-        // For now, write a placeholder result to FlowContext
-        // In full implementation, this would:
-        // 1. Capture screen via MediaProjection
-        // 2. Run native template matching
-        // 3. Return match coordinates if score > threshold
+        Log.d(TAG, "Visual trigger: template=${vtNode.templateImagePath}, threshold=${vtNode.threshold}")
 
-        // Mark as found=false since we can't actually match yet without MediaProjection integration
-        context.put(vtNode.outputContextKey, "not_found")
-        context.put("${vtNode.outputContextKey}_found", false)
+        // 1. Decode the template image from disk
+        val templateBitmap = BitmapFactory.decodeFile(vtNode.templateImagePath)
+            ?: return NodeResult.Failure("Failed to decode template image: ${vtNode.templateImagePath}")
 
-        Log.d(TAG, "Visual trigger placeholder executed — wrote '${vtNode.outputContextKey}' to FlowContext")
-        return NodeResult.Success
+        // 2. Capture the current screen
+        val screenBitmap = provider.captureFrame()
+            ?: return NodeResult.Failure("Failed to capture screen frame")
+
+        try {
+            // 3. Load template into the native bridge with a unique ID
+            // Use hashCode as integer ID for the native bridge
+            val templateId = vtNode.id.hashCode()
+            VisionNativeBridge.nativeClearTemplates()
+            VisionNativeBridge.addTemplate(templateId, templateBitmap)
+
+            // 4. Run native template matching
+            val results = VisionNativeBridge.match(screenBitmap)
+
+            // 5. Find our template result
+            val match = results.firstOrNull { it.id == templateId }
+
+            if (match != null && match.matched && match.score >= vtNode.threshold) {
+                Log.d(TAG, "  ✓ Match found: score=${match.score}, at=(${match.x},${match.y}), size=${match.width}x${match.height}")
+
+                // Write match coordinates to FlowContext
+                val cx = match.x + match.width / 2
+                val cy = match.y + match.height / 2
+                context.put("${vtNode.outputContextKey}_found", true)
+                context.put("${vtNode.outputContextKey}_x", cx)
+                context.put("${vtNode.outputContextKey}_y", cy)
+                context.put("${vtNode.outputContextKey}_width", match.width)
+                context.put("${vtNode.outputContextKey}_height", match.height)
+                context.put("${vtNode.outputContextKey}_score", match.score)
+                context.put(vtNode.outputContextKey, "${cx},${cy}")
+
+                return NodeResult.Success
+            } else {
+                val score = match?.score ?: 0f
+                Log.d(TAG, "  ✗ No match above threshold (score=$score, need≥${vtNode.threshold})")
+                context.put("${vtNode.outputContextKey}_found", false)
+                context.put(vtNode.outputContextKey, "not_found")
+                return NodeResult.Failure("Template not found on screen (best score: $score)")
+            }
+        } finally {
+            templateBitmap.recycle()
+            // Don't recycle screenBitmap — it's managed by the VisionMediaProjection flow
+            VisionNativeBridge.nativeClearTemplates()
+        }
     }
 }

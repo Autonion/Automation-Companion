@@ -1,5 +1,8 @@
 package com.autonion.automationcompanion.features.flow_automation.ui.list
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -10,10 +13,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -31,7 +31,8 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Flow list screen — shows saved flows with edit, run, and delete actions.
+ * Flow list screen — shows saved flows with edit, run, export, and delete actions.
+ * Supports importing flows from external JSON files.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -43,6 +44,28 @@ fun FlowListScreen(
     onBack: () -> Unit
 ) {
     val flows by viewModel.flows.collectAsState()
+
+    // Import picker
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            viewModel.importFlow(uri)
+        }
+    }
+
+    // Export picker — needs to know which flow to export
+    var exportingFlowId by remember { mutableStateOf<String?>(null) }
+    var exportingFlowName by remember { mutableStateOf("flow") }
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri: Uri? ->
+        val flowId = exportingFlowId
+        if (uri != null && flowId != null) {
+            viewModel.exportFlow(flowId, uri)
+        }
+        exportingFlowId = null
+    }
 
     LaunchedEffect(Unit) { viewModel.refresh() }
 
@@ -74,6 +97,18 @@ fun FlowListScreen(
                         )
                     }
                 },
+                actions = {
+                    // Import button
+                    IconButton(onClick = {
+                        importLauncher.launch(arrayOf("application/json"))
+                    }) {
+                        Icon(
+                            Icons.Default.FileOpen,
+                            contentDescription = "Import Flow",
+                            tint = Color.White.copy(alpha = 0.7f)
+                        )
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Transparent,
                     titleContentColor = Color.White
@@ -101,16 +136,30 @@ fun FlowListScreen(
                             fontSize = 14.sp
                         )
                         Spacer(Modifier.height(24.dp))
-                        Button(
-                            onClick = onCreateNew,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = NodeColors.VisualTriggerPurple
-                            ),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Icon(Icons.Default.Add, contentDescription = null)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Create Flow")
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Button(
+                                onClick = onCreateNew,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = NodeColors.VisualTriggerPurple
+                                ),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Create Flow")
+                            }
+                            OutlinedButton(
+                                onClick = { importLauncher.launch(arrayOf("application/json")) },
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.FileOpen,
+                                    contentDescription = null,
+                                    tint = Color.White
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text("Import", color = Color.White)
+                            }
                         }
                     }
                 }
@@ -125,6 +174,11 @@ fun FlowListScreen(
                             flow = flow,
                             onEdit = { onEditFlow(flow.id) },
                             onRun = { onRunFlow(flow.id) },
+                            onExport = {
+                                exportingFlowId = flow.id
+                                exportingFlowName = flow.name
+                                exportLauncher.launch("${flow.name}.json")
+                            },
                             onDelete = { viewModel.deleteFlow(flow.id) }
                         )
                     }
@@ -154,6 +208,7 @@ private fun FlowCard(
     flow: FlowGraph,
     onEdit: () -> Unit,
     onRun: () -> Unit,
+    onExport: () -> Unit,
     onDelete: () -> Unit
 ) {
     var showDeleteConfirm by remember { mutableStateOf(false) }
@@ -237,6 +292,19 @@ private fun FlowCard(
                             Icons.Default.Edit,
                             contentDescription = "Edit",
                             tint = Color.White.copy(alpha = 0.6f),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+
+                    // Export button
+                    IconButton(
+                        onClick = onExport,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Share,
+                            contentDescription = "Export",
+                            tint = Color(0xFF90CAF9).copy(alpha = 0.7f),
                             modifier = Modifier.size(18.dp)
                         )
                     }

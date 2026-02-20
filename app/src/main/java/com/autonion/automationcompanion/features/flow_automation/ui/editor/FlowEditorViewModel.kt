@@ -32,7 +32,9 @@ data class FlowEditorState(
     val showNodePalette: Boolean = false,
     val showNodeConfig: Boolean = false,
     val showEdgeConfig: Boolean = false,
-    val isDirty: Boolean = false
+    val isDirty: Boolean = false,
+    val canUndo: Boolean = false,
+    val canRedo: Boolean = false
 )
 
 class FlowEditorViewModel(application: Application) : AndroidViewModel(application) {
@@ -44,6 +46,50 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
     val state: StateFlow<FlowEditorState> = _state.asStateFlow()
 
     val executionState: StateFlow<FlowExecutionState> = executionEngine.state
+
+    // ─── Undo/Redo ────────────────────────────────────────────────────────
+
+    private val undoStack = mutableListOf<FlowGraph>()
+    private val redoStack = mutableListOf<FlowGraph>()
+    private val maxUndoSize = 30
+
+    private fun pushUndo() {
+        val current = _state.value.graph
+        undoStack.add(current)
+        if (undoStack.size > maxUndoSize) undoStack.removeAt(0)
+        redoStack.clear()
+        _state.update { it.copy(canUndo = undoStack.isNotEmpty(), canRedo = false) }
+    }
+
+    fun undo() {
+        if (undoStack.isEmpty()) return
+        val previous = undoStack.removeAt(undoStack.lastIndex)
+        redoStack.add(_state.value.graph)
+        _state.update {
+            it.copy(
+                graph = previous,
+                isDirty = true,
+                canUndo = undoStack.isNotEmpty(),
+                canRedo = redoStack.isNotEmpty()
+            )
+        }
+        Log.d(TAG, "Undo: stack=${undoStack.size}, redo=${redoStack.size}")
+    }
+
+    fun redo() {
+        if (redoStack.isEmpty()) return
+        val next = redoStack.removeAt(redoStack.lastIndex)
+        undoStack.add(_state.value.graph)
+        _state.update {
+            it.copy(
+                graph = next,
+                isDirty = true,
+                canUndo = undoStack.isNotEmpty(),
+                canRedo = redoStack.isNotEmpty()
+            )
+        }
+        Log.d(TAG, "Redo: stack=${undoStack.size}, redo=${redoStack.size}")
+    }
 
     // ─── Graph Loading ───────────────────────────────────────────────────
 
@@ -76,6 +122,7 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
     // ─── Node Operations ─────────────────────────────────────────────────
 
     fun addNode(type: FlowNodeType, position: NodePosition = NodePosition(400f, 400f)) {
+        pushUndo()
         val node: FlowNode = when (type) {
             FlowNodeType.START -> StartNode(position = position)
             FlowNodeType.GESTURE -> GestureNode(position = position)
@@ -95,6 +142,7 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun deleteNode(nodeId: String) {
+        pushUndo()
         _state.update { state ->
             state.copy(
                 graph = state.graph.withoutNode(nodeId),
@@ -125,6 +173,7 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun updateNode(node: FlowNode) {
+        pushUndo()
         _state.update { state ->
             state.copy(graph = state.graph.withNode(node), isDirty = true)
         }
@@ -152,6 +201,7 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
             return
         }
 
+        pushUndo()
         val edge = FlowEdge(
             fromNodeId = fromId,
             toNodeId = toNodeId
@@ -182,12 +232,14 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun updateEdge(edge: FlowEdge) {
+        pushUndo()
         _state.update { state ->
             state.copy(graph = state.graph.withEdge(edge), isDirty = true)
         }
     }
 
     fun deleteEdge(edgeId: String) {
+        pushUndo()
         _state.update { state ->
             state.copy(
                 graph = state.graph.withoutEdge(edgeId),

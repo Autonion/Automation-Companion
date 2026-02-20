@@ -10,23 +10,30 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Undo
+import androidx.compose.material.icons.filled.Redo
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.autonion.automationcompanion.features.flow_automation.engine.FlowExecutionState
 import com.autonion.automationcompanion.features.flow_automation.ui.editor.canvas.FlowCanvas
+import com.autonion.automationcompanion.features.flow_automation.ui.editor.canvas.MiniMap
 import com.autonion.automationcompanion.features.flow_automation.ui.editor.panels.EdgeConditionOverlay
 import com.autonion.automationcompanion.features.flow_automation.ui.editor.panels.NodeConfigPanel
 import com.autonion.automationcompanion.features.flow_automation.ui.editor.panels.NodePalette
 
 /**
  * Main flow editor screen composable.
- * Combines the infinite canvas with overlaid panels for node/edge config.
+ * Combines the infinite canvas with overlaid panels for node/edge config,
+ * a MiniMap for navigation, and undo/redo controls.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -38,10 +45,23 @@ fun FlowEditorScreen(
     val execState by viewModel.executionState.collectAsState()
     val isExecuting = execState is FlowExecutionState.Running
 
-    Box(modifier = Modifier.fillMaxSize().background(Color(0xFF101216))) {
+    val density = LocalDensity.current
+    var canvasSize by remember { mutableStateOf(Size.Zero) }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF101216))
+            .onSizeChanged { size ->
+                with(density) {
+                    canvasSize = Size(size.width.toFloat(), size.height.toFloat())
+                }
+            }
+    ) {
         // Canvas (full screen)
         FlowCanvas(
             state = state,
+            executionState = execState,
             onCanvasTransform = { offset, zoom -> viewModel.updateCanvasTransform(offset, zoom) },
             onNodeTap = { viewModel.selectNode(it) },
             onNodeDrag = { id, pos -> viewModel.updateNodePosition(id, pos) },
@@ -82,6 +102,28 @@ fun FlowEditorScreen(
                 modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
             )
 
+            // Undo / Redo
+            IconButton(
+                onClick = { viewModel.undo() },
+                enabled = state.canUndo
+            ) {
+                Icon(
+                    Icons.Default.Undo,
+                    contentDescription = "Undo",
+                    tint = if (state.canUndo) Color.White else Color.White.copy(alpha = 0.25f)
+                )
+            }
+            IconButton(
+                onClick = { viewModel.redo() },
+                enabled = state.canRedo
+            ) {
+                Icon(
+                    Icons.Default.Redo,
+                    contentDescription = "Redo",
+                    tint = if (state.canRedo) Color.White else Color.White.copy(alpha = 0.25f)
+                )
+            }
+
             // Node count badge
             Surface(
                 shape = RoundedCornerShape(12.dp),
@@ -106,6 +148,23 @@ fun FlowEditorScreen(
                 )
             }
         }
+
+        // MiniMap (bottom-left corner)
+        MiniMap(
+            state = state,
+            canvasSize = canvasSize,
+            onNavigate = { center ->
+                val newOffset = androidx.compose.ui.geometry.Offset(
+                    -center.x * state.canvasZoom + canvasSize.width / 2f,
+                    -center.y * state.canvasZoom + canvasSize.height / 2f
+                )
+                viewModel.updateCanvasTransform(newOffset, state.canvasZoom)
+            },
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(start = 12.dp, bottom = 12.dp)
+                .navigationBarsPadding()
+        )
 
         // Connection mode indicator
         AnimatedVisibility(

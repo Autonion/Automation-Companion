@@ -1,23 +1,32 @@
 package com.autonion.automationcompanion.features.flow_automation.engine.executors
 
+import android.content.Context
 import android.util.Log
 import com.autonion.automationcompanion.features.flow_automation.engine.NodeExecutor
 import com.autonion.automationcompanion.features.flow_automation.engine.NodeResult
+import com.autonion.automationcompanion.features.flow_automation.engine.ScreenCaptureProvider
 import com.autonion.automationcompanion.features.flow_automation.model.FlowContext
 import com.autonion.automationcompanion.features.flow_automation.model.FlowNode
 import com.autonion.automationcompanion.features.flow_automation.model.ScreenMLMode
 import com.autonion.automationcompanion.features.flow_automation.model.ScreenMLNode
+import com.autonion.automationcompanion.features.screen_understanding_ml.core.PerceptionLayer
 
 private const val TAG = "ScreenMLNodeExecutor"
 
 /**
  * Executor for [ScreenMLNode].
- * - OCR mode: captures screen and extracts text, writes to FlowContext.
- * - Object Detection mode: finds UI elements and writes coordinates.
  *
- * For Pass 1, this is a placeholder. Full TFLite integration comes in Pass 2.
+ * Captures the current screen via [ScreenCaptureProvider] and runs
+ * TFLite-based inference through [PerceptionLayer]:
+ * - **OCR mode**: Collects all detected `UIElement.text` values and
+ *   writes concatenated text to [FlowContext].
+ * - **Object Detection mode**: Finds `UIElement` matching `targetLabel`
+ *   and writes bounding-box coordinates to [FlowContext].
  */
-class ScreenMLNodeExecutor : NodeExecutor {
+class ScreenMLNodeExecutor(
+    private val appContext: Context? = null,
+    private val screenCaptureProvider: ScreenCaptureProvider? = null
+) : NodeExecutor {
 
     override suspend fun execute(node: FlowNode, context: FlowContext): NodeResult {
         val mlNode = node as? ScreenMLNode
@@ -32,27 +41,99 @@ class ScreenMLNodeExecutor : NodeExecutor {
     }
 
     private suspend fun executeOCR(node: ScreenMLNode, context: FlowContext): NodeResult {
-        // TODO (Pass 2): Integrate with MediaProjection screen capture + TFLite OCR model
-        // For now, write a placeholder result
-        Log.d(TAG, "OCR placeholder: would capture screen and extract text")
+        val provider = screenCaptureProvider
+            ?: return NodeResult.Failure("Screen capture not available — MediaProjection not started")
+        val ctx = appContext
+            ?: return NodeResult.Failure("App context not available for PerceptionLayer")
 
-        context.put(node.outputContextKey, "")  // Empty text result
-        context.put("${node.outputContextKey}_success", true)
+        // 1. Capture the screen
+        val bitmap = provider.captureFrame()
+            ?: return NodeResult.Failure("Failed to capture screen frame for OCR")
 
-        return NodeResult.Success
+        // 2. Run TFLite detection
+        val perceptionLayer = PerceptionLayer(ctx)
+        try {
+            val detections = perceptionLayer.detect(bitmap)
+            Log.d(TAG, "OCR: detected ${detections.size} elements")
+
+            // 3. Collect all text from detected elements
+            val allText = detections
+                .mapNotNull { it.text }
+                .filter { it.isNotBlank() }
+                .joinToString(" ")
+
+            // Also collect labels for context
+            val labels = detections.map { it.label }.distinct()
+
+            context.put(node.outputContextKey, allText)
+            context.put("${node.outputContextKey}_success", true)
+            context.put("${node.outputContextKey}_element_count", detections.size)
+            context.put("${node.outputContextKey}_labels", labels.joinToString(","))
+
+            Log.d(TAG, "OCR result: ${detections.size} elements, text='${allText.take(100)}'")
+            return NodeResult.Success
+        } catch (e: Exception) {
+            Log.e(TAG, "OCR detection failed", e)
+            context.put("${node.outputContextKey}_success", false)
+            return NodeResult.Failure("OCR detection error: ${e.message}")
+        } finally {
+            perceptionLayer.close()
+        }
     }
 
     private suspend fun executeObjectDetection(node: ScreenMLNode, context: FlowContext): NodeResult {
-        // TODO (Pass 2): Integrate with YOLO-based UI element detection
-        Log.d(TAG, "Object Detection placeholder: would detect UI elements")
+        val provider = screenCaptureProvider
+            ?: return NodeResult.Failure("Screen capture not available — MediaProjection not started")
+        val ctx = appContext
+            ?: return NodeResult.Failure("App context not available for PerceptionLayer")
 
-        context.put(node.outputContextKey, "[]")  // Empty detections
-        context.put("${node.outputContextKey}_success", true)
+        // 1. Capture the screen
+        val bitmap = provider.captureFrame()
+            ?: return NodeResult.Failure("Failed to capture screen frame for Object Detection")
 
-        if (node.targetLabel != null) {
-            context.put("${node.outputContextKey}_target_found", false)
+        // 2. Run TFLite detection
+        val perceptionLayer = PerceptionLayer(ctx)
+        try {
+            val detections = perceptionLayer.detect(bitmap)
+            Log.d(TAG, "Object Detection: detected ${detections.size} elements")
+
+            // 3. Serialize all detection results
+            val detectionsJson = detections.joinToString(";") { el ->
+                "${el.label}:${el.bounds.left},${el.bounds.top},${el.bounds.right},${el.bounds.bottom}:${el.confidence}"
+            }
+            context.put(node.outputContextKey, detectionsJson)
+            context.put("${node.outputContextKey}_success", true)
+            context.put("${node.outputContextKey}_element_count", detections.size)
+
+            // 4. If targetLabel specified, check for its presence
+            if (node.targetLabel != null) {
+                val target = detections.find {
+                    it.label.equals(node.targetLabel, ignoreCase = true)
+                }
+
+                if (target != null) {
+                    val cx = (target.bounds.left + target.bounds.right) / 2f
+                    val cy = (target.bounds.top + target.bounds.bottom) / 2f
+                    context.put("${node.outputContextKey}_target_found", true)
+                    context.put("${node.outputContextKey}_target_x", cx)
+                    context.put("${node.outputContextKey}_target_y", cy)
+                    context.put("${node.outputContextKey}_target_label", target.label)
+                    context.put("${node.outputContextKey}_target_confidence", target.confidence)
+                    Log.d(TAG, "  ✓ Target '${node.targetLabel}' found at ($cx, $cy), confidence=${target.confidence}")
+                } else {
+                    context.put("${node.outputContextKey}_target_found", false)
+                    Log.d(TAG, "  ✗ Target '${node.targetLabel}' not found among ${detections.size} detections")
+                    return NodeResult.Failure("Target element '${node.targetLabel}' not found on screen")
+                }
+            }
+
+            return NodeResult.Success
+        } catch (e: Exception) {
+            Log.e(TAG, "Object detection failed", e)
+            context.put("${node.outputContextKey}_success", false)
+            return NodeResult.Failure("Object detection error: ${e.message}")
+        } finally {
+            perceptionLayer.close()
         }
-
-        return NodeResult.Success
     }
 }

@@ -35,12 +35,17 @@ private const val NOTIFICATION_ID = 6001
  *
  * Shows a persistent notification with the active node name,
  * and a floating overlay with a panic button to stop execution.
+ *
+ * Supports MediaProjection for visual trigger and screen ML nodes.
+ * Pass EXTRA_RESULT_CODE + EXTRA_RESULT_DATA from a MediaProjection
+ * consent intent to enable screen capture.
  */
 class FlowExecutionService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private lateinit var executionEngine: FlowExecutionEngine
     private lateinit var repository: FlowRepository
+    private var screenCaptureProvider: ScreenCaptureProvider? = null
 
     // Overlay
     private var windowManager: WindowManager? = null
@@ -48,11 +53,20 @@ class FlowExecutionService : Service() {
 
     companion object {
         private const val EXTRA_FLOW_ID = "extra_flow_id"
+        const val EXTRA_RESULT_CODE = "extra_result_code"
+        const val EXTRA_RESULT_DATA = "extra_result_data"
         private const val ACTION_STOP = "com.autonion.automationcompanion.flow.STOP"
 
-        fun createIntent(context: Context, flowId: String): Intent {
+        fun createIntent(
+            context: Context,
+            flowId: String,
+            resultCode: Int? = null,
+            resultData: Intent? = null
+        ): Intent {
             return Intent(context, FlowExecutionService::class.java).apply {
                 putExtra(EXTRA_FLOW_ID, flowId)
+                if (resultCode != null) putExtra(EXTRA_RESULT_CODE, resultCode)
+                if (resultData != null) putExtra(EXTRA_RESULT_DATA, resultData)
             }
         }
     }
@@ -61,7 +75,6 @@ class FlowExecutionService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        executionEngine = FlowExecutionEngine(applicationContext)
         repository = FlowRepository(applicationContext)
         createNotificationChannel()
     }
@@ -79,6 +92,23 @@ class FlowExecutionService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+
+        // Initialize MediaProjection-based screen capture if consent data is present
+        val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, -1)
+        @Suppress("DEPRECATION")
+        val resultData = intent.getParcelableExtra<Intent>(EXTRA_RESULT_DATA)
+
+        if (resultCode != -1 && resultData != null) {
+            Log.d(TAG, "MediaProjection consent available — initializing ScreenCaptureProvider")
+            screenCaptureProvider = ScreenCaptureProvider(this).also {
+                it.start(resultCode, resultData)
+            }
+        } else {
+            Log.d(TAG, "No MediaProjection consent — visual trigger and ML nodes will run in degraded mode")
+        }
+
+        // Create the engine with the (possibly null) capture provider
+        executionEngine = FlowExecutionEngine(applicationContext, screenCaptureProvider)
 
         startForeground(NOTIFICATION_ID, buildNotification("Loading flow..."))
         showOverlay()
@@ -240,6 +270,8 @@ class FlowExecutionService : Service() {
 
     private fun stopExecution() {
         executionEngine.stop()
+        screenCaptureProvider?.stop()
+        screenCaptureProvider = null
         removeOverlay()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -248,6 +280,8 @@ class FlowExecutionService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         executionEngine.stop()
+        screenCaptureProvider?.stop()
+        screenCaptureProvider = null
         removeOverlay()
         scope.cancel()
     }

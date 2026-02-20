@@ -29,7 +29,10 @@ sealed class FlowExecutionState {
  * Walks the directed graph from the StartNode, executing each node via its
  * [NodeExecutor] and following edges based on [EdgeConditionEvaluator].
  */
-class FlowExecutionEngine(private val appContext: Context) {
+class FlowExecutionEngine(
+    private val appContext: Context,
+    private val screenCaptureProvider: ScreenCaptureProvider? = null
+) {
 
     private val _state = MutableStateFlow<FlowExecutionState>(FlowExecutionState.Idle)
     val state: StateFlow<FlowExecutionState> = _state.asStateFlow()
@@ -38,12 +41,12 @@ class FlowExecutionEngine(private val appContext: Context) {
     private var executionJob: Job? = null
     private var isPaused = false
 
-    // Executor registry
+    // Executor registry — wire real implementations when ScreenCaptureProvider is available
     private val executors = mapOf<FlowNodeType, NodeExecutor>(
         FlowNodeType.START to StartNodeExecutor(appContext),
         FlowNodeType.GESTURE to GestureNodeExecutor(),
-        FlowNodeType.VISUAL_TRIGGER to VisualTriggerNodeExecutor(),
-        FlowNodeType.SCREEN_ML to ScreenMLNodeExecutor(),
+        FlowNodeType.VISUAL_TRIGGER to VisualTriggerNodeExecutor(screenCaptureProvider),
+        FlowNodeType.SCREEN_ML to ScreenMLNodeExecutor(appContext, screenCaptureProvider),
         FlowNodeType.DELAY to DelayNodeExecutor()
     )
 
