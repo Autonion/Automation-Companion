@@ -330,27 +330,24 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
 
     fun executeFlow(resultCode: Int? = null, resultData: android.content.Intent? = null) {
         saveFlow()
-        executionEngine.stop()
-        screenCaptureProvider?.stop()
         
-        if (resultCode != null && resultData != null && resultCode == android.app.Activity.RESULT_OK) {
-            screenCaptureProvider = com.autonion.automationcompanion.features.flow_automation.engine.ScreenCaptureProvider(getApplication()).apply {
-                start(resultCode, resultData)
-            }
-        } else {
-            screenCaptureProvider = null
+        val context = getApplication<android.app.Application>()
+        val flowId = _state.value.graph.id
+        
+        val runIntent = android.content.Intent(context, com.autonion.automationcompanion.features.flow_automation.ui.FlowMediaProjectionActivity::class.java).apply {
+            action = com.autonion.automationcompanion.features.flow_automation.ui.FlowMediaProjectionActivity.ACTION_RUN_FLOW
+            putExtra(com.autonion.automationcompanion.features.flow_automation.ui.FlowMediaProjectionActivity.EXTRA_FLOW_ID, flowId)
+            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        
-        executionEngine = FlowExecutionEngine(getApplication(), screenCaptureProvider)
-        observeEngine()
-        
-        executionEngine.execute(_state.value.graph, viewModelScope)
+        context.startActivity(runIntent)
     }
 
     fun stopExecution() {
-        executionEngine.stop()
-        screenCaptureProvider?.stop()
-        screenCaptureProvider = null
+        val context = getApplication<android.app.Application>()
+        val stopIntent = android.content.Intent(context, com.autonion.automationcompanion.features.flow_automation.engine.FlowExecutionService::class.java).apply {
+            action = "com.autonion.automationcompanion.flow.STOP"
+        }
+        context.startService(stopIntent)
     }
 
     // ─── Flow Mode Overlay Handling ─────────────────────────────────────

@@ -59,10 +59,12 @@ class FlowMediaProjectionActivity : ComponentActivity() {
                 }
                 ACTION_RUN_FLOW -> {
                     val flowId = intent.getStringExtra(EXTRA_FLOW_ID) ?: ""
-                    val serviceIntent = FlowExecutionService.createIntent(this, flowId).apply {
-                        putExtra("EXTRA_RESULT_CODE", result.resultCode)
-                        putExtra("EXTRA_RESULT_DATA", result.data)
-                    }
+                    val serviceIntent = FlowExecutionService.createIntent(
+                        context = this,
+                        flowId = flowId,
+                        resultCode = result.resultCode,
+                        resultData = result.data
+                    )
                     androidx.core.content.ContextCompat.startForegroundService(this, serviceIntent)
                 }
             }

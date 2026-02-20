@@ -93,24 +93,25 @@ class FlowExecutionService : Service() {
             return START_NOT_STICKY
         }
 
+        startForeground(NOTIFICATION_ID, buildNotification("Loading flow..."), android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+
         // Initialize MediaProjection-based screen capture if consent data is present
-        val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, -1)
+        val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0)
         @Suppress("DEPRECATION")
         val resultData = intent.getParcelableExtra<Intent>(EXTRA_RESULT_DATA)
 
-        if (resultCode != -1 && resultData != null) {
+        if (resultCode == android.app.Activity.RESULT_OK && resultData != null) {
             Log.d(TAG, "MediaProjection consent available — initializing ScreenCaptureProvider")
             screenCaptureProvider = ScreenCaptureProvider(this).also {
                 it.start(resultCode, resultData)
             }
         } else {
-            Log.d(TAG, "No MediaProjection consent — visual trigger and ML nodes will run in degraded mode")
+            Log.d(TAG, "No MediaProjection consent — visual trigger and ML nodes will run in degraded mode: resultCode=$resultCode, data=$resultData")
         }
 
         // Create the engine with the (possibly null) capture provider
         executionEngine = FlowExecutionEngine(applicationContext, screenCaptureProvider)
 
-        startForeground(NOTIFICATION_ID, buildNotification("Loading flow..."))
         showOverlay()
         startFlowExecution(flowId)
 
