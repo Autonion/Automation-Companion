@@ -93,7 +93,11 @@ class FlowExecutionService : Service() {
             return START_NOT_STICKY
         }
 
-        startForeground(NOTIFICATION_ID, buildNotification("Loading flow..."), android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIFICATION_ID, buildNotification("Loading flow..."), android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+        } else {
+            startForeground(NOTIFICATION_ID, buildNotification("Loading flow..."))
+        }
 
         // Initialize MediaProjection-based screen capture if consent data is present
         val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0)
