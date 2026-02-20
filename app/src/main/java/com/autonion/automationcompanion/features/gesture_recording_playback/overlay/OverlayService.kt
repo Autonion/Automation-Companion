@@ -723,8 +723,10 @@ class OverlayService : Service() {
             android.util.Log.d("OverlayService", "saveForFlowMode: local broadcast sent. Result (has receivers) = $broadcastResult")
 
             showStatusAnimation(true)
-            // Auto-close after a brief delay so user sees the success animation
-            binding.root.postDelayed({ stopSelf() }, 800)
+            // DON'T auto-close in flow mode. The user might want to capture more gestures,
+            // or close manually using the 'X' button. But we do want to perhaps clear?
+            // ActionManager.clearAllActions() // Optional: clear after save so they can record a new gesture without closing?
+            // Actually, for a single node, maybe they just re-record. Let's just leave it open.
         } catch (e: Exception) {
             android.util.Log.e("OverlayService", "Error in saveForFlowMode", e)
             showStatusAnimation(false)

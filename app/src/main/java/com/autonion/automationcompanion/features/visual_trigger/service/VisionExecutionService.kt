@@ -107,7 +107,7 @@ class VisionExecutionService : Service() {
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Vision Automation Running")
             .setContentText("Scanning screen...")
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(com.autonion.automationcompanion.R.drawable.ic_notification)
             .addAction(android.R.drawable.ic_media_pause, "Stop", stopPendingIntent)
             .build()
 

@@ -43,10 +43,9 @@ class VisionEditorActivity : ComponentActivity() {
                                 putExtra(FlowOverlayContract.EXTRA_RESULT_IMAGE_PATH, imagePath)
                             }
                             LocalBroadcastManager.getInstance(this@VisionEditorActivity).sendBroadcast(resultIntent)
-                        } else {
-                            // Re-show the capture overlay so user can capture more or cancel
-                            showOverlayAgain()
-                        }
+                        } 
+                        // Always re-show the overlay so user can capture more or close manually
+                        showOverlayAgain()
                         finish()
                     },
                     onCancel = {

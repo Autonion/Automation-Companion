@@ -103,7 +103,7 @@ class CaptureOverlayService : Service() {
         val notification = NotificationCompat.Builder(this, channelId)
             .setContentTitle("Vision Capture Active")
             .setContentText("Use the overlay to capture a screenshot")
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(com.autonion.automationcompanion.R.drawable.ic_notification)
             .build()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {

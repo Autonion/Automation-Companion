@@ -21,6 +21,7 @@ class FlowMediaProjectionActivity : ComponentActivity() {
 
     companion object {
         const val ACTION_START_VISUAL_OVERLAY = "ACTION_START_VISUAL_OVERLAY"
+        const val ACTION_START_SCREEN_ML = "ACTION_START_SCREEN_ML"
         const val ACTION_RUN_FLOW = "ACTION_RUN_FLOW"
         
         const val EXTRA_FLOW_ID = "EXTRA_FLOW_ID"
@@ -39,7 +40,18 @@ class FlowMediaProjectionActivity : ComponentActivity() {
                         putExtra(FlowOverlayContract.EXTRA_FLOW_MODE, true)
                         putExtra(FlowOverlayContract.EXTRA_FLOW_NODE_ID, nodeId)
                     }
-                    startForegroundService(serviceIntent)
+                    androidx.core.content.ContextCompat.startForegroundService(this, serviceIntent)
+                }
+                ACTION_START_SCREEN_ML -> {
+                    val nodeId = intent.getStringExtra(EXTRA_NODE_ID)
+                    val serviceIntent = Intent(this, com.autonion.automationcompanion.features.screen_understanding_ml.core.ScreenUnderstandingService::class.java).apply {
+                        action = "START_CAPTURE"
+                        putExtra("resultCode", result.resultCode)
+                        putExtra("data", result.data)
+                        putExtra(FlowOverlayContract.EXTRA_FLOW_MODE, true)
+                        putExtra(FlowOverlayContract.EXTRA_FLOW_NODE_ID, nodeId)
+                    }
+                    androidx.core.content.ContextCompat.startForegroundService(this, serviceIntent)
                 }
                 ACTION_RUN_FLOW -> {
                     val flowId = intent.getStringExtra(EXTRA_FLOW_ID) ?: ""
@@ -47,7 +59,7 @@ class FlowMediaProjectionActivity : ComponentActivity() {
                         putExtra("EXTRA_RESULT_CODE", result.resultCode)
                         putExtra("EXTRA_RESULT_DATA", result.data)
                     }
-                    startForegroundService(serviceIntent)
+                    androidx.core.content.ContextCompat.startForegroundService(this, serviceIntent)
                 }
             }
         } else {

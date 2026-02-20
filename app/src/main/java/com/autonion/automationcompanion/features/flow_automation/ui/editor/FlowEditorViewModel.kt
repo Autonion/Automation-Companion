@@ -409,40 +409,40 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
 
     fun launchOverlayForNode(node: FlowNode) {
         val app = getApplication<Application>()
-        val intent = android.content.Intent()
         
         when (node) {
             is GestureNode -> {
+                val intent = android.content.Intent()
                 intent.setClass(app, com.autonion.automationcompanion.features.gesture_recording_playback.overlay.OverlayService::class.java)
                 intent.action = "com.autonion.ACTION_START_OVERLAY"
                 intent.putExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_MODE, true)
                 intent.putExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_NODE_ID, node.id)
                 app.startService(intent)
+                
+                val homeIntent = android.content.Intent(android.content.Intent.ACTION_MAIN).apply {
+                    addCategory(android.content.Intent.CATEGORY_HOME)
+                    flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                app.startActivity(homeIntent)
             }
             is VisualTriggerNode -> {
                 val intent = android.content.Intent(app, com.autonion.automationcompanion.features.flow_automation.ui.FlowMediaProjectionActivity::class.java).apply {
                     action = com.autonion.automationcompanion.features.flow_automation.ui.FlowMediaProjectionActivity.ACTION_START_VISUAL_OVERLAY
                     putExtra(com.autonion.automationcompanion.features.flow_automation.ui.FlowMediaProjectionActivity.EXTRA_NODE_ID, node.id)
+                    flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
                 }
-                intent.flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
                 app.startActivity(intent)
             }
             is ScreenMLNode -> {
-                val intent = android.content.Intent()
-                intent.setClass(app, com.autonion.automationcompanion.features.screen_understanding_ml.core.ScreenUnderstandingService::class.java)
-                intent.action = "START_CAPTURE_PHASE"
-                intent.putExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_MODE, true)
-                intent.putExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_NODE_ID, node.id)
-                app.startService(intent)
+                val intent = android.content.Intent(app, com.autonion.automationcompanion.features.flow_automation.ui.FlowMediaProjectionActivity::class.java).apply {
+                    action = com.autonion.automationcompanion.features.flow_automation.ui.FlowMediaProjectionActivity.ACTION_START_SCREEN_ML
+                    putExtra(com.autonion.automationcompanion.features.flow_automation.ui.FlowMediaProjectionActivity.EXTRA_NODE_ID, node.id)
+                    flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                app.startActivity(intent)
             }
             else -> return
         }
-        
-        val homeIntent = android.content.Intent(android.content.Intent.ACTION_MAIN).apply {
-            addCategory(android.content.Intent.CATEGORY_HOME)
-            flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
-        }
-        app.startActivity(homeIntent)
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────

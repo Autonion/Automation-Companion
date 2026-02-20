@@ -80,6 +80,10 @@ class ScreenUnderstandingService : Service() {
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var currentPresetId: String? = null
+    
+    // Flow mode state
+    private var isFlowMode = false
+    private var flowNodeId: String? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -160,7 +164,7 @@ class ScreenUnderstandingService : Service() {
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Screen Agent Active")
             .setContentText("Understanding screen content...")
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(com.autonion.automationcompanion.R.drawable.ic_notification)
             .build()
 
         if (useMediaProjectionType && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -179,6 +183,9 @@ class ScreenUnderstandingService : Service() {
         val data = intent.getParcelableExtra<Intent>("data")
         val presetName = intent.getStringExtra("presetName")
         val playPresetId = intent.getStringExtra("playPresetId")
+        
+        isFlowMode = intent.getBooleanExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_MODE, false)
+        flowNodeId = intent.getStringExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_NODE_ID)
 
         Log.d(TAG, "Service received presetName: '$presetName', playPresetId: '$playPresetId'")
 
@@ -288,6 +295,8 @@ class ScreenUnderstandingService : Service() {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     putExtra("IMAGE_PATH", file.absolutePath)
                     putExtra("PRESET_NAME", overlay?.getCurrentName() ?: "Untitled")
+                    putExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_MODE, isFlowMode)
+                    putExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_NODE_ID, flowNodeId)
                 }
                 startActivity(intent)
             }

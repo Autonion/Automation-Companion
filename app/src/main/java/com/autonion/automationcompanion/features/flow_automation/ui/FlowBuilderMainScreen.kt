@@ -3,6 +3,7 @@ package com.autonion.automationcompanion.features.flow_automation.ui
 import android.content.Context
 import android.content.Intent
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -47,7 +48,7 @@ fun FlowBuilderMainScreen(
             val editorViewModel: FlowEditorViewModel = viewModel()
 
             // Load or create
-            remember(flowId) {
+            LaunchedEffect(flowId) {
                 if (flowId == "new") {
                     editorViewModel.createNewFlow("Untitled Flow")
                 } else {
