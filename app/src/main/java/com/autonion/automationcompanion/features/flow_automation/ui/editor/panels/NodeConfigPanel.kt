@@ -25,6 +25,7 @@ fun NodeConfigPanel(
     node: FlowNode,
     onUpdateNode: (FlowNode) -> Unit,
     onDeleteNode: () -> Unit,
+    onLaunchOverlay: (FlowNode) -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -76,9 +77,9 @@ fun NodeConfigPanel(
             // Type-specific fields
             when (node) {
                 is StartNode -> StartNodeConfig(node, onUpdateNode)
-                is GestureNode -> GestureNodeConfig(node, onUpdateNode)
-                is VisualTriggerNode -> VisualTriggerNodeConfig(node, onUpdateNode)
-                is ScreenMLNode -> ScreenMLNodeConfig(node, onUpdateNode)
+                is GestureNode -> GestureNodeConfig(node, onUpdateNode, onLaunchOverlay)
+                is VisualTriggerNode -> VisualTriggerNodeConfig(node, onUpdateNode, onLaunchOverlay)
+                is ScreenMLNode -> ScreenMLNodeConfig(node, onUpdateNode, onLaunchOverlay)
                 is DelayNode -> DelayNodeConfig(node, onUpdateNode)
             }
 
@@ -119,9 +120,25 @@ private fun StartNodeConfig(node: StartNode, onUpdate: (FlowNode) -> Unit) {
 }
 
 @Composable
-private fun GestureNodeConfig(node: GestureNode, onUpdate: (FlowNode) -> Unit) {
-    // Gesture type selector
-    Text("Gesture Type", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
+private fun GestureNodeConfig(node: GestureNode, onUpdate: (FlowNode) -> Unit, onLaunchOverlay: (FlowNode) -> Unit) {
+    if (node.recordedActionsJson.isNotEmpty()) {
+        Text("Recorded actions available.", color = Color(0xFF64FFDA), fontSize = 12.sp)
+        Spacer(Modifier.height(8.dp))
+    }
+
+    Button(
+        onClick = { onLaunchOverlay(node) },
+        modifier = Modifier.fillMaxWidth(),
+        colors = ButtonDefaults.buttonColors(containerColor = NodeColors.GestureBlue),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Text(if (node.recordedActionsJson.isEmpty()) "Record Gesture" else "Re-record Gesture", color = Color.White)
+    }
+
+    Spacer(Modifier.height(16.dp))
+
+    // Gesture type selector (Advanced)
+    Text("Advanced: Fallback Config", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
     Spacer(Modifier.height(4.dp))
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         GestureType.entries.forEach { type ->
@@ -205,7 +222,23 @@ private fun GestureNodeConfig(node: GestureNode, onUpdate: (FlowNode) -> Unit) {
 }
 
 @Composable
-private fun VisualTriggerNodeConfig(node: VisualTriggerNode, onUpdate: (FlowNode) -> Unit) {
+private fun VisualTriggerNodeConfig(node: VisualTriggerNode, onUpdate: (FlowNode) -> Unit, onLaunchOverlay: (FlowNode) -> Unit) {
+    if (node.visionPresetJson.isNotEmpty()) {
+        Text("Vision configuration available.", color = Color(0xFF64FFDA), fontSize = 12.sp)
+        Spacer(Modifier.height(8.dp))
+    }
+
+    Button(
+        onClick = { onLaunchOverlay(node) },
+        modifier = Modifier.fillMaxWidth(),
+        colors = ButtonDefaults.buttonColors(containerColor = NodeColors.VisualTriggerPurple),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Text(if (node.visionPresetJson.isEmpty()) "Identify Target Regions" else "Re-configure Target Regions", color = Color.White)
+    }
+
+    Spacer(Modifier.height(16.dp))
+
     var threshold by remember(node.id) { mutableStateOf(node.threshold) }
     var outputKey by remember(node.id) { mutableStateOf(node.outputContextKey) }
 
@@ -238,8 +271,24 @@ private fun VisualTriggerNodeConfig(node: VisualTriggerNode, onUpdate: (FlowNode
 }
 
 @Composable
-private fun ScreenMLNodeConfig(node: ScreenMLNode, onUpdate: (FlowNode) -> Unit) {
-    Text("Mode", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
+private fun ScreenMLNodeConfig(node: ScreenMLNode, onUpdate: (FlowNode) -> Unit, onLaunchOverlay: (FlowNode) -> Unit) {
+    if (node.automationStepsJson.isNotEmpty()) {
+        Text("Screen ML actions available.", color = Color(0xFF64FFDA), fontSize = 12.sp)
+        Spacer(Modifier.height(8.dp))
+    }
+
+    Button(
+        onClick = { onLaunchOverlay(node) },
+        modifier = Modifier.fillMaxWidth(),
+        colors = ButtonDefaults.buttonColors(containerColor = NodeColors.ScreenMLAmber),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Text(if (node.automationStepsJson.isEmpty()) "Capture & Detect Screen" else "Re-capture Screen", color = Color.Black)
+    }
+
+    Spacer(Modifier.height(16.dp))
+
+    Text("Fallback Mode", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
     Spacer(Modifier.height(4.dp))
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         ScreenMLMode.entries.forEach { mode ->

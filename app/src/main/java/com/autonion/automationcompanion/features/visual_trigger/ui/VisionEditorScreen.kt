@@ -42,7 +42,9 @@ fun VisionEditorScreen(
     imagePath: String,
     presetId: String? = null,
     presetName: String = "New Automation",
-    onSaved: () -> Unit,
+    isFlowMode: Boolean = false,
+    flowNodeId: String? = null,
+    onSaved: (String?) -> Unit,
     onCancel: () -> Unit,
     onRecapture: () -> Unit,
     viewModel: VisionEditorViewModel = viewModel()
@@ -437,7 +439,13 @@ fun VisionEditorScreen(
                 contentAlignment = Alignment.BottomEnd
             ) {
                 FloatingActionButton(
-                    onClick = { viewModel.savePreset(presetName) { onSaved() } },
+                    onClick = { 
+                        if (isFlowMode && flowNodeId != null) {
+                            viewModel.saveForFlowMode(flowNodeId) { filePath -> onSaved(filePath) }
+                        } else {
+                            viewModel.savePreset(presetName) { onSaved(null) } 
+                        }
+                    },
                     containerColor = Color(0xFF00C853),
                     contentColor = Color.White,
                     shape = RoundedCornerShape(16.dp)

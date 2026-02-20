@@ -94,13 +94,12 @@ class FlowExecutionEngine(
             currentCoroutineContext().ensureActive()
 
             val node = currentNode
-            Log.d(TAG, "Executing node: ${node.label} (${node.type})")
-            _state.value = FlowExecutionState.Running(node.id, node.label)
+            Log.d(TAG, "Executing node: ${node.label} (${node.nodeType})")
 
             // Find the right executor
-            val executor = executors[node.type]
+            val executor = executors[node.nodeType]
             if (executor == null) {
-                _state.value = FlowExecutionState.Error(node.id, "No executor for type ${node.type}")
+                _state.value = FlowExecutionState.Error(node.id, "No executor for type ${node.nodeType}")
                 return
             }
 

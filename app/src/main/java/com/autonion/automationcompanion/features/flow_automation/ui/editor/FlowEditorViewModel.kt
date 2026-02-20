@@ -47,6 +47,38 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
 
     val executionState: StateFlow<FlowExecutionState> = executionEngine.state
 
+    private val overlayReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
+            intent ?: return
+            val action = intent.action ?: return
+            val nodeId = intent.getStringExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_RESULT_NODE_ID) ?: return
+            val filePath = intent.getStringExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_RESULT_FILE_PATH) ?: return
+            
+            try {
+                val json = java.io.File(filePath).readText()
+                handleOverlayResult(nodeId, action, json, intent)
+                // Clean up temp file
+                java.io.File(filePath).delete()
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to read flow result file", e)
+            }
+        }
+    }
+
+    init {
+        val filter = android.content.IntentFilter().apply {
+            addAction(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.ACTION_FLOW_GESTURE_DONE)
+            addAction(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.ACTION_FLOW_VISION_DONE)
+            addAction(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.ACTION_FLOW_ML_DONE)
+        }
+        androidx.localbroadcastmanager.content.LocalBroadcastManager.getInstance(application).registerReceiver(overlayReceiver, filter)
+    }
+
+    override fun onCleared() {
+        androidx.localbroadcastmanager.content.LocalBroadcastManager.getInstance(getApplication<Application>()).unregisterReceiver(overlayReceiver)
+        super.onCleared()
+    }
+
     // ─── Undo/Redo ────────────────────────────────────────────────────────
 
     private val undoStack = mutableListOf<FlowGraph>()
@@ -277,6 +309,91 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
 
     fun stopExecution() {
         executionEngine.stop()
+    }
+
+    // ─── Flow Mode Overlay Handling ─────────────────────────────────────
+
+    private fun handleOverlayResult(nodeId: String, action: String, json: String, intent: android.content.Intent) {
+        _state.update { state ->
+            val node = state.graph.nodeById(nodeId) ?: return@update state
+            val updatedNode = when (action) {
+                com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.ACTION_FLOW_GESTURE_DONE -> {
+                    var updated = (node as? GestureNode)?.copy(recordedActionsJson = json) ?: node
+                    if (updated is GestureNode) {
+                        try {
+                            val actions = kotlinx.serialization.json.Json.decodeFromString<List<com.autonion.automationcompanion.features.gesture_recording_playback.models.Action>>(json)
+                            val firstAction = actions.firstOrNull { it.points.isNotEmpty() }
+                            if (firstAction != null) {
+                                val pt = firstAction.points.first()
+                                val newGestureType = when (firstAction.type) {
+                                    com.autonion.automationcompanion.features.gesture_recording_playback.models.ActionType.CLICK -> GestureType.TAP
+                                    com.autonion.automationcompanion.features.gesture_recording_playback.models.ActionType.LONG_CLICK -> GestureType.LONG_PRESS
+                                    com.autonion.automationcompanion.features.gesture_recording_playback.models.ActionType.SWIPE -> GestureType.SWIPE
+                                    else -> GestureType.TAP
+                                }
+                                val swipeEndX = if (firstAction.type == com.autonion.automationcompanion.features.gesture_recording_playback.models.ActionType.SWIPE) firstAction.points.lastOrNull()?.x else null
+                                val swipeEndY = if (firstAction.type == com.autonion.automationcompanion.features.gesture_recording_playback.models.ActionType.SWIPE) firstAction.points.lastOrNull()?.y else null
+                                
+                                updated = updated.copy(
+                                    coordinateSource = CoordinateSource.Static(pt.x, pt.y),
+                                    gestureType = newGestureType,
+                                    durationMs = firstAction.duration,
+                                    swipeEndX = swipeEndX,
+                                    swipeEndY = swipeEndY
+                                )
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Failed parsing gesture JSON for fallback updates", e)
+                        }
+                    }
+                    updated
+                }
+                com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.ACTION_FLOW_VISION_DONE -> {
+                    val imgPath = intent.getStringExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_RESULT_IMAGE_PATH) ?: ""
+                    (node as? VisualTriggerNode)?.copy(visionPresetJson = json, templateImagePath = imgPath) ?: node
+                }
+                com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.ACTION_FLOW_ML_DONE -> {
+                    val imgPath = intent.getStringExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_RESULT_IMAGE_PATH) ?: ""
+                    (node as? ScreenMLNode)?.copy(automationStepsJson = json, captureImagePath = imgPath) ?: node
+                }
+                else -> node
+            }
+            val newGraph = state.graph.withNode(updatedNode)
+            // Save immediately updated node
+            repository.save(newGraph)
+            state.copy(graph = newGraph, isDirty = false)
+        }
+    }
+
+    fun launchOverlayForNode(node: FlowNode) {
+        val app = getApplication<Application>()
+        val intent = android.content.Intent()
+        
+        when (node) {
+            is GestureNode -> {
+                intent.setClass(app, com.autonion.automationcompanion.features.gesture_recording_playback.overlay.OverlayService::class.java)
+                intent.action = "com.autonion.ACTION_START_OVERLAY" 
+            }
+            is VisualTriggerNode -> {
+                intent.setClass(app, com.autonion.automationcompanion.features.visual_trigger.service.CaptureOverlayService::class.java)
+                intent.action = "com.autonion.ACTION_SHOW_OVERLAY"
+            }
+            is ScreenMLNode -> {
+                intent.setClass(app, com.autonion.automationcompanion.features.screen_understanding_ml.core.ScreenUnderstandingService::class.java)
+                intent.action = "START_CAPTURE_PHASE"
+            }
+            else -> return
+        }
+        
+        intent.putExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_MODE, true)
+        intent.putExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_NODE_ID, node.id)
+        app.startService(intent)
+        
+        val homeIntent = android.content.Intent(android.content.Intent.ACTION_MAIN).apply {
+            addCategory(android.content.Intent.CATEGORY_HOME)
+            flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        app.startActivity(homeIntent)
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────

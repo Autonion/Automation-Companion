@@ -41,8 +41,11 @@ import com.autonion.automationcompanion.ui.theme.AppTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
 import java.io.File
 import java.util.UUID
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
+import com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract
 
 class CaptureEditorActivity : ComponentActivity() {
 
@@ -50,12 +53,20 @@ class CaptureEditorActivity : ComponentActivity() {
     private var editorViewInput: EditorView? = null // Reference to AndroidView to get data
     private var perceptionLayer: PerceptionLayer? = null
     private var presetName: String = "Untitled"
+    
+    // Flow mode state
+    private var isFlowMode = false
+    private var flowNodeId: String? = null
+    private var currentImagePath: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
         val imagePath = intent.getStringExtra("IMAGE_PATH")
         presetName = intent.getStringExtra("PRESET_NAME") ?: "Untitled"
+        isFlowMode = intent.getBooleanExtra(FlowOverlayContract.EXTRA_FLOW_MODE, false)
+        flowNodeId = intent.getStringExtra(FlowOverlayContract.EXTRA_FLOW_NODE_ID)
+        currentImagePath = imagePath
         
         if (imagePath == null) {
             Toast.makeText(this, "No image provided", Toast.LENGTH_SHORT).show()
@@ -220,6 +231,27 @@ class CaptureEditorActivity : ComponentActivity() {
                  actionType = actionTypes.getOrElse(i) { ActionType.CLICK },
                  inputText = inputTexts.getOrElse(i) { null }
              )
+        }
+        
+        if (isFlowMode && flowNodeId != null) {
+            try {
+                val json = Json.encodeToString(steps)
+                val tempFile = File(cacheDir, "flow_ml_${flowNodeId}.json")
+                tempFile.writeText(json)
+                
+                val resultIntent = Intent(FlowOverlayContract.ACTION_FLOW_ML_DONE).apply {
+                    putExtra(FlowOverlayContract.EXTRA_RESULT_NODE_ID, flowNodeId)
+                    putExtra(FlowOverlayContract.EXTRA_RESULT_FILE_PATH, tempFile.absolutePath)
+                    putExtra(FlowOverlayContract.EXTRA_RESULT_IMAGE_PATH, currentImagePath)
+                }
+                LocalBroadcastManager.getInstance(this).sendBroadcast(resultIntent)
+                
+                Toast.makeText(this, "Flow node configured", Toast.LENGTH_SHORT).show()
+                finish()
+            } catch (e: Exception) {
+                Toast.makeText(this, "Error saving for flow mode: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+            return
         }
         
         val service = ScreenUnderstandingService.instance

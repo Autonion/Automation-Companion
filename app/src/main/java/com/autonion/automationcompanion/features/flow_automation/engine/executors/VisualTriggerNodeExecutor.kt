@@ -9,6 +9,9 @@ import com.autonion.automationcompanion.features.flow_automation.engine.ScreenCa
 import com.autonion.automationcompanion.features.flow_automation.model.FlowContext
 import com.autonion.automationcompanion.features.flow_automation.model.FlowNode
 import com.autonion.automationcompanion.features.flow_automation.model.VisualTriggerNode
+import com.autonion.automationcompanion.features.visual_trigger.models.VisionPreset
+import com.autonion.automationcompanion.features.visual_trigger.models.ExecutionMode
+import com.autonion.automationcompanion.features.visual_trigger.service.VisionActionExecutor
 
 private const val TAG = "VisualTriggerExecutor"
 
@@ -27,12 +30,16 @@ class VisualTriggerNodeExecutor(
         val vtNode = node as? VisualTriggerNode
             ?: return NodeResult.Failure("Expected VisualTriggerNode but got ${node::class.simpleName}")
 
+        val provider = screenCaptureProvider
+            ?: return NodeResult.Failure("Screen capture not available — MediaProjection not started")
+
+        if (vtNode.visionPresetJson.isNotEmpty()) {
+            return executePreset(vtNode, provider)
+        }
+
         if (vtNode.templateImagePath.isBlank()) {
             return NodeResult.Failure("No template image configured")
         }
-
-        val provider = screenCaptureProvider
-            ?: return NodeResult.Failure("Screen capture not available — MediaProjection not started")
 
         Log.d(TAG, "Visual trigger: template=${vtNode.templateImagePath}, threshold=${vtNode.threshold}")
 
@@ -83,6 +90,66 @@ class VisualTriggerNodeExecutor(
             templateBitmap.recycle()
             // Don't recycle screenBitmap — it's managed by the VisionMediaProjection flow
             VisionNativeBridge.nativeClearTemplates()
+        }
+    }
+
+    private suspend fun executePreset(node: VisualTriggerNode, provider: ScreenCaptureProvider): NodeResult {
+        try {
+            val preset = kotlinx.serialization.json.Json.decodeFromString<VisionPreset>(node.visionPresetJson)
+            Log.d(TAG, "Playing back VisionPreset: ${preset.name} with ${preset.regions.size} regions")
+            
+            for (region in preset.regions) {
+                val templateBitmap = BitmapFactory.decodeFile(region.templatePath)
+                if (templateBitmap == null) {
+                    Log.e(TAG, "Failed to decode region template: ${region.templatePath}")
+                    if (preset.executionMode == ExecutionMode.MANDATORY_SEQUENTIAL) {
+                        return NodeResult.Failure("Failed to decode region template")
+                    }
+                    continue
+                }
+                
+                // Allow UI to update
+                kotlinx.coroutines.delay(200)
+                
+                val screenBitmap = provider.captureFrame()
+                if (screenBitmap == null) {
+                    templateBitmap.recycle()
+                    return NodeResult.Failure("Failed to capture screen frame")
+                }
+                
+                try {
+                    VisionNativeBridge.nativeClearTemplates()
+                    VisionNativeBridge.addTemplate(region.id, templateBitmap)
+                    val results = VisionNativeBridge.match(screenBitmap)
+                    val match = results.firstOrNull { it.id == region.id }
+                    
+                    if (match != null && match.matched && match.score >= node.threshold) {
+                        val cx = match.x + match.width / 2f
+                        val cy = match.y + match.height / 2f
+                        Log.d(TAG, "Region ${region.id} matched at ($cx, $cy) score: ${match.score}")
+                        
+                        val success = VisionActionExecutor.execute(region.action, android.graphics.PointF(cx, cy))
+                        if (!success) {
+                            Log.w(TAG, "Failed to execute action for region ${region.id}")
+                        }
+                        
+                        // Add delay to let UI settle before next region
+                        kotlinx.coroutines.delay(500)
+                    } else {
+                        Log.d(TAG, "Region ${region.id} not found above threshold")
+                        if (preset.executionMode == ExecutionMode.MANDATORY_SEQUENTIAL) {
+                            return NodeResult.Failure("Mandatory region ${region.id} not found")
+                        }
+                    }
+                } finally {
+                    templateBitmap.recycle()
+                    VisionNativeBridge.nativeClearTemplates()
+                }
+            }
+            return NodeResult.Success
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed playing back preset", e)
+            return NodeResult.Failure("Malformed vision preset: ${e.message}")
         }
     }
 }

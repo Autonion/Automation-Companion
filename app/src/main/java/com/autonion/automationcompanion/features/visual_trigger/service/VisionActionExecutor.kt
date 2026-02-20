@@ -41,6 +41,13 @@ object VisionActionExecutor : AccessibilityFeature {
         }
     }
 
+    suspend fun dispatchPath(path: Path, duration: Long): Boolean {
+        val service = serviceRef?.get() ?: return false
+        val stroke = GestureDescription.StrokeDescription(path, 0, duration)
+        val gesture = GestureDescription.Builder().addStroke(stroke).build()
+        return dispatchGesture(service, gesture)
+    }
+
     private suspend fun dispatchClick(service: AccessibilityService, point: PointF): Boolean {
         val path = Path().apply {
             moveTo(point.x, point.y)

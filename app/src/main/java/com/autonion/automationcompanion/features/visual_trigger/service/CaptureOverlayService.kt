@@ -28,6 +28,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
 import com.autonion.automationcompanion.R
+import com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract
 import com.autonion.automationcompanion.features.visual_trigger.ui.VisionEditorActivity
 import java.io.File
 import java.io.FileOutputStream
@@ -51,6 +52,10 @@ class CaptureOverlayService : Service() {
     private var resultData: Intent? = null
     private var presetName: String = "New Automation"
 
+    // Flow mode state
+    private var isFlowMode = false
+    private var flowNodeId: String? = null
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -65,11 +70,17 @@ class CaptureOverlayService : Service() {
                 resultCode = intent.getIntExtra("EXTRA_RESULT_CODE", 0)
                 resultData = intent.getParcelableExtra("EXTRA_RESULT_DATA")
                 presetName = intent.getStringExtra("EXTRA_PRESET_NAME") ?: "New Automation"
+                
+                if (intent.getBooleanExtra(FlowOverlayContract.EXTRA_FLOW_MODE, false)) {
+                    isFlowMode = true
+                    flowNodeId = intent.getStringExtra(FlowOverlayContract.EXTRA_FLOW_NODE_ID)
+                }
+                
                 startForegroundServiceNotification()
                 showOverlay()
             }
             "ACTION_SHOW_OVERLAY" -> {
-                // Called after editor finishes — re-show the overlay
+                // Called after editor finishes — re-show the overlay (not used much in flow mode)
                 overlayView?.visibility = View.VISIBLE
             }
         }
@@ -353,11 +364,16 @@ class CaptureOverlayService : Service() {
             val intent = Intent(this, VisionEditorActivity::class.java).apply {
                 putExtra("IMAGE_PATH", file.absolutePath)
                 putExtra("EXTRA_PRESET_NAME", presetName)
+                if (isFlowMode) {
+                    putExtra(FlowOverlayContract.EXTRA_FLOW_MODE, true)
+                    putExtra(FlowOverlayContract.EXTRA_FLOW_NODE_ID, flowNodeId)
+                }
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             startActivity(intent)
 
             // DON'T stopSelf() — keep service alive, overlay will re-show on ACTION_SHOW_OVERLAY
+            // In FLOW_MODE, the EditorActivity will handle stopping the service when done via broadcast
         } catch (e: Exception) {
             Log.e(TAG, "Error saving capture", e)
         }

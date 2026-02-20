@@ -69,7 +69,7 @@ fun NodePalette(
                         modifier = Modifier
                             .clip(RoundedCornerShape(12.dp))
                             .background(item.color.copy(alpha = 0.15f))
-                            .clickable { onAddNode(item.type) }
+                            .clickable { onAddNode(item.nodeType) }
                             .padding(horizontal = 20.dp, vertical = 12.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
@@ -89,7 +89,7 @@ fun NodePalette(
 }
 
 private data class NodeTypeItem(
-    val type: FlowNodeType,
+    val nodeType: FlowNodeType,
     val label: String,
     val emoji: String,
     val color: Color

@@ -34,6 +34,12 @@ class ScreenMLNodeExecutor(
 
         Log.d(TAG, "Screen ML: mode=${mlNode.mode}, outputKey=${mlNode.outputContextKey}")
 
+        if (mlNode.automationStepsJson.isNotEmpty()) {
+            val provider = screenCaptureProvider 
+                ?: return NodeResult.Failure("Screen capture not available")
+            return executeSteps(mlNode, context, provider)
+        }
+
         return when (mlNode.mode) {
             ScreenMLMode.OCR -> executeOCR(mlNode, context)
             ScreenMLMode.OBJECT_DETECTION -> executeObjectDetection(mlNode, context)
@@ -134,6 +140,70 @@ class ScreenMLNodeExecutor(
             return NodeResult.Failure("Object detection error: ${e.message}")
         } finally {
             perceptionLayer.close()
+        }
+    }
+
+    private suspend fun executeSteps(node: ScreenMLNode, context: FlowContext, provider: ScreenCaptureProvider): NodeResult {
+        val ctx = appContext ?: return NodeResult.Failure("App context not available for PerceptionLayer")
+        
+        try {
+            val steps = kotlinx.serialization.json.Json.decodeFromString<List<com.autonion.automationcompanion.features.screen_understanding_ml.model.AutomationStep>>(node.automationStepsJson)
+            Log.d(TAG, "Playing back ${steps.size} ML automation steps")
+            
+            val perceptionLayer = PerceptionLayer(ctx)
+            try {
+                for (step in steps.sortedBy { it.orderIndex }) {
+                    Log.d(TAG, "Executing step ${step.orderIndex}: ${step.label}")
+                    
+                    // Allow UI to settle
+                    kotlinx.coroutines.delay(500)
+                    
+                    val bitmap = provider.captureFrame()
+                    if (bitmap == null) {
+                        if (step.isOptional) continue else return NodeResult.Failure("Failed to capture screen for step ${step.label}")
+                    }
+                    
+                    val detections = perceptionLayer.detect(bitmap)
+                    val matches = detections.filter { it.label.equals(step.anchor.label, ignoreCase = true) }
+                    
+                    val originalCx = (step.anchor.bounds.left + step.anchor.bounds.right) / 2f
+                    val originalCy = (step.anchor.bounds.top + step.anchor.bounds.bottom) / 2f
+                    
+                    val bestMatch = matches.minByOrNull { detection ->
+                        val cx = (detection.bounds.left + detection.bounds.right) / 2f
+                        val cy = (detection.bounds.top + detection.bounds.bottom) / 2f
+                        Math.hypot((cx - originalCx).toDouble(), (cy - originalCy).toDouble())
+                    }
+                    
+                    if (bestMatch != null) {
+                        val cx = (bestMatch.bounds.left + bestMatch.bounds.right) / 2f
+                        val cy = (bestMatch.bounds.top + bestMatch.bounds.bottom) / 2f
+                        
+                        val intent = com.autonion.automationcompanion.features.screen_understanding_ml.model.ActionIntent(
+                            type = step.actionType,
+                            targetPoint = android.graphics.PointF(cx, cy),
+                            inputText = step.inputText,
+                            description = step.label
+                        )
+                        
+                        val success = com.autonion.automationcompanion.features.screen_understanding_ml.logic.ActionExecutor.execute(ctx, intent)
+                        if (!success && !step.isOptional) {
+                            return NodeResult.Failure("Failed to execute action for step ${step.label}")
+                        }
+                    } else {
+                        Log.d(TAG, "Could not find element '${step.anchor.label}' for step ${step.orderIndex}")
+                        if (!step.isOptional) {
+                            return NodeResult.Failure("Mandatory element '${step.anchor.label}' not found")
+                        }
+                    }
+                }
+            } finally {
+                perceptionLayer.close()
+            }
+            return NodeResult.Success
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed playing back ML automation steps", e)
+            return NodeResult.Failure("Malformed ML steps: ${e.message}")
         }
     }
 }

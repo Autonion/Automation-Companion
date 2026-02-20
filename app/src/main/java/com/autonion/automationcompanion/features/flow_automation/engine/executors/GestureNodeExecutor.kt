@@ -29,6 +29,14 @@ class GestureNodeExecutor : NodeExecutor {
             return NodeResult.Failure("AccessibilityService not connected")
         }
 
+        if (gestureNode.recordedActionsJson.isNotEmpty()) {
+            val result = executeRecordedActions(gestureNode.recordedActionsJson)
+            if (result is NodeResult.Success) {
+                return result
+            }
+            Log.w(TAG, "Recorded action playback failed, falling back to static config")
+        }
+
         // Resolve coordinates
         val point = resolveCoordinates(gestureNode, context)
             ?: return NodeResult.Failure("Could not resolve coordinates")
@@ -78,6 +86,52 @@ class GestureNodeExecutor : NodeExecutor {
                     else -> null
                 }
             }
+        }
+    }
+
+    private suspend fun executeRecordedActions(json: String): NodeResult {
+        try {
+            val actions = kotlinx.serialization.json.Json.decodeFromString<List<com.autonion.automationcompanion.features.gesture_recording_playback.models.Action>>(json)
+            Log.d(TAG, "Playing back ${actions.size} recorded actions")
+            
+            for (action in actions) {
+                if (action.delayBefore > 0) kotlinx.coroutines.delay(action.delayBefore)
+                
+                val success = when (action.type) {
+                    com.autonion.automationcompanion.features.gesture_recording_playback.models.ActionType.CLICK -> {
+                        val pt = action.points.firstOrNull() ?: continue
+                        val path = android.graphics.Path().apply { moveTo(pt.x, pt.y); lineTo(pt.x+1, pt.y+1) }
+                        VisionActionExecutor.dispatchPath(path, if (action.duration < 50) 50 else action.duration)
+                    }
+                    com.autonion.automationcompanion.features.gesture_recording_playback.models.ActionType.LONG_CLICK -> {
+                        val pt = action.points.firstOrNull() ?: continue
+                        val path = android.graphics.Path().apply { moveTo(pt.x, pt.y); lineTo(pt.x+1, pt.y+1) }
+                        VisionActionExecutor.dispatchPath(path, if (action.duration < 100) 500 else action.duration)
+                    }
+                    com.autonion.automationcompanion.features.gesture_recording_playback.models.ActionType.SWIPE -> {
+                        val start = action.points.firstOrNull() ?: continue
+                        val end = action.points.lastOrNull() ?: continue
+                        val path = android.graphics.Path().apply { moveTo(start.x, start.y); lineTo(end.x, end.y) }
+                        VisionActionExecutor.dispatchPath(path, action.duration)
+                    }
+                    com.autonion.automationcompanion.features.gesture_recording_playback.models.ActionType.WAIT -> {
+                        kotlinx.coroutines.delay(action.duration)
+                        true
+                    }
+                }
+                
+                if (!success && action.type != com.autonion.automationcompanion.features.gesture_recording_playback.models.ActionType.WAIT) {
+                    Log.w(TAG, "Failed executing action: $action")
+                    return NodeResult.Failure("Failed to dispatch gesture action")
+                }
+                
+                val waitTime = if (action.delayAfter < 100) 500 else action.delayAfter
+                kotlinx.coroutines.delay(waitTime)
+            }
+            return NodeResult.Success
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed playing back recorded actions", e)
+            return NodeResult.Failure("Malformed recorded gesture actions: ${e.message}")
         }
     }
 }

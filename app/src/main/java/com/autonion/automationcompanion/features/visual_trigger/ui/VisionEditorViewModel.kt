@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
 import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
@@ -177,6 +178,64 @@ class VisionEditorViewModel(application: Application) : AndroidViewModel(applica
             }
             withContext(Dispatchers.Main) {
                 onComplete()
+            }
+        }
+    }
+
+    /**
+     * Flow mode save: serializes the setup into a VisionPreset JSON and saves to a temp file,
+     * without permanent DB storage.
+     */
+    fun saveForFlowMode(flowNodeId: String, onComplete: (String) -> Unit) {
+        val bitmap = _imageBitmap.value ?: return
+        if (currentImagePath == null) return
+
+        viewModelScope.launch {
+            val tempFilePath = withContext(Dispatchers.IO) {
+                // Save capture image
+                val captureFile = File(getApplication<Application>().cacheDir, "flow_viz_cap_${flowNodeId}.png")
+                FileOutputStream(captureFile).use { out ->
+                    bitmap.compress(Bitmap.CompressFormat.PNG, 90, out)
+                }
+
+                val visionRegions = _regions.value.map { temp ->
+                    val templateFile = File(getApplication<Application>().cacheDir, "flow_viz_${flowNodeId}_${temp.id}.png")
+                    val crop = Bitmap.createBitmap(
+                        bitmap,
+                        temp.rect.left.coerceAtLeast(0),
+                        temp.rect.top.coerceAtLeast(0),
+                        temp.rect.width().coerceAtMost(bitmap.width - temp.rect.left.coerceAtLeast(0)),
+                        temp.rect.height().coerceAtMost(bitmap.height - temp.rect.top.coerceAtLeast(0))
+                    )
+                    FileOutputStream(templateFile).use { out ->
+                        crop.compress(Bitmap.CompressFormat.PNG, 100, out)
+                    }
+
+                    VisionRegion.fromRect(
+                        id = temp.id,
+                        rect = temp.rect,
+                        templatePath = templateFile.absolutePath,
+                        action = temp.action,
+                        color = temp.color
+                    )
+                }
+
+                val preset = VisionPreset(
+                    id = "flow_${flowNodeId}",
+                    name = "Flow Vision Config",
+                    regions = visionRegions,
+                    isActive = true,
+                    captureImagePath = captureFile.absolutePath
+                )
+                
+                val json = Json.encodeToString(preset)
+                val tempFile = File(getApplication<Application>().cacheDir, "flow_vision_${flowNodeId}.json")
+                tempFile.writeText(json)
+                
+                tempFile.absolutePath
+            }
+            withContext(Dispatchers.Main) {
+                onComplete(tempFilePath)
             }
         }
     }

@@ -236,6 +236,9 @@ fun FlowEditorScreen(
                         onDeleteNode = {
                             viewModel.deleteNode(selectedNode.id)
                         },
+                        onLaunchOverlay = { node ->
+                            viewModel.launchOverlayForNode(node)
+                        },
                         onDismiss = { viewModel.dismissNodeConfig() }
                     )
                 }

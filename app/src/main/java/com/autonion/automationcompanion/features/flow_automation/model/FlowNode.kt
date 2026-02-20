@@ -58,7 +58,7 @@ enum class ScreenMLMode {
 @Serializable
 sealed class FlowNode {
     abstract val id: String
-    abstract val type: FlowNodeType
+    abstract val nodeType: FlowNodeType
     abstract val position: NodePosition
     abstract val label: String
     abstract val outputEdgeIds: List<String>
@@ -82,12 +82,20 @@ data class StartNode(
     val appPackageName: String? = null,
     val launchFlags: Int = 0
 ) : FlowNode() {
-    override val type: FlowNodeType = FlowNodeType.START
+    override val nodeType: FlowNodeType = FlowNodeType.START
 }
 
 /**
  * Performs a gesture (tap, swipe, long press) via Accessibility Service.
- * Coordinates can be static or dynamically read from FlowContext.
+ *
+ * Configuration modes:
+ * 1. **Recorded** (preferred) — User records gestures via the overlay. The
+ *    serialized action list is stored in [recordedActionsJson].
+ * 2. **Manual** (advanced) — User sets coordinates directly via
+ *    [coordinateSource] and [gestureType].
+ *
+ * During playback the executor checks [recordedActionsJson] first;
+ * if empty it falls back to manual coordinate mode.
  */
 @Serializable
 @SerialName("gesture")
@@ -102,15 +110,22 @@ data class GestureNode(
     val coordinateSource: CoordinateSource = CoordinateSource.Static(540f, 960f),
     val durationMs: Long = 100L,
     val swipeEndX: Float? = null,
-    val swipeEndY: Float? = null
+    val swipeEndY: Float? = null,
+    /** Serialized List<Action> JSON from gesture recording overlay. */
+    val recordedActionsJson: String = ""
 ) : FlowNode() {
-    override val type: FlowNodeType = FlowNodeType.GESTURE
+    override val nodeType: FlowNodeType = FlowNodeType.GESTURE
 }
 
 /**
- * Image-based trigger that uses OpenCV template matching to find
- * a reference image on screen.
- * Writes match result coordinates to FlowContext.
+ * Image-based trigger that uses OpenCV template matching.
+ *
+ * Configuration modes:
+ * 1. **Full V-Trigger preset** — User captures via the VisionTrigger overlay,
+ *    defining regions + actions. Stored in [visionPresetJson].
+ * 2. **Simple template** — Just [templateImagePath] + [threshold] for basic matching.
+ *
+ * The executor checks [visionPresetJson] first.
  */
 @Serializable
 @SerialName("visual_trigger")
@@ -127,15 +142,22 @@ data class VisualTriggerNode(
     val searchRegionY: Int = 0,
     val searchRegionWidth: Int = 0,
     val searchRegionHeight: Int = 0,
-    val outputContextKey: String = "match_result"
+    val outputContextKey: String = "match_result",
+    /** Serialized VisionPreset JSON with regions and actions. */
+    val visionPresetJson: String = ""
 ) : FlowNode() {
-    override val type: FlowNodeType = FlowNodeType.VISUAL_TRIGGER
+    override val nodeType: FlowNodeType = FlowNodeType.VISUAL_TRIGGER
 }
 
 /**
  * ML-powered screen understanding node.
- * - OCR: extracts text from a screen capture and writes it to FlowContext.
- * - Object Detection: finds UI elements and writes coordinates to FlowContext.
+ *
+ * Configuration modes:
+ * 1. **Recorded preset** — User captures screen via CaptureEditor, selects
+ *    elements & assigns actions. Stored in [automationStepsJson].
+ * 2. **Live mode** — Real-time OCR/object detection via [mode].
+ *
+ * The executor checks [automationStepsJson] first.
  */
 @Serializable
 @SerialName("screen_ml")
@@ -148,9 +170,13 @@ data class ScreenMLNode(
     override val timeoutMs: Long = 20_000L,
     val mode: ScreenMLMode = ScreenMLMode.OCR,
     val outputContextKey: String = "ml_result",
-    val targetLabel: String? = null
+    val targetLabel: String? = null,
+    /** Serialized automation steps JSON from CaptureEditor. */
+    val automationStepsJson: String = "",
+    /** Path to captured screenshot used during configuration. */
+    val captureImagePath: String = ""
 ) : FlowNode() {
-    override val type: FlowNodeType = FlowNodeType.SCREEN_ML
+    override val nodeType: FlowNodeType = FlowNodeType.SCREEN_ML
 }
 
 /**
@@ -167,5 +193,5 @@ data class DelayNode(
     override val timeoutMs: Long = 60_000L,
     val delayMs: Long = 2000L
 ) : FlowNode() {
-    override val type: FlowNodeType = FlowNodeType.DELAY
+    override val nodeType: FlowNodeType = FlowNodeType.DELAY
 }

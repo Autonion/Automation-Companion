@@ -26,9 +26,12 @@ import androidx.core.app.NotificationCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.autonion.automationcompanion.R
 import com.autonion.automationcompanion.databinding.OverlayViewBinding
+import com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract
 import com.autonion.automationcompanion.features.gesture_recording_playback.managers.ActionManager
 import com.autonion.automationcompanion.features.gesture_recording_playback.managers.PresetManager
 import com.autonion.automationcompanion.features.gesture_recording_playback.managers.SettingsManager
+import kotlinx.serialization.json.Json
+import java.io.File
 
 class OverlayService : Service() {
 
@@ -48,6 +51,10 @@ class OverlayService : Service() {
 
     private var currentPresetName: String? = null
 
+    // Flow mode state — when launched from flow editor
+    private var isFlowMode = false
+    private var flowNodeId: String? = null
+
     // Automation state
     private var isPlaying = false
     private var currentLoopCount = 1
@@ -63,6 +70,12 @@ class OverlayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Check for flow mode
+        if (intent?.getBooleanExtra(FlowOverlayContract.EXTRA_FLOW_MODE, false) == true) {
+            isFlowMode = true
+            flowNodeId = intent.getStringExtra(FlowOverlayContract.EXTRA_FLOW_NODE_ID)
+        }
+
         currentPresetName = intent?.getStringExtra(EXTRA_PRESET_NAME)
         currentPresetName?.let {
             val actions = PresetManager.loadPreset(this, it)
@@ -274,6 +287,12 @@ class OverlayService : Service() {
         binding.btnSave.setOnClickListener {
             if (ActionManager.isConfirmationShowing(markersView)) {
                 Toast.makeText(this, "Please confirm or cancel the pending action first", Toast.LENGTH_LONG).show()
+                return@setOnClickListener
+            }
+
+            if (isFlowMode) {
+                // Flow mode: serialize actions to temp file and broadcast back
+                saveForFlowMode()
                 return@setOnClickListener
             }
 
@@ -681,6 +700,32 @@ class OverlayService : Service() {
             .start()
     }
 
+
+    /**
+     * Flow mode save: serialize current actions to a temp JSON file,
+     * broadcast the result back to the flow editor ViewModel, then close.
+     */
+    private fun saveForFlowMode() {
+        try {
+            val actions = ActionManager.getActions()
+            val json = Json.encodeToString(actions)
+            val tempFile = File(cacheDir, "flow_gesture_${flowNodeId}.json")
+            tempFile.writeText(json)
+
+            val resultIntent = Intent(FlowOverlayContract.ACTION_FLOW_GESTURE_DONE).apply {
+                putExtra(FlowOverlayContract.EXTRA_RESULT_NODE_ID, flowNodeId)
+                putExtra(FlowOverlayContract.EXTRA_RESULT_FILE_PATH, tempFile.absolutePath)
+            }
+            LocalBroadcastManager.getInstance(this).sendBroadcast(resultIntent)
+
+            showStatusAnimation(true)
+            // Auto-close after a brief delay so user sees the success animation
+            binding.root.postDelayed({ stopSelf() }, 800)
+        } catch (e: Exception) {
+            showStatusAnimation(false)
+            Toast.makeText(this, "Error saving for flow: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     private fun broadcastIntent(action: String) {
         val intent = Intent(action)
