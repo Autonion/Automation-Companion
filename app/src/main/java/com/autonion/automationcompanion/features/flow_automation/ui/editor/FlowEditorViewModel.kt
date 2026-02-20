@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.autonion.automationcompanion.features.flow_automation.data.FlowRepository
 import com.autonion.automationcompanion.features.flow_automation.engine.FlowExecutionEngine
 import com.autonion.automationcompanion.features.flow_automation.engine.FlowExecutionState
+import com.autonion.automationcompanion.features.flow_automation.engine.ScreenCaptureProvider
 import com.autonion.automationcompanion.features.flow_automation.model.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -40,12 +41,20 @@ data class FlowEditorState(
 class FlowEditorViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = FlowRepository(application)
-    private val executionEngine = FlowExecutionEngine(application)
+    private var executionEngine = FlowExecutionEngine(application)
+    private var screenCaptureProvider: ScreenCaptureProvider? = null
 
     private val _state = MutableStateFlow(FlowEditorState())
     val state: StateFlow<FlowEditorState> = _state.asStateFlow()
 
-    val executionState: StateFlow<FlowExecutionState> = executionEngine.state
+    private val _executionState = MutableStateFlow<FlowExecutionState>(FlowExecutionState.Idle)
+    val executionState: StateFlow<FlowExecutionState> = _executionState.asStateFlow()
+    
+    private var engineStateJob: kotlinx.coroutines.Job? = null
+
+    init {
+        observeEngine()
+    }
 
     private val overlayReceiver = object : android.content.BroadcastReceiver() {
         override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
@@ -85,7 +94,15 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
 
     override fun onCleared() {
         androidx.localbroadcastmanager.content.LocalBroadcastManager.getInstance(getApplication<Application>()).unregisterReceiver(overlayReceiver)
+        screenCaptureProvider?.stop()
         super.onCleared()
+    }
+    
+    private fun observeEngine() {
+        engineStateJob?.cancel()
+        engineStateJob = viewModelScope.launch {
+            executionEngine.state.collect { _executionState.value = it }
+        }
     }
 
     // ─── Undo/Redo ────────────────────────────────────────────────────────
@@ -311,13 +328,29 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
 
     // ─── Execution ───────────────────────────────────────────────────────
 
-    fun executeFlow() {
+    fun executeFlow(resultCode: Int? = null, resultData: android.content.Intent? = null) {
         saveFlow()
+        executionEngine.stop()
+        screenCaptureProvider?.stop()
+        
+        if (resultCode != null && resultData != null && resultCode == android.app.Activity.RESULT_OK) {
+            screenCaptureProvider = com.autonion.automationcompanion.features.flow_automation.engine.ScreenCaptureProvider(getApplication()).apply {
+                start(resultCode, resultData)
+            }
+        } else {
+            screenCaptureProvider = null
+        }
+        
+        executionEngine = FlowExecutionEngine(getApplication(), screenCaptureProvider)
+        observeEngine()
+        
         executionEngine.execute(_state.value.graph, viewModelScope)
     }
 
     fun stopExecution() {
         executionEngine.stop()
+        screenCaptureProvider?.stop()
+        screenCaptureProvider = null
     }
 
     // ─── Flow Mode Overlay Handling ─────────────────────────────────────
@@ -381,22 +414,29 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
         when (node) {
             is GestureNode -> {
                 intent.setClass(app, com.autonion.automationcompanion.features.gesture_recording_playback.overlay.OverlayService::class.java)
-                intent.action = "com.autonion.ACTION_START_OVERLAY" 
+                intent.action = "com.autonion.ACTION_START_OVERLAY"
+                intent.putExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_MODE, true)
+                intent.putExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_NODE_ID, node.id)
+                app.startService(intent)
             }
             is VisualTriggerNode -> {
-                intent.setClass(app, com.autonion.automationcompanion.features.visual_trigger.service.CaptureOverlayService::class.java)
-                intent.action = "com.autonion.ACTION_SHOW_OVERLAY"
+                val intent = android.content.Intent(app, com.autonion.automationcompanion.features.flow_automation.ui.FlowMediaProjectionActivity::class.java).apply {
+                    action = com.autonion.automationcompanion.features.flow_automation.ui.FlowMediaProjectionActivity.ACTION_START_VISUAL_OVERLAY
+                    putExtra(com.autonion.automationcompanion.features.flow_automation.ui.FlowMediaProjectionActivity.EXTRA_NODE_ID, node.id)
+                }
+                intent.flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                app.startActivity(intent)
             }
             is ScreenMLNode -> {
+                val intent = android.content.Intent()
                 intent.setClass(app, com.autonion.automationcompanion.features.screen_understanding_ml.core.ScreenUnderstandingService::class.java)
                 intent.action = "START_CAPTURE_PHASE"
+                intent.putExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_MODE, true)
+                intent.putExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_NODE_ID, node.id)
+                app.startService(intent)
             }
             else -> return
         }
-        
-        intent.putExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_MODE, true)
-        intent.putExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_NODE_ID, node.id)
-        app.startService(intent)
         
         val homeIntent = android.content.Intent(android.content.Intent.ACTION_MAIN).apply {
             addCategory(android.content.Intent.CATEGORY_HOME)

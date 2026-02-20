@@ -64,6 +64,9 @@ fun FlowBuilderMainScreen(
 }
 
 private fun startFlowService(context: Context, flowId: String) {
-    val intent = FlowExecutionService.createIntent(context, flowId)
-    context.startForegroundService(intent)
+    val runIntent = Intent(context, com.autonion.automationcompanion.features.flow_automation.ui.FlowMediaProjectionActivity::class.java).apply {
+        action = com.autonion.automationcompanion.features.flow_automation.ui.FlowMediaProjectionActivity.ACTION_RUN_FLOW
+        putExtra(com.autonion.automationcompanion.features.flow_automation.ui.FlowMediaProjectionActivity.EXTRA_FLOW_ID, flowId)
+    }
+    context.startActivity(runIntent)
 }

@@ -158,6 +158,11 @@
             android:foregroundServiceType="mediaProjection" />
 
         <!-- Flow Automation Engine -->
+        <activity
+            android:name=".features.flow_automation.ui.FlowMediaProjectionActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <service
             android:name=".features.flow_automation.engine.FlowExecutionService"
             android:enabled="true"

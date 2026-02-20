@@ -13,6 +13,10 @@ import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material.icons.filled.Redo
 import androidx.compose.material3.*
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.app.Activity
+import android.content.Context
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,6 +51,17 @@ fun FlowEditorScreen(
 
     val density = LocalDensity.current
     var canvasSize by remember { mutableStateOf(Size.Zero) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    val projectionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK && result.data != null) {
+            viewModel.executeFlow(result.resultCode, result.data)
+        } else {
+            android.widget.Toast.makeText(context, "Screen record permission is needed to run Vision and AI nodes", android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
 
     Box(
         modifier = Modifier
@@ -273,8 +288,6 @@ fun FlowEditorScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
             horizontalAlignment = Alignment.End
         ) {
-            val context = androidx.compose.ui.platform.LocalContext.current
-
             // Execute / Stop
             FloatingActionButton(
                 onClick = {
@@ -285,7 +298,8 @@ fun FlowEditorScreen(
                             android.widget.Toast.makeText(context, "Please enable Accessibility Service to run flows", android.widget.Toast.LENGTH_SHORT).show()
                             context.startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
                         } else {
-                            viewModel.executeFlow()
+                            val mpManager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as android.media.projection.MediaProjectionManager
+                            projectionLauncher.launch(mpManager.createScreenCaptureIntent())
                         }
                     }
                 },
