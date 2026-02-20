@@ -74,6 +74,30 @@ class OverlayService : Service() {
         if (intent?.getBooleanExtra(FlowOverlayContract.EXTRA_FLOW_MODE, false) == true) {
             isFlowMode = true
             flowNodeId = intent.getStringExtra(FlowOverlayContract.EXTRA_FLOW_NODE_ID)
+            
+            val clearOnStart = intent.getBooleanExtra("EXTRA_CLEAR_ON_START", false)
+            val jsonStr = intent.getStringExtra("EXTRA_FLOW_GESTURE_JSON")
+            
+            if (clearOnStart) {
+                ActionManager.clearAllActions()
+                if (::markersView.isInitialized) ActionManager.releaseViews(markersView)
+            } else if (!jsonStr.isNullOrEmpty()) {
+                try {
+                    val actions = Json.decodeFromString<List<com.autonion.automationcompanion.features.gesture_recording_playback.models.Action>>(jsonStr)
+                    if (::markersView.isInitialized) {
+                        ActionManager.releaseViews(markersView)
+                        ActionManager.loadActions(actions)
+                        if (markersView.isAttachedToWindow) {
+                            ActionManager.recreateVisuals(markersView)
+                        }
+                    } else {
+                        ActionManager.loadActions(actions)
+                    }
+                } catch (e: Exception) {
+                    ActionManager.clearAllActions()
+                }
+            }
+            updateActionCount()
         }
 
         currentPresetName = intent?.getStringExtra(EXTRA_PRESET_NAME)

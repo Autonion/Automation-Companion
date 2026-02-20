@@ -417,6 +417,11 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
                 intent.action = "com.autonion.ACTION_START_OVERLAY"
                 intent.putExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_MODE, true)
                 intent.putExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_NODE_ID, node.id)
+                if (node.recordedActionsJson.isNotEmpty()) {
+                    intent.putExtra("EXTRA_FLOW_GESTURE_JSON", node.recordedActionsJson)
+                } else {
+                    intent.putExtra("EXTRA_CLEAR_ON_START", true)
+                }
                 app.startService(intent)
                 
                 val homeIntent = android.content.Intent(android.content.Intent.ACTION_MAIN).apply {
@@ -429,6 +434,11 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
                 val intent = android.content.Intent(app, com.autonion.automationcompanion.features.flow_automation.ui.FlowMediaProjectionActivity::class.java).apply {
                     action = com.autonion.automationcompanion.features.flow_automation.ui.FlowMediaProjectionActivity.ACTION_START_VISUAL_OVERLAY
                     putExtra(com.autonion.automationcompanion.features.flow_automation.ui.FlowMediaProjectionActivity.EXTRA_NODE_ID, node.id)
+                    if (node.visionPresetJson.isNotEmpty()) {
+                        putExtra("EXTRA_FLOW_VISION_JSON", node.visionPresetJson)
+                    } else {
+                        putExtra("EXTRA_CLEAR_ON_START", true)
+                    }
                     flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
                 }
                 app.startActivity(intent)
@@ -437,6 +447,11 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
                 val intent = android.content.Intent(app, com.autonion.automationcompanion.features.flow_automation.ui.FlowMediaProjectionActivity::class.java).apply {
                     action = com.autonion.automationcompanion.features.flow_automation.ui.FlowMediaProjectionActivity.ACTION_START_SCREEN_ML
                     putExtra(com.autonion.automationcompanion.features.flow_automation.ui.FlowMediaProjectionActivity.EXTRA_NODE_ID, node.id)
+                    if (node.automationStepsJson.isNotEmpty()) {
+                        putExtra("EXTRA_FLOW_ML_JSON", node.automationStepsJson)
+                    } else {
+                        putExtra("EXTRA_CLEAR_ON_START", true)
+                    }
                     flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
                 }
                 app.startActivity(intent)

@@ -55,6 +55,8 @@ class CaptureOverlayService : Service() {
     // Flow mode state
     private var isFlowMode = false
     private var flowNodeId: String? = null
+    private var flowVisionJson: String? = null
+    private var clearOnStart: Boolean = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -74,6 +76,8 @@ class CaptureOverlayService : Service() {
                 if (intent.getBooleanExtra(FlowOverlayContract.EXTRA_FLOW_MODE, false)) {
                     isFlowMode = true
                     flowNodeId = intent.getStringExtra(FlowOverlayContract.EXTRA_FLOW_NODE_ID)
+                    intent.getStringExtra("EXTRA_FLOW_VISION_JSON")?.let { flowVisionJson = it }
+                    intent.getBooleanExtra("EXTRA_CLEAR_ON_START", false).let { if (it) clearOnStart = true }
                 }
                 
                 startForegroundServiceNotification()
@@ -367,6 +371,8 @@ class CaptureOverlayService : Service() {
                 if (isFlowMode) {
                     putExtra(FlowOverlayContract.EXTRA_FLOW_MODE, true)
                     putExtra(FlowOverlayContract.EXTRA_FLOW_NODE_ID, flowNodeId)
+                    flowVisionJson?.let { putExtra("EXTRA_FLOW_VISION_JSON", it) }
+                    if (clearOnStart) putExtra("EXTRA_CLEAR_ON_START", true)
                 }
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }

@@ -192,15 +192,42 @@ class CaptureEditorActivity : ComponentActivity() {
     }
     
     private fun runDetection() {
+        val flowMlJson = intent.getStringExtra("EXTRA_FLOW_ML_JSON")
         Toast.makeText(this, "Detecting UI elements...", Toast.LENGTH_SHORT).show()
         lifecycleScope.launch(Dispatchers.Default) {
-             val elements = perceptionLayer?.detect(sourceBitmap!!) ?: emptyList()
+             val detectedElements = perceptionLayer?.detect(sourceBitmap!!) ?: emptyList()
              withContext(Dispatchers.Main) {
-                 if (elements.isEmpty()) {
+                 val finalElements = detectedElements.toMutableList()
+                 var loadedStates: List<SelectionState>? = null
+
+                 if (!flowMlJson.isNullOrEmpty()) {
+                     try {
+                         val steps = Json.decodeFromString<List<AutomationStep>>(flowMlJson)
+                         val savedElements = steps.map { it.anchor }
+                         for (saved in savedElements) {
+                             if (finalElements.none { it.id == saved.id }) {
+                                 finalElements.add(saved)
+                             }
+                         }
+                         loadedStates = steps.map { step ->
+                             SelectionState(
+                                 element = step.anchor,
+                                 isOptional = step.isOptional,
+                                 actionType = step.actionType,
+                                 inputText = step.inputText
+                             )
+                         }
+                     } catch (e: Exception) {
+                         android.util.Log.e("CaptureEditor", "Failed to parse EXTRA_FLOW_ML_JSON", e)
+                     }
+                 }
+
+                 if (finalElements.isEmpty()) {
                      Toast.makeText(this@CaptureEditorActivity, "No elements found — try Retake", Toast.LENGTH_SHORT).show()
                  } else {
-                     Toast.makeText(this@CaptureEditorActivity, "Found ${elements.size} elements", Toast.LENGTH_SHORT).show()
-                     editorViewInput?.setElements(elements)
+                     Toast.makeText(this@CaptureEditorActivity, "Found ${finalElements.size} elements", Toast.LENGTH_SHORT).show()
+                     editorViewInput?.setElements(finalElements)
+                     loadedStates?.let { editorViewInput?.setSelectionStates(it) }
                  }
              }
         }
@@ -327,6 +354,12 @@ class CaptureEditorActivity : ComponentActivity() {
         
         fun setElements(newElements: List<UIElement>) {
             elements = newElements
+            invalidate()
+        }
+        
+        fun setSelectionStates(states: List<SelectionState>) {
+            selectionStates.clear()
+            selectionStates.addAll(states)
             invalidate()
         }
         

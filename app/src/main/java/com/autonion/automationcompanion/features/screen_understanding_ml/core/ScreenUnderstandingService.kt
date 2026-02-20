@@ -84,6 +84,8 @@ class ScreenUnderstandingService : Service() {
     // Flow mode state
     private var isFlowMode = false
     private var flowNodeId: String? = null
+    private var flowMlJson: String? = null
+    private var clearOnStart: Boolean = false
 
     override fun onCreate() {
         super.onCreate()
@@ -186,6 +188,8 @@ class ScreenUnderstandingService : Service() {
         
         isFlowMode = intent.getBooleanExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_MODE, false)
         flowNodeId = intent.getStringExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_NODE_ID)
+        flowMlJson = intent.getStringExtra("EXTRA_FLOW_ML_JSON")
+        clearOnStart = intent.getBooleanExtra("EXTRA_CLEAR_ON_START", false)
 
         Log.d(TAG, "Service received presetName: '$presetName', playPresetId: '$playPresetId'")
 
@@ -297,6 +301,8 @@ class ScreenUnderstandingService : Service() {
                     putExtra("PRESET_NAME", overlay?.getCurrentName() ?: "Untitled")
                     putExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_MODE, isFlowMode)
                     putExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_NODE_ID, flowNodeId)
+                    flowMlJson?.let { putExtra("EXTRA_FLOW_ML_JSON", it) }
+                    if (clearOnStart) putExtra("EXTRA_CLEAR_ON_START", true)
                 }
                 startActivity(intent)
             }

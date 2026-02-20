@@ -21,7 +21,10 @@ class VisionEditorActivity : ComponentActivity() {
         val isFlowMode = intent.getBooleanExtra(FlowOverlayContract.EXTRA_FLOW_MODE, false)
         val flowNodeId = intent.getStringExtra(FlowOverlayContract.EXTRA_FLOW_NODE_ID)
 
-        if (imagePath == null && presetId == null) {
+        val flowVisionJson = intent.getStringExtra("EXTRA_FLOW_VISION_JSON")
+        val clearOnStart = intent.getBooleanExtra("EXTRA_CLEAR_ON_START", false)
+
+        if (imagePath == null && presetId == null && flowVisionJson == null) {
             Toast.makeText(this, "No image or preset to edit", Toast.LENGTH_SHORT).show()
             finish()
             return
@@ -56,7 +59,8 @@ class VisionEditorActivity : ComponentActivity() {
                         // Just close this activity — overlay will re-show and user can capture again
                         showOverlayAgain()
                         finish()
-                    }
+                    },
+                    flowVisionJson = flowVisionJson
                 )
             }
         }

@@ -47,11 +47,16 @@ fun VisionEditorScreen(
     onSaved: (String?) -> Unit,
     onCancel: () -> Unit,
     onRecapture: () -> Unit,
+    flowVisionJson: String? = null,
     viewModel: VisionEditorViewModel = viewModel()
 ) {
     val initialized = remember { mutableStateOf(false) }
     if (!initialized.value) {
-        if (presetId != null) {
+        if (flowVisionJson != null) {
+            viewModel.loadFlowPreset(flowVisionJson) { success ->
+                if (!success) viewModel.loadImage(imagePath)
+            }
+        } else if (presetId != null) {
             viewModel.loadExistingPreset(presetId) { success ->
                 if (!success) viewModel.loadImage(imagePath)
             }

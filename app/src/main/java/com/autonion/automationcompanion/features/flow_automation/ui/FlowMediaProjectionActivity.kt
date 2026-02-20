@@ -39,6 +39,8 @@ class FlowMediaProjectionActivity : ComponentActivity() {
                         putExtra("EXTRA_RESULT_DATA", result.data)
                         putExtra(FlowOverlayContract.EXTRA_FLOW_MODE, true)
                         putExtra(FlowOverlayContract.EXTRA_FLOW_NODE_ID, nodeId)
+                        intent.getStringExtra("EXTRA_FLOW_VISION_JSON")?.let { putExtra("EXTRA_FLOW_VISION_JSON", it) }
+                        intent.getBooleanExtra("EXTRA_CLEAR_ON_START", false).let { if (it) putExtra("EXTRA_CLEAR_ON_START", true) }
                     }
                     androidx.core.content.ContextCompat.startForegroundService(this, serviceIntent)
                 }
@@ -50,6 +52,8 @@ class FlowMediaProjectionActivity : ComponentActivity() {
                         putExtra("data", result.data)
                         putExtra(FlowOverlayContract.EXTRA_FLOW_MODE, true)
                         putExtra(FlowOverlayContract.EXTRA_FLOW_NODE_ID, nodeId)
+                        intent.getStringExtra("EXTRA_FLOW_ML_JSON")?.let { putExtra("EXTRA_FLOW_ML_JSON", it) }
+                        intent.getBooleanExtra("EXTRA_CLEAR_ON_START", false).let { if (it) putExtra("EXTRA_CLEAR_ON_START", true) }
                     }
                     androidx.core.content.ContextCompat.startForegroundService(this, serviceIntent)
                 }

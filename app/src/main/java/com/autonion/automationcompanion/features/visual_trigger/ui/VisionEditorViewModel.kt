@@ -89,6 +89,43 @@ class VisionEditorViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
+    /**
+     * Load a preset directly from JSON String (used for Flow mode)
+     */
+    fun loadFlowPreset(json: String, onResult: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val preset = Json.decodeFromString<VisionPreset>(json)
+                val capturePath = preset.captureImagePath
+
+                if (capturePath == null || !File(capturePath).exists()) {
+                    withContext(Dispatchers.Main) { onResult(false) }
+                    return@launch
+                }
+
+                currentImagePath = capturePath
+                val bitmap = withContext(Dispatchers.IO) {
+                    BitmapFactory.decodeFile(capturePath)
+                }
+                _imageBitmap.value = bitmap
+
+                // Restore regions
+                _regions.value = preset.regions.map { region ->
+                    TempRegion(
+                        id = region.id,
+                        rect = region.toRect(),
+                        color = region.color,
+                        action = region.action
+                    )
+                }
+
+                withContext(Dispatchers.Main) { onResult(true) }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { onResult(false) }
+            }
+        }
+    }
+
     fun addRegion(rect: Rect) {
         val currentList = _regions.value.toMutableList()
         val nextId = (currentList.maxOfOrNull { it.id } ?: 0) + 1
