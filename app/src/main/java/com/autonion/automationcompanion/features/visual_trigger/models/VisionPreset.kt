@@ -17,5 +17,6 @@ data class VisionPreset(
 @Serializable
 enum class ExecutionMode {
     @SerialName("mandatory_sequential") MANDATORY_SEQUENTIAL,
-    @SerialName("optional_sequential") OPTIONAL_SEQUENTIAL
+    @SerialName("optional_sequential") OPTIONAL_SEQUENTIAL,
+    @SerialName("detect_only") DETECT_ONLY
 }

@@ -34,7 +34,7 @@ class VisualTriggerNodeExecutor(
             ?: return NodeResult.Failure("Screen capture not available — MediaProjection not started")
 
         if (vtNode.visionPresetJson.isNotEmpty()) {
-            return executePreset(vtNode, provider)
+            return executePreset(vtNode, provider, context)
         }
 
         if (vtNode.templateImagePath.isBlank()) {
@@ -93,10 +93,10 @@ class VisualTriggerNodeExecutor(
         }
     }
 
-    private suspend fun executePreset(node: VisualTriggerNode, provider: ScreenCaptureProvider): NodeResult {
+    private suspend fun executePreset(node: VisualTriggerNode, provider: ScreenCaptureProvider, context: FlowContext): NodeResult {
         try {
             val preset = kotlinx.serialization.json.Json.decodeFromString<VisionPreset>(node.visionPresetJson)
-            Log.d(TAG, "Playing back VisionPreset: ${preset.name} with ${preset.regions.size} regions")
+            Log.d(TAG, "Playing back VisionPreset: ${preset.name} with ${preset.regions.size} regions, mode: ${preset.executionMode}")
             
             for (region in preset.regions) {
                 val templateBitmap = BitmapFactory.decodeFile(region.templatePath)
@@ -128,17 +128,35 @@ class VisualTriggerNodeExecutor(
                         val cy = match.y + match.height / 2f
                         Log.d(TAG, "Region ${region.id} matched at ($cx, $cy) score: ${match.score}")
                         
-                        val success = VisionActionExecutor.execute(region.action, android.graphics.PointF(cx, cy))
-                        if (!success) {
-                            Log.w(TAG, "Failed to execute action for region ${region.id}")
+                        context.put("${node.outputContextKey}_found", true)
+                        context.put("${node.outputContextKey}_x", cx)
+                        context.put("${node.outputContextKey}_y", cy)
+                        context.put("${node.outputContextKey}_width", match.width)
+                        context.put("${node.outputContextKey}_height", match.height)
+                        context.put("${node.outputContextKey}_score", match.score)
+                        context.put(node.outputContextKey, "${cx},${cy}")
+                        
+                        if (preset.executionMode != ExecutionMode.DETECT_ONLY) {
+                            val success = VisionActionExecutor.execute(region.action, android.graphics.PointF(cx, cy))
+                            if (!success) {
+                                Log.w(TAG, "Failed to execute action for region ${region.id}")
+                            }
+                        } else {
+                            Log.d(TAG, "DETECT_ONLY mode: Skipping action execution for region ${region.id}")
                         }
                         
                         // Add delay to let UI settle before next region
                         kotlinx.coroutines.delay(500)
                     } else {
                         Log.d(TAG, "Region ${region.id} not found above threshold")
+                        context.put("${node.outputContextKey}_found", false)
+                        
                         if (preset.executionMode == ExecutionMode.MANDATORY_SEQUENTIAL) {
                             return NodeResult.Failure("Mandatory region ${region.id} not found")
+                        } else if (preset.executionMode == ExecutionMode.DETECT_ONLY) {
+                            // In DETECT_ONLY, not finding a region is a valid path, let the engine handle routing via EdgeConditions
+                            // We just log properties and move on.
+                            Log.d(TAG, "DETECT_ONLY mode: Region ${region.id} not found. Continuing execution to allow Edge routing.")
                         }
                     }
                 } finally {

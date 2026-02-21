@@ -358,8 +358,13 @@ private fun edgeConditionLabel(edge: FlowEdge): String? {
         null -> null; is EdgeCondition.Always -> null
         is EdgeCondition.WaitSeconds -> "⏱ ${c.seconds}s"
         is EdgeCondition.IfTextContains -> "? \"${c.substring}\""
+        is EdgeCondition.IfNotTextContains -> "! \"${c.substring}\""
         is EdgeCondition.IfContextEquals -> "= ${c.key}"
+        is EdgeCondition.IfNotContextEquals -> "≠ ${c.key}"
         is EdgeCondition.IfImageFound -> "🔍 found?"
+        is EdgeCondition.IfNotImageFound -> "🔍 not found"
         is EdgeCondition.Retry -> "↻ ×${c.maxAttempts}"
+        is EdgeCondition.Else -> "otherwise"
+        is EdgeCondition.StopExecution -> "🛑 stop"
     }
 }

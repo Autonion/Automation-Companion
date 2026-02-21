@@ -109,8 +109,8 @@ data class GestureNode(
     val gestureType: GestureType = GestureType.TAP,
     val coordinateSource: CoordinateSource = CoordinateSource.Static(540f, 960f),
     val durationMs: Long = 100L,
-    val swipeEndX: Float? = null,
     val swipeEndY: Float? = null,
+    val swipeEndX: Float? = null,
     /** Serialized List<Action> JSON from gesture recording overlay. */
     val recordedActionsJson: String = ""
 ) : FlowNode() {

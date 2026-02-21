@@ -50,6 +50,36 @@ object EdgeConditionEvaluator {
                 found
             }
 
+            is EdgeCondition.IfNotTextContains -> {
+                val text = context.getString(condition.contextKey) ?: ""
+                val result = !text.contains(condition.substring, ignoreCase = true)
+                Log.d(TAG, "Edge ${edge.id}: ifNotTextContains('${condition.substring}' in '$text') = $result")
+                result
+            }
+
+            is EdgeCondition.IfNotContextEquals -> {
+                val value = context.getString(condition.key) ?: ""
+                val result = value != condition.value
+                Log.d(TAG, "Edge ${edge.id}: ifNotContextEquals('${condition.key}'='$value' != '${condition.value}') = $result")
+                result
+            }
+
+            is EdgeCondition.IfNotImageFound -> {
+                val found = context.getBoolean("${condition.contextKey}_found") ?: false
+                Log.d(TAG, "Edge ${edge.id}: ifNotImageFound('${condition.contextKey}') = ${!found}")
+                !found
+            }
+
+            is EdgeCondition.Else -> {
+                // Else evaluates to true only during the fallback pass in resolveNextEdge
+                true
+            }
+
+            is EdgeCondition.StopExecution -> {
+                // Treated as a valid path to follow, engine halts when encountered
+                true
+            }
+
             is EdgeCondition.Retry -> {
                 // Retry edges are handled by the execution engine, not here.
                 // The evaluator gives them a pass; the engine handles retry logic.
@@ -61,15 +91,25 @@ object EdgeConditionEvaluator {
     /**
      * From a list of outgoing edges, pick the first one whose condition evaluates to true.
      * Non-failure edges are evaluated first; failure edges are separate.
+     * 'Else' edges are evaluated last.
      */
     suspend fun resolveNextEdge(
         edges: List<FlowEdge>,
         context: FlowContext
     ): FlowEdge? {
-        val normalEdges = edges.filter { !it.isFailurePath }
+        val normalEdges = edges.filter { !it.isFailurePath && it.condition !is EdgeCondition.Else }
+        val elseEdges = edges.filter { !it.isFailurePath && it.condition is EdgeCondition.Else }
+
+        // Evaluate all normal positive/negative conditions
         for (edge in normalEdges) {
             if (evaluate(edge, context)) return edge
         }
+
+        // Fallback to Else edges if standard logic doesn't match
+        for (edge in elseEdges) {
+            if (evaluate(edge, context)) return edge
+        }
+
         return null
     }
 }

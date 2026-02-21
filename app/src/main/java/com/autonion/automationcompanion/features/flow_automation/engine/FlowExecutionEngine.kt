@@ -125,9 +125,14 @@ class FlowExecutionEngine(
                         currentNode = null
                     } else {
                         val nextEdge = EdgeConditionEvaluator.resolveNextEdge(outgoingEdges, flowContext)
-                        currentNode = nextEdge?.let { graph.nodeById(it.toNodeId) }
-                        if (currentNode == null && nextEdge == null) {
-                            Log.d(TAG, "No matching edge condition — flow complete")
+                        if (nextEdge?.condition is EdgeCondition.StopExecution) {
+                            Log.d(TAG, "StopExecution condition encountered — halting flow")
+                            currentNode = null
+                        } else {
+                            currentNode = nextEdge?.let { graph.nodeById(it.toNodeId) }
+                            if (currentNode == null && nextEdge == null) {
+                                Log.d(TAG, "No matching edge condition — flow complete")
+                            }
                         }
                     }
                 }

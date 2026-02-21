@@ -226,6 +226,37 @@ private fun VisualTriggerNodeConfig(node: VisualTriggerNode, onUpdate: (FlowNode
     if (node.visionPresetJson.isNotEmpty()) {
         Text("Vision configuration available.", color = Color(0xFF64FFDA), fontSize = 12.sp)
         Spacer(Modifier.height(8.dp))
+        
+        val preset = remember(node.visionPresetJson) {
+            try {
+                kotlinx.serialization.json.Json.decodeFromString<com.autonion.automationcompanion.features.visual_trigger.models.VisionPreset>(node.visionPresetJson)
+            } catch (e: Exception) { null }
+        }
+        
+        if (preset != null) {
+            Text("Execution Mode", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
+            Spacer(Modifier.height(4.dp))
+            
+            // Because there can be multiple values, let's stack or scroll them
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                com.autonion.automationcompanion.features.visual_trigger.models.ExecutionMode.entries.forEach { mode ->
+                    FilterChip(
+                        selected = preset.executionMode == mode,
+                        onClick = {
+                            val updatedPreset = preset.copy(executionMode = mode)
+                            val newJson = kotlinx.serialization.json.Json.encodeToString(updatedPreset)
+                            onUpdate(node.copy(visionPresetJson = newJson))
+                        },
+                        label = { Text(mode.name.replace("_", " "), fontSize = 11.sp) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = NodeColors.VisualTriggerPurple.copy(alpha = 0.3f),
+                            selectedLabelColor = NodeColors.VisualTriggerPurple
+                        )
+                    )
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+        }
     }
 
     Button(

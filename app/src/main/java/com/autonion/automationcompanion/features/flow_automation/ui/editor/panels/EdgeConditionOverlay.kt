@@ -18,9 +18,14 @@ private enum class ConditionType(val label: String) {
     NONE("No Condition"),
     WAIT("Wait (seconds)"),
     IF_TEXT("If Text Contains"),
+    IF_NOT_TEXT("If Text Doesn't Contain"),
     IF_EQUALS("If Context Equals"),
+    IF_NOT_EQUALS("If Context Doesn't Equal"),
     IF_IMAGE("If Image Found"),
-    RETRY("Retry on Failure")
+    IF_NOT_IMAGE("If Image Not Found"),
+    RETRY("Retry on Failure"),
+    ELSE("Else (Fallback)"),
+    STOP("Stop Execution")
 }
 
 /**
@@ -41,9 +46,14 @@ fun EdgeConditionOverlay(
                 is EdgeCondition.Always -> ConditionType.NONE
                 is EdgeCondition.WaitSeconds -> ConditionType.WAIT
                 is EdgeCondition.IfTextContains -> ConditionType.IF_TEXT
+                is EdgeCondition.IfNotTextContains -> ConditionType.IF_NOT_TEXT
                 is EdgeCondition.IfContextEquals -> ConditionType.IF_EQUALS
+                is EdgeCondition.IfNotContextEquals -> ConditionType.IF_NOT_EQUALS
                 is EdgeCondition.IfImageFound -> ConditionType.IF_IMAGE
+                is EdgeCondition.IfNotImageFound -> ConditionType.IF_NOT_IMAGE
                 is EdgeCondition.Retry -> ConditionType.RETRY
+                is EdgeCondition.Else -> ConditionType.ELSE
+                is EdgeCondition.StopExecution -> ConditionType.STOP
             }
         )
     }
@@ -77,9 +87,14 @@ fun EdgeConditionOverlay(
                                 ConditionType.NONE -> null
                                 ConditionType.WAIT -> EdgeCondition.WaitSeconds(2f)
                                 ConditionType.IF_TEXT -> EdgeCondition.IfTextContains("ml_result", "")
+                                ConditionType.IF_NOT_TEXT -> EdgeCondition.IfNotTextContains("ml_result", "")
                                 ConditionType.IF_EQUALS -> EdgeCondition.IfContextEquals("", "")
+                                ConditionType.IF_NOT_EQUALS -> EdgeCondition.IfNotContextEquals("", "")
                                 ConditionType.IF_IMAGE -> EdgeCondition.IfImageFound("match_result")
+                                ConditionType.IF_NOT_IMAGE -> EdgeCondition.IfNotImageFound("match_result")
                                 ConditionType.RETRY -> EdgeCondition.Retry()
+                                ConditionType.ELSE -> EdgeCondition.Else
+                                ConditionType.STOP -> EdgeCondition.StopExecution
                             }
                             onUpdateEdge(edge.copy(condition = newCondition))
                         },
@@ -173,6 +188,69 @@ fun EdgeConditionOverlay(
                         onValueChange = {
                             key = it
                             onUpdateEdge(edge.copy(condition = EdgeCondition.IfImageFound(it)))
+                        },
+                        label = { Text("Context Key (from Image Match node)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = flowTextFieldColors()
+                    )
+                }
+                is EdgeCondition.IfNotTextContains -> {
+                    var key by remember(edge.id) { mutableStateOf(condition.contextKey) }
+                    var text by remember(edge.id) { mutableStateOf(condition.substring) }
+                    OutlinedTextField(
+                        value = key,
+                        onValueChange = {
+                            key = it
+                            onUpdateEdge(edge.copy(condition = EdgeCondition.IfNotTextContains(it, condition.substring)))
+                        },
+                        label = { Text("Context Key") },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = flowTextFieldColors()
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = text,
+                        onValueChange = {
+                            text = it
+                            onUpdateEdge(edge.copy(condition = EdgeCondition.IfNotTextContains(condition.contextKey, it)))
+                        },
+                        label = { Text("Does Not Contain Text") },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = flowTextFieldColors()
+                    )
+                }
+                is EdgeCondition.IfNotContextEquals -> {
+                    var key by remember(edge.id) { mutableStateOf(condition.key) }
+                    var value by remember(edge.id) { mutableStateOf(condition.value) }
+                    OutlinedTextField(
+                        value = key,
+                        onValueChange = {
+                            key = it
+                            onUpdateEdge(edge.copy(condition = EdgeCondition.IfNotContextEquals(it, condition.value)))
+                        },
+                        label = { Text("Context Key") },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = flowTextFieldColors()
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = value,
+                        onValueChange = {
+                            value = it
+                            onUpdateEdge(edge.copy(condition = EdgeCondition.IfNotContextEquals(condition.key, it)))
+                        },
+                        label = { Text("Must Not Equal Value") },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = flowTextFieldColors()
+                    )
+                }
+                is EdgeCondition.IfNotImageFound -> {
+                    var key by remember(edge.id) { mutableStateOf(condition.contextKey) }
+                    OutlinedTextField(
+                        value = key,
+                        onValueChange = {
+                            key = it
+                            onUpdateEdge(edge.copy(condition = EdgeCondition.IfNotImageFound(it)))
                         },
                         label = { Text("Context Key (from Image Match node)") },
                         modifier = Modifier.fillMaxWidth(),

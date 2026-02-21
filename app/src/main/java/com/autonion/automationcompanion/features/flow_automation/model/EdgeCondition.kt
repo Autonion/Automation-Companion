@@ -43,6 +43,27 @@ sealed class EdgeCondition {
     @SerialName("if_image_found")
     data class IfImageFound(val contextKey: String) : EdgeCondition()
 
+    /** Follow if FlowContext[contextKey] does NOT contain the given substring. */
+    @Serializable
+    @SerialName("if_not_text_contains")
+    data class IfNotTextContains(
+        val contextKey: String,
+        val substring: String
+    ) : EdgeCondition()
+
+    /** Follow if FlowContext[key] does NOT equal the given value. */
+    @Serializable
+    @SerialName("if_not_context_equals")
+    data class IfNotContextEquals(
+        val key: String,
+        val value: String
+    ) : EdgeCondition()
+
+    /** Follow if no image match was found. */
+    @Serializable
+    @SerialName("if_not_image_found")
+    data class IfNotImageFound(val contextKey: String) : EdgeCondition()
+
     /** Retry the source node up to [maxAttempts] times with a delay between each. */
     @Serializable
     @SerialName("retry")
@@ -50,4 +71,14 @@ sealed class EdgeCondition {
         val maxAttempts: Int = 3,
         val delayMs: Long = 2000L
     ) : EdgeCondition()
+
+    /** Follow this edge only if no other normal conditions match. */
+    @Serializable
+    @SerialName("else")
+    object Else : EdgeCondition()
+
+    /** Stop execution of the flow successfully. */
+    @Serializable
+    @SerialName("stop_execution")
+    object StopExecution : EdgeCondition()
 }
