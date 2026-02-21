@@ -28,10 +28,10 @@ object NodeColors {
 }
 
 object NodeDimensions {
-    const val WIDTH = 220f
-    const val HEIGHT = 88f
-    const val CORNER_RADIUS = 16f
-    const val PORT_RADIUS = 11f
+    const val WIDTH = 280f
+    const val HEIGHT = 100f
+    const val CORNER_RADIUS = 18f
+    const val PORT_RADIUS = 13f
     const val GRID_SIZE = 40f
-    const val ICON_SIZE = 24f
+    const val ICON_SIZE = 28f
 }
