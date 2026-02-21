@@ -262,6 +262,8 @@ class ScreenUnderstandingService : Service() {
                 // Store a copy of the latest bitmap for snap capture
                 latestBitmap = bitmap.copy(bitmap.config ?: Bitmap.Config.ARGB_8888, false)
 
+                // Use lightweight TFLite detection for live frames
+                // OCR is too expensive for every frame — use detectWithOcr() on-demand instead
                 val detections = perceptionLayer?.detect(bitmap) ?: emptyList()
                 val tracked = temporalTracker?.update(detections) ?: emptyList()
 

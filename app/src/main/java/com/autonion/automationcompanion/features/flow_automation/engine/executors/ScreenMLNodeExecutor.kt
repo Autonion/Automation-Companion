@@ -49,41 +49,63 @@ class ScreenMLNodeExecutor(
     private suspend fun executeOCR(node: ScreenMLNode, context: FlowContext): NodeResult {
         val provider = screenCaptureProvider
             ?: return NodeResult.Failure("Screen capture not available — MediaProjection not started")
-        val ctx = appContext
-            ?: return NodeResult.Failure("App context not available for PerceptionLayer")
 
         // 1. Capture the screen
         val bitmap = provider.captureFrame()
             ?: return NodeResult.Failure("Failed to capture screen frame for OCR")
 
-        // 2. Run TFLite detection
-        val perceptionLayer = PerceptionLayer(ctx)
+        // 2. Run ML Kit text recognition
+        val ocrEngine = com.autonion.automationcompanion.features.screen_understanding_ml.core.OcrEngine()
         try {
-            val detections = perceptionLayer.detect(bitmap)
-            Log.d(TAG, "OCR: detected ${detections.size} elements")
+            val result = ocrEngine.recognizeText(bitmap)
+            Log.d(TAG, "OCR: recognized ${result.blocks.size} blocks, ${result.fullText.length} chars")
 
-            // 3. Collect all text from detected elements
-            val allText = detections
-                .mapNotNull { it.text }
-                .filter { it.isNotBlank() }
-                .joinToString(" ")
-
-            // Also collect labels for context
-            val labels = detections.map { it.label }.distinct()
-
-            context.put(node.outputContextKey, allText)
+            // 3. Write results to FlowContext
+            context.put(node.outputContextKey, result.fullText)
             context.put("${node.outputContextKey}_success", true)
-            context.put("${node.outputContextKey}_element_count", detections.size)
-            context.put("${node.outputContextKey}_labels", labels.joinToString(","))
+            context.put("${node.outputContextKey}_block_count", result.blocks.size)
 
-            Log.d(TAG, "OCR result: ${detections.size} elements, text='${allText.take(100)}'")
+            // Write individual block texts for fine-grained access
+            result.blocks.forEachIndexed { i, block ->
+                context.put("${node.outputContextKey}_block_${i}", block.text)
+                block.bounds?.let { b ->
+                    context.put("${node.outputContextKey}_block_${i}_bounds",
+                        "${b.left},${b.top},${b.right},${b.bottom}")
+                }
+            }
+
+            Log.d(TAG, "OCR result: '${result.fullText.take(200)}'")
+
+            // 4. If targetLabel set, search for it in recognized text
+            if (!node.targetLabel.isNullOrBlank()) {
+                val found = result.fullText.contains(node.targetLabel, ignoreCase = true)
+                context.put("${node.outputContextKey}_target_found", found)
+
+                if (found) {
+                    // Find the block containing the target text and write its position
+                    val matchBlock = result.blocks.firstOrNull {
+                        it.text.contains(node.targetLabel, ignoreCase = true)
+                    }
+                    matchBlock?.bounds?.let { b ->
+                        val cx = (b.left + b.right) / 2f
+                        val cy = (b.top + b.bottom) / 2f
+                        context.put("${node.outputContextKey}_target_x", cx)
+                        context.put("${node.outputContextKey}_target_y", cy)
+                    }
+                    Log.d(TAG, "  ✓ Target text '${node.targetLabel}' found")
+                } else {
+                    Log.d(TAG, "  ✗ Target text '${node.targetLabel}' not found")
+                    return NodeResult.Failure("Target text '${node.targetLabel}' not found on screen")
+                }
+            }
+
             return NodeResult.Success
         } catch (e: Exception) {
-            Log.e(TAG, "OCR detection failed", e)
+            Log.e(TAG, "OCR recognition failed", e)
             context.put("${node.outputContextKey}_success", false)
-            return NodeResult.Failure("OCR detection error: ${e.message}")
+            return NodeResult.Failure("OCR error: ${e.message}")
         } finally {
-            perceptionLayer.close()
+            ocrEngine.close()
         }
     }
 
