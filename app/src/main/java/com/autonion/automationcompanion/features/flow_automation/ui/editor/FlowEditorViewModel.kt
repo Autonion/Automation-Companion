@@ -356,6 +356,10 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
         _state.update { it.copy(showEdgeConfig = false) }
     }
 
+    fun renameFlow(newName: String) {
+        _state.update { it.copy(graph = it.graph.copy(name = newName), isDirty = true) }
+    }
+
     // ─── Execution ───────────────────────────────────────────────────────
 
     fun executeFlow(resultCode: Int? = null, resultData: android.content.Intent? = null) {

@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -24,9 +25,11 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.activity.compose.BackHandler
 import com.autonion.automationcompanion.features.flow_automation.engine.FlowExecutionState
 import com.autonion.automationcompanion.features.flow_automation.ui.editor.canvas.FlowCanvas
 import com.autonion.automationcompanion.features.flow_automation.ui.editor.canvas.MiniMap
@@ -61,6 +64,18 @@ fun FlowEditorScreen(
         } else {
             android.widget.Toast.makeText(context, "Screen record permission is needed to run Vision and AI nodes", android.widget.Toast.LENGTH_LONG).show()
         }
+    }
+
+    // ── BackHandler: dismiss panels before exiting ──
+    val hasPanelOpen = state.showEdgeConfig || state.showNodeConfig || state.showNodePalette
+    BackHandler(enabled = hasPanelOpen) {
+        when {
+            state.showEdgeConfig -> viewModel.dismissEdgeConfig()
+            state.showNodeConfig -> viewModel.dismissNodeConfig()
+            state.showNodePalette -> viewModel.toggleNodePalette()
+        }
+        viewModel.selectNode(null)
+        viewModel.selectEdge(null)
     }
 
     Box(
@@ -110,12 +125,27 @@ fun FlowEditorScreen(
                 )
             }
 
-            Text(
-                state.graph.name,
-                color = Color.White,
-                fontWeight = FontWeight.Bold,
-                fontSize = 16.sp,
-                modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
+            // Editable flow title
+            var titleText by remember(state.graph.id) { mutableStateOf(state.graph.name) }
+            BasicTextField(
+                value = titleText,
+                onValueChange = {
+                    titleText = it
+                    viewModel.renameFlow(it)
+                },
+                textStyle = TextStyle(
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp
+                ),
+                singleLine = true,
+                modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                decorationBox = { innerTextField ->
+                    if (titleText.isEmpty()) {
+                        Text("Untitled Flow", color = Color.White.copy(0.3f), fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    }
+                    innerTextField()
+                }
             )
 
             // Undo / Redo
