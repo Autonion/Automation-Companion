@@ -87,6 +87,7 @@ fun FlowEditorScreen(
                 viewModel.cancelConnection()
             },
             onOutputPortTap = { viewModel.startConnection(it) },
+            onFailurePortTap = { viewModel.startFailureConnection(it) },
             onNodeDropForConnection = { viewModel.completeConnection(it) }
         )
 

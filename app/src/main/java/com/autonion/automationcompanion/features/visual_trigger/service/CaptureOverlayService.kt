@@ -121,6 +121,25 @@ class CaptureOverlayService : Service() {
     private fun showOverlay() {
         if (overlayView != null) return
 
+        // Check overlay permission before attempting to add window
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !android.provider.Settings.canDrawOverlays(this)) {
+            Log.e(TAG, "Overlay permission not granted — cannot show capture overlay")
+            // Prompt user to grant permission
+            try {
+                val intent = Intent(
+                    android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    android.net.Uri.parse("package:$packageName")
+                ).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(intent)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to open overlay permission settings", e)
+            }
+            stopSelf()
+            return
+        }
+
         val lp = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -243,7 +262,13 @@ class CaptureOverlayService : Service() {
         }
 
         overlayView = container
-        windowManager?.addView(overlayView, lp)
+        try {
+            windowManager?.addView(overlayView, lp)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to add overlay view — likely missing overlay permission", e)
+            overlayView = null
+            stopSelf()
+        }
     }
 
     private fun captureScreen() {

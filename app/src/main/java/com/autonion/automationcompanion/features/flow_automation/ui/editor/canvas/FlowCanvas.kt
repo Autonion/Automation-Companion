@@ -51,6 +51,7 @@ fun FlowCanvas(
     onEdgeTap: (String) -> Unit,
     onCanvasTap: () -> Unit,
     onOutputPortTap: (String) -> Unit,
+    onFailurePortTap: (String) -> Unit,
     onNodeDropForConnection: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -96,7 +97,10 @@ fun FlowCanvas(
 
                     // Hit-test using latest graph
                     val graph = latestGraph
-                    val hitPortId = findNodeOutputPort(graph.nodes, downCanvas)
+                    val hitOutputPortId = findNodeOutputPort(graph.nodes, downCanvas)
+                    val hitFailurePortId = findNodeFailurePort(graph.nodes, downCanvas)
+                    val hitPortId = hitOutputPortId ?: hitFailurePortId
+                    
                     val hitNodeId = hitPortId ?: findNodeAt(graph.nodes, downCanvas)
 
                     // Capture initial node position for drag
@@ -165,9 +169,12 @@ fun FlowCanvas(
                     // 3. Tap detection (no drag, no pinch)
                     if (!isDrag && !pinched) {
                         val connecting = latestIsConnecting
-                        if (hitPortId != null) {
-                            if (connecting) onNodeDropForConnection(hitPortId)
-                            else onOutputPortTap(hitPortId)
+                        if (hitOutputPortId != null) {
+                            if (connecting) onNodeDropForConnection(hitOutputPortId)
+                            else onOutputPortTap(hitOutputPortId)
+                        } else if (hitFailurePortId != null) {
+                            if (connecting) onNodeDropForConnection(hitFailurePortId)
+                            else onFailurePortTap(hitFailurePortId)
                         } else if (hitNodeId != null) {
                             if (connecting) onNodeDropForConnection(hitNodeId)
                             else onNodeTap(hitNodeId)
@@ -249,21 +256,31 @@ private fun DrawScope.drawNode(
     if (isActive) drawRoundRect(accent.copy(glowAlpha), Offset(x - 3f, y - 3f), Size(w + 6f, h + 6f), androidx.compose.ui.geometry.CornerRadius(r + 3f), style = Stroke(2f))
 
     // Labels
-    drawText(textMeasurer.measure(AnnotatedString(node.label), TextStyle(Color.White, fontSize = 13.sp), maxLines = 1), topLeft = Offset(x + 12f, y + 14f))
+    drawText(textMeasurer.measure(AnnotatedString(node.label), TextStyle(Color.White, fontSize = 15.sp), maxLines = 1), topLeft = Offset(x + 14f, y + 16f))
     val badge = when (node) {
         is StartNode -> "▶ START"; is GestureNode -> "👆 ${node.gestureType.name}"
         is VisualTriggerNode -> "🔍 IMAGE"; is ScreenMLNode -> "🧠 ${node.mode.name}"
         is DelayNode -> "⏱ DELAY"
     }
-    drawText(textMeasurer.measure(AnnotatedString(badge), TextStyle(Color.White.copy(.6f), fontSize = 10.sp), maxLines = 1), topLeft = Offset(x + 12f, y + h - 24f))
+    drawText(textMeasurer.measure(AnnotatedString(badge), TextStyle(Color.White.copy(.6f), fontSize = 11.sp), maxLines = 1), topLeft = Offset(x + 14f, y + h - 28f))
 
-    // Output port
+    // Output port (green) with ✓-style inner circle + "OK" label
     val pc = Offset(x + w, y + h / 2f)
     drawCircle(NodeColors.PortOutput, NodeDimensions.PORT_RADIUS, pc)
     drawCircle(Color.White, NodeDimensions.PORT_RADIUS * .4f, pc)
+    drawText(textMeasurer.measure(AnnotatedString("OK"), TextStyle(NodeColors.PortOutput.copy(.8f), fontSize = 8.sp)),
+        topLeft = Offset(pc.x - 7f, pc.y + NodeDimensions.PORT_RADIUS + 2f))
 
-    // Failure port
-    if (node !is DelayNode) drawCircle(NodeColors.PortFailure, NodeDimensions.PORT_RADIUS * .7f, Offset(x + w / 2f, y + h))
+    // Failure port (red) with ✗ cross icon + "FAIL" label — full size for easy tapping
+    if (node !is DelayNode) {
+        val fp = Offset(x + w / 2f, y + h)
+        drawCircle(NodeColors.PortFailure, NodeDimensions.PORT_RADIUS, fp)
+        val cross = NodeDimensions.PORT_RADIUS * 0.45f
+        drawLine(Color.White, Offset(fp.x - cross, fp.y - cross), Offset(fp.x + cross, fp.y + cross), 2.5f)
+        drawLine(Color.White, Offset(fp.x + cross, fp.y - cross), Offset(fp.x - cross, fp.y + cross), 2.5f)
+        drawText(textMeasurer.measure(AnnotatedString("FAIL"), TextStyle(NodeColors.PortFailure.copy(.8f), fontSize = 8.sp)),
+            topLeft = Offset(fp.x - 10f, fp.y + NodeDimensions.PORT_RADIUS + 2f))
+    }
 }
 
 @OptIn(ExperimentalTextApi::class)
@@ -273,19 +290,59 @@ private fun DrawScope.drawEdge(
     dashPhase: Float, textMeasurer: TextMeasurer
 ) {
     val w = NodeDimensions.WIDTH; val h = NodeDimensions.HEIGHT
-    val (start, end) = if (edge.isFailurePath) {
-        Offset(fromNode.position.x + w / 2f, fromNode.position.y + h) to
-            Offset(toNode.position.x + w / 2f, toNode.position.y)
-    } else {
-        Offset(fromNode.position.x + w, fromNode.position.y + h / 2f) to
-            Offset(toNode.position.x, toNode.position.y + h / 2f)
-    }
 
     val col = when {
         isSelected -> NodeColors.NodeSelected
         isActive -> Color(0xFF64FFDA)
         edge.isFailurePath -> NodeColors.EdgeFailure
         else -> NodeColors.EdgeDefault
+    }
+
+    // ── Self-loop: draw a loop arc around the node ──
+    if (edge.fromNodeId == edge.toNodeId) {
+        val nx = fromNode.position.x; val ny = fromNode.position.y
+        val loopRadius = 50f
+
+        val p = Path()
+        if (edge.isFailurePath) {
+            // Failure self-loop: bottom port → loops below → back to left side
+            val startPt = Offset(nx + w / 2f, ny + h)
+            val endPt = Offset(nx, ny + h / 2f)
+            p.moveTo(startPt.x, startPt.y)
+            p.cubicTo(
+                startPt.x + loopRadius, startPt.y + loopRadius * 1.5f,
+                endPt.x - loopRadius * 1.5f, endPt.y + loopRadius,
+                endPt.x, endPt.y
+            )
+            val labelPos = Offset(nx - loopRadius, ny + h + loopRadius * 0.5f)
+            drawSelfLoopPath(p, col, isSelected, isActive, dashPhase)
+            drawArrowhead(endPt, Offset(endPt.x - loopRadius, endPt.y + loopRadius), col)
+            edgeConditionLabel(edge)?.let { drawEdgeLabel(it, labelPos, col, textMeasurer) }
+        } else {
+            // Success self-loop: right port → loops above → back to top
+            val startPt = Offset(nx + w, ny + h / 2f)
+            val endPt = Offset(nx + w / 2f, ny)
+            p.moveTo(startPt.x, startPt.y)
+            p.cubicTo(
+                startPt.x + loopRadius * 1.5f, startPt.y - loopRadius,
+                endPt.x + loopRadius, endPt.y - loopRadius * 1.5f,
+                endPt.x, endPt.y
+            )
+            val labelPos = Offset(nx + w + loopRadius * 0.3f, ny - loopRadius * 1.2f)
+            drawSelfLoopPath(p, col, isSelected, isActive, dashPhase)
+            drawArrowhead(endPt, Offset(endPt.x + loopRadius, endPt.y - loopRadius), col)
+            edgeConditionLabel(edge)?.let { drawEdgeLabel(it, labelPos, col, textMeasurer) }
+        }
+        return
+    }
+
+    // ── Normal edge between two different nodes ──
+    val (start, end) = if (edge.isFailurePath) {
+        Offset(fromNode.position.x + w / 2f, fromNode.position.y + h) to
+            Offset(toNode.position.x + w / 2f, toNode.position.y)
+    } else {
+        Offset(fromNode.position.x + w, fromNode.position.y + h / 2f) to
+            Offset(toNode.position.x, toNode.position.y + h / 2f)
     }
 
     val mx = (start.x + end.x) / 2f
@@ -308,6 +365,29 @@ private fun DrawScope.drawEdge(
     }
 }
 
+/** Draw the path for a self-loop edge (shared between success and failure). */
+private fun DrawScope.drawSelfLoopPath(
+    p: Path, col: Color, isSelected: Boolean, isActive: Boolean, dashPhase: Float
+) {
+    if (isActive) {
+        drawPath(p, col.copy(.3f), style = Stroke(6f, cap = StrokeCap.Round))
+        drawPath(p, col, style = Stroke(2.5f, cap = StrokeCap.Round, pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 6f), dashPhase)))
+    } else {
+        drawPath(p, col, style = Stroke(if (isSelected) 3f else 2f, cap = StrokeCap.Round))
+    }
+}
+
+/** Draw a label badge near an edge. */
+@OptIn(ExperimentalTextApi::class)
+private fun DrawScope.drawEdgeLabel(
+    label: String, position: Offset, col: Color, textMeasurer: TextMeasurer
+) {
+    val lr = textMeasurer.measure(AnnotatedString(label), TextStyle(col.copy(.8f), fontSize = 9.sp))
+    val lo = Offset(position.x - lr.size.width / 2f, position.y - lr.size.height / 2f)
+    drawRoundRect(Color(0xFF1A1C1E), Offset(lo.x - 6f, lo.y - 3f), Size(lr.size.width + 12f, lr.size.height + 6f), androidx.compose.ui.geometry.CornerRadius(8f))
+    drawText(lr, topLeft = lo)
+}
+
 private fun DrawScope.drawArrowhead(tip: Offset, from: Offset, color: Color) {
     val a = atan2(tip.y - from.y, tip.x - from.x); val l = 10f; val h = Math.toRadians(25.0).toFloat()
     drawPath(Path().apply {
@@ -323,8 +403,16 @@ private fun findNodeAt(nodes: List<FlowNode>, pos: Offset) =
     nodes.lastOrNull { Rect(it.position.x, it.position.y, it.position.x + NodeDimensions.WIDTH, it.position.y + NodeDimensions.HEIGHT).contains(pos) }?.id
 
 private fun findNodeOutputPort(nodes: List<FlowNode>, pos: Offset): String? {
-    val r = NodeDimensions.PORT_RADIUS * 3.5f
+    val r = NodeDimensions.PORT_RADIUS * 2.5f
     return nodes.lastOrNull { (pos - Offset(it.position.x + NodeDimensions.WIDTH, it.position.y + NodeDimensions.HEIGHT / 2f)).getDistance() < r }?.id
+}
+
+private fun findNodeFailurePort(nodes: List<FlowNode>, pos: Offset): String? {
+    val r = NodeDimensions.PORT_RADIUS * 2.5f
+    return nodes.lastOrNull { 
+        it !is DelayNode &&
+        (pos - Offset(it.position.x + NodeDimensions.WIDTH / 2f, it.position.y + NodeDimensions.HEIGHT)).getDistance() < r 
+    }?.id
 }
 
 private fun findEdgeAt(graph: FlowGraph, pos: Offset) = graph.edges.lastOrNull { e ->

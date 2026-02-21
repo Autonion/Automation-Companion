@@ -30,6 +30,7 @@ data class FlowEditorState(
     val canvasZoom: Float = 1f,
     val isConnecting: Boolean = false,
     val connectFromNodeId: String? = null,
+    val connectFromFailurePort: Boolean = false,
     val showNodePalette: Boolean = false,
     val showNodeConfig: Boolean = false,
     val showEdgeConfig: Boolean = false,
@@ -240,18 +241,20 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
     // ─── Edge Operations ─────────────────────────────────────────────────
 
     fun startConnection(fromNodeId: String) {
-        _state.update { it.copy(isConnecting = true, connectFromNodeId = fromNodeId) }
+        _state.update { it.copy(isConnecting = true, connectFromNodeId = fromNodeId, connectFromFailurePort = false) }
+    }
+
+    fun startFailureConnection(fromNodeId: String) {
+        _state.update { it.copy(isConnecting = true, connectFromNodeId = fromNodeId, connectFromFailurePort = true) }
     }
 
     fun completeConnection(toNodeId: String) {
-        val fromId = _state.value.connectFromNodeId ?: return
-        if (fromId == toNodeId) {
-            cancelConnection()
-            return
-        }
+        val currentState = _state.value
+        val fromId = currentState.connectFromNodeId ?: return
+        val isFailure = currentState.connectFromFailurePort
 
         // Prevent duplicate edges
-        val existingEdge = _state.value.graph.edges.find {
+        val existingEdge = currentState.graph.edges.find {
             it.fromNodeId == fromId && it.toNodeId == toNodeId
         }
         if (existingEdge != null) {
@@ -259,23 +262,50 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
             return
         }
 
+        // Only one failure edge per node
+        if (isFailure) {
+            val existingFailure = currentState.graph.failureEdge(fromId)
+            if (existingFailure != null) {
+                Log.w(TAG, "Node $fromId already has a failure edge, replacing it")
+                pushUndo()
+                val cleaned = currentState.graph.withoutEdge(existingFailure.id)
+                val edge = FlowEdge(
+                    fromNodeId = fromId,
+                    toNodeId = toNodeId,
+                    isFailurePath = true
+                )
+                _state.update {
+                    it.copy(
+                        graph = cleaned.withEdge(edge),
+                        isConnecting = false,
+                        connectFromNodeId = null,
+                        connectFromFailurePort = false,
+                        isDirty = true
+                    )
+                }
+                return
+            }
+        }
+
         pushUndo()
         val edge = FlowEdge(
             fromNodeId = fromId,
-            toNodeId = toNodeId
+            toNodeId = toNodeId,
+            isFailurePath = isFailure
         )
         _state.update { state ->
             state.copy(
                 graph = state.graph.withEdge(edge),
                 isConnecting = false,
                 connectFromNodeId = null,
+                connectFromFailurePort = false,
                 isDirty = true
             )
         }
     }
 
     fun cancelConnection() {
-        _state.update { it.copy(isConnecting = false, connectFromNodeId = null) }
+        _state.update { it.copy(isConnecting = false, connectFromNodeId = null, connectFromFailurePort = false) }
     }
 
     fun selectEdge(edgeId: String?) {

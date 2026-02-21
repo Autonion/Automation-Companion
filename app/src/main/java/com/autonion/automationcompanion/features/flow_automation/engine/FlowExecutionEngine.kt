@@ -95,6 +95,7 @@ class FlowExecutionEngine(
 
             val node = currentNode
             Log.d(TAG, "Executing node: ${node.label} (${node.nodeType})")
+            _state.value = FlowExecutionState.Running(node.id, node.label)
 
             // Find the right executor
             val executor = executors[node.nodeType]

@@ -98,6 +98,8 @@ class VisualTriggerNodeExecutor(
             val preset = kotlinx.serialization.json.Json.decodeFromString<VisionPreset>(node.visionPresetJson)
             Log.d(TAG, "Playing back VisionPreset: ${preset.name} with ${preset.regions.size} regions, mode: ${preset.executionMode}")
             
+            var anyRegionMatched = false
+            
             for (region in preset.regions) {
                 val templateBitmap = BitmapFactory.decodeFile(region.templatePath)
                 if (templateBitmap == null) {
@@ -128,6 +130,7 @@ class VisualTriggerNodeExecutor(
                         val cy = match.y + match.height / 2f
                         Log.d(TAG, "Region ${region.id} matched at ($cx, $cy) score: ${match.score}")
                         
+                        anyRegionMatched = true
                         context.put("${node.outputContextKey}_found", true)
                         context.put("${node.outputContextKey}_x", cx)
                         context.put("${node.outputContextKey}_y", cy)
@@ -153,18 +156,23 @@ class VisualTriggerNodeExecutor(
                         
                         if (preset.executionMode == ExecutionMode.MANDATORY_SEQUENTIAL) {
                             return NodeResult.Failure("Mandatory region ${region.id} not found")
-                        } else if (preset.executionMode == ExecutionMode.DETECT_ONLY) {
-                            // In DETECT_ONLY, not finding a region is a valid path, let the engine handle routing via EdgeConditions
-                            // We just log properties and move on.
-                            Log.d(TAG, "DETECT_ONLY mode: Region ${region.id} not found. Continuing execution to allow Edge routing.")
                         }
+                        // OPTIONAL_SEQUENTIAL and DETECT_ONLY: continue to next region
                     }
                 } finally {
                     templateBitmap.recycle()
                     VisionNativeBridge.nativeClearTemplates()
                 }
             }
-            return NodeResult.Success
+            
+            // For DETECT_ONLY: if no regions matched, return Failure so the engine
+            // follows the failure edge (e.g., scroll → retry loop)
+            return if (preset.executionMode == ExecutionMode.DETECT_ONLY && !anyRegionMatched) {
+                Log.d(TAG, "DETECT_ONLY: no regions matched — returning Failure for failure-edge routing")
+                NodeResult.Failure("No regions matched in DETECT_ONLY mode")
+            } else {
+                NodeResult.Success
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed playing back preset", e)
             return NodeResult.Failure("Malformed vision preset: ${e.message}")
