@@ -381,9 +381,9 @@ fun FlowEditorScreen(
             }
         }
 
-        // FAB cluster (bottom-right) — hidden when palette is open
+        // FAB cluster (bottom-right) — hidden when any panel is open
         AnimatedVisibility(
-            visible = !state.showNodePalette,
+            visible = !state.showNodePalette && !state.showNodeConfig && !state.showEdgeConfig,
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(16.dp)
