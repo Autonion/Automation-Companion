@@ -20,6 +20,7 @@ import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.text.*
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
 import com.autonion.automationcompanion.features.flow_automation.engine.FlowExecutionState
@@ -262,17 +263,18 @@ fun FlowCanvas(
                         Offset(fromNode.position.x + w, fromNode.position.y + h / 2f)
                     }
                     val lineColor = if (state.connectFromFailurePort) 
-                        NodeColors.EdgeFailure.copy(0.7f) 
+                        NodeColors.EdgeFailure.copy(0.9f) 
                     else 
-                        Color(0xFF64FFDA).copy(0.7f)
+                        NodeColors.EdgeActive.copy(0.9f)
                     
                     // Dashed rubber-band line
                     drawLine(
-                        lineColor, startPos, dragEnd, 2.5f,
-                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 8f), dashPhase)
+                        lineColor, startPos, dragEnd, 3f,
+                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 10f), dashPhase)
                     )
                     // Small dot at endpoint
-                    drawCircle(lineColor, 6f, dragEnd)
+                    drawCircle(lineColor, 8f, dragEnd)
+                    drawCircle(Color.White, 4f, dragEnd)
                 }
             }
         }
@@ -298,102 +300,153 @@ private fun DrawScope.drawNode(
 ) {
     val x = node.position.x; val y = node.position.y
     val w = NodeDimensions.WIDTH; val h = NodeDimensions.HEIGHT
-    val hh = NodeDimensions.HEADER_HEIGHT
     val r = NodeDimensions.CORNER_RADIUS
     val cr = androidx.compose.ui.geometry.CornerRadius(r)
-    val (bodyBg, accent) = nodeColors(node)
+    val (_, accent) = nodeColors(node)
 
-    // ── Glow when running ──
+    // ── Glow when running / active ──
     if (isActive) {
+        val glowRadius = r + 16f
         drawRoundRect(
-            accent.copy(glowAlpha * .3f),
-            Offset(x - 10f, y - 10f), Size(w + 20f, h + 20f),
-            androidx.compose.ui.geometry.CornerRadius(r + 10f)
+            accent.copy(alpha = glowAlpha * 0.4f),
+            Offset(x - 16f, y - 16f), Size(w + 32f, h + 32f),
+            androidx.compose.ui.geometry.CornerRadius(glowRadius),
+        )
+        drawRoundRect(
+            accent.copy(alpha = glowAlpha * 0.6f),
+            Offset(x - 8f, y - 8f), Size(w + 16f, h + 16f),
+            androidx.compose.ui.geometry.CornerRadius(r + 4f),
         )
     }
 
     // ── Drop shadow ──
-    drawRoundRect(Color.Black.copy(.5f), Offset(x + 3f, y + 5f), Size(w, h), cr)
+    val shadowOpacity = if (isSelected) 0.6f else 0.4f
+    drawRoundRect(Color.Black.copy(alpha = shadowOpacity), Offset(x + 4f, y + 8f), Size(w, h), cr)
+    drawRoundRect(Color.Black.copy(alpha = shadowOpacity * 0.5f), Offset(x, y + 2f), Size(w, h), cr)
 
-    // ── Body background (dark) ──
-    drawRoundRect(bodyBg, Offset(x, y), Size(w, h), cr)
+    // ── Body gradient background (original glassmorphic) ──
+    val bgBrush = Brush.verticalGradient(
+        colors = listOf(
+            accent.copy(alpha = 0.25f), 
+            Color(0xFF101216), 
+            Color(0xFF0D0F12)
+        ),
+        startY = y,
+        endY = y + h
+    )
+    drawRoundRect(bgBrush, Offset(x, y), Size(w, h), cr)
+    
+    // Slight top inner highlight
+    val highlightBrush = Brush.verticalGradient(
+        colors = listOf(Color.White.copy(alpha = 0.08f), Color.Transparent),
+        startY = y, endY = y + h * 0.5f
+    )
+    drawRoundRect(highlightBrush, Offset(x, y), Size(w, h), cr)
 
-    // ── Header bar (colored) ──
-    drawPath(Path().apply {
-        addRoundRect(androidx.compose.ui.geometry.RoundRect(x, y, x + w, y + hh,
-            topLeftCornerRadius = cr, topRightCornerRadius = cr,
-            bottomLeftCornerRadius = androidx.compose.ui.geometry.CornerRadius(0f),
-            bottomRightCornerRadius = androidx.compose.ui.geometry.CornerRadius(0f)))
-    }, accent)
+    // ── Border (original gradient) ──
+    val borderAlpha = if (isSelected) 1f else 0.5f
+    val borderWidth = if (isSelected) 2.5f else 1.5f
+    val borderBrush = Brush.verticalGradient(
+        colors = listOf(accent.copy(alpha = borderAlpha), accent.copy(alpha = borderAlpha * 0.2f)),
+        startY = y,
+        endY = y + h
+    )
+    drawRoundRect(borderBrush, Offset(x, y), Size(w, h), cr, style = Stroke(borderWidth))
 
-    // ── Divider line ──
-    drawLine(NodeColors.DividerLine, Offset(x, y + hh), Offset(x + w, y + hh), 1f)
-
-    // ── Selection ring ──
+    // ── Selection glow inside border ──
     if (isSelected) {
         drawRoundRect(
-            NodeColors.NodeSelected, Offset(x - 2f, y - 2f),
-            Size(w + 4f, h + 4f), androidx.compose.ui.geometry.CornerRadius(r + 2f),
-            style = Stroke(2.5f)
-        )
-    }
-    if (isActive) {
-        drawRoundRect(
-            accent.copy(glowAlpha), Offset(x - 3f, y - 3f),
-            Size(w + 6f, h + 6f), androidx.compose.ui.geometry.CornerRadius(r + 3f),
+            accent.copy(alpha = 0.3f), Offset(x + 1f, y + 1f),
+            Size(w - 2f, h - 2f), androidx.compose.ui.geometry.CornerRadius(r - 1f),
             style = Stroke(2f)
         )
     }
 
-    // ── Header: icon + title ──
+    // ── Icon circle (left side, vertically centered) — solid accent fill ──
+    val iconCenterX = x + 38f
+    val iconCenterY = y + h / 2f
+    val iconRadius = 22f
+    // Outer glow ring
+    drawCircle(accent.copy(alpha = 0.15f), radius = iconRadius + 6f, center = Offset(iconCenterX, iconCenterY))
+    // Solid accent circle
+    drawCircle(accent, radius = iconRadius, center = Offset(iconCenterX, iconCenterY))
+    // Subtle inner highlight
+    drawCircle(Color.White.copy(alpha = 0.15f), radius = iconRadius - 2f, center = Offset(iconCenterX, iconCenterY))
+
     val icon = when (node) {
         is StartNode -> "▶"; is GestureNode -> "👆"
         is VisualTriggerNode -> "🔍"; is ScreenMLNode -> "🧠"
         is DelayNode -> "⏱"; is LaunchAppNode -> "🚀"
     }
-    val maxTextW = (w - 32f).toInt()
-    drawText(textMeasurer.measure(
-        AnnotatedString("$icon  ${node.label}"),
-        TextStyle(Color.White, fontSize = 14.sp),
+    val iconResult = textMeasurer.measure(
+        AnnotatedString(icon),
+        TextStyle(fontSize = 18.sp),
+        maxLines = 1
+    )
+    drawText(iconResult, topLeft = Offset(
+        iconCenterX - iconResult.size.width / 2f,
+        iconCenterY - iconResult.size.height / 2f
+    ))
+
+    // ── Title (bold, white) ──
+    val textStartX = x + 72f
+    val maxTextW = (w - 60f).toInt()  // Same as original — generous width
+    val titleResult = textMeasurer.measure(
+        AnnotatedString(node.label),
+        TextStyle(Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp),
         maxLines = 1, overflow = TextOverflow.Ellipsis,
         constraints = androidx.compose.ui.unit.Constraints(maxWidth = maxTextW)
-    ), topLeft = Offset(x + 12f, y + 8f))
+    )
+    drawText(titleResult, topLeft = Offset(textStartX, iconCenterY - titleResult.size.height - 2f))
 
-    // ── Body: subtitle ──
+    // ── Subtitle (uppercase, accent colored in pill) ──
     val subtitle = when (node) {
-        is StartNode -> "Entry Point"
-        is GestureNode -> node.gestureType.name.lowercase().replaceFirstChar { it.uppercase() }
-        is VisualTriggerNode -> "Image Match"
-        is ScreenMLNode -> node.mode.name
-        is DelayNode -> "Wait"
-        is LaunchAppNode -> if (node.appPackageName.isNotBlank()) node.appPackageName.substringAfterLast('.') else "Select App"
+        is StartNode -> "ENTRY POINT"
+        is GestureNode -> node.gestureType.name.uppercase()
+        is VisualTriggerNode -> "IMAGE MATCH"
+        is ScreenMLNode -> node.mode.name.uppercase()
+        is DelayNode -> "WAIT"
+        is LaunchAppNode -> if (node.appPackageName.isNotBlank())
+            node.appPackageName.substringAfterLast('.').uppercase()
+        else "SELECT APP"
     }
-    drawText(textMeasurer.measure(
+    val subText = textMeasurer.measure(
         AnnotatedString(subtitle),
-        TextStyle(Color.White.copy(.45f), fontSize = 11.sp),
+        TextStyle(accent.copy(alpha = 0.9f), fontSize = 13.sp, fontWeight = FontWeight.Medium, letterSpacing = 0.8.sp),
         maxLines = 1, overflow = TextOverflow.Ellipsis,
         constraints = androidx.compose.ui.unit.Constraints(maxWidth = maxTextW)
-    ), topLeft = Offset(x + 14f, y + hh + 10f))
+    )
+    val subY = iconCenterY + 4f
+    drawRoundRect(
+        color = accent.copy(alpha = 0.1f),
+        topLeft = Offset(textStartX - 8f, subY - 4f),
+        size = Size(Math.min(subText.size.width.toFloat(), maxTextW.toFloat()) + 16f, subText.size.height + 8f),
+        cornerRadius = androidx.compose.ui.geometry.CornerRadius(8f)
+    )
+    drawText(subText, topLeft = Offset(textStartX, subY))
 
-    // ── Input port (left-center) — small grey dot ──
+    // ── Input port (left-center) ──
     val ip = Offset(x, y + h / 2f)
-    drawCircle(Color(0xFF2A2D33), NodeDimensions.PORT_RADIUS + 3f, ip)
-    drawCircle(NodeColors.PortInput, NodeDimensions.PORT_RADIUS, ip)
+    drawCircle(Color(0xFF1A1C20), NodeDimensions.PORT_RADIUS + 5f, ip)
+    drawCircle(accent.copy(alpha = 0.4f), NodeDimensions.PORT_RADIUS + 2f, ip)
+    drawCircle(NodeColors.PortInput, NodeDimensions.PORT_RADIUS - 2f, ip)
 
-    // ── Output port (right-center) — green dot ──
+    // ── Output port (right-center) ──
     val op = Offset(x + w, y + h / 2f)
-    drawCircle(Color(0xFF1A2E1C), NodeDimensions.PORT_RADIUS + 3f, op)
-    drawCircle(NodeColors.PortOutput, NodeDimensions.PORT_RADIUS, op)
+    drawCircle(Color(0xFF1A1C20), NodeDimensions.PORT_RADIUS + 5f, op)
+    drawCircle(Color(0xFF4ADE80).copy(alpha = 0.3f), NodeDimensions.PORT_RADIUS + 2f, op)
+    drawCircle(NodeColors.PortOutput, NodeDimensions.PORT_RADIUS - 2f, op)
 
-    // ── Failure port (bottom-center) — red dot, NO text ──
+    // ── Failure port (bottom-center) ──
     if (node !is DelayNode && node !is LaunchAppNode) {
         val fp = Offset(x + w / 2f, y + h)
-        drawCircle(Color(0xFF2E1A1A), NodeDimensions.PORT_RADIUS + 3f, fp)
-        drawCircle(NodeColors.PortFailure, NodeDimensions.PORT_RADIUS, fp)
+        drawCircle(Color(0xFF1A1C20), NodeDimensions.PORT_RADIUS + 5f, fp)
+        drawCircle(NodeColors.PortFailure.copy(alpha = 0.3f), NodeDimensions.PORT_RADIUS + 2f, fp)
+        drawCircle(NodeColors.PortFailure, NodeDimensions.PORT_RADIUS - 2f, fp)
         // Tiny ✗ inside
-        val cross = NodeDimensions.PORT_RADIUS * 0.35f
-        drawLine(Color.White.copy(.8f), Offset(fp.x - cross, fp.y - cross), Offset(fp.x + cross, fp.y + cross), 1.5f)
-        drawLine(Color.White.copy(.8f), Offset(fp.x + cross, fp.y - cross), Offset(fp.x - cross, fp.y + cross), 1.5f)
+        val cross = (NodeDimensions.PORT_RADIUS - 2f) * 0.45f
+        drawLine(Color.White.copy(alpha = 0.9f), Offset(fp.x - cross, fp.y - cross), Offset(fp.x + cross, fp.y + cross), 2.5f, cap = StrokeCap.Round)
+        drawLine(Color.White.copy(alpha = 0.9f), Offset(fp.x + cross, fp.y - cross), Offset(fp.x - cross, fp.y + cross), 2.5f, cap = StrokeCap.Round)
     }
 }
 
@@ -432,7 +485,7 @@ private fun DrawScope.drawEdge(
             drawStyledEdgePath(p, col, isSelected, isActive, isFailure, dashPhase)
             drawArrowhead(endPt, Offset(endPt.x - loopRadius, endPt.y + loopRadius), col)
             if (isSelected) edgeConditionLabel(edge)?.let {
-                drawEdgeLabel(it, Offset(nx - loopRadius, ny + h + loopRadius * 0.5f), col, textMeasurer)
+                drawEdgeLabel(it, Offset(nx - loopRadius * 0.5f, ny + h + loopRadius * 0.5f), col, textMeasurer)
             }
         } else {
             val startPt = Offset(nx + w, ny + h / 2f)
@@ -446,7 +499,7 @@ private fun DrawScope.drawEdge(
             drawStyledEdgePath(p, col, isSelected, isActive, isFailure, dashPhase)
             drawArrowhead(endPt, Offset(endPt.x + loopRadius, endPt.y - loopRadius), col)
             if (isSelected) edgeConditionLabel(edge)?.let {
-                drawEdgeLabel(it, Offset(nx + w + loopRadius * 0.3f, ny - loopRadius * 1.2f), col, textMeasurer)
+                drawEdgeLabel(it, Offset(nx + w + loopRadius * 0.3f, ny - loopRadius * 0.8f), col, textMeasurer)
             }
         }
         return
@@ -499,22 +552,22 @@ private fun DrawScope.drawStyledEdgePath(
     isFailure: Boolean, dashPhase: Float
 ) {
     if (isActive) {
-        drawPath(p, col.copy(.25f), style = Stroke(6f, cap = StrokeCap.Round))
-        drawPath(p, col, style = Stroke(2.5f, cap = StrokeCap.Round,
-            pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 6f), dashPhase)))
+        drawPath(p, col.copy(.25f), style = Stroke(8f, cap = StrokeCap.Round))
+        drawPath(p, col, style = Stroke(4f, cap = StrokeCap.Round,
+            pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 8f), dashPhase)))
     } else if (isFailure) {
         // Dashed line for failure paths
-        val dashEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f), 0f)
+        val dashEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 8f), 0f)
         if (isSelected) {
-            drawPath(p, col.copy(.2f), style = Stroke(5f, cap = StrokeCap.Round, pathEffect = dashEffect))
+            drawPath(p, col.copy(.2f), style = Stroke(8f, cap = StrokeCap.Round, pathEffect = dashEffect))
         }
-        drawPath(p, col, style = Stroke(if (isSelected) 2.5f else 1.5f, cap = StrokeCap.Round, pathEffect = dashEffect))
+        drawPath(p, col, style = Stroke(if (isSelected) 4f else 3f, cap = StrokeCap.Round, pathEffect = dashEffect))
     } else {
         // Solid line for success paths
         if (isSelected) {
-            drawPath(p, col.copy(.2f), style = Stroke(5f, cap = StrokeCap.Round))
+            drawPath(p, col.copy(.2f), style = Stroke(8f, cap = StrokeCap.Round))
         }
-        drawPath(p, col, style = Stroke(if (isSelected) 2.5f else 1.8f, cap = StrokeCap.Round))
+        drawPath(p, col, style = Stroke(if (isSelected) 4f else 3f, cap = StrokeCap.Round))
     }
 }
 
@@ -523,14 +576,29 @@ private fun DrawScope.drawStyledEdgePath(
 private fun DrawScope.drawEdgeLabel(
     label: String, position: Offset, col: Color, textMeasurer: TextMeasurer
 ) {
-    val lr = textMeasurer.measure(AnnotatedString(label), TextStyle(col.copy(.8f), fontSize = 9.sp))
+    val lr = textMeasurer.measure(
+        AnnotatedString(label), 
+        TextStyle(col.copy(alpha = 0.9f), fontSize = 10.sp, fontWeight = FontWeight.Medium)
+    )
     val lo = Offset(position.x - lr.size.width / 2f, position.y - lr.size.height / 2f)
-    drawRoundRect(Color(0xFF1A1C1E), Offset(lo.x - 6f, lo.y - 3f), Size(lr.size.width + 12f, lr.size.height + 6f), androidx.compose.ui.geometry.CornerRadius(8f))
+    drawRoundRect(
+        Color(0xFF101216).copy(alpha = 0.85f), 
+        Offset(lo.x - 8f, lo.y - 4f), 
+        Size(lr.size.width + 16f, lr.size.height + 8f), 
+        androidx.compose.ui.geometry.CornerRadius(10f)
+    )
+    drawRoundRect(
+        col.copy(alpha = 0.3f), 
+        Offset(lo.x - 8f, lo.y - 4f), 
+        Size(lr.size.width + 16f, lr.size.height + 8f), 
+        androidx.compose.ui.geometry.CornerRadius(10f),
+        style = Stroke(1.5f)
+    )
     drawText(lr, topLeft = lo)
 }
 
 private fun DrawScope.drawArrowhead(tip: Offset, from: Offset, color: Color) {
-    val a = atan2(tip.y - from.y, tip.x - from.x); val l = 10f; val ha = Math.toRadians(25.0).toFloat()
+    val a = atan2(tip.y - from.y, tip.x - from.x); val l = 14f; val ha = Math.toRadians(30.0).toFloat()
     drawPath(Path().apply {
         moveTo(tip.x, tip.y)
         lineTo(tip.x - l * cos(a - ha), tip.y - l * sin(a - ha))
