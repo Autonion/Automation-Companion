@@ -36,6 +36,7 @@ import com.autonion.automationcompanion.features.flow_automation.model.ScreenMLN
 import com.autonion.automationcompanion.features.flow_automation.model.VisualTriggerNode
 import com.autonion.automationcompanion.features.flow_automation.ui.editor.canvas.FlowCanvas
 import com.autonion.automationcompanion.features.flow_automation.ui.editor.canvas.MiniMap
+import com.autonion.automationcompanion.features.flow_automation.ui.editor.canvas.flowEditorColors
 import com.autonion.automationcompanion.features.flow_automation.ui.editor.panels.EdgeConditionOverlay
 import com.autonion.automationcompanion.features.flow_automation.ui.editor.panels.NodeConfigPanel
 import com.autonion.automationcompanion.features.flow_automation.ui.editor.panels.NodePalette
@@ -56,6 +57,7 @@ fun FlowEditorScreen(
     val execState by viewModel.executionState.collectAsState()
     val isExecuting = execState is FlowExecutionState.Running
 
+    val editorColors = flowEditorColors()
     val density = LocalDensity.current
     var canvasSize by remember { mutableStateOf(Size.Zero) }
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -115,7 +117,7 @@ fun FlowEditorScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF101216))
+            .background(editorColors.canvasBg)
             .onSizeChanged { size ->
                 with(density) {
                     canvasSize = Size(size.width.toFloat(), size.height.toFloat())
@@ -126,6 +128,7 @@ fun FlowEditorScreen(
         FlowCanvas(
             state = state,
             executionState = execState,
+            editorColors = editorColors,
             onCanvasTransform = { offset, zoom ->
                 viewModel.updateCanvasTransform(offset, zoom)
                 // Show MiniMap on interaction
@@ -162,7 +165,7 @@ fun FlowEditorScreen(
                 Icon(
                     Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "Back",
-                    tint = Color.White
+                    tint = editorColors.topBarText
                 )
             }
 
@@ -175,7 +178,7 @@ fun FlowEditorScreen(
                     viewModel.renameFlow(it)
                 },
                 textStyle = TextStyle(
-                    color = Color.White,
+                    color = editorColors.topBarText,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp
                 ),
@@ -183,7 +186,7 @@ fun FlowEditorScreen(
                 modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
                 decorationBox = { innerTextField ->
                     if (titleText.isEmpty()) {
-                        Text("Untitled Flow", color = Color.White.copy(0.3f), fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Text("Untitled Flow", color = editorColors.topBarDimText, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     }
                     innerTextField()
                 }
@@ -197,7 +200,7 @@ fun FlowEditorScreen(
                 Icon(
                     Icons.Default.Undo,
                     contentDescription = "Undo",
-                    tint = if (state.canUndo) Color.White else Color.White.copy(alpha = 0.25f)
+                    tint = if (state.canUndo) editorColors.topBarText else editorColors.topBarDimText
                 )
             }
             IconButton(
@@ -207,18 +210,18 @@ fun FlowEditorScreen(
                 Icon(
                     Icons.Default.Redo,
                     contentDescription = "Redo",
-                    tint = if (state.canRedo) Color.White else Color.White.copy(alpha = 0.25f)
+                    tint = if (state.canRedo) editorColors.topBarText else editorColors.topBarDimText
                 )
             }
 
             // Node count badge
             Surface(
                 shape = RoundedCornerShape(12.dp),
-                color = Color.White.copy(alpha = 0.1f)
+                color = editorColors.topBarBadgeBg
             ) {
                 Text(
                     "${state.graph.nodes.size} nodes",
-                    color = Color.White.copy(alpha = 0.7f),
+                    color = editorColors.panelDimText,
                     fontSize = 11.sp,
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                 )

@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.sp
 import com.autonion.automationcompanion.features.flow_automation.model.FlowNodeType
 import com.autonion.automationcompanion.features.flow_automation.ui.editor.canvas.NodeColors
 import com.autonion.automationcompanion.features.flow_automation.ui.editor.canvas.drawNodeIcon
+import com.autonion.automationcompanion.features.flow_automation.ui.editor.canvas.flowEditorColors
 
 /**
  * Grid palette showing available node types to add.
@@ -40,13 +41,15 @@ fun NodePalette(
         NodeTypeItem(FlowNodeType.LAUNCH_APP, "Launch App", "🚀", NodeColors.LaunchAppTeal)
     )
 
+    val editorColors = flowEditorColors()
+
     Card(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp)
             .navigationBarsPadding(),
         shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1C1E)),
+        colors = CardDefaults.cardColors(containerColor = editorColors.panelBg),
         elevation = CardDefaults.cardElevation(12.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -57,12 +60,12 @@ fun NodePalette(
             ) {
                 Text(
                     "Add Node",
-                    color = Color.White,
+                    color = editorColors.panelText,
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp
                 )
                 TextButton(onClick = onDismiss) {
-                    Text("✕", color = Color.White.copy(alpha = 0.6f), fontSize = 20.sp)
+                    Text("✕", color = editorColors.panelDimText, fontSize = 20.sp)
                 }
             }
 
@@ -86,7 +89,7 @@ fun NodePalette(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center
                     ) {
-                        androidx.compose.foundation.Canvas(modifier = Modifier.size(48.dp)) {
+                        androidx.compose.foundation.Canvas(modifier = Modifier.size(44.dp)) {
                             val cX = size.width / 2f
                             val cY = size.height / 2f
                             val circleR = size.width / 2f - 2f
@@ -96,14 +99,14 @@ fun NodePalette(
                             drawCircle(item.color, radius = circleR, center = Offset(cX, cY))
                             // Inner highlight
                             drawCircle(Color.White.copy(alpha = 0.12f), radius = circleR - 2f, center = Offset(cX, cY))
-                            // Icon
+                            // Icon (large scale for clarity)
                             drawNodeIcon(
                                 nodeType = item.nodeType,
                                 iconCenterX = cX,
                                 iconCenterY = cY,
                                 iconColor = Color.White,
                                 accent = item.color,
-                                scale = 1.3f
+                                scale = 1.8f
                             )
                         }
                         Spacer(Modifier.height(10.dp))

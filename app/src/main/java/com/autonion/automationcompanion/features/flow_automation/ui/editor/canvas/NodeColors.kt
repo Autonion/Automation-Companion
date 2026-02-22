@@ -1,6 +1,96 @@
 package com.autonion.automationcompanion.features.flow_automation.ui.editor.canvas
 
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+
+/**
+ * Theme-aware colors for the flow editor.
+ * Provides light and dark variants for all editor chrome
+ * (canvas background, grid, panels, ports, text).
+ *
+ * Node accent colors (green, blue, purple, amber, grey, teal) remain
+ * the same in both themes — only backgrounds and surfaces adapt.
+ */
+data class FlowEditorColors(
+    // Canvas
+    val canvasBg: Color,
+    val gridLine: Color,
+    // Node body
+    val nodeBodyBg: Color,
+    val nodeShadow: Color,
+    val nodeHighlight: Color,
+    val nodeBorderBg: Color,
+    // Text
+    val titleText: Color,
+    val subtitleBgAlpha: Float,
+    // Ports
+    val portBg: Color,
+    // Panel chrome
+    val panelBg: Color,
+    val panelText: Color,
+    val panelDimText: Color,
+    // Top bar
+    val topBarText: Color,
+    val topBarDimText: Color,
+    val topBarBadgeBg: Color,
+    // Misc
+    val connectionIndicatorBg: Color,
+    val connectionIndicatorText: Color,
+) {
+    companion object {
+        val Dark = FlowEditorColors(
+            canvasBg = Color(0xFF101216),
+            gridLine = Color(0xFF1E2128),
+            nodeBodyBg = Color(0xFF0D0F12),
+            nodeShadow = Color.Black,
+            nodeHighlight = Color.White.copy(alpha = 0.08f),
+            nodeBorderBg = Color(0xFF101216),
+            titleText = Color.White,
+            subtitleBgAlpha = 0.1f,
+            portBg = Color(0xFF1A1C20),
+            panelBg = Color(0xFF1A1C1E),
+            panelText = Color.White,
+            panelDimText = Color.White.copy(alpha = 0.6f),
+            topBarText = Color.White,
+            topBarDimText = Color.White.copy(alpha = 0.25f),
+            topBarBadgeBg = Color.White.copy(alpha = 0.1f),
+            connectionIndicatorBg = Color(0xFF64FFDA).copy(alpha = 0.9f),
+            connectionIndicatorText = Color.Black,
+        )
+
+        val Light = FlowEditorColors(
+            canvasBg = Color(0xFFF5F6FA),
+            gridLine = Color(0xFFE0E2E8),
+            nodeBodyBg = Color.White,
+            nodeShadow = Color(0xFF9E9E9E),
+            nodeHighlight = Color.White.copy(alpha = 0.5f),
+            nodeBorderBg = Color.White,
+            titleText = Color(0xFF1A1C1E),
+            subtitleBgAlpha = 0.12f,
+            portBg = Color(0xFFE8EAED),
+            panelBg = Color(0xFFF0F1F5),
+            panelText = Color(0xFF1A1C1E),
+            panelDimText = Color(0xFF1A1C1E).copy(alpha = 0.5f),
+            topBarText = Color(0xFF1A1C1E),
+            topBarDimText = Color(0xFF1A1C1E).copy(alpha = 0.3f),
+            topBarBadgeBg = Color.Black.copy(alpha = 0.07f),
+            connectionIndicatorBg = Color(0xFF00897B).copy(alpha = 0.9f),
+            connectionIndicatorText = Color.White,
+        )
+    }
+}
+
+val LocalFlowEditorColors = staticCompositionLocalOf { FlowEditorColors.Dark }
+
+/**
+ * Resolve the current editor color palette based on system theme.
+ */
+@Composable
+fun flowEditorColors(): FlowEditorColors {
+    return if (isSystemInDarkTheme()) FlowEditorColors.Dark else FlowEditorColors.Light
+}
 
 /**
  * Node visual constants and color mapping.
@@ -9,7 +99,7 @@ import androidx.compose.ui.graphics.Color
  * Color-coding: Green=Start, Orange=AI/ML, Blue=Action, Purple=Vision, Grey=Utility
  */
 object NodeColors {
-    // ── Node type colors (header accent) ──
+    // ── Node type colors (header accent) — same in both themes ──
     val StartGreen      = Color(0xFF4ADE80)
     val StartGreenBg    = Color(0xFF0F1A14)
     val GestureBlue     = Color(0xFF60A5FA)

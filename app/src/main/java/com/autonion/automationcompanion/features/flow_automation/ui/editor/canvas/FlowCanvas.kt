@@ -47,6 +47,7 @@ import kotlin.math.sin
 fun FlowCanvas(
     state: FlowEditorState,
     executionState: FlowExecutionState = FlowExecutionState.Idle,
+    editorColors: FlowEditorColors = FlowEditorColors.Dark,
     onCanvasTransform: (Offset, Float) -> Unit,
     onNodeTap: (String) -> Unit,
     onNodeDrag: (String, NodePosition) -> Unit,
@@ -89,7 +90,7 @@ fun FlowCanvas(
     Canvas(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFF101216))
+            .background(editorColors.canvasBg)
             // Key on Unit — the handler reads latestGraph via rememberUpdatedState
             // so it never restarts mid-drag when the graph changes.
             .pointerInput(Unit) {
@@ -226,7 +227,7 @@ fun FlowCanvas(
             translate(offset.x, offset.y)
             scale(zoom, zoom, Offset.Zero)
         }) {
-            drawGrid()
+            drawGrid(editorColors)
 
             // Edges
             state.graph.edges.forEach { edge ->
@@ -246,7 +247,7 @@ fun FlowCanvas(
                     node,
                     isSelected = node.id == state.selectedNodeId,
                     isActive = node.id == activeNodeId,
-                    glowAlpha, textMeasurer
+                    glowAlpha, textMeasurer, editorColors
                 )
             }
 
@@ -283,9 +284,9 @@ fun FlowCanvas(
 
 // ─── Drawing ─────────────────────────────────────────────────────────────────
 
-private fun DrawScope.drawGrid() {
+private fun DrawScope.drawGrid(colors: FlowEditorColors) {
     val g = NodeDimensions.GRID_SIZE
-    val c = Color(0xFF1E2128)
+    val c = colors.gridLine
     val b = Rect(-2000f, -2000f, size.width + 2000f, size.height + 2000f)
     var x = (b.left / g).toInt() * g
     while (x < b.right) { drawLine(c, Offset(x, b.top), Offset(x, b.bottom), 0.5f); x += g }
@@ -296,7 +297,7 @@ private fun DrawScope.drawGrid() {
 @OptIn(ExperimentalTextApi::class)
 private fun DrawScope.drawNode(
     node: FlowNode, isSelected: Boolean, isActive: Boolean,
-    glowAlpha: Float, textMeasurer: TextMeasurer
+    glowAlpha: Float, textMeasurer: TextMeasurer, colors: FlowEditorColors
 ) {
     val x = node.position.x; val y = node.position.y
     val w = NodeDimensions.WIDTH; val h = NodeDimensions.HEIGHT
@@ -321,15 +322,15 @@ private fun DrawScope.drawNode(
 
     // ── Drop shadow ──
     val shadowOpacity = if (isSelected) 0.6f else 0.4f
-    drawRoundRect(Color.Black.copy(alpha = shadowOpacity), Offset(x + 4f, y + 8f), Size(w, h), cr)
-    drawRoundRect(Color.Black.copy(alpha = shadowOpacity * 0.5f), Offset(x, y + 2f), Size(w, h), cr)
+    drawRoundRect(colors.nodeShadow.copy(alpha = shadowOpacity), Offset(x + 4f, y + 8f), Size(w, h), cr)
+    drawRoundRect(colors.nodeShadow.copy(alpha = shadowOpacity * 0.5f), Offset(x, y + 2f), Size(w, h), cr)
 
-    // ── Body gradient background (original glassmorphic) ──
+    // ── Body gradient background ──
     val bgBrush = Brush.verticalGradient(
         colors = listOf(
             accent.copy(alpha = 0.25f), 
-            Color(0xFF101216), 
-            Color(0xFF0D0F12)
+            colors.canvasBg, 
+            colors.nodeBodyBg
         ),
         startY = y,
         endY = y + h
@@ -338,12 +339,12 @@ private fun DrawScope.drawNode(
     
     // Slight top inner highlight
     val highlightBrush = Brush.verticalGradient(
-        colors = listOf(Color.White.copy(alpha = 0.08f), Color.Transparent),
+        colors = listOf(colors.nodeHighlight, Color.Transparent),
         startY = y, endY = y + h * 0.5f
     )
     drawRoundRect(highlightBrush, Offset(x, y), Size(w, h), cr)
 
-    // ── Border (original gradient) ──
+    // ── Border (gradient) ──
     val borderAlpha = if (isSelected) 1f else 0.5f
     val borderWidth = if (isSelected) 2.5f else 1.5f
     val borderBrush = Brush.verticalGradient(
@@ -376,12 +377,12 @@ private fun DrawScope.drawNode(
     // Draw custom geometric icon (scaled up further)
     drawNodeIcon(node.nodeType, iconCenterX, iconCenterY, Color.White, accent, scale = 1.35f)
 
-    // ── Title (bold, white) ──
+    // ── Title (bold) ──
     val textStartX = x + 120f
-    val maxTextW = (w - 140f).toInt()  // Adjust for left padding to maintain balanced right padding
+    val maxTextW = (w - 140f).toInt()
     val titleResult = textMeasurer.measure(
         AnnotatedString(node.label),
-        TextStyle(Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp),
+        TextStyle(colors.titleText, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp),
         maxLines = 1, overflow = TextOverflow.Ellipsis,
         constraints = androidx.compose.ui.unit.Constraints(maxWidth = maxTextW)
     )
@@ -406,7 +407,7 @@ private fun DrawScope.drawNode(
     )
     val subY = iconCenterY + 4f
     drawRoundRect(
-        color = accent.copy(alpha = 0.1f),
+        color = accent.copy(alpha = colors.subtitleBgAlpha),
         topLeft = Offset(textStartX - 8f, subY - 4f),
         size = Size(Math.min(subText.size.width.toFloat(), maxTextW.toFloat()) + 16f, subText.size.height + 8f),
         cornerRadius = androidx.compose.ui.geometry.CornerRadius(8f)
@@ -415,20 +416,20 @@ private fun DrawScope.drawNode(
 
     // ── Input port (left-center) ──
     val ip = Offset(x, y + h / 2f)
-    drawCircle(Color(0xFF1A1C20), NodeDimensions.PORT_RADIUS + 5f, ip)
+    drawCircle(colors.portBg, NodeDimensions.PORT_RADIUS + 5f, ip)
     drawCircle(accent.copy(alpha = 0.4f), NodeDimensions.PORT_RADIUS + 2f, ip)
     drawCircle(NodeColors.PortInput, NodeDimensions.PORT_RADIUS - 2f, ip)
 
     // ── Output port (right-center) ──
     val op = Offset(x + w, y + h / 2f)
-    drawCircle(Color(0xFF1A1C20), NodeDimensions.PORT_RADIUS + 5f, op)
+    drawCircle(colors.portBg, NodeDimensions.PORT_RADIUS + 5f, op)
     drawCircle(Color(0xFF4ADE80).copy(alpha = 0.3f), NodeDimensions.PORT_RADIUS + 2f, op)
     drawCircle(NodeColors.PortOutput, NodeDimensions.PORT_RADIUS - 2f, op)
 
     // ── Failure port (bottom-center) ──
     if (node !is DelayNode && node !is LaunchAppNode) {
         val fp = Offset(x + w / 2f, y + h)
-        drawCircle(Color(0xFF1A1C20), NodeDimensions.PORT_RADIUS + 5f, fp)
+        drawCircle(colors.portBg, NodeDimensions.PORT_RADIUS + 5f, fp)
         drawCircle(NodeColors.PortFailure.copy(alpha = 0.3f), NodeDimensions.PORT_RADIUS + 2f, fp)
         drawCircle(NodeColors.PortFailure, NodeDimensions.PORT_RADIUS - 2f, fp)
         // Tiny ✗ inside
@@ -850,58 +851,62 @@ internal fun DrawScope.drawNodeIcon(
                 drawLine(iconColor, Offset(iconCenterX - 4.5f, iconCenterY + 8f), Offset(iconCenterX + 4.5f, iconCenterY + 8f), strokeWidth = 3f, cap = StrokeCap.Round)
             }
             FlowNodeType.LAUNCH_APP -> {
-                // Clean upright rocket icon
+                // Diagonal rocket icon (tilted 45° to fly upper-right)
                 val cx = iconCenterX
                 val cy = iconCenterY
 
-                // Rocket body (rounded rectangle)
-                val bodyW = 10f
-                val bodyH = 18f
-                drawRoundRect(
-                    iconColor,
-                    topLeft = Offset(cx - bodyW / 2f, cy - bodyH / 2f + 2f),
-                    size = androidx.compose.ui.geometry.Size(bodyW, bodyH),
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(4f),
-                    style = Stroke(2.5f)
-                )
+                withTransform({
+                    rotate(-45f, Offset(cx, cy))
+                }) {
+                    // Rocket body (rounded rectangle)
+                    val bodyW = 10f
+                    val bodyH = 18f
+                    drawRoundRect(
+                        iconColor,
+                        topLeft = Offset(cx - bodyW / 2f, cy - bodyH / 2f + 2f),
+                        size = androidx.compose.ui.geometry.Size(bodyW, bodyH),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(4f),
+                        style = Stroke(2.5f)
+                    )
 
-                // Nose cone (triangle on top)
-                val nose = Path().apply {
-                    moveTo(cx - bodyW / 2f, cy - bodyH / 2f + 2f)
-                    lineTo(cx, cy - bodyH / 2f - 8f)
-                    lineTo(cx + bodyW / 2f, cy - bodyH / 2f + 2f)
-                    close()
+                    // Nose cone (triangle on top)
+                    val nose = Path().apply {
+                        moveTo(cx - bodyW / 2f, cy - bodyH / 2f + 2f)
+                        lineTo(cx, cy - bodyH / 2f - 8f)
+                        lineTo(cx + bodyW / 2f, cy - bodyH / 2f + 2f)
+                        close()
+                    }
+                    drawPath(nose, iconColor)
+
+                    // Window porthole
+                    drawCircle(iconColor, radius = 3f, center = Offset(cx, cy - 1f), style = Stroke(2f))
+
+                    // Left fin
+                    val lFin = Path().apply {
+                        moveTo(cx - bodyW / 2f, cy + bodyH / 2f - 2f)
+                        lineTo(cx - bodyW / 2f - 5f, cy + bodyH / 2f + 5f)
+                        lineTo(cx - bodyW / 2f, cy + bodyH / 2f + 2f)
+                        close()
+                    }
+                    drawPath(lFin, iconColor)
+
+                    // Right fin
+                    val rFin = Path().apply {
+                        moveTo(cx + bodyW / 2f, cy + bodyH / 2f - 2f)
+                        lineTo(cx + bodyW / 2f + 5f, cy + bodyH / 2f + 5f)
+                        lineTo(cx + bodyW / 2f, cy + bodyH / 2f + 2f)
+                        close()
+                    }
+                    drawPath(rFin, iconColor)
+
+                    // Flame (small inverted triangle at bottom)
+                    val flame = Path().apply {
+                        moveTo(cx - 3f, cy + bodyH / 2f + 2f)
+                        lineTo(cx, cy + bodyH / 2f + 8f)
+                        lineTo(cx + 3f, cy + bodyH / 2f + 2f)
+                    }
+                    drawPath(flame, iconColor, style = Stroke(2f, join = StrokeJoin.Round))
                 }
-                drawPath(nose, iconColor)
-
-                // Window porthole
-                drawCircle(iconColor, radius = 3f, center = Offset(cx, cy - 1f), style = Stroke(2f))
-
-                // Left fin
-                val lFin = Path().apply {
-                    moveTo(cx - bodyW / 2f, cy + bodyH / 2f - 2f)
-                    lineTo(cx - bodyW / 2f - 5f, cy + bodyH / 2f + 5f)
-                    lineTo(cx - bodyW / 2f, cy + bodyH / 2f + 2f)
-                    close()
-                }
-                drawPath(lFin, iconColor)
-
-                // Right fin
-                val rFin = Path().apply {
-                    moveTo(cx + bodyW / 2f, cy + bodyH / 2f - 2f)
-                    lineTo(cx + bodyW / 2f + 5f, cy + bodyH / 2f + 5f)
-                    lineTo(cx + bodyW / 2f, cy + bodyH / 2f + 2f)
-                    close()
-                }
-                drawPath(rFin, iconColor)
-
-                // Flame (small inverted triangle at bottom)
-                val flame = Path().apply {
-                    moveTo(cx - 3f, cy + bodyH / 2f + 2f)
-                    lineTo(cx, cy + bodyH / 2f + 8f)
-                    lineTo(cx + 3f, cy + bodyH / 2f + 2f)
-                }
-                drawPath(flame, iconColor, style = Stroke(2f, join = StrokeJoin.Round))
             }
         }
     }
