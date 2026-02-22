@@ -363,7 +363,7 @@ private fun DrawScope.drawNode(
     }
 
     // ── Icon circle (left side, vertically centered) — solid accent fill ──
-    val iconCenterX = x + 52f
+    val iconCenterX = x + 72f
     val iconCenterY = y + h / 2f
     val iconRadius = 30f
     // Outer glow ring
@@ -377,8 +377,8 @@ private fun DrawScope.drawNode(
     drawNodeIcon(node.nodeType, iconCenterX, iconCenterY, Color.White, accent, scale = 1.35f)
 
     // ── Title (bold, white) ──
-    val textStartX = x + 100f
-    val maxTextW = (w - 120f).toInt()  // Adjust for left padding to maintain balanced right padding
+    val textStartX = x + 120f
+    val maxTextW = (w - 140f).toInt()  // Adjust for left padding to maintain balanced right padding
     val titleResult = textMeasurer.measure(
         AnnotatedString(node.label),
         TextStyle(Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp),
