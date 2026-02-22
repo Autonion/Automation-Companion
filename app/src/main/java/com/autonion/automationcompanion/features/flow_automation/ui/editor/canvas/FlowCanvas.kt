@@ -850,29 +850,58 @@ internal fun DrawScope.drawNodeIcon(
                 drawLine(iconColor, Offset(iconCenterX - 4.5f, iconCenterY + 8f), Offset(iconCenterX + 4.5f, iconCenterY + 8f), strokeWidth = 3f, cap = StrokeCap.Round)
             }
             FlowNodeType.LAUNCH_APP -> {
-                // Rocket
-                val p = Path().apply {
-                    // Rocket body (diagonal capsule)
-                    moveTo(iconCenterX - 7.5f, iconCenterY + 7.5f)
-                    lineTo(iconCenterX + 1.5f, iconCenterY - 1.5f)
-                    cubicTo(iconCenterX + 7.5f, iconCenterY - 7.5f, iconCenterX + 12f, iconCenterY - 12f, iconCenterX + 12f, iconCenterY - 12f) // Nose
-                    cubicTo(iconCenterX + 12f, iconCenterY - 12f, iconCenterX + 7.5f, iconCenterY - 7.5f, iconCenterX + 1.5f, iconCenterY + 1.5f)
-                    lineTo(iconCenterX - 7.5f, iconCenterY + 7.5f)
-                    // Left wing
-                    moveTo(iconCenterX - 4.5f, iconCenterY + 4.5f)
-                    lineTo(iconCenterX - 12f, iconCenterY + 7.5f)
-                    lineTo(iconCenterX - 7.5f, iconCenterY)
-                    // Right wing
-                    moveTo(iconCenterX + 4.5f, iconCenterY - 4.5f)
-                    lineTo(iconCenterX + 7.5f, iconCenterY - 12f)
-                    lineTo(iconCenterX, iconCenterY - 7.5f)
-                    // Thrust flame
-                    moveTo(iconCenterX - 7.5f, iconCenterY + 7.5f)
-                    lineTo(iconCenterX - 12f, iconCenterY + 12f)
+                // Clean upright rocket icon
+                val cx = iconCenterX
+                val cy = iconCenterY
+
+                // Rocket body (rounded rectangle)
+                val bodyW = 10f
+                val bodyH = 18f
+                drawRoundRect(
+                    iconColor,
+                    topLeft = Offset(cx - bodyW / 2f, cy - bodyH / 2f + 2f),
+                    size = androidx.compose.ui.geometry.Size(bodyW, bodyH),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(4f),
+                    style = Stroke(2.5f)
+                )
+
+                // Nose cone (triangle on top)
+                val nose = Path().apply {
+                    moveTo(cx - bodyW / 2f, cy - bodyH / 2f + 2f)
+                    lineTo(cx, cy - bodyH / 2f - 8f)
+                    lineTo(cx + bodyW / 2f, cy - bodyH / 2f + 2f)
+                    close()
                 }
-                drawPath(p, iconColor, style = Stroke(3f, join = StrokeJoin.Round))
-                // Window dot
-                drawCircle(iconColor, radius = 2f, center = Offset(iconCenterX + 3f, iconCenterY - 3f))
+                drawPath(nose, iconColor)
+
+                // Window porthole
+                drawCircle(iconColor, radius = 3f, center = Offset(cx, cy - 1f), style = Stroke(2f))
+
+                // Left fin
+                val lFin = Path().apply {
+                    moveTo(cx - bodyW / 2f, cy + bodyH / 2f - 2f)
+                    lineTo(cx - bodyW / 2f - 5f, cy + bodyH / 2f + 5f)
+                    lineTo(cx - bodyW / 2f, cy + bodyH / 2f + 2f)
+                    close()
+                }
+                drawPath(lFin, iconColor)
+
+                // Right fin
+                val rFin = Path().apply {
+                    moveTo(cx + bodyW / 2f, cy + bodyH / 2f - 2f)
+                    lineTo(cx + bodyW / 2f + 5f, cy + bodyH / 2f + 5f)
+                    lineTo(cx + bodyW / 2f, cy + bodyH / 2f + 2f)
+                    close()
+                }
+                drawPath(rFin, iconColor)
+
+                // Flame (small inverted triangle at bottom)
+                val flame = Path().apply {
+                    moveTo(cx - 3f, cy + bodyH / 2f + 2f)
+                    lineTo(cx, cy + bodyH / 2f + 8f)
+                    lineTo(cx + 3f, cy + bodyH / 2f + 2f)
+                }
+                drawPath(flame, iconColor, style = Stroke(2f, join = StrokeJoin.Round))
             }
         }
     }

@@ -3,8 +3,9 @@ package com.autonion.automationcompanion.features.flow_automation.ui.editor.pane
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -12,7 +13,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.autonion.automationcompanion.features.flow_automation.model.FlowNodeType
@@ -20,7 +23,8 @@ import com.autonion.automationcompanion.features.flow_automation.ui.editor.canva
 import com.autonion.automationcompanion.features.flow_automation.ui.editor.canvas.drawNodeIcon
 
 /**
- * Horizontal palette bar showing available node types to add.
+ * Grid palette showing available node types to add.
+ * Uses a 3-column grid with uniform card sizes.
  */
 @Composable
 fun NodePalette(
@@ -39,10 +43,11 @@ fun NodePalette(
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        shape = RoundedCornerShape(16.dp),
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .navigationBarsPadding(),
+        shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1C1E)),
-        elevation = CardDefaults.cardElevation(8.dp)
+        elevation = CardDefaults.cardElevation(12.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
@@ -54,43 +59,61 @@ fun NodePalette(
                     "Add Node",
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp
+                    fontSize = 18.sp
                 )
                 TextButton(onClick = onDismiss) {
-                    Text("✕", color = Color.White.copy(alpha = 0.6f), fontSize = 18.sp)
+                    Text("✕", color = Color.White.copy(alpha = 0.6f), fontSize = 20.sp)
                 }
             }
 
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(12.dp))
 
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(3),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.heightIn(max = 300.dp)
             ) {
                 items(nodeTypes) { item ->
                     Column(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(item.color.copy(alpha = 0.15f))
+                            .fillMaxWidth()
+                            .aspectRatio(0.9f)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(item.color.copy(alpha = 0.12f))
                             .clickable { onAddNode(item.nodeType) }
-                            .padding(horizontal = 20.dp, vertical = 12.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                            .padding(12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
                     ) {
-                        androidx.compose.foundation.Canvas(modifier = Modifier.size(32.dp)) {
+                        androidx.compose.foundation.Canvas(modifier = Modifier.size(48.dp)) {
+                            val cX = size.width / 2f
+                            val cY = size.height / 2f
+                            val circleR = size.width / 2f - 2f
+                            // Outer glow ring
+                            drawCircle(item.color.copy(alpha = 0.2f), radius = circleR + 3f, center = Offset(cX, cY))
+                            // Solid accent circle
+                            drawCircle(item.color, radius = circleR, center = Offset(cX, cY))
+                            // Inner highlight
+                            drawCircle(Color.White.copy(alpha = 0.12f), radius = circleR - 2f, center = Offset(cX, cY))
+                            // Icon
                             drawNodeIcon(
                                 nodeType = item.nodeType,
-                                iconCenterX = size.width / 2f,
-                                iconCenterY = size.height / 2f,
+                                iconCenterX = cX,
+                                iconCenterY = cY,
                                 iconColor = Color.White,
                                 accent = item.color,
-                                scale = 1.6f
+                                scale = 1.3f
                             )
                         }
-                        Spacer(Modifier.height(8.dp))
+                        Spacer(Modifier.height(10.dp))
                         Text(
                             item.label,
                             color = item.color,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            textAlign = TextAlign.Center,
+                            maxLines = 1
                         )
                     }
                 }

@@ -381,61 +381,67 @@ fun FlowEditorScreen(
             }
         }
 
-        // FAB cluster (bottom-right)
-        Column(
+        // FAB cluster (bottom-right) — hidden when palette is open
+        AnimatedVisibility(
+            visible = !state.showNodePalette,
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(16.dp)
                 .navigationBarsPadding(),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-            horizontalAlignment = Alignment.End
+            enter = fadeIn() + scaleIn(),
+            exit = fadeOut() + scaleOut()
         ) {
-            // Execute / Stop
-            FloatingActionButton(
-                onClick = {
-                    if (isExecuting) {
-                        viewModel.stopExecution()
-                    } else {
-                        if (!com.autonion.automationcompanion.AccessibilityRouter.isServiceConnected()) {
-                            android.widget.Toast.makeText(context, "Please enable Accessibility Service to run flows", android.widget.Toast.LENGTH_SHORT).show()
-                            context.startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                        } else if (!hasVisualNodes) {
-                            // No visual/ML nodes → execute directly without MediaProjection
-                            viewModel.executeFlow()
-                        } else if (needsFullScreen) {
-                            // Has LaunchApp + visual nodes → show blocking dialog first
-                            showFullScreenDialog = true
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalAlignment = Alignment.End
+            ) {
+                // Execute / Stop
+                FloatingActionButton(
+                    onClick = {
+                        if (isExecuting) {
+                            viewModel.stopExecution()
                         } else {
-                            // Has visual nodes but no LaunchApp → request MP permission normally
-                            val mpManager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as android.media.projection.MediaProjectionManager
-                            projectionLauncher.launch(mpManager.createScreenCaptureIntent())
+                            if (!com.autonion.automationcompanion.AccessibilityRouter.isServiceConnected()) {
+                                android.widget.Toast.makeText(context, "Please enable Accessibility Service to run flows", android.widget.Toast.LENGTH_SHORT).show()
+                                context.startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                            } else if (!hasVisualNodes) {
+                                // No visual/ML nodes → execute directly without MediaProjection
+                                viewModel.executeFlow()
+                            } else if (needsFullScreen) {
+                                // Has LaunchApp + visual nodes → show blocking dialog first
+                                showFullScreenDialog = true
+                            } else {
+                                // Has visual nodes but no LaunchApp → request MP permission normally
+                                val mpManager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as android.media.projection.MediaProjectionManager
+                                projectionLauncher.launch(mpManager.createScreenCaptureIntent())
+                            }
                         }
-                    }
-                },
-                containerColor = if (isExecuting) Color(0xFFEF5350) else Color(0xFF2E7D32),
-                shape = CircleShape
-            ) {
-                Icon(
-                    if (isExecuting) Icons.Default.Stop else Icons.Default.PlayArrow,
-                    contentDescription = if (isExecuting) "Stop" else "Run",
-                    tint = Color.White
-                )
-            }
+                    },
+                    containerColor = if (isExecuting) Color(0xFFEF5350) else Color(0xFF2E7D32),
+                    shape = CircleShape
+                ) {
+                    Icon(
+                        if (isExecuting) Icons.Default.Stop else Icons.Default.PlayArrow,
+                        contentDescription = if (isExecuting) "Stop" else "Run",
+                        tint = Color.White
+                    )
+                }
 
-            // Add node
-            FloatingActionButton(
-                onClick = { 
-                    if (!com.autonion.automationcompanion.AccessibilityRouter.isServiceConnected()) {
-                        android.widget.Toast.makeText(context, "Please enable Accessibility Service to add nodes", android.widget.Toast.LENGTH_SHORT).show()
-                        context.startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                    } else {
-                        viewModel.toggleNodePalette() 
-                    }
-                },
-                containerColor = Color(0xFF7B1FA2),
-                shape = CircleShape
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Add Node", tint = Color.White)
+                // Add node
+                FloatingActionButton(
+                    onClick = { 
+                        if (!com.autonion.automationcompanion.AccessibilityRouter.isServiceConnected()) {
+                            android.widget.Toast.makeText(context, "Please enable Accessibility Service to add nodes", android.widget.Toast.LENGTH_SHORT).show()
+                            context.startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                        } else {
+                            viewModel.toggleNodePalette() 
+                        }
+                    },
+                    containerColor = Color(0xFF7B1FA2),
+                    shape = CircleShape
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Add Node", tint = Color.White)
+                }
             }
         }
     }
