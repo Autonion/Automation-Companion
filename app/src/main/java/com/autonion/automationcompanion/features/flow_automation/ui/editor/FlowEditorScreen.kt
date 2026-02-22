@@ -397,10 +397,14 @@ fun FlowEditorScreen(
                         if (!com.autonion.automationcompanion.AccessibilityRouter.isServiceConnected()) {
                             android.widget.Toast.makeText(context, "Please enable Accessibility Service to run flows", android.widget.Toast.LENGTH_SHORT).show()
                             context.startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                        } else if (!hasVisualNodes) {
+                            // No visual/ML nodes → execute directly without MediaProjection
+                            viewModel.executeFlow()
                         } else if (needsFullScreen) {
-                            // Show blocking dialog about full-screen requirement
+                            // Has LaunchApp + visual nodes → show blocking dialog first
                             showFullScreenDialog = true
                         } else {
+                            // Has visual nodes but no LaunchApp → request MP permission normally
                             val mpManager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as android.media.projection.MediaProjectionManager
                             projectionLauncher.launch(mpManager.createScreenCaptureIntent())
                         }

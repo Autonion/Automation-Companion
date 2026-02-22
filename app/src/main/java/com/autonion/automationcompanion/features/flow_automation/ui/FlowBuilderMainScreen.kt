@@ -65,9 +65,25 @@ fun FlowBuilderMainScreen(
 }
 
 private fun startFlowService(context: Context, flowId: String) {
-    val runIntent = Intent(context, com.autonion.automationcompanion.features.flow_automation.ui.FlowMediaProjectionActivity::class.java).apply {
-        action = com.autonion.automationcompanion.features.flow_automation.ui.FlowMediaProjectionActivity.ACTION_RUN_FLOW
-        putExtra(com.autonion.automationcompanion.features.flow_automation.ui.FlowMediaProjectionActivity.EXTRA_FLOW_ID, flowId)
+    // Load the flow to check if it needs MediaProjection
+    val repository = com.autonion.automationcompanion.features.flow_automation.data.FlowRepository(context)
+    val graph = repository.load(flowId)
+    
+    val needsMediaProjection = graph?.nodes?.any {
+        it is com.autonion.automationcompanion.features.flow_automation.model.VisualTriggerNode ||
+        it is com.autonion.automationcompanion.features.flow_automation.model.ScreenMLNode
+    } ?: false
+
+    if (needsMediaProjection) {
+        // Needs screen capture → go through FlowMediaProjectionActivity for permission
+        val runIntent = Intent(context, FlowMediaProjectionActivity::class.java).apply {
+            action = FlowMediaProjectionActivity.ACTION_RUN_FLOW
+            putExtra(FlowMediaProjectionActivity.EXTRA_FLOW_ID, flowId)
+        }
+        context.startActivity(runIntent)
+    } else {
+        // No screen capture needed → start service directly
+        val serviceIntent = FlowExecutionService.createIntent(context = context, flowId = flowId)
+        androidx.core.content.ContextCompat.startForegroundService(context, serviceIntent)
     }
-    context.startActivity(runIntent)
 }

@@ -380,13 +380,37 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
         
         val context = getApplication<android.app.Application>()
         val flowId = _state.value.graph.id
-        
-        val runIntent = android.content.Intent(context, com.autonion.automationcompanion.features.flow_automation.ui.FlowMediaProjectionActivity::class.java).apply {
-            action = com.autonion.automationcompanion.features.flow_automation.ui.FlowMediaProjectionActivity.ACTION_RUN_FLOW
-            putExtra(com.autonion.automationcompanion.features.flow_automation.ui.FlowMediaProjectionActivity.EXTRA_FLOW_ID, flowId)
-            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+
+        // Check if any node in the flow needs MediaProjection (screen capture)
+        val needsMediaProjection = _state.value.graph.nodes.any {
+            it is VisualTriggerNode || it is ScreenMLNode
         }
-        context.startActivity(runIntent)
+
+        if (!needsMediaProjection) {
+            // No visual/ML nodes → start FlowExecutionService directly (no MP permission needed)
+            val serviceIntent = com.autonion.automationcompanion.features.flow_automation.engine.FlowExecutionService.createIntent(
+                context = context,
+                flowId = flowId
+            )
+            androidx.core.content.ContextCompat.startForegroundService(context, serviceIntent)
+        } else if (resultCode != null && resultData != null) {
+            // Already have MP consent (passed from the projection launcher) → start service with it
+            val serviceIntent = com.autonion.automationcompanion.features.flow_automation.engine.FlowExecutionService.createIntent(
+                context = context,
+                flowId = flowId,
+                resultCode = resultCode,
+                resultData = resultData
+            )
+            androidx.core.content.ContextCompat.startForegroundService(context, serviceIntent)
+        } else {
+            // Needs MP but no consent yet → go via FlowMediaProjectionActivity to get consent
+            val runIntent = android.content.Intent(context, com.autonion.automationcompanion.features.flow_automation.ui.FlowMediaProjectionActivity::class.java).apply {
+                action = com.autonion.automationcompanion.features.flow_automation.ui.FlowMediaProjectionActivity.ACTION_RUN_FLOW
+                putExtra(com.autonion.automationcompanion.features.flow_automation.ui.FlowMediaProjectionActivity.EXTRA_FLOW_ID, flowId)
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(runIntent)
+        }
     }
 
     fun stopExecution() {

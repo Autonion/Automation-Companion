@@ -93,7 +93,10 @@ class FlowExecutionService : Service() {
             return START_NOT_STICKY
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        // Determine if MediaProjection data is present
+        val hasMediaProjection = intent.hasExtra(EXTRA_RESULT_CODE) && intent.hasExtra(EXTRA_RESULT_DATA)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && hasMediaProjection) {
             startForeground(NOTIFICATION_ID, buildNotification("Loading flow..."), android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
         } else {
             startForeground(NOTIFICATION_ID, buildNotification("Loading flow..."))
