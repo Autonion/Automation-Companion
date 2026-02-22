@@ -45,10 +45,10 @@ val ALL_CATEGORIES = listOf(
         accentColor = AccentBlue
     ),
     CategorySummary(
-        category = LogCategory.SEMANTIC_AUTOMATION,
-        displayName = "Semantic Automation",
-        description = "Natural language flows",
-        icon = Icons.Default.ChatBubble,
+        category = LogCategory.VISUAL_TRIGGER,
+        displayName = "Visual Trigger",
+        description = "Image matching & actions",
+        icon = Icons.Default.Visibility,
         accentColor = AccentGreen
     ),
     CategorySummary(

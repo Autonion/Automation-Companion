@@ -28,6 +28,8 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
 import com.autonion.automationcompanion.R
+import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
+import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
 import com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract
 import com.autonion.automationcompanion.features.visual_trigger.ui.VisionEditorActivity
 import java.io.File
@@ -124,6 +126,7 @@ class CaptureOverlayService : Service() {
         // Check overlay permission before attempting to add window
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !android.provider.Settings.canDrawOverlays(this)) {
             Log.e(TAG, "Overlay permission not granted — cannot show capture overlay")
+            DebugLogger.error(applicationContext, LogCategory.VISUAL_TRIGGER, "Overlay Permission Denied", "Cannot show capture overlay without permission", TAG)
             // Prompt user to grant permission
             try {
                 val intent = Intent(
@@ -289,6 +292,7 @@ class CaptureOverlayService : Service() {
             if (mediaProjection == null) {
                 mediaProjection = mediaProjectionManager?.getMediaProjection(resultCode, resultData!!)
                 Log.d(TAG, "Created new MediaProjection")
+                DebugLogger.info(applicationContext, LogCategory.VISUAL_TRIGGER, "Projection Created", "New MediaProjection created for screen capture", TAG)
             }
 
             // Android 14+: must register callback before EVERY createVirtualDisplay call
@@ -334,6 +338,7 @@ class CaptureOverlayService : Service() {
                     val image = reader.acquireLatestImage()
                     if (image != null) {
                         Log.d(TAG, "Frame acquired on attempt $retries")
+                        DebugLogger.success(applicationContext, LogCategory.VISUAL_TRIGGER, "Frame Captured", "Screen frame acquired on attempt $retries", TAG)
                         try {
                             val planes = image.planes
                             val buffer = planes[0].buffer
@@ -362,6 +367,7 @@ class CaptureOverlayService : Service() {
                             saveAndOpenEditor(finalBitmap)
                         } catch (e: Exception) {
                             Log.e(TAG, "Error processing frame", e)
+                            DebugLogger.error(applicationContext, LogCategory.VISUAL_TRIGGER, "Frame Error", "Error processing captured frame: ${e.message}", TAG)
                             image.close()
                             overlayView?.visibility = View.VISIBLE
                         }
@@ -379,6 +385,7 @@ class CaptureOverlayService : Service() {
             }, 300)
         } catch (e: Exception) {
             Log.e(TAG, "Error in startProjection", e)
+            DebugLogger.error(applicationContext, LogCategory.VISUAL_TRIGGER, "Projection Error", "Error starting projection: ${e.message}", TAG)
             overlayView?.visibility = View.VISIBLE
         }
     }
@@ -407,6 +414,7 @@ class CaptureOverlayService : Service() {
             // In FLOW_MODE, the EditorActivity will handle stopping the service when done via broadcast
         } catch (e: Exception) {
             Log.e(TAG, "Error saving capture", e)
+            DebugLogger.error(applicationContext, LogCategory.VISUAL_TRIGGER, "Save Error", "Error saving capture: ${e.message}", TAG)
         }
     }
 

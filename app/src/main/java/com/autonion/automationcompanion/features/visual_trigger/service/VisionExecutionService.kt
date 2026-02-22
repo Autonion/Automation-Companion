@@ -24,6 +24,8 @@ import android.widget.LinearLayout
 import androidx.core.app.NotificationCompat
 import com.autonion.automationcompanion.R
 import com.autonion.automationcompanion.core.vision.VisionNativeBridge
+import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
+import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
 import com.autonion.automationcompanion.features.visual_trigger.core.VisionMediaProjection
 import com.autonion.automationcompanion.features.visual_trigger.data.VisionRepository
 import com.autonion.automationcompanion.features.visual_trigger.models.ExecutionMode
@@ -64,6 +66,7 @@ class VisionExecutionService : Service() {
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         VisionNativeBridge.init()
         Log.d(TAG, "Service created")
+        DebugLogger.info(applicationContext, LogCategory.VISUAL_TRIGGER, "Service Created", "VisionExecutionService initialized", TAG)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -80,6 +83,7 @@ class VisionExecutionService : Service() {
                     startExecution(resultCode, resultData, presetId)
                 } else {
                     Log.e(TAG, "Missing params: resultCode=$resultCode, data=$resultData, presetId=$presetId")
+                    DebugLogger.error(applicationContext, LogCategory.VISUAL_TRIGGER, "Start Failed", "Missing params: resultCode=$resultCode, presetId=$presetId", TAG)
                     stopSelf()
                 }
             }
@@ -227,6 +231,7 @@ class VisionExecutionService : Service() {
             if (isPaused) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause
         )
         Log.d(TAG, if (isPaused) "PAUSED" else "RESUMED")
+        DebugLogger.info(applicationContext, LogCategory.VISUAL_TRIGGER, if (isPaused) "Paused" else "Resumed", if (isPaused) "Execution paused by user" else "Execution resumed by user", TAG)
     }
 
     // ── Execution Logic ───────────────────────────────────────────────
@@ -236,11 +241,13 @@ class VisionExecutionService : Service() {
             activePreset = repository?.getPreset(presetId)
             if (activePreset == null) {
                 Log.e(TAG, "Preset not found: $presetId")
+                DebugLogger.error(applicationContext, LogCategory.VISUAL_TRIGGER, "Preset Not Found", "Preset ID: $presetId", TAG)
                 stopSelf()
                 return@launch
             }
 
             Log.d(TAG, "▶ Starting execution: '${activePreset?.name}', ${activePreset?.regions?.size} regions, mode=${activePreset?.executionMode}")
+            DebugLogger.info(applicationContext, LogCategory.VISUAL_TRIGGER, "Execution Started", "Preset: '${activePreset?.name}', ${activePreset?.regions?.size} regions, mode=${activePreset?.executionMode}", TAG)
 
             VisionNativeBridge.nativeClearTemplates()
 
@@ -251,6 +258,7 @@ class VisionExecutionService : Service() {
                     VisionNativeBridge.addTemplate(region.id, bitmap)
                 } else {
                     Log.e(TAG, "  ✗ Failed to decode template: ${region.templatePath}")
+                    DebugLogger.warning(applicationContext, LogCategory.VISUAL_TRIGGER, "Template Decode Failed", "Path: ${region.templatePath}", TAG)
                 }
             }
 
@@ -264,6 +272,9 @@ class VisionExecutionService : Service() {
             Log.d(TAG, "Projection started, collecting frames...")
             val connected = VisionActionExecutor.isConnected()
             Log.d(TAG, "AccessibilityService connected: $connected")
+            if (!connected) {
+                DebugLogger.warning(applicationContext, LogCategory.VISUAL_TRIGGER, "No Accessibility", "AccessibilityService not connected — actions may fail", TAG)
+            }
 
             var frameCount = 0
 
@@ -308,13 +319,20 @@ class VisionExecutionService : Service() {
                         val cx = match.x + match.width / 2
                         val cy = match.y + match.height / 2
                         Log.d(TAG, "  ▶ Executing ${region.action} at ($cx, $cy)")
+                        DebugLogger.info(applicationContext, LogCategory.VISUAL_TRIGGER, "Action Executing", "${region.action} at ($cx, $cy)", TAG)
                         val success = executeAction(region, cx, cy)
                         Log.d(TAG, "  Action result: $success")
+                        if (success) {
+                            DebugLogger.success(applicationContext, LogCategory.VISUAL_TRIGGER, "Action Succeeded", "${region.action} at ($cx, $cy)", TAG)
+                        } else {
+                            DebugLogger.warning(applicationContext, LogCategory.VISUAL_TRIGGER, "Action Failed", "${region.action} at ($cx, $cy) returned false", TAG)
+                        }
                     }
                 }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error in processFrame", e)
+            DebugLogger.error(applicationContext, LogCategory.VISUAL_TRIGGER, "Frame Error", "Error processing frame: ${e.message}", TAG)
         }
     }
 
@@ -355,6 +373,7 @@ class VisionExecutionService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         Log.d(TAG, "Service destroying...")
+        DebugLogger.info(applicationContext, LogCategory.VISUAL_TRIGGER, "Service Stopped", "VisionExecutionService shutting down", TAG)
 
         // 1. Pause first so the loop stops calling native match
         isPaused = true

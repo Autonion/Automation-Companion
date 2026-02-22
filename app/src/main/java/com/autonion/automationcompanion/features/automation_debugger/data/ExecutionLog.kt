@@ -29,6 +29,7 @@ object LogCategory {
     const val EMERGENCY_TRIGGER = "EMERGENCY_TRIGGER"
     const val CROSS_DEVICE_SYNC = "CROSS_DEVICE_SYNC"
     const val FLOW_BUILDER = "FLOW_BUILDER"
+    const val VISUAL_TRIGGER = "VISUAL_TRIGGER"
 }
 
 object LogLevel {
