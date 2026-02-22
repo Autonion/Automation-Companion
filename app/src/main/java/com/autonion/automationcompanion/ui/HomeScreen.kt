@@ -15,7 +15,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.material.icons.automirrored.filled.CallSplit
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.automirrored.filled.ViewQuilt
 import com.autonion.automationcompanion.ui.components.*
@@ -87,21 +86,6 @@ fun HomeScreen(onOpen: (String) -> Unit) {
                 }
             }
 
-            // Hero Card: Flow Builder
-            item {
-                StaggeredEntry(index = 2) {
-                    HeroCard(
-                        title = "Flow Builder",
-                        description = "Build visual automation flows with a node-based graph editor.",
-                        icon = Icons.Default.AccountTree,
-                        iconColor = Color.White,
-                        iconContainerColor = AccentPurple,
-                        onClick = { onOpen(AutomationRoutes.FLOW_BUILDER) }
-                    )
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-
             // Hero Card: Gesture Recording
             item {
                 StaggeredEntry(index = 3) {
@@ -153,12 +137,12 @@ fun HomeScreen(onOpen: (String) -> Unit) {
             item {
                 StaggeredEntry(index = 5) {
                     ListCard(
-                        title = "Conditional Flows",
-                        description = "Add logic, conditions, and guards to your workflow.",
-                        icon = Icons.AutoMirrored.Filled.CallSplit,
+                        title = "Flow Builder",
+                        description = "Build visual automation flows with a node-based graph editor.",
+                        icon = Icons.Default.AccountTree,
                         iconColor = Color.White,
-                        iconContainerColor = AccentOrange,
-                        onClick = { onOpen(AutomationRoutes.CONDITIONAL) }
+                        iconContainerColor = AccentPurple,
+                        onClick = { onOpen(AutomationRoutes.FLOW_BUILDER) }
                     )
                 }
             }
