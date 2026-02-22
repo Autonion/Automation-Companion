@@ -142,7 +142,9 @@ fun FlowEditorScreen(
             },
             onOutputPortTap = { viewModel.startConnection(it) },
             onFailurePortTap = { viewModel.startFailureConnection(it) },
-            onNodeDropForConnection = { viewModel.completeConnection(it) }
+            onNodeDropForConnection = { viewModel.completeConnection(it) },
+            onDragEndpoint = { viewModel.updateDragEndpoint(it) },
+            onEdgeCut = { edgeId -> viewModel.deleteEdge(edgeId) }
         )
 
         // Top bar

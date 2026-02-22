@@ -31,6 +31,7 @@ data class FlowEditorState(
     val isConnecting: Boolean = false,
     val connectFromNodeId: String? = null,
     val connectFromFailurePort: Boolean = false,
+    val dragConnectionEndpoint: Offset? = null, // Canvas-space endpoint for rubber-band line
     val showNodePalette: Boolean = false,
     val showNodeConfig: Boolean = false,
     val showEdgeConfig: Boolean = false,
@@ -254,11 +255,15 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
     // ─── Edge Operations ─────────────────────────────────────────────────
 
     fun startConnection(fromNodeId: String) {
-        _state.update { it.copy(isConnecting = true, connectFromNodeId = fromNodeId, connectFromFailurePort = false) }
+        _state.update { it.copy(isConnecting = true, connectFromNodeId = fromNodeId, connectFromFailurePort = false, dragConnectionEndpoint = null) }
     }
 
     fun startFailureConnection(fromNodeId: String) {
-        _state.update { it.copy(isConnecting = true, connectFromNodeId = fromNodeId, connectFromFailurePort = true) }
+        _state.update { it.copy(isConnecting = true, connectFromNodeId = fromNodeId, connectFromFailurePort = true, dragConnectionEndpoint = null) }
+    }
+
+    fun updateDragEndpoint(canvasPos: Offset?) {
+        _state.update { it.copy(dragConnectionEndpoint = canvasPos) }
     }
 
     fun completeConnection(toNodeId: String) {
@@ -293,6 +298,7 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
                         isConnecting = false,
                         connectFromNodeId = null,
                         connectFromFailurePort = false,
+                        dragConnectionEndpoint = null,
                         isDirty = true
                     )
                 }
@@ -312,13 +318,14 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
                 isConnecting = false,
                 connectFromNodeId = null,
                 connectFromFailurePort = false,
+                dragConnectionEndpoint = null,
                 isDirty = true
             )
         }
     }
 
     fun cancelConnection() {
-        _state.update { it.copy(isConnecting = false, connectFromNodeId = null, connectFromFailurePort = false) }
+        _state.update { it.copy(isConnecting = false, connectFromNodeId = null, connectFromFailurePort = false, dragConnectionEndpoint = null) }
     }
 
     fun selectEdge(edgeId: String?) {

@@ -54,6 +54,8 @@ fun FlowCanvas(
     onOutputPortTap: (String) -> Unit,
     onFailurePortTap: (String) -> Unit,
     onNodeDropForConnection: (String) -> Unit,
+    onDragEndpoint: (Offset?) -> Unit = {},
+    onEdgeCut: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // Canvas transform state — kept as mutable state so gestures read latest values
@@ -115,6 +117,11 @@ fun FlowCanvas(
                     var screenAccum = Offset.Zero
                     var canvasAccum = Offset.Zero
                     var pinched = false
+                    
+                    // Track if this is a port-drag (for drag-to-connect)
+                    var isPortDrag = false
+                    // Track actual last screen position for accurate drop detection
+                    var lastScreenPos = downScreen
 
                     // 2. Move/up loop
                     while (true) {
@@ -134,17 +141,30 @@ fun FlowCanvas(
                         } else if (ev.changes.size == 1) {
                             val c = ev.changes.first()
                             val delta = c.positionChange()
+                            lastScreenPos = c.position
 
                             if (!isDrag && delta != Offset.Zero) {
                                 screenAccum += delta
                                 if (screenAccum.getDistance() > threshold) {
                                     isDrag = true
                                     canvasAccum = screenAccum / zoom
+                                    
+                                    // If drag started on a port, enter port-drag mode
+                                    if (hitPortId != null) {
+                                        isPortDrag = true
+                                        if (hitOutputPortId != null) onOutputPortTap(hitOutputPortId)
+                                        else if (hitFailurePortId != null) onFailurePortTap(hitFailurePortId)
+                                    }
                                 }
                             }
 
                             if (isDrag && !pinched) {
-                                if (initPos != null && hitNodeId != null) {
+                                if (isPortDrag) {
+                                    // ── Port drag → update rubber-band endpoint ──
+                                    val currentCanvas = screenToCanvas(c.position, offset, zoom)
+                                    onDragEndpoint(currentCanvas)
+                                    c.consume()
+                                } else if (initPos != null && hitNodeId != null) {
                                     // ── Node drag ──
                                     canvasAccum += delta / zoom
                                     onNodeDrag(
@@ -167,8 +187,22 @@ fun FlowCanvas(
                         if (allUp) break
                     }
 
-                    // 3. Tap detection (no drag, no pinch)
-                    if (!isDrag && !pinched) {
+                    // 3. Handle release
+                    if (isPortDrag) {
+                        // Port drag released — use actual last finger position
+                        val releaseCanvas = screenToCanvas(lastScreenPos, offset, zoom)
+                        // Drop anywhere on a node to connect (full body + generous padding)
+                        val dropNodeId = findNodeAt(latestGraph.nodes, releaseCanvas)
+                            ?: findNodeNear(latestGraph.nodes, releaseCanvas)
+                        if (dropNodeId != null) {
+                            onNodeDropForConnection(dropNodeId)
+                        } else {
+                            // Dropped on empty space → cancel connection
+                            onCanvasTap()
+                        }
+                        onDragEndpoint(null)
+                    } else if (!isDrag && !pinched) {
+                        // Tap detection (no drag, no pinch)
                         val connecting = latestIsConnecting
                         if (hitOutputPortId != null) {
                             if (connecting) onNodeDropForConnection(hitOutputPortId)
@@ -213,6 +247,33 @@ fun FlowCanvas(
                     isActive = node.id == activeNodeId,
                     glowAlpha, textMeasurer
                 )
+            }
+
+            // Rubber-band line during drag connection
+            val dragEnd = state.dragConnectionEndpoint
+            val fromNodeId = state.connectFromNodeId
+            if (state.isConnecting && dragEnd != null && fromNodeId != null) {
+                val fromNode = state.graph.nodeById(fromNodeId)
+                if (fromNode != null) {
+                    val w = NodeDimensions.WIDTH; val h = NodeDimensions.HEIGHT
+                    val startPos = if (state.connectFromFailurePort) {
+                        Offset(fromNode.position.x + w / 2f, fromNode.position.y + h)
+                    } else {
+                        Offset(fromNode.position.x + w, fromNode.position.y + h / 2f)
+                    }
+                    val lineColor = if (state.connectFromFailurePort) 
+                        NodeColors.EdgeFailure.copy(0.7f) 
+                    else 
+                        Color(0xFF64FFDA).copy(0.7f)
+                    
+                    // Dashed rubber-band line
+                    drawLine(
+                        lineColor, startPos, dragEnd, 2.5f,
+                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 8f), dashPhase)
+                    )
+                    // Small dot at endpoint
+                    drawCircle(lineColor, 6f, dragEnd)
+                }
             }
         }
     }
@@ -482,6 +543,17 @@ private fun DrawScope.drawArrowhead(tip: Offset, from: Offset, color: Color) {
 private fun findNodeAt(nodes: List<FlowNode>, pos: Offset) =
     nodes.lastOrNull { Rect(it.position.x, it.position.y, it.position.x + NodeDimensions.WIDTH, it.position.y + NodeDimensions.HEIGHT).contains(pos) }?.id
 
+/** Expanded hit area for drop targets — 20px padding around the node body. */
+private fun findNodeNear(nodes: List<FlowNode>, pos: Offset): String? {
+    val pad = 20f
+    return nodes.lastOrNull {
+        Rect(
+            it.position.x - pad, it.position.y - pad,
+            it.position.x + NodeDimensions.WIDTH + pad, it.position.y + NodeDimensions.HEIGHT + pad
+        ).contains(pos)
+    }?.id
+}
+
 private fun findNodeOutputPort(nodes: List<FlowNode>, pos: Offset): String? {
     val r = NodeDimensions.PORT_HIT_RADIUS
     return nodes.lastOrNull { (pos - Offset(it.position.x + NodeDimensions.WIDTH, it.position.y + NodeDimensions.HEIGHT / 2f)).getDistance() < r }?.id
@@ -521,6 +593,59 @@ private fun findEdgeAt(graph: FlowGraph, pos: Offset): String? {
         }
     }?.id
 }
+
+/** Hit-test the left-center input port of a node (where edges connect TO). */
+private fun findNodeInputPort(nodes: List<FlowNode>, pos: Offset): String? {
+    val r = NodeDimensions.PORT_HIT_RADIUS * 1.5f  // Slightly larger hit area for drop targets
+    return nodes.lastOrNull {
+        (pos - Offset(it.position.x, it.position.y + NodeDimensions.HEIGHT / 2f)).getDistance() < r
+    }?.id
+}
+
+/**
+ * Detect if a swipe segment (from segA to segB) crosses any edge in the graph.
+ * Uses line-segment intersection to find crossings.
+ */
+private fun findEdgeCrossing(graph: FlowGraph, segA: Offset, segB: Offset): String? {
+    val w = NodeDimensions.WIDTH; val h = NodeDimensions.HEIGHT
+
+    return graph.edges.firstOrNull { e ->
+        val f = graph.nodeById(e.fromNodeId) ?: return@firstOrNull false
+        val t = graph.nodeById(e.toNodeId) ?: return@firstOrNull false
+
+        val edgeStart: Offset
+        val edgeEnd: Offset
+        if (e.isFailurePath) {
+            edgeStart = Offset(f.position.x + w / 2f, f.position.y + h)
+            edgeEnd = Offset(t.position.x + w / 2f, t.position.y)
+        } else {
+            edgeStart = Offset(f.position.x + w, f.position.y + h / 2f)
+            edgeEnd = Offset(t.position.x, t.position.y + h / 2f)
+        }
+
+        // Test multiple segments along the edge (since edges could be curved in the future)
+        (0 until 8).any { i ->
+            val t0 = i.toFloat() / 8; val t1 = (i + 1).toFloat() / 8
+            val eA = Offset(lerp(edgeStart.x, edgeEnd.x, t0), lerp(edgeStart.y, edgeEnd.y, t0))
+            val eB = Offset(lerp(edgeStart.x, edgeEnd.x, t1), lerp(edgeStart.y, edgeEnd.y, t1))
+            segmentsIntersect(segA, segB, eA, eB)
+        }
+    }?.id
+}
+
+/** Check if two 2D line segments intersect. */
+private fun segmentsIntersect(a1: Offset, a2: Offset, b1: Offset, b2: Offset): Boolean {
+    val d1 = cross(b2 - b1, a1 - b1)
+    val d2 = cross(b2 - b1, a2 - b1)
+    val d3 = cross(a2 - a1, b1 - a1)
+    val d4 = cross(a2 - a1, b2 - a1)
+    if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+        ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))
+    ) return true
+    return false
+}
+
+private fun cross(a: Offset, b: Offset) = a.x * b.y - a.y * b.x
 
 private fun lerp(a: Float, b: Float, t: Float) = a + (b - a) * t
 
