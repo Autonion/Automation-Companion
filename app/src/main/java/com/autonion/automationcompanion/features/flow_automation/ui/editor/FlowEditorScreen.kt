@@ -31,11 +31,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.activity.compose.BackHandler
 import com.autonion.automationcompanion.features.flow_automation.engine.FlowExecutionState
+import com.autonion.automationcompanion.features.flow_automation.model.LaunchAppNode
+import com.autonion.automationcompanion.features.flow_automation.model.ScreenMLNode
+import com.autonion.automationcompanion.features.flow_automation.model.VisualTriggerNode
 import com.autonion.automationcompanion.features.flow_automation.ui.editor.canvas.FlowCanvas
 import com.autonion.automationcompanion.features.flow_automation.ui.editor.canvas.MiniMap
 import com.autonion.automationcompanion.features.flow_automation.ui.editor.panels.EdgeConditionOverlay
 import com.autonion.automationcompanion.features.flow_automation.ui.editor.panels.NodeConfigPanel
 import com.autonion.automationcompanion.features.flow_automation.ui.editor.panels.NodePalette
+import kotlinx.coroutines.delay
 
 /**
  * Main flow editor screen composable.
@@ -55,6 +59,36 @@ fun FlowEditorScreen(
     val density = LocalDensity.current
     var canvasSize by remember { mutableStateOf(Size.Zero) }
     val context = androidx.compose.ui.platform.LocalContext.current
+
+    // ── MiniMap auto-hide state ──
+    var showMiniMap by remember { mutableStateOf(false) }
+    var lastInteractionTime by remember { mutableLongStateOf(0L) }
+
+    // Auto-hide MiniMap after 2 seconds of canvas inactivity
+    LaunchedEffect(lastInteractionTime) {
+        if (lastInteractionTime > 0) {
+            delay(2500)
+            showMiniMap = false
+        }
+    }
+
+    // ── MediaProjection blocking dialog ──
+    var showFullScreenDialog by remember { mutableStateOf(false) }
+    var pendingExecute by remember { mutableStateOf(false) }
+
+    // Detect if flow has LaunchApp + visual/ML nodes (needs full-screen capture)
+    val hasLaunchAppNode = remember(state.graph.nodes) {
+        state.graph.nodes.any { it is LaunchAppNode }
+    }
+    val hasVisualNodes = remember(state.graph.nodes) {
+        state.graph.nodes.any { it is VisualTriggerNode || it is ScreenMLNode }
+    }
+    val needsFullScreen = hasLaunchAppNode && hasVisualNodes
+
+    // ── Warning banner for flows that need full-screen capture ──
+    val showScreenCaptureWarning = remember(state.graph.nodes) {
+        needsFullScreen
+    }
 
     val projectionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -92,7 +126,12 @@ fun FlowEditorScreen(
         FlowCanvas(
             state = state,
             executionState = execState,
-            onCanvasTransform = { offset, zoom -> viewModel.updateCanvasTransform(offset, zoom) },
+            onCanvasTransform = { offset, zoom ->
+                viewModel.updateCanvasTransform(offset, zoom)
+                // Show MiniMap on interaction
+                showMiniMap = true
+                lastInteractionTime = System.currentTimeMillis()
+            },
             onNodeTap = { viewModel.selectNode(it) },
             onNodeDrag = { id, pos -> viewModel.updateNodePosition(id, pos) },
             onEdgeTap = { viewModel.selectEdge(it) },
@@ -195,22 +234,52 @@ fun FlowEditorScreen(
             }
         }
 
-        // MiniMap (bottom-left corner)
-        MiniMap(
-            state = state,
-            canvasSize = canvasSize,
-            onNavigate = { center ->
-                val newOffset = androidx.compose.ui.geometry.Offset(
-                    -center.x * state.canvasZoom + canvasSize.width / 2f,
-                    -center.y * state.canvasZoom + canvasSize.height / 2f
+        // Screen capture warning banner (when flow has LaunchApp + visual nodes)
+        AnimatedVisibility(
+            visible = showScreenCaptureWarning && !isExecuting,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .padding(top = 52.dp),
+            enter = fadeIn() + slideInVertically(),
+            exit = fadeOut() + slideOutVertically()
+        ) {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = Color(0xFFE65100).copy(alpha = 0.9f),
+                modifier = Modifier.padding(horizontal = 48.dp)
+            ) {
+                Text(
+                    "⚠ This flow switches apps — use \"Entire screen\" when granting capture permission",
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                 )
-                viewModel.updateCanvasTransform(newOffset, state.canvasZoom)
-            },
+            }
+        }
+
+        // MiniMap (bottom-left corner) — auto-hides when not navigating
+        AnimatedVisibility(
+            visible = showMiniMap,
             modifier = Modifier
                 .align(Alignment.BottomStart)
                 .padding(start = 12.dp, bottom = 12.dp)
-                .navigationBarsPadding()
-        )
+                .navigationBarsPadding(),
+            enter = fadeIn(),
+            exit = fadeOut()
+        ) {
+            MiniMap(
+                state = state,
+                canvasSize = canvasSize,
+                onNavigate = { center ->
+                    val newOffset = androidx.compose.ui.geometry.Offset(
+                        -center.x * state.canvasZoom + canvasSize.width / 2f,
+                        -center.y * state.canvasZoom + canvasSize.height / 2f
+                    )
+                    viewModel.updateCanvasTransform(newOffset, state.canvasZoom)
+                }
+            )
+        }
 
         // Connection mode indicator
         AnimatedVisibility(
@@ -328,6 +397,9 @@ fun FlowEditorScreen(
                         if (!com.autonion.automationcompanion.AccessibilityRouter.isServiceConnected()) {
                             android.widget.Toast.makeText(context, "Please enable Accessibility Service to run flows", android.widget.Toast.LENGTH_SHORT).show()
                             context.startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                        } else if (needsFullScreen) {
+                            // Show blocking dialog about full-screen requirement
+                            showFullScreenDialog = true
                         } else {
                             val mpManager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as android.media.projection.MediaProjectionManager
                             projectionLauncher.launch(mpManager.createScreenCaptureIntent())
@@ -360,5 +432,58 @@ fun FlowEditorScreen(
                 Icon(Icons.Default.Add, contentDescription = "Add Node", tint = Color.White)
             }
         }
+    }
+
+    // ── Full-screen MediaProjection blocking dialog ──
+    if (showFullScreenDialog) {
+        AlertDialog(
+            onDismissRequest = { showFullScreenDialog = false },
+            containerColor = Color(0xFF1A1C1E),
+            titleContentColor = Color.White,
+            textContentColor = Color.White.copy(alpha = 0.8f),
+            title = {
+                Text("⚠ Full Screen Capture Required", fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        "This flow contains a \"Launch App\" node along with screen capture nodes (Image Match / Screen ML)."
+                    )
+                    Text(
+                        "When the permission dialog appears, you MUST select \"Entire screen\" instead of a single app. " +
+                        "Otherwise, screen capture will stop working after the app switches."
+                    )
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0xFFE65100).copy(alpha = 0.15f)
+                    ) {
+                        Text(
+                            "If single-app sharing is selected, the flow will continue running but visual/ML nodes may fail after the app switch. " +
+                            "The flow will follow failure edges instead of crashing.",
+                            color = Color(0xFFFFA726),
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(12.dp)
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showFullScreenDialog = false
+                        val mpManager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as android.media.projection.MediaProjectionManager
+                        projectionLauncher.launch(mpManager.createScreenCaptureIntent())
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
+                ) {
+                    Text("I understand — proceed", color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showFullScreenDialog = false }) {
+                    Text("Cancel", color = Color.White.copy(alpha = 0.6f))
+                }
+            }
+        )
     }
 }

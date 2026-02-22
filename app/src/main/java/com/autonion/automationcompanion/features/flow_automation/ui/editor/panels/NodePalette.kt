@@ -31,7 +31,8 @@ fun NodePalette(
         NodeTypeItem(FlowNodeType.GESTURE, "Gesture", "👆", NodeColors.GestureBlue),
         NodeTypeItem(FlowNodeType.VISUAL_TRIGGER, "Image Match", "🔍", NodeColors.VisualTriggerPurple),
         NodeTypeItem(FlowNodeType.SCREEN_ML, "Screen ML", "🧠", NodeColors.ScreenMLAmber),
-        NodeTypeItem(FlowNodeType.DELAY, "Delay", "⏱", NodeColors.DelayGrey)
+        NodeTypeItem(FlowNodeType.DELAY, "Delay", "⏱", NodeColors.DelayGrey),
+        NodeTypeItem(FlowNodeType.LAUNCH_APP, "Launch App", "🚀", NodeColors.LaunchAppTeal)
     )
 
     Card(

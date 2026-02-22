@@ -47,7 +47,8 @@ class FlowExecutionEngine(
         FlowNodeType.GESTURE to GestureNodeExecutor(),
         FlowNodeType.VISUAL_TRIGGER to VisualTriggerNodeExecutor(screenCaptureProvider),
         FlowNodeType.SCREEN_ML to ScreenMLNodeExecutor(appContext, screenCaptureProvider),
-        FlowNodeType.DELAY to DelayNodeExecutor()
+        FlowNodeType.DELAY to DelayNodeExecutor(),
+        FlowNodeType.LAUNCH_APP to LaunchAppNodeExecutor(appContext)
     )
 
     /**

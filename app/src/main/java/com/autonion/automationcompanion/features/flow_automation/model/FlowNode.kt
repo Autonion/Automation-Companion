@@ -13,7 +13,8 @@ enum class FlowNodeType {
     @SerialName("gesture") GESTURE,
     @SerialName("visual_trigger") VISUAL_TRIGGER,
     @SerialName("screen_ml") SCREEN_ML,
-    @SerialName("delay") DELAY
+    @SerialName("delay") DELAY,
+    @SerialName("launch_app") LAUNCH_APP
 }
 
 /**
@@ -194,4 +195,26 @@ data class DelayNode(
     val delayMs: Long = 2000L
 ) : FlowNode() {
     override val nodeType: FlowNodeType = FlowNodeType.DELAY
+}
+
+/**
+ * Launches a different app mid-flow.
+ *
+ * Uses PackageManager to find and launch the target app.
+ * When combined with visual/ML nodes, requires full-screen MediaProjection
+ * permission to avoid capture issues after the app switch.
+ */
+@Serializable
+@SerialName("launch_app")
+data class LaunchAppNode(
+    override val id: String = UUID.randomUUID().toString(),
+    override val position: NodePosition = NodePosition(),
+    override val label: String = "Launch App",
+    override val outputEdgeIds: List<String> = emptyList(),
+    override val onFailureEdgeId: String? = null,
+    override val timeoutMs: Long = 10_000L,
+    val appPackageName: String = "",
+    val launchDelayMs: Long = 1500L
+) : FlowNode() {
+    override val nodeType: FlowNodeType = FlowNodeType.LAUNCH_APP
 }

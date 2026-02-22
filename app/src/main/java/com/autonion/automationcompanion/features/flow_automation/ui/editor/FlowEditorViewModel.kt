@@ -188,6 +188,7 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
             FlowNodeType.VISUAL_TRIGGER -> VisualTriggerNode(position = position)
             FlowNodeType.SCREEN_ML -> ScreenMLNode(position = position)
             FlowNodeType.DELAY -> DelayNode(position = position)
+            FlowNodeType.LAUNCH_APP -> LaunchAppNode(position = position)
         }
         _state.update { state ->
             state.copy(
@@ -197,6 +198,18 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
                 showNodeConfig = true,
                 isDirty = true
             )
+        }
+        // Warn about MediaProjection when adding LaunchApp alongside visual/ML nodes
+        if (type == FlowNodeType.LAUNCH_APP) {
+            val hasVisualNodes = _state.value.graph.nodes.any { it is VisualTriggerNode || it is ScreenMLNode }
+            if (hasVisualNodes) {
+                val app = getApplication<android.app.Application>()
+                android.widget.Toast.makeText(
+                    app,
+                    "\u26a0 This flow uses screen capture nodes. When running, select \"Entire screen\" in the permission dialog for app switching to work.",
+                    android.widget.Toast.LENGTH_LONG
+                ).show()
+            }
         }
     }
 
@@ -500,6 +513,7 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
             is VisualTriggerNode -> node.copy(position = pos)
             is ScreenMLNode -> node.copy(position = pos)
             is DelayNode -> node.copy(position = pos)
+            is LaunchAppNode -> node.copy(position = pos)
         }
     }
 }

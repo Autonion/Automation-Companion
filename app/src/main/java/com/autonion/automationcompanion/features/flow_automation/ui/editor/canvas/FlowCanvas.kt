@@ -288,7 +288,7 @@ private fun DrawScope.drawNode(
     val icon = when (node) {
         is StartNode -> "▶"; is GestureNode -> "👆"
         is VisualTriggerNode -> "🔍"; is ScreenMLNode -> "🧠"
-        is DelayNode -> "⏱"
+        is DelayNode -> "⏱"; is LaunchAppNode -> "🚀"
     }
     val maxTextW = (w - 32f).toInt()
     drawText(textMeasurer.measure(
@@ -305,6 +305,7 @@ private fun DrawScope.drawNode(
         is VisualTriggerNode -> "Image Match"
         is ScreenMLNode -> node.mode.name
         is DelayNode -> "Wait"
+        is LaunchAppNode -> if (node.appPackageName.isNotBlank()) node.appPackageName.substringAfterLast('.') else "Select App"
     }
     drawText(textMeasurer.measure(
         AnnotatedString(subtitle),
@@ -324,7 +325,7 @@ private fun DrawScope.drawNode(
     drawCircle(NodeColors.PortOutput, NodeDimensions.PORT_RADIUS, op)
 
     // ── Failure port (bottom-center) — red dot, NO text ──
-    if (node !is DelayNode) {
+    if (node !is DelayNode && node !is LaunchAppNode) {
         val fp = Offset(x + w / 2f, y + h)
         drawCircle(Color(0xFF2E1A1A), NodeDimensions.PORT_RADIUS + 3f, fp)
         drawCircle(NodeColors.PortFailure, NodeDimensions.PORT_RADIUS, fp)
@@ -490,6 +491,7 @@ private fun findNodeFailurePort(nodes: List<FlowNode>, pos: Offset): String? {
     val r = NodeDimensions.PORT_HIT_RADIUS
     return nodes.lastOrNull { 
         it !is DelayNode &&
+        it !is LaunchAppNode &&
         (pos - Offset(it.position.x + NodeDimensions.WIDTH / 2f, it.position.y + NodeDimensions.HEIGHT)).getDistance() < r 
     }?.id
 }
@@ -537,6 +539,7 @@ private fun nodeColors(node: FlowNode) = when (node) {
     is VisualTriggerNode -> NodeColors.VisualTriggerPurpleBg to NodeColors.VisualTriggerPurple
     is ScreenMLNode -> NodeColors.ScreenMLAmberBg to NodeColors.ScreenMLAmber
     is DelayNode -> NodeColors.DelayGreyBg to NodeColors.DelayGrey
+    is LaunchAppNode -> NodeColors.LaunchAppTealBg to NodeColors.LaunchAppTeal
 }
 
 private fun edgeConditionLabel(edge: FlowEdge): String? {

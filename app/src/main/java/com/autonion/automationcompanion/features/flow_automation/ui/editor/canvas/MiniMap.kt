@@ -99,6 +99,7 @@ fun MiniMap(
                     is VisualTriggerNode -> NodeColors.VisualTriggerPurple
                     is ScreenMLNode -> NodeColors.ScreenMLAmber
                     is DelayNode -> NodeColors.DelayGrey
+                    is LaunchAppNode -> NodeColors.LaunchAppTeal
                 }
 
                 val dotSize = Size(
