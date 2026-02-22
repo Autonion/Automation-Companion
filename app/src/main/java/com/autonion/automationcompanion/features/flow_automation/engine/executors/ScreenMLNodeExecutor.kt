@@ -2,6 +2,8 @@ package com.autonion.automationcompanion.features.flow_automation.engine.executo
 
 import android.content.Context
 import android.util.Log
+import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
+import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
 import com.autonion.automationcompanion.features.flow_automation.engine.NodeExecutor
 import com.autonion.automationcompanion.features.flow_automation.engine.NodeResult
 import com.autonion.automationcompanion.features.flow_automation.engine.ScreenCaptureProvider
@@ -59,6 +61,7 @@ class ScreenMLNodeExecutor(
         try {
             val result = ocrEngine.recognizeText(bitmap)
             Log.d(TAG, "OCR: recognized ${result.blocks.size} blocks, ${result.fullText.length} chars")
+            DebugLogger.info(appContext!!, LogCategory.FLOW_BUILDER, "OCR Complete", "Recognized ${result.blocks.size} blocks, ${result.fullText.length} chars", TAG)
 
             // 3. Write results to FlowContext
             context.put(node.outputContextKey, result.fullText)
@@ -93,8 +96,10 @@ class ScreenMLNodeExecutor(
                         context.put("${node.outputContextKey}_target_y", cy)
                     }
                     Log.d(TAG, "  ✓ Target text '${node.targetLabel}' found")
+                    DebugLogger.success(appContext!!, LogCategory.FLOW_BUILDER, "OCR Target Found", "Text '${node.targetLabel}' found on screen", TAG)
                 } else {
                     Log.d(TAG, "  ✗ Target text '${node.targetLabel}' not found")
+                    DebugLogger.warning(appContext!!, LogCategory.FLOW_BUILDER, "OCR Target Missing", "Text '${node.targetLabel}' not found on screen", TAG)
                     return NodeResult.Failure("Target text '${node.targetLabel}' not found on screen")
                 }
             }
@@ -102,6 +107,7 @@ class ScreenMLNodeExecutor(
             return NodeResult.Success
         } catch (e: Exception) {
             Log.e(TAG, "OCR recognition failed", e)
+            DebugLogger.error(appContext!!, LogCategory.FLOW_BUILDER, "OCR Failed", "OCR error: ${e.message}", TAG)
             context.put("${node.outputContextKey}_success", false)
             return NodeResult.Failure("OCR error: ${e.message}")
         } finally {
@@ -124,6 +130,7 @@ class ScreenMLNodeExecutor(
         try {
             val detections = perceptionLayer.detect(bitmap)
             Log.d(TAG, "Object Detection: detected ${detections.size} elements")
+            DebugLogger.info(ctx, LogCategory.FLOW_BUILDER, "Detection Complete", "Detected ${detections.size} UI elements", TAG)
 
             // 3. Serialize all detection results
             val detectionsJson = detections.joinToString(";") { el ->
@@ -148,9 +155,11 @@ class ScreenMLNodeExecutor(
                     context.put("${node.outputContextKey}_target_label", target.label)
                     context.put("${node.outputContextKey}_target_confidence", target.confidence)
                     Log.d(TAG, "  ✓ Target '${node.targetLabel}' found at ($cx, $cy), confidence=${target.confidence}")
+                    DebugLogger.success(ctx, LogCategory.FLOW_BUILDER, "Target Found", "'${node.targetLabel}' found at ($cx,$cy) conf=${target.confidence}", TAG)
                 } else {
                     context.put("${node.outputContextKey}_target_found", false)
                     Log.d(TAG, "  ✗ Target '${node.targetLabel}' not found among ${detections.size} detections")
+                    DebugLogger.warning(ctx, LogCategory.FLOW_BUILDER, "Target Missing", "'${node.targetLabel}' not found among ${detections.size} detections", TAG)
                     return NodeResult.Failure("Target element '${node.targetLabel}' not found on screen")
                 }
             }
@@ -158,6 +167,7 @@ class ScreenMLNodeExecutor(
             return NodeResult.Success
         } catch (e: Exception) {
             Log.e(TAG, "Object detection failed", e)
+            DebugLogger.error(ctx, LogCategory.FLOW_BUILDER, "Detection Failed", "Object detection error: ${e.message}", TAG)
             context.put("${node.outputContextKey}_success", false)
             return NodeResult.Failure("Object detection error: ${e.message}")
         } finally {
@@ -171,6 +181,7 @@ class ScreenMLNodeExecutor(
         try {
             val steps = kotlinx.serialization.json.Json.decodeFromString<List<com.autonion.automationcompanion.features.screen_understanding_ml.model.AutomationStep>>(node.automationStepsJson)
             Log.d(TAG, "Playing back ${steps.size} ML automation steps")
+            DebugLogger.info(ctx, LogCategory.FLOW_BUILDER, "ML Steps Started", "Playing back ${steps.size} automation steps", TAG)
             
             val perceptionLayer = PerceptionLayer(ctx)
             try {
@@ -225,6 +236,7 @@ class ScreenMLNodeExecutor(
             return NodeResult.Success
         } catch (e: Exception) {
             Log.e(TAG, "Failed playing back ML automation steps", e)
+            DebugLogger.error(ctx, LogCategory.FLOW_BUILDER, "ML Steps Failed", "Error: ${e.message}", TAG)
             return NodeResult.Failure("Malformed ML steps: ${e.message}")
         }
     }

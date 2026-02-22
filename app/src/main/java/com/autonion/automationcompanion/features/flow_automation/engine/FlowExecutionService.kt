@@ -19,6 +19,8 @@ import android.widget.ImageButton
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
 import com.autonion.automationcompanion.R
+import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
+import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
 import com.autonion.automationcompanion.features.flow_automation.data.FlowRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -29,6 +31,7 @@ import kotlinx.coroutines.launch
 private const val TAG = "FlowExecutionService"
 private const val CHANNEL_ID = "flow_execution_channel"
 private const val NOTIFICATION_ID = 6001
+private val DBG_CATEGORY = LogCategory.FLOW_BUILDER
 
 /**
  * Foreground service that hosts the FlowExecutionEngine.
@@ -82,6 +85,7 @@ class FlowExecutionService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
             Log.d(TAG, "Stop action received")
+            DebugLogger.info(applicationContext, DBG_CATEGORY, "Stop Requested", "Stop action received via notification", TAG)
             stopExecution()
             return START_NOT_STICKY
         }
@@ -89,6 +93,7 @@ class FlowExecutionService : Service() {
         val flowId = intent?.getStringExtra(EXTRA_FLOW_ID)
         if (flowId == null) {
             Log.e(TAG, "No flow ID provided")
+            DebugLogger.error(applicationContext, DBG_CATEGORY, "Service Error", "No flow ID provided to service", TAG)
             stopSelf()
             return START_NOT_STICKY
         }
@@ -109,11 +114,13 @@ class FlowExecutionService : Service() {
 
         if (resultCode == android.app.Activity.RESULT_OK && resultData != null) {
             Log.d(TAG, "MediaProjection consent available — initializing ScreenCaptureProvider")
+            DebugLogger.info(applicationContext, DBG_CATEGORY, "MediaProjection Ready", "Screen capture initialized for visual nodes", TAG)
             screenCaptureProvider = ScreenCaptureProvider(this).also {
                 it.start(resultCode, resultData)
             }
         } else {
             Log.d(TAG, "No MediaProjection consent — visual trigger and ML nodes will run in degraded mode: resultCode=$resultCode, data=$resultData")
+            DebugLogger.warning(applicationContext, DBG_CATEGORY, "No MediaProjection", "Visual trigger and Screen ML nodes will run in degraded mode", TAG)
         }
 
         // Create the engine with the (possibly null) capture provider
@@ -129,11 +136,13 @@ class FlowExecutionService : Service() {
         val graph = repository.load(flowId)
         if (graph == null) {
             Log.e(TAG, "Flow not found: $flowId")
+            DebugLogger.error(applicationContext, DBG_CATEGORY, "Flow Not Found", "Could not load flow with ID: $flowId", TAG)
             stopSelf()
             return
         }
 
         Log.d(TAG, "Starting flow execution: ${graph.name}")
+        DebugLogger.info(applicationContext, DBG_CATEGORY, "Service Starting Flow", "Loaded flow '${graph.name}' (${graph.nodes.size} nodes, ${graph.edges.size} edges)", TAG)
 
         // Observe state changes
         scope.launch {
@@ -145,11 +154,13 @@ class FlowExecutionService : Service() {
                     }
                     is FlowExecutionState.Completed -> {
                         Log.d(TAG, "Flow completed")
+                        DebugLogger.success(applicationContext, DBG_CATEGORY, "Flow Complete", "Flow finished — stopping service", TAG)
                         updateNotification("Flow completed")
                         stopExecution()
                     }
                     is FlowExecutionState.Error -> {
                         Log.e(TAG, "Flow error: ${state.message}")
+                        DebugLogger.error(applicationContext, DBG_CATEGORY, "Flow Error", "Error: ${state.message}", TAG)
                         updateNotification("Error: ${state.message}")
                         stopExecution()
                     }

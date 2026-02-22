@@ -3,6 +3,8 @@ package com.autonion.automationcompanion.features.flow_automation.engine.executo
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
+import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
 import com.autonion.automationcompanion.features.flow_automation.engine.NodeExecutor
 import com.autonion.automationcompanion.features.flow_automation.engine.NodeResult
 import com.autonion.automationcompanion.features.flow_automation.model.FlowContext
@@ -24,6 +26,7 @@ class StartNodeExecutor(private val appContext: Context) : NodeExecutor {
         val packageName = startNode.appPackageName
         if (packageName.isNullOrBlank()) {
             Log.d(TAG, "No target app configured — starting flow without app launch")
+            DebugLogger.info(appContext, LogCategory.FLOW_BUILDER, "Start Node", "No target app configured — starting flow without app launch", TAG)
             return NodeResult.Success
         }
 
@@ -39,12 +42,14 @@ class StartNodeExecutor(private val appContext: Context) : NodeExecutor {
 
             appContext.startActivity(launchIntent)
             Log.d(TAG, "Launched app: $packageName")
+            DebugLogger.success(appContext, LogCategory.FLOW_BUILDER, "App Launched", "Launched target app: $packageName", TAG)
 
             // Small delay to let the app come to foreground
             delay(1500)
             NodeResult.Success
         } catch (e: Exception) {
             Log.e(TAG, "Failed to launch app: ${e.message}")
+            DebugLogger.error(appContext, LogCategory.FLOW_BUILDER, "App Launch Failed", "Failed to launch $packageName: ${e.message}", TAG)
             NodeResult.Failure("Failed to launch $packageName: ${e.message}")
         }
     }

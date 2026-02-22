@@ -52,11 +52,11 @@ val ALL_CATEGORIES = listOf(
         accentColor = AccentGreen
     ),
     CategorySummary(
-        category = LogCategory.CONDITIONAL_MACROS,
-        displayName = "Conditional Macros",
-        description = "Logic & guard conditions",
-        icon = Icons.AutoMirrored.Filled.CallSplit,
-        accentColor = AccentOrange
+        category = LogCategory.FLOW_BUILDER,
+        displayName = "Flow Builder",
+        description = "Visual automation flows",
+        icon = Icons.Default.AccountTree,
+        accentColor = AccentPurple
     ),
     CategorySummary(
         category = LogCategory.SYSTEM_CONTEXT,
