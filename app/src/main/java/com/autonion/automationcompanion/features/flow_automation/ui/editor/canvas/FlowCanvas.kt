@@ -363,9 +363,9 @@ private fun DrawScope.drawNode(
     }
 
     // ── Icon circle (left side, vertically centered) — solid accent fill ──
-    val iconCenterX = x + 38f
+    val iconCenterX = x + 52f
     val iconCenterY = y + h / 2f
-    val iconRadius = 22f
+    val iconRadius = 30f
     // Outer glow ring
     drawCircle(accent.copy(alpha = 0.15f), radius = iconRadius + 6f, center = Offset(iconCenterX, iconCenterY))
     // Solid accent circle
@@ -373,24 +373,12 @@ private fun DrawScope.drawNode(
     // Subtle inner highlight
     drawCircle(Color.White.copy(alpha = 0.15f), radius = iconRadius - 2f, center = Offset(iconCenterX, iconCenterY))
 
-    val icon = when (node) {
-        is StartNode -> "▶"; is GestureNode -> "👆"
-        is VisualTriggerNode -> "🔍"; is ScreenMLNode -> "🧠"
-        is DelayNode -> "⏱"; is LaunchAppNode -> "🚀"
-    }
-    val iconResult = textMeasurer.measure(
-        AnnotatedString(icon),
-        TextStyle(fontSize = 18.sp),
-        maxLines = 1
-    )
-    drawText(iconResult, topLeft = Offset(
-        iconCenterX - iconResult.size.width / 2f,
-        iconCenterY - iconResult.size.height / 2f
-    ))
+    // Draw custom geometric icon (scaled up further)
+    drawNodeIcon(node.nodeType, iconCenterX, iconCenterY, Color.White, accent, scale = 1.35f)
 
     // ── Title (bold, white) ──
-    val textStartX = x + 72f
-    val maxTextW = (w - 60f).toInt()  // Same as original — generous width
+    val textStartX = x + 100f
+    val maxTextW = (w - 120f).toInt()  // Adjust for left padding to maintain balanced right padding
     val titleResult = textMeasurer.measure(
         AnnotatedString(node.label),
         TextStyle(Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.5.sp),
@@ -749,5 +737,143 @@ private fun edgeConditionLabel(edge: FlowEdge): String? {
         is EdgeCondition.Retry -> "↻ ×${c.maxAttempts}"
         is EdgeCondition.Else -> "otherwise"
         is EdgeCondition.StopExecution -> "🛑 stop"
+    }
+}
+
+internal fun DrawScope.drawNodeIcon(
+    nodeType: FlowNodeType,
+    iconCenterX: Float,
+    iconCenterY: Float,
+    iconColor: Color,
+    accent: Color,
+    scale: Float = 1f
+) {
+    withTransform({
+        scale(scale, scale, Offset(iconCenterX, iconCenterY))
+    }) {
+        when (nodeType) {
+            FlowNodeType.START -> {
+                // Play icon (triangle inside a circle)
+                drawCircle(iconColor, radius = 15f, center = Offset(iconCenterX, iconCenterY), style = Stroke(3f))
+                val p = Path().apply {
+                    moveTo(iconCenterX - 3f, iconCenterY - 6f)
+                    lineTo(iconCenterX + 7f, iconCenterY)
+                    lineTo(iconCenterX - 3f, iconCenterY + 6f)
+                    close()
+                }
+                drawPath(p, iconColor)
+            }
+            FlowNodeType.GESTURE -> {
+                // Pointing hand icon
+                val p = Path().apply {
+                    // Index finger
+                    val ix = iconCenterX - 3f
+                    val iy = iconCenterY - 2f
+                    addRoundRect(androidx.compose.ui.geometry.RoundRect(
+                        left = ix - 3.5f, top = iy - 12f, right = ix + 2.5f, bottom = iy + 3f,
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(3f)
+                    ))
+                    // Middle finger
+                    addRoundRect(androidx.compose.ui.geometry.RoundRect(
+                        left = ix + 2.5f, top = iy - 4.5f, right = ix + 8.5f, bottom = iy + 6f,
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(3f)
+                    ))
+                    // Ring finger
+                    addRoundRect(androidx.compose.ui.geometry.RoundRect(
+                        left = ix + 8.5f, top = iy - 1.5f, right = ix + 14.5f, bottom = iy + 7.5f,
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(3f)
+                    ))
+                    // Palm / body of hand
+                    addRoundRect(androidx.compose.ui.geometry.RoundRect(
+                        left = ix - 7.5f, top = iy + 3f, right = ix + 14.5f, bottom = iy + 15f,
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(4.5f)
+                    ))
+                }
+                drawPath(p, iconColor)
+            }
+            FlowNodeType.VISUAL_TRIGGER -> {
+                // Image Match (Photo Frame with Magnifying Glass)
+                // 1. Photo Frame
+                drawRoundRect(
+                    iconColor,
+                    topLeft = Offset(iconCenterX - 13.5f, iconCenterY - 10.5f),
+                    size = Size(21f, 21f),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(3f),
+                    style = Stroke(3f)
+                )
+                // Mountains inside frame
+                val m = Path().apply {
+                    moveTo(iconCenterX - 13.5f, iconCenterY + 6f)
+                    lineTo(iconCenterX - 7.5f, iconCenterY - 1.5f)
+                    lineTo(iconCenterX - 4.5f, iconCenterY + 1.5f)
+                    lineTo(iconCenterX, iconCenterY - 4.5f)
+                    lineTo(iconCenterX + 6f, iconCenterY + 4.5f)
+                }
+                drawPath(m, iconColor, style = Stroke(2.5f, join = StrokeJoin.Round))
+                // 2. Overlapping Magnifying Glass (top right)
+                drawCircle(accent, radius = 9f, center = Offset(iconCenterX + 7.5f, iconCenterY - 7.5f)) // mask out background
+                drawCircle(iconColor, radius = 6f, center = Offset(iconCenterX + 7.5f, iconCenterY - 7.5f), style = Stroke(3f))
+                drawLine(iconColor, Offset(iconCenterX + 12f, iconCenterY - 3f), Offset(iconCenterX + 18f, iconCenterY + 3f), strokeWidth = 3.5f, cap = StrokeCap.Round)
+            }
+            FlowNodeType.SCREEN_ML -> {
+                // Document with Text Lines
+                drawRoundRect(
+                    iconColor,
+                    topLeft = Offset(iconCenterX - 10.5f, iconCenterY - 13.5f),
+                    size = Size(21f, 27f),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(3f),
+                    style = Stroke(3f)
+                )
+                drawLine(iconColor, Offset(iconCenterX - 4.5f, iconCenterY - 6f), Offset(iconCenterX + 4.5f, iconCenterY - 6f), strokeWidth = 3f, cap = StrokeCap.Round)
+                drawLine(iconColor, Offset(iconCenterX - 4.5f, iconCenterY), Offset(iconCenterX + 4.5f, iconCenterY), strokeWidth = 3f, cap = StrokeCap.Round)
+                drawLine(iconColor, Offset(iconCenterX - 4.5f, iconCenterY + 6f), Offset(iconCenterX + 1.5f, iconCenterY + 6f), strokeWidth = 3f, cap = StrokeCap.Round)
+            }
+            FlowNodeType.DELAY -> {
+                // Hourglass
+                val p = Path().apply {
+                    // Top glass
+                    moveTo(iconCenterX - 9f, iconCenterY - 10.5f)
+                    lineTo(iconCenterX + 9f, iconCenterY - 10.5f)
+                    lineTo(iconCenterX + 1.5f, iconCenterY)
+                    lineTo(iconCenterX - 1.5f, iconCenterY)
+                    close()
+                    // Bottom glass
+                    moveTo(iconCenterX - 1.5f, iconCenterY)
+                    lineTo(iconCenterX + 1.5f, iconCenterY)
+                    lineTo(iconCenterX + 9f, iconCenterY + 10.5f)
+                    lineTo(iconCenterX - 9f, iconCenterY + 10.5f)
+                    close()
+                }
+                drawPath(p, iconColor, style = Stroke(3f, join = StrokeJoin.Round))
+                // Sand lines
+                drawLine(iconColor, Offset(iconCenterX - 6f, iconCenterY - 9f), Offset(iconCenterX + 6f, iconCenterY - 9f), strokeWidth = 3f, cap = StrokeCap.Round)
+                drawLine(iconColor, Offset(iconCenterX - 4.5f, iconCenterY + 8f), Offset(iconCenterX + 4.5f, iconCenterY + 8f), strokeWidth = 3f, cap = StrokeCap.Round)
+            }
+            FlowNodeType.LAUNCH_APP -> {
+                // Rocket
+                val p = Path().apply {
+                    // Rocket body (diagonal capsule)
+                    moveTo(iconCenterX - 7.5f, iconCenterY + 7.5f)
+                    lineTo(iconCenterX + 1.5f, iconCenterY - 1.5f)
+                    cubicTo(iconCenterX + 7.5f, iconCenterY - 7.5f, iconCenterX + 12f, iconCenterY - 12f, iconCenterX + 12f, iconCenterY - 12f) // Nose
+                    cubicTo(iconCenterX + 12f, iconCenterY - 12f, iconCenterX + 7.5f, iconCenterY - 7.5f, iconCenterX + 1.5f, iconCenterY + 1.5f)
+                    lineTo(iconCenterX - 7.5f, iconCenterY + 7.5f)
+                    // Left wing
+                    moveTo(iconCenterX - 4.5f, iconCenterY + 4.5f)
+                    lineTo(iconCenterX - 12f, iconCenterY + 7.5f)
+                    lineTo(iconCenterX - 7.5f, iconCenterY)
+                    // Right wing
+                    moveTo(iconCenterX + 4.5f, iconCenterY - 4.5f)
+                    lineTo(iconCenterX + 7.5f, iconCenterY - 12f)
+                    lineTo(iconCenterX, iconCenterY - 7.5f)
+                    // Thrust flame
+                    moveTo(iconCenterX - 7.5f, iconCenterY + 7.5f)
+                    lineTo(iconCenterX - 12f, iconCenterY + 12f)
+                }
+                drawPath(p, iconColor, style = Stroke(3f, join = StrokeJoin.Round))
+                // Window dot
+                drawCircle(iconColor, radius = 2f, center = Offset(iconCenterX + 3f, iconCenterY - 3f))
+            }
+        }
     }
 }

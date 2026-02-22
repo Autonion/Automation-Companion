@@ -38,12 +38,12 @@ object NodeColors {
 }
 
 object NodeDimensions {
-    const val WIDTH = 480f
-    const val HEIGHT = 160f
+    const val WIDTH = 550f
+    const val HEIGHT = 175f
     const val HEADER_HEIGHT = 0f
     const val CORNER_RADIUS = 24f
-    const val PORT_RADIUS = 12f
-    const val PORT_HIT_RADIUS = 40f
+    const val PORT_RADIUS = 20f
+    const val PORT_HIT_RADIUS = 50f
     const val GRID_SIZE = 40f
     const val ICON_SIZE = 32f
 }

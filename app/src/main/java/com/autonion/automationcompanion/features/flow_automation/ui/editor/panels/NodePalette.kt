@@ -17,6 +17,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.autonion.automationcompanion.features.flow_automation.model.FlowNodeType
 import com.autonion.automationcompanion.features.flow_automation.ui.editor.canvas.NodeColors
+import com.autonion.automationcompanion.features.flow_automation.ui.editor.canvas.drawNodeIcon
 
 /**
  * Horizontal palette bar showing available node types to add.
@@ -74,8 +75,17 @@ fun NodePalette(
                             .padding(horizontal = 20.dp, vertical = 12.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text(item.emoji, fontSize = 24.sp)
-                        Spacer(Modifier.height(4.dp))
+                        androidx.compose.foundation.Canvas(modifier = Modifier.size(32.dp)) {
+                            drawNodeIcon(
+                                nodeType = item.nodeType,
+                                iconCenterX = size.width / 2f,
+                                iconCenterY = size.height / 2f,
+                                iconColor = Color.White,
+                                accent = item.color,
+                                scale = 1.6f
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
                         Text(
                             item.label,
                             color = item.color,
