@@ -157,6 +157,18 @@
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
 
+        <!-- Flow Automation Engine -->
+        <activity
+            android:name=".features.flow_automation.ui.FlowMediaProjectionActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <service
+            android:name=".features.flow_automation.engine.FlowExecutionService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+
         <receiver
             android:name=".features.system_context_automation.location.engine.location_receiver.SlotAlarmReceiver"
             android:exported="false" />

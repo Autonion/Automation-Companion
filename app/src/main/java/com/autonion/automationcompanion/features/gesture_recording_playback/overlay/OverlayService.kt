@@ -26,9 +26,12 @@ import androidx.core.app.NotificationCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.autonion.automationcompanion.R
 import com.autonion.automationcompanion.databinding.OverlayViewBinding
+import com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract
 import com.autonion.automationcompanion.features.gesture_recording_playback.managers.ActionManager
 import com.autonion.automationcompanion.features.gesture_recording_playback.managers.PresetManager
 import com.autonion.automationcompanion.features.gesture_recording_playback.managers.SettingsManager
+import kotlinx.serialization.json.Json
+import java.io.File
 
 class OverlayService : Service() {
 
@@ -48,6 +51,10 @@ class OverlayService : Service() {
 
     private var currentPresetName: String? = null
 
+    // Flow mode state — when launched from flow editor
+    private var isFlowMode = false
+    private var flowNodeId: String? = null
+
     // Automation state
     private var isPlaying = false
     private var currentLoopCount = 1
@@ -63,6 +70,36 @@ class OverlayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Check for flow mode
+        if (intent?.getBooleanExtra(FlowOverlayContract.EXTRA_FLOW_MODE, false) == true) {
+            isFlowMode = true
+            flowNodeId = intent.getStringExtra(FlowOverlayContract.EXTRA_FLOW_NODE_ID)
+            
+            val clearOnStart = intent.getBooleanExtra("EXTRA_CLEAR_ON_START", false)
+            val jsonStr = intent.getStringExtra("EXTRA_FLOW_GESTURE_JSON")
+            
+            if (clearOnStart) {
+                ActionManager.clearAllActions()
+                if (::markersView.isInitialized) ActionManager.releaseViews(markersView)
+            } else if (!jsonStr.isNullOrEmpty()) {
+                try {
+                    val actions = Json.decodeFromString<List<com.autonion.automationcompanion.features.gesture_recording_playback.models.Action>>(jsonStr)
+                    if (::markersView.isInitialized) {
+                        ActionManager.releaseViews(markersView)
+                        ActionManager.loadActions(actions)
+                        if (markersView.isAttachedToWindow) {
+                            ActionManager.recreateVisuals(markersView)
+                        }
+                    } else {
+                        ActionManager.loadActions(actions)
+                    }
+                } catch (e: Exception) {
+                    ActionManager.clearAllActions()
+                }
+            }
+            updateActionCount()
+        }
+
         currentPresetName = intent?.getStringExtra(EXTRA_PRESET_NAME)
         currentPresetName?.let {
             val actions = PresetManager.loadPreset(this, it)
@@ -274,6 +311,12 @@ class OverlayService : Service() {
         binding.btnSave.setOnClickListener {
             if (ActionManager.isConfirmationShowing(markersView)) {
                 Toast.makeText(this, "Please confirm or cancel the pending action first", Toast.LENGTH_LONG).show()
+                return@setOnClickListener
+            }
+
+            if (isFlowMode) {
+                // Flow mode: serialize actions to temp file and broadcast back
+                saveForFlowMode()
                 return@setOnClickListener
             }
 
@@ -584,7 +627,7 @@ class OverlayService : Service() {
     }
 
     private fun updateSaveButtonState() {
-        binding.btnSave.isEnabled = !currentPresetName.isNullOrEmpty()
+        binding.btnSave.isEnabled = isFlowMode || !currentPresetName.isNullOrEmpty()
     }
 
     private fun updateToggleState(isEditing: Boolean) {
@@ -681,6 +724,39 @@ class OverlayService : Service() {
             .start()
     }
 
+
+    /**
+     * Flow mode save: serialize current actions to a temp JSON file,
+     * broadcast the result back to the flow editor ViewModel, then close.
+     */
+    private fun saveForFlowMode() {
+        android.util.Log.d("OverlayService", "saveForFlowMode called. isFlowMode=$isFlowMode, flowNodeId=$flowNodeId")
+        try {
+            val actions = ActionManager.getActions()
+            android.util.Log.d("OverlayService", "saveForFlowMode: Actions count = ${actions.size}")
+            val json = Json.encodeToString(actions)
+            val tempFile = File(cacheDir, "flow_gesture_${flowNodeId}.json")
+            tempFile.writeText(json)
+            android.util.Log.d("OverlayService", "saveForFlowMode: JSON written to ${tempFile.absolutePath} (length: ${json.length})")
+
+            val resultIntent = Intent(FlowOverlayContract.ACTION_FLOW_GESTURE_DONE).apply {
+                putExtra(FlowOverlayContract.EXTRA_RESULT_NODE_ID, flowNodeId)
+                putExtra(FlowOverlayContract.EXTRA_RESULT_FILE_PATH, tempFile.absolutePath)
+            }
+            val broadcastResult = LocalBroadcastManager.getInstance(this).sendBroadcast(resultIntent)
+            android.util.Log.d("OverlayService", "saveForFlowMode: local broadcast sent. Result (has receivers) = $broadcastResult")
+
+            showStatusAnimation(true)
+            // DON'T auto-close in flow mode. The user might want to capture more gestures,
+            // or close manually using the 'X' button. But we do want to perhaps clear?
+            // ActionManager.clearAllActions() // Optional: clear after save so they can record a new gesture without closing?
+            // Actually, for a single node, maybe they just re-record. Let's just leave it open.
+        } catch (e: Exception) {
+            android.util.Log.e("OverlayService", "Error in saveForFlowMode", e)
+            showStatusAnimation(false)
+            Toast.makeText(this, "Error saving for flow: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     private fun broadcastIntent(action: String) {
         val intent = Intent(action)

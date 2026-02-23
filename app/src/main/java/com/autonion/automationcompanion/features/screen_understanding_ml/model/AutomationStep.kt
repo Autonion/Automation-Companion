@@ -1,9 +1,11 @@
 package com.autonion.automationcompanion.features.screen_understanding_ml.model
 
 import android.graphics.RectF
+import kotlinx.serialization.Serializable
 
 // ActionType is defined in ActionIntent.kt
 
+@Serializable
 data class AutomationStep(
     val id: String,
     var orderIndex: Int,

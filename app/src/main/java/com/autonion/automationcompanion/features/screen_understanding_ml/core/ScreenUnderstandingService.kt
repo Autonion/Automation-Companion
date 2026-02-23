@@ -80,6 +80,12 @@ class ScreenUnderstandingService : Service() {
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private var currentPresetId: String? = null
+    
+    // Flow mode state
+    private var isFlowMode = false
+    private var flowNodeId: String? = null
+    private var flowMlJson: String? = null
+    private var clearOnStart: Boolean = false
 
     override fun onCreate() {
         super.onCreate()
@@ -160,7 +166,7 @@ class ScreenUnderstandingService : Service() {
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Screen Agent Active")
             .setContentText("Understanding screen content...")
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(com.autonion.automationcompanion.R.drawable.ic_notification)
             .build()
 
         if (useMediaProjectionType && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -179,6 +185,11 @@ class ScreenUnderstandingService : Service() {
         val data = intent.getParcelableExtra<Intent>("data")
         val presetName = intent.getStringExtra("presetName")
         val playPresetId = intent.getStringExtra("playPresetId")
+        
+        isFlowMode = intent.getBooleanExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_MODE, false)
+        flowNodeId = intent.getStringExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_NODE_ID)
+        flowMlJson = intent.getStringExtra("EXTRA_FLOW_ML_JSON")
+        clearOnStart = intent.getBooleanExtra("EXTRA_CLEAR_ON_START", false)
 
         Log.d(TAG, "Service received presetName: '$presetName', playPresetId: '$playPresetId'")
 
@@ -251,6 +262,8 @@ class ScreenUnderstandingService : Service() {
                 // Store a copy of the latest bitmap for snap capture
                 latestBitmap = bitmap.copy(bitmap.config ?: Bitmap.Config.ARGB_8888, false)
 
+                // Use lightweight TFLite detection for live frames
+                // OCR is too expensive for every frame — use detectWithOcr() on-demand instead
                 val detections = perceptionLayer?.detect(bitmap) ?: emptyList()
                 val tracked = temporalTracker?.update(detections) ?: emptyList()
 
@@ -288,6 +301,10 @@ class ScreenUnderstandingService : Service() {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     putExtra("IMAGE_PATH", file.absolutePath)
                     putExtra("PRESET_NAME", overlay?.getCurrentName() ?: "Untitled")
+                    putExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_MODE, isFlowMode)
+                    putExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_NODE_ID, flowNodeId)
+                    flowMlJson?.let { putExtra("EXTRA_FLOW_ML_JSON", it) }
+                    if (clearOnStart) putExtra("EXTRA_CLEAR_ON_START", true)
                 }
                 startActivity(intent)
             }

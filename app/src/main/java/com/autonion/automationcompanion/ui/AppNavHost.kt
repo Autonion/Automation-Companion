@@ -24,6 +24,7 @@ import com.autonion.automationcompanion.features.PlaceholderScreen
 import com.autonion.automationcompanion.features.automation_debugger.DebuggerViewModel
 import com.autonion.automationcompanion.features.automation_debugger.ui.DebuggerScreen
 import com.autonion.automationcompanion.features.automation_debugger.ui.LogDetailScreen
+import com.autonion.automationcompanion.features.flow_automation.ui.FlowBuilderMainScreen
 import com.autonion.automationcompanion.features.gesture_recording_playback.GestureRecordingScreen
 import com.autonion.automationcompanion.features.system_context_automation.SystemContextMainScreen
 
@@ -45,6 +46,7 @@ object AutomationRoutes {
     const val DEBUGGER_DETAIL = "feature/automation_debugger/{category}"
     const val CROSS_DEVICE = "feature/cross_device_automation"
     const val PROFILE_LEARNING = "feature/automation_profile_learning"
+    const val FLOW_BUILDER = "feature/flow_builder"
 }
 
 @Composable
@@ -128,11 +130,9 @@ fun AppNavHost() {
 
         composable(AutomationRoutes.CONDITIONAL) {
             PlaceholderScreen(
-                title = "Conditional Macros",
+                title = "Conditional Flows",
                 todos = listOf(
-                    "Condition DSL (time/location/state)",
-                    "Evaluator & test harness",
-                    "UI for editing conditions"
+
                 ),
                 onBack = {navController.popBackStack()}
             )
@@ -217,6 +217,12 @@ fun AppNavHost() {
                     "Suggest automations based on history"
                 ),
                 onBack = {navController.popBackStack()}
+            )
+        }
+
+        composable(AutomationRoutes.FLOW_BUILDER) {
+            FlowBuilderMainScreen(
+                onBack = { navController.popBackStack() }
             )
         }
 

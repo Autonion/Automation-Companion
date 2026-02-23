@@ -272,6 +272,53 @@ class PerceptionLayer(private val context: Context) {
         return if (unionArea > 0) interArea / unionArea else 0f
     }
 
+    /**
+     * Run UI element detection (TFLite) and enrich results with OCR (ML Kit).
+     *
+     * For each detected UIElement, if an OCR text block overlaps its bounds
+     * (IoU > threshold), the recognized text is written to [UIElement.text].
+     *
+     * Call this instead of [detect] when you need text content alongside
+     * element classifications.
+     */
+    suspend fun detectWithOcr(bitmap: Bitmap): List<UIElement> {
+        // 1. Run standard detection
+        val elements = detect(bitmap)
+        if (elements.isEmpty()) return elements
+
+        // 2. Run ML Kit OCR
+        val ocrEngine = OcrEngine()
+        try {
+            val ocrResult = ocrEngine.recognizeText(bitmap)
+            if (ocrResult.blocks.isEmpty()) return elements
+
+            Log.d(TAG, "OCR found ${ocrResult.blocks.size} text blocks to match against ${elements.size} elements")
+
+            // 3. For each element, find overlapping OCR text
+            return elements.map { element ->
+                val matchingTexts = ocrResult.blocks
+                    .filter { block ->
+                        block.bounds != null && calculateIoU(element.bounds, block.bounds) > 0.05f
+                    }
+                    .sortedByDescending { block ->
+                        calculateIoU(element.bounds, block.bounds!!)
+                    }
+
+                if (matchingTexts.isNotEmpty()) {
+                    val text = matchingTexts.joinToString(" ") { it.text }
+                    element.copy(text = text)
+                } else {
+                    element
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "OCR enrichment failed, returning elements without text", e)
+            return elements
+        } finally {
+            ocrEngine.close()
+        }
+    }
+
     fun close() {
         synchronized(lock) {
             isClosed = true
