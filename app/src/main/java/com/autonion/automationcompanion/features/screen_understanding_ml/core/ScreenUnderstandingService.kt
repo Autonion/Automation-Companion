@@ -347,8 +347,19 @@ class ScreenUnderstandingService : Service() {
 
                         Log.d(TAG, "Looking for step ${step.orderIndex}: ${step.label}")
 
-                        // Keep searching for this element until found or stopped
-                        val foundElement = waitForElement(step)
+                        // OCR text steps: run live OCR to find text at its current position
+                        val isOcrStep = step.anchor.label.equals("Text", ignoreCase = true)
+                        val foundElement: UIElement? = if (isOcrStep && !step.anchor.text.isNullOrBlank()) {
+                            Log.d(TAG, "OCR text step — searching for '${step.anchor.text}' on current screen")
+                            findTextOnScreen(step.anchor.text)
+                        } else if (isOcrStep) {
+                            // No text stored — fall back to saved coordinates
+                            Log.d(TAG, "OCR step without text — using saved anchor coords")
+                            step.anchor
+                        } else {
+                            // ML detection step — keep searching via live detection
+                            waitForElement(step)
+                        }
 
                         if (!isPlaying) break
 
@@ -430,22 +441,76 @@ class ScreenUnderstandingService : Service() {
         val timeout = 5000L
         val startTime = System.currentTimeMillis()
         val anchorBounds = step.anchor.bounds
+        val anchorText = step.anchor.text  // OCR text from capture-time enrichment
 
         while (System.currentTimeMillis() - startTime < timeout && isPlaying) {
             val currentElements = latestElements
 
-            // Find best match: same label AND highest IoU with saved anchor bounds
-            val match = currentElements
-                .filter { it.label == step.anchor.label }  // Use anchor's actual label
-                .maxByOrNull { calculateIoU(it.bounds, anchorBounds) }
+            // Filter by label (case-insensitive)
+            val sameLabel = currentElements
+                .filter { it.label.equals(step.anchor.label, ignoreCase = true) }
+
+            // Text-aware matching: if anchor has OCR text, prefer elements whose text matches
+            val match = if (!anchorText.isNullOrBlank()) {
+                // First try: exact text + IoU
+                val textMatches = sameLabel.filter { el ->
+                    !el.text.isNullOrBlank() && el.text.contains(anchorText, ignoreCase = true)
+                }
+                textMatches.maxByOrNull { calculateIoU(it.bounds, anchorBounds) }
+                    ?: sameLabel.maxByOrNull { calculateIoU(it.bounds, anchorBounds) }  // Fallback to IoU-only
+            } else {
+                sameLabel.maxByOrNull { calculateIoU(it.bounds, anchorBounds) }
+            }
 
             // Accept if IoU > 0.1 (lenient since screen may have scrolled slightly)
             if (match != null && calculateIoU(match.bounds, anchorBounds) > 0.1f) {
+                Log.d(TAG, "waitForElement matched: label=${match.label}, text=${match.text}, IoU=${calculateIoU(match.bounds, anchorBounds)}")
                 return match
             }
 
             delay(200)
         }
+        return null
+    }
+
+    /**
+     * Run live OCR on the current screen to find where [targetText] appears right now.
+     * Returns a UIElement with the text's current bounds, or null if not found within timeout.
+     */
+    private suspend fun findTextOnScreen(targetText: String): UIElement? {
+        val timeout = 5000L
+        val startTime = System.currentTimeMillis()
+        val ocrEngine = OcrEngine()
+
+        try {
+            while (System.currentTimeMillis() - startTime < timeout && isPlaying) {
+                val bitmap = latestBitmap
+                if (bitmap != null) {
+                    val result = ocrEngine.recognizeText(bitmap)
+                    // Find the best matching block (case-insensitive contains)
+                    val matchBlock = result.blocks.firstOrNull { block ->
+                        block.text.contains(targetText, ignoreCase = true)
+                    }
+                    if (matchBlock != null && matchBlock.bounds != null) {
+                        Log.d(TAG, "findTextOnScreen: found '${matchBlock.text}' at ${matchBlock.bounds}")
+                        return UIElement(
+                            id = java.util.UUID.randomUUID().toString(),
+                            label = "Text",
+                            confidence = matchBlock.confidence ?: 0.9f,
+                            bounds = matchBlock.bounds,
+                            text = matchBlock.text
+                        )
+                    }
+                    Log.d(TAG, "findTextOnScreen: '$targetText' not found in ${result.blocks.size} blocks, retrying...")
+                }
+                delay(500)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "findTextOnScreen failed", e)
+        } finally {
+            ocrEngine.close()
+        }
+        Log.w(TAG, "findTextOnScreen: '$targetText' not found within timeout")
         return null
     }
 
