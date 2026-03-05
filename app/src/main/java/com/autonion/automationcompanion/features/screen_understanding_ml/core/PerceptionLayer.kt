@@ -8,7 +8,6 @@ import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
 import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.UIElement
 import org.tensorflow.lite.Interpreter
-import org.tensorflow.lite.gpu.GpuDelegate
 import org.tensorflow.lite.support.common.ops.NormalizeOp
 import org.tensorflow.lite.support.image.ImageProcessor
 import org.tensorflow.lite.support.image.TensorImage
@@ -22,56 +21,56 @@ class PerceptionLayer(private val context: Context) {
     }
 
     private var interpreter: Interpreter? = null
-    private val modelFilename = "best_float16.tflite"
-    private val labels = listOf("Button", "Input", "Image", "Toggle", "Text")
+    private val modelFilename = "best_int8.tflite"
+    private val labels = listOf("button", "icon", "input", "toggle", "radio", "checkbox", "dropdown")
     
     // Model specific constants
-    private val inputSize = 640 
+    private val inputSize = 512
     private val confThreshold = 0.25f
-
-    private var gpuDelegate: GpuDelegate? = null
 
     init {
         setupInterpreter()
     }
 
     private fun setupInterpreter() {
-        // Try GPU first, fall back to CPU cleanly
+        // INT8 quantized models don't work with GPU delegate.
+        // Try NNAPI for hardware acceleration, fall back to CPU.
         try {
-            val delegate = GpuDelegate()
-            val gpuOptions = Interpreter.Options().apply {
-                addDelegate(delegate)
+            val nnapiOptions = Interpreter.Options().apply {
+                setUseNNAPI(true)
             }
             val modelFile = loadModelFile(context, modelFilename)
-            interpreter = Interpreter(modelFile, gpuOptions)
-            gpuDelegate = delegate
-            Log.i(TAG, "Model loaded and interpreter created")
+            interpreter = Interpreter(modelFile, nnapiOptions)
+            Log.i(TAG, "Model loaded with NNAPI delegate")
             DebugLogger.success(
                 context, LogCategory.SCREEN_CONTEXT_AI,
                 "ML model loaded",
-                "TFLite interpreter ready for UI detection",
+                "TFLite interpreter ready (NNAPI) for UI detection",
                 "PerceptionLayer"
             )
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to load model", e)
-            DebugLogger.error(
-                context, LogCategory.SCREEN_CONTEXT_AI,
-                "ML model load failed",
-                "${e.message}",
-                "PerceptionLayer"
-            )
-            Log.w("PerceptionLayer", "GPU delegate failed, falling back to CPU", e)
-            gpuDelegate?.close()
-            gpuDelegate = null
+            Log.w(TAG, "NNAPI delegate failed, falling back to CPU", e)
             try {
                 val cpuOptions = Interpreter.Options().apply {
                     setNumThreads(4)
                 }
                 val modelFile = loadModelFile(context, modelFilename)
                 interpreter = Interpreter(modelFile, cpuOptions)
-                android.util.Log.d("PerceptionLayer", "Model loaded with CPU (4 threads)")
+                Log.i(TAG, "Model loaded with CPU (4 threads)")
+                DebugLogger.success(
+                    context, LogCategory.SCREEN_CONTEXT_AI,
+                    "ML model loaded",
+                    "TFLite interpreter ready (CPU) for UI detection",
+                    "PerceptionLayer"
+                )
             } catch (e2: Exception) {
-                android.util.Log.e("PerceptionLayer", "Error loading model", e2)
+                Log.e(TAG, "Failed to load model on CPU", e2)
+                DebugLogger.error(
+                    context, LogCategory.SCREEN_CONTEXT_AI,
+                    "ML model load failed",
+                    "${e2.message}",
+                    "PerceptionLayer"
+                )
             }
         }
     }
@@ -93,7 +92,7 @@ class PerceptionLayer(private val context: Context) {
         synchronized(lock) {
             if (isClosed || interpreter == null) return emptyList()
             
-            // 1. Preprocess
+            // 1. Preprocess — always use FLOAT32 input; TFLite handles quantization
             val imageProcessor = ImageProcessor.Builder()
                 .add(ResizeOp(inputSize, inputSize, ResizeOp.ResizeMethod.BILINEAR))
                 .add(NormalizeOp(0f, 255f))
@@ -103,27 +102,51 @@ class PerceptionLayer(private val context: Context) {
             tensorImage.load(bitmap)
             tensorImage = imageProcessor.process(tensorImage)
     
-            // 2. Inference
+            // 2. Inference — support both float and quantized output
             val outputTensor = interpreter!!.getOutputTensor(0)
             val outputShape = outputTensor.shape() 
+            val outputType = outputTensor.dataType()
             
-            // Create output array — handle different output ranks safely
-            val outputArray = if (outputShape.size == 3) {
-                 Array(outputShape[0]) { Array(outputShape[1]) { FloatArray(outputShape[2]) } }
-            } else {
-                 android.util.Log.e("PerceptionLayer", "Unexpected output rank: ${outputShape.size}")
-                 return emptyList()
+            if (outputShape.size != 3) {
+                android.util.Log.e(TAG, "Unexpected output rank: ${outputShape.size}")
+                return emptyList()
             }
-    
+
+            // Allocate output buffer matching the tensor's data type
+            val outputData: Array<Array<FloatArray>>
+            
             try {
-                interpreter!!.run(tensorImage.buffer, outputArray)
+                if (outputType == org.tensorflow.lite.DataType.FLOAT32) {
+                    // Float model — direct read
+                    val floatOutput = Array(outputShape[0]) { Array(outputShape[1]) { FloatArray(outputShape[2]) } }
+                    interpreter!!.run(tensorImage.buffer, floatOutput)
+                    outputData = floatOutput
+                } else {
+                    // Quantized model (INT8/UINT8) — read bytes, then dequantize
+                    val quantParams = outputTensor.quantizationParams()
+                    val scale = quantParams.scale
+                    val zeroPoint = quantParams.zeroPoint
+                    android.util.Log.d(TAG, "Quantized output: type=$outputType, scale=$scale, zeroPoint=$zeroPoint")
+                    
+                    val byteOutput = Array(outputShape[0]) { Array(outputShape[1]) { ByteArray(outputShape[2]) } }
+                    interpreter!!.run(tensorImage.buffer, byteOutput)
+                    
+                    // Dequantize: float = (byte_val - zeroPoint) * scale
+                    outputData = Array(outputShape[0]) { b ->
+                        Array(outputShape[1]) { c ->
+                            FloatArray(outputShape[2]) { a ->
+                                ((byteOutput[b][c][a].toInt() and 0xFF) - zeroPoint) * scale
+                            }
+                        }
+                    }
+                }
             } catch (e: Exception) {
-                android.util.Log.e("PerceptionLayer", "Error running inference", e)
+                android.util.Log.e(TAG, "Error running inference", e)
                 return emptyList()
             }
     
             // 3. Postprocess
-            return processOutput(outputArray, bitmap.width, bitmap.height)
+            return processOutput(outputData, bitmap.width, bitmap.height)
         }
     }
 
@@ -324,8 +347,6 @@ class PerceptionLayer(private val context: Context) {
             isClosed = true
             interpreter?.close()
             interpreter = null
-            gpuDelegate?.close()
-            gpuDelegate = null
         }
     }
 }
