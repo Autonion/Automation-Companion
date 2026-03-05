@@ -96,6 +96,19 @@ class ScreenUnderstandingService : Service() {
 
     override fun onDestroy() {
         Log.d(TAG, "Service onDestroy - Instance Destroyed: $this")
+
+        // Log final inference stats to debugger
+        val avgMs = perceptionLayer?.getAverageInferenceTimeMs() ?: 0f
+        val count = perceptionLayer?.getInferenceCount() ?: 0
+        if (count > 0) {
+            DebugLogger.info(
+                this, LogCategory.SCREEN_CONTEXT_AI,
+                "Session ended",
+                "Processed $count frames, avg inference: ${"%.1f".format(avgMs)}ms/frame",
+                TAG
+            )
+        }
+
         instance = null
         isPlaying = false
         scope.cancel()
@@ -256,21 +269,33 @@ class ScreenUnderstandingService : Service() {
         mediaProjectionCore?.startProjection(resultCode, data, metrics.widthPixels, metrics.heightPixels, metrics.densityDpi)
 
         scope.launch {
+            var frameCount = 0
             mediaProjectionCore?.screenCaptureFlow?.collect { bitmap ->
-                Log.d(TAG, "Frame received: ${bitmap.width}x${bitmap.height}")
+                frameCount++
 
-                // Store a copy of the latest bitmap for snap capture
+                // Store a copy of the latest bitmap for snap capture (always)
                 latestBitmap = bitmap.copy(bitmap.config ?: Bitmap.Config.ARGB_8888, false)
 
-                // Use lightweight TFLite detection for live frames
-                // OCR is too expensive for every frame — use detectWithOcr() on-demand instead
-                val detections = perceptionLayer?.detect(bitmap) ?: emptyList()
-                val tracked = temporalTracker?.update(detections) ?: emptyList()
+                // Frame skipping: run detection every 2nd frame, reuse last result for skipped
+                if (frameCount % 2 == 1) {
+                    val detections = perceptionLayer?.detect(bitmap) ?: emptyList()
+                    val tracked = temporalTracker?.update(detections) ?: emptyList()
+                    latestElements = tracked
 
-                latestElements = tracked
+                    withContext(Dispatchers.Main) {
+                        overlay?.updateElements(tracked)
+                    }
+                }
 
-                withContext(Dispatchers.Main) {
-                    overlay?.updateElements(tracked)
+                // Log stats every 20 frames
+                if (frameCount % 20 == 0) {
+                    val avgMs = perceptionLayer?.getAverageInferenceTimeMs() ?: 0f
+                    DebugLogger.info(
+                        this@ScreenUnderstandingService, LogCategory.SCREEN_CONTEXT_AI,
+                        "Detection stats",
+                        "Frame #$frameCount: ${latestElements.size} elements, avg: ${"%.1f".format(avgMs)}ms/frame (skip every 2nd)",
+                        TAG
+                    )
                 }
             }
         }
@@ -278,6 +303,12 @@ class ScreenUnderstandingService : Service() {
 
     private fun captureSnapshot() {
         Log.d(TAG, "Snap clicked, latestBitmap=${latestBitmap != null}")
+        DebugLogger.info(
+            this, LogCategory.SCREEN_CONTEXT_AI,
+            "Snap captured",
+            "Screenshot taken for element selection",
+            TAG
+        )
         val bitmap = latestBitmap
         if (bitmap != null) {
             Toast.makeText(this, "Capturing Snapshot...", Toast.LENGTH_SHORT).show()

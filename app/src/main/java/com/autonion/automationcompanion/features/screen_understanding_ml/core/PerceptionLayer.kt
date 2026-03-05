@@ -60,7 +60,7 @@ class PerceptionLayer(private val context: Context) {
                 DebugLogger.success(
                     context, LogCategory.SCREEN_CONTEXT_AI,
                     "ML model loaded",
-                    "TFLite interpreter ready (CPU) for UI detection",
+                    "TFLite interpreter ready (CPU, 4 threads) for UI detection",
                     "PerceptionLayer"
                 )
             } catch (e2: Exception) {
@@ -88,9 +88,23 @@ class PerceptionLayer(private val context: Context) {
     private val lock = Any()
     private var isClosed = false
 
+    // Inference timing stats
+    private var inferenceCount = 0L
+    private var totalInferenceTimeNs = 0L
+
+    /** Average inference time in milliseconds across all calls */
+    fun getAverageInferenceTimeMs(): Float {
+        return if (inferenceCount > 0) (totalInferenceTimeNs / 1_000_000f) / inferenceCount else 0f
+    }
+
+    /** Total number of inference calls */
+    fun getInferenceCount(): Long = inferenceCount
+
     fun detect(bitmap: Bitmap): List<UIElement> {
         synchronized(lock) {
             if (isClosed || interpreter == null) return emptyList()
+
+            val frameStartNs = android.os.SystemClock.elapsedRealtimeNanos()
             
             // 1. Preprocess — always use FLOAT32 input; TFLite handles quantization
             val imageProcessor = ImageProcessor.Builder()
@@ -101,8 +115,11 @@ class PerceptionLayer(private val context: Context) {
             var tensorImage = TensorImage(org.tensorflow.lite.DataType.FLOAT32)
             tensorImage.load(bitmap)
             tensorImage = imageProcessor.process(tensorImage)
+
+            val preprocessNs = android.os.SystemClock.elapsedRealtimeNanos() - frameStartNs
     
             // 2. Inference — support both float and quantized output
+            val inferenceStartNs = android.os.SystemClock.elapsedRealtimeNanos()
             val outputTensor = interpreter!!.getOutputTensor(0)
             val outputShape = outputTensor.shape() 
             val outputType = outputTensor.dataType()
@@ -126,7 +143,6 @@ class PerceptionLayer(private val context: Context) {
                     val quantParams = outputTensor.quantizationParams()
                     val scale = quantParams.scale
                     val zeroPoint = quantParams.zeroPoint
-                    android.util.Log.d(TAG, "Quantized output: type=$outputType, scale=$scale, zeroPoint=$zeroPoint")
                     
                     val byteOutput = Array(outputShape[0]) { Array(outputShape[1]) { ByteArray(outputShape[2]) } }
                     interpreter!!.run(tensorImage.buffer, byteOutput)
@@ -144,9 +160,26 @@ class PerceptionLayer(private val context: Context) {
                 android.util.Log.e(TAG, "Error running inference", e)
                 return emptyList()
             }
+
+            val inferenceNs = android.os.SystemClock.elapsedRealtimeNanos() - inferenceStartNs
     
             // 3. Postprocess
-            return processOutput(outputData, bitmap.width, bitmap.height)
+            val postStartNs = android.os.SystemClock.elapsedRealtimeNanos()
+            val results = processOutput(outputData, bitmap.width, bitmap.height)
+            val postprocessNs = android.os.SystemClock.elapsedRealtimeNanos() - postStartNs
+
+            // Track timing
+            val totalNs = android.os.SystemClock.elapsedRealtimeNanos() - frameStartNs
+            inferenceCount++
+            totalInferenceTimeNs += totalNs
+            Log.d(TAG, "Inference #$inferenceCount: " +
+                "preprocess=${"%.0f".format(preprocessNs / 1_000_000f)}ms, " +
+                "inference=${"%.0f".format(inferenceNs / 1_000_000f)}ms, " +
+                "postprocess=${"%.0f".format(postprocessNs / 1_000_000f)}ms, " +
+                "TOTAL=${"%.0f".format(totalNs / 1_000_000f)}ms (avg: ${"%.1f".format(getAverageInferenceTimeMs())}ms), " +
+                "${results.size} elements")
+
+            return results
         }
     }
 
