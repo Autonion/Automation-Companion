@@ -17,6 +17,18 @@ import android.widget.EditText
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.UIElement
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.ActionType
 
+data class DebugMetrics(
+    val fps: Float = 0f,
+    val inferenceMs: Float = 0f,
+    val avgInferenceMs: Float = 0f,
+    val elementCount: Int = 0,
+    val temperature: Float = -1f,  // -1 = unavailable
+    val delegate: String = "Unknown",
+    val modelName: String = "Unknown",
+    val frameCount: Long = 0,
+    val inferenceCount: Long = 0
+)
+
 class ScreenAgentOverlay(
     private val context: Context,
     private val initialName: String? = null,
@@ -87,6 +99,11 @@ class ScreenAgentOverlay(
 
     fun showPlaybackMode() {
         showOverlay(mode = "playback")
+    }
+
+    fun showDebugMode() {
+        debugMode = true
+        showOverlay(mode = "debug")
     }
 
     private fun showOverlay(mode: String) {
@@ -242,6 +259,10 @@ class ScreenAgentOverlay(
                 panel.addView(btnPlay!!)
                 panel.addView(btnStop)
             }
+            "debug" -> {
+                // Debug/Test mode: just Close button
+                panel.addView(btnStop)
+            }
             else -> {
                 // Full mode: all buttons
                 panel.addView(btnInspect)
@@ -272,11 +293,19 @@ class ScreenAgentOverlay(
                     WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
             
             format = PixelFormat.TRANSLUCENT
-            gravity = Gravity.TOP or Gravity.START
             width = WindowManager.LayoutParams.WRAP_CONTENT
             height = WindowManager.LayoutParams.WRAP_CONTENT
-            x = 50
-            y = 200 
+            
+            if (mode == "debug") {
+                // Bottom-right so it doesn't cover the metrics HUD at the top
+                gravity = Gravity.BOTTOM or Gravity.END
+                x = 30
+                y = 200
+            } else {
+                gravity = Gravity.TOP or Gravity.START
+                x = 50
+                y = 200
+            }
         }
         
         // Make Draggable using existing OverlayTouchListener
@@ -449,9 +478,13 @@ class ScreenAgentOverlay(
     fun getSelectionInputTexts(): List<String?> = overlayView?.getSelectionInputTexts() ?: emptyList()
 
     fun updateElements(elements: List<UIElement>) {
-        // Always update the data model so we have the latest elements for playback or when Inspect is toggled.
-        // ScreenAgentOverlay logic controls whether they are drawn (via validationMode in onDraw).
         overlayView?.setElements(elements)
+    }
+
+    var debugMode = false
+
+    fun updateMetrics(metrics: DebugMetrics) {
+        overlayView?.setMetrics(metrics)
     }
     
     data class SelectionState(
@@ -506,10 +539,35 @@ class ScreenAgentOverlay(
         private var elements: List<UIElement> = emptyList()
         private val selectionStates: MutableList<SelectionState> = mutableListOf() 
         private var validationMode = false
+        private var currentMetrics: DebugMetrics? = null
+
+        private val paintMetricsBg = Paint().apply {
+            color = Color.parseColor("#CC000000")
+            style = Paint.Style.FILL
+        }
+        private val paintMetricsText = Paint().apply {
+            color = Color.parseColor("#00FF00")
+            textSize = 28f
+            style = Paint.Style.FILL
+            typeface = android.graphics.Typeface.MONOSPACE
+            isAntiAlias = true
+        }
+        private val paintMetricsLabel = Paint().apply {
+            color = Color.parseColor("#AAAAAA")
+            textSize = 24f
+            style = Paint.Style.FILL
+            typeface = android.graphics.Typeface.MONOSPACE
+            isAntiAlias = true
+        }
 
         fun setElements(newElements: List<UIElement>) {
             if (validationMode) return 
             elements = newElements
+            invalidate()
+        }
+
+        fun setMetrics(metrics: DebugMetrics) {
+            currentMetrics = metrics
             invalidate()
         }
         
@@ -656,9 +714,26 @@ class ScreenAgentOverlay(
 
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
+
+            // Always draw debug metrics HUD if debugMode is on
+            if (debugMode) {
+                drawMetricsHud(canvas)
+            }
             
             // Only draw UI elements if we are in "Inspect" (validation) mode.
-            // If we are just running (passive) or playing, we don't want to clutter the screen.
+            if (!validationMode && !debugMode) return
+
+            // In debug mode, always draw bounding boxes (even without validation mode)
+            if (debugMode) {
+                for (element in elements) {
+                    canvas.drawRect(element.bounds, paintBox)
+                    // Draw label + confidence
+                    val label = "${element.label} ${"%.0f".format(element.confidence * 100)}%"
+                    canvas.drawText(label, element.bounds.left, element.bounds.top - 5f, paintText)
+                }
+                return
+            }
+
             if (!validationMode) return
 
             canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paintDim)
@@ -704,6 +779,39 @@ class ScreenAgentOverlay(
                     // Optional: Draw label only if needed to reduce clutter
                     // canvas.drawText(element.label, element.bounds.left, element.bounds.top, paintText)
                 }
+            }
+        }
+        private fun drawMetricsHud(canvas: Canvas) {
+            val metrics = currentMetrics ?: return
+            val statusBarHeight = 80f // approximate status bar offset
+            val padding = 16f
+            val lineHeight = 32f
+            val lines = mutableListOf<Pair<String, String>>()
+
+            lines.add("MODEL" to metrics.modelName)
+            lines.add("DELEGATE" to metrics.delegate)
+            lines.add("FPS" to "%.1f".format(metrics.fps))
+            lines.add("INFERENCE" to "%.0fms".format(metrics.inferenceMs))
+            lines.add("AVG INFERENCE" to "%.1fms".format(metrics.avgInferenceMs))
+            lines.add("ELEMENTS" to "${metrics.elementCount}")
+            lines.add("FRAMES" to "${metrics.frameCount} (inferred: ${metrics.inferenceCount})")
+            if (metrics.temperature >= 0) {
+                val tempColor = when {
+                    metrics.temperature > 45 -> Color.RED
+                    metrics.temperature > 38 -> Color.YELLOW
+                    else -> Color.parseColor("#00FF00")
+                }
+                lines.add("TEMP" to "%.1f°C".format(metrics.temperature))
+            }
+
+            val hudHeight = statusBarHeight + padding * 2 + lines.size * lineHeight + padding
+            canvas.drawRect(0f, 0f, width.toFloat(), hudHeight, paintMetricsBg)
+
+            var y = statusBarHeight + padding + lineHeight
+            for ((label, value) in lines) {
+                canvas.drawText("$label: ", padding, y, paintMetricsLabel)
+                canvas.drawText(value, padding + 220f, y, paintMetricsText)
+                y += lineHeight
             }
         }
     }

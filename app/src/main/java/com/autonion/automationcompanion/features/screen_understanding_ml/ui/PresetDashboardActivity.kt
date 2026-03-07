@@ -31,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ViewQuilt
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.ViewQuilt
@@ -126,6 +127,14 @@ class PresetDashboardActivity : ComponentActivity() {
                         val intent = Intent(this@PresetDashboardActivity, SetupFlowActivity::class.java).apply {
                             putExtra("ACTION_REQUEST_PERMISSION_PLAY_PRESET", preset.id)
                             putExtra("presetName", preset.name)
+                        }
+                        startActivity(intent)
+                    },
+                    onTest = { modelFile ->
+                        val intent = Intent(this@PresetDashboardActivity, SetupFlowActivity::class.java).apply {
+                            putExtra("presetName", "_debug_test")
+                            putExtra("debugMode", true)
+                            putExtra("modelFile", modelFile)
                         }
                         startActivity(intent)
                     }
@@ -225,11 +234,53 @@ private fun PresetDashboardContent(
     onBack: () -> Unit,
     onAddClick: () -> Unit,
     onDelete: (AutomationPreset) -> Unit,
-    onPlay: (AutomationPreset) -> Unit
+    onPlay: (AutomationPreset) -> Unit,
+    onTest: (String) -> Unit = {}
 ) {
     val fabScale = remember { Animatable(0f) }
+    var showModelPicker by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         fabScale.animateTo(1f, tween(300, easing = FastOutSlowInEasing))
+    }
+
+    // Model picker dialog
+    if (showModelPicker) {
+        Dialog(onDismissRequest = { showModelPicker = false }) {
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 6.dp
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Text("Select Model", style = MaterialTheme.typography.titleMedium)
+                    androidx.compose.foundation.layout.Spacer(modifier = Modifier.size(12.dp))
+                    
+                    val models = listOf(
+                        "best_int8_416.tflite" to "INT8 · 416 (NNAPI)"
+                    )
+                    models.forEach { (file, label) ->
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                                .clickable {
+                                    showModelPicker = false
+                                    onTest(file)
+                                }
+                        ) {
+                            Text(
+                                text = label,
+                                modifier = Modifier.padding(16.dp),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 
     AuroraBackground {
@@ -246,7 +297,16 @@ private fun PresetDashboardContent(
                         containerColor = Color.Transparent,
                         titleContentColor = MaterialTheme.colorScheme.onSurface,
                         navigationIconContentColor = MaterialTheme.colorScheme.onSurface
-                    )
+                    ),
+                    actions = {
+                        IconButton(onClick = { showModelPicker = true }) {
+                            Icon(
+                                Icons.Default.BugReport,
+                                contentDescription = "Test Detection",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
                 )
             },
             floatingActionButton = {

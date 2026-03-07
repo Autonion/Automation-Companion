@@ -87,6 +87,36 @@ class ScreenUnderstandingService : Service() {
     private var flowMlJson: String? = null
     private var clearOnStart: Boolean = false
 
+    // Debug metrics mode
+    var isDebugMode = false
+        set(value) {
+            field = value
+            overlay?.debugMode = value
+        }
+
+    private fun readDeviceTemperature(): Float {
+        // Try thermal zone files (CPU temperature)
+        try {
+            for (i in 0..15) {
+                val file = java.io.File("/sys/class/thermal/thermal_zone$i/temp")
+                if (file.exists() && file.canRead()) {
+                    val rawTemp = file.readText().trim().toFloatOrNull() ?: continue
+                    val temp = if (rawTemp > 1000) rawTemp / 1000f else rawTemp
+                    if (temp in 10f..120f) return temp // Sanity check
+                }
+            }
+        } catch (_: Exception) {}
+
+        // Fallback: battery temperature via BatteryManager
+        try {
+            val batteryIntent = registerReceiver(null, android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED))
+            val batteryTemp = batteryIntent?.getIntExtra(android.os.BatteryManager.EXTRA_TEMPERATURE, -1) ?: -1
+            if (batteryTemp > 0) return batteryTemp / 10f // Battery temp is in tenths of °C
+        } catch (_: Exception) {}
+
+        return -1f
+    }
+
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "Service onCreate - Instance Created: $this")
@@ -157,6 +187,11 @@ class ScreenUnderstandingService : Service() {
 
         when (intent?.action) {
             "START_CAPTURE" -> handleStartCapture(intent)
+            "DEBUG_TOGGLE" -> {
+                isDebugMode = !isDebugMode
+                Log.d(TAG, "Debug mode toggled: $isDebugMode")
+                Toast.makeText(this, "Debug Mode: ${if (isDebugMode) "ON" else "OFF"}", Toast.LENGTH_SHORT).show()
+            }
             else -> {
                 Log.w(TAG, "Unknown action: ${intent?.action}, stopping")
                 stopSelf()
@@ -198,24 +233,30 @@ class ScreenUnderstandingService : Service() {
         val data = intent.getParcelableExtra<Intent>("data")
         val presetName = intent.getStringExtra("presetName")
         val playPresetId = intent.getStringExtra("playPresetId")
+        val modelFile = intent.getStringExtra("modelFile")
         
         isFlowMode = intent.getBooleanExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_MODE, false)
         flowNodeId = intent.getStringExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_NODE_ID)
         flowMlJson = intent.getStringExtra("EXTRA_FLOW_ML_JSON")
         clearOnStart = intent.getBooleanExtra("EXTRA_CLEAR_ON_START", false)
 
-        Log.d(TAG, "Service received presetName: '$presetName', playPresetId: '$playPresetId'")
+        Log.d(TAG, "Service received presetName: '$presetName', playPresetId: '$playPresetId', modelFile: '$modelFile'")
+
+        // Check for debug mode flag
+        if (intent.getBooleanExtra("debugMode", false)) {
+            isDebugMode = true
+        }
 
         if (resultCode != 0 && data != null) {
             // Store preset info before startCapture so overlay mode is correct
             if (playPresetId != null) {
                 currentPresetId = playPresetId
             }
-            startCapture(resultCode, data, presetName, playPresetId)
+            startCapture(resultCode, data, presetName, playPresetId, modelFile)
         }
     }
 
-    private fun startCapture(resultCode: Int, data: Intent, presetName: String?, playPresetId: String?) {
+    private fun startCapture(resultCode: Int, data: Intent, presetName: String?, playPresetId: String?, modelFile: String? = null) {
         // Cleanup existing resources
         overlay?.dismiss()
         mediaProjectionCore?.stopProjection()
@@ -225,7 +266,7 @@ class ScreenUnderstandingService : Service() {
 
         mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         mediaProjectionCore = MediaProjectionCore(this, mediaProjectionManager!!)
-        perceptionLayer = PerceptionLayer(this)
+        perceptionLayer = PerceptionLayer(this, modelFile)
         temporalTracker = TemporalTracker()
 
         // Load preset if in playback mode
@@ -256,7 +297,11 @@ class ScreenUnderstandingService : Service() {
         )
 
         if (android.provider.Settings.canDrawOverlays(this)) {
-            if (playPresetId != null) {
+            if (isDebugMode) {
+                // Debug/test mode: live bounding boxes + metrics HUD, no capture controls
+                overlay?.showDebugMode()
+                Toast.makeText(this, "Debug Mode: Live detection active", Toast.LENGTH_LONG).show()
+            } else if (playPresetId != null) {
                 // Playback mode: show Play + Stop buttons
                 overlay?.showPlaybackMode()
                 Toast.makeText(this, "Navigate to the app, then tap Play ▶", Toast.LENGTH_LONG).show()
@@ -269,15 +314,29 @@ class ScreenUnderstandingService : Service() {
         mediaProjectionCore?.startProjection(resultCode, data, metrics.widthPixels, metrics.heightPixels, metrics.densityDpi)
 
         scope.launch {
-            var frameCount = 0
+            var frameCount = 0L
+            var lastFpsTime = android.os.SystemClock.elapsedRealtime()
+            var framesInWindow = 0
+            var currentFps = 0f
+
             mediaProjectionCore?.screenCaptureFlow?.collect { bitmap ->
                 frameCount++
+                framesInWindow++
+
+                // Calculate FPS every second
+                val now = android.os.SystemClock.elapsedRealtime()
+                if (now - lastFpsTime >= 1000) {
+                    currentFps = framesInWindow * 1000f / (now - lastFpsTime)
+                    framesInWindow = 0
+                    lastFpsTime = now
+                }
 
                 // Store a copy of the latest bitmap for snap capture (always)
                 latestBitmap = bitmap.copy(bitmap.config ?: Bitmap.Config.ARGB_8888, false)
 
-                // Frame skipping: run detection every 2nd frame, reuse last result for skipped
-                if (frameCount % 2 == 1) {
+                // Frame skipping: run detection every 2nd frame in normal mode, every frame in debug mode
+                val shouldDetect = if (isDebugMode) true else (frameCount % 2 == 1L)
+                if (shouldDetect) {
                     val detections = perceptionLayer?.detect(bitmap) ?: emptyList()
                     val tracked = temporalTracker?.update(detections) ?: emptyList()
                     latestElements = tracked
@@ -287,8 +346,26 @@ class ScreenUnderstandingService : Service() {
                     }
                 }
 
+                // Update debug metrics overlay
+                if (isDebugMode) {
+                    val debugMetrics = com.autonion.automationcompanion.features.screen_understanding_ml.ui.DebugMetrics(
+                        fps = currentFps,
+                        inferenceMs = perceptionLayer?.getLastInferenceTimeMs() ?: 0f,
+                        avgInferenceMs = perceptionLayer?.getAverageInferenceTimeMs() ?: 0f,
+                        elementCount = latestElements.size,
+                        temperature = readDeviceTemperature(),
+                        delegate = perceptionLayer?.getDelegate() ?: "Unknown",
+                        modelName = perceptionLayer?.getModelName() ?: "Unknown",
+                        frameCount = frameCount,
+                        inferenceCount = perceptionLayer?.getInferenceCount() ?: 0
+                    )
+                    withContext(Dispatchers.Main) {
+                        overlay?.updateMetrics(debugMetrics)
+                    }
+                }
+
                 // Log stats every 20 frames
-                if (frameCount % 20 == 0) {
+                if (frameCount % 20 == 0L) {
                     val avgMs = perceptionLayer?.getAverageInferenceTimeMs() ?: 0f
                     DebugLogger.info(
                         this@ScreenUnderstandingService, LogCategory.SCREEN_CONTEXT_AI,
