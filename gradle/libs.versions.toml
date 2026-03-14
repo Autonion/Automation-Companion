@@ -1,7 +1,7 @@
 [versions]
 agp = "9.1.0"
 biometric = "1.1.0"
-composeBom = "2026.02.00"
+composeBom = "2026.03.00"
 kotlin = "2.3.10"
 coreKtx = "1.17.0"
 junit = "4.13.2"
