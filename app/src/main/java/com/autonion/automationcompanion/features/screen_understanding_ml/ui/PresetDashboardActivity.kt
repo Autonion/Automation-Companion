@@ -238,50 +238,11 @@ private fun PresetDashboardContent(
     onTest: (String) -> Unit = {}
 ) {
     val fabScale = remember { Animatable(0f) }
-    var showModelPicker by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         fabScale.animateTo(1f, tween(300, easing = FastOutSlowInEasing))
     }
 
-    // Model picker dialog
-    if (showModelPicker) {
-        Dialog(onDismissRequest = { showModelPicker = false }) {
-            Surface(
-                shape = RoundedCornerShape(20.dp),
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 6.dp
-            ) {
-                Column(modifier = Modifier.padding(20.dp)) {
-                    Text("Select Model", style = MaterialTheme.typography.titleMedium)
-                    androidx.compose.foundation.layout.Spacer(modifier = Modifier.size(12.dp))
-                    
-                    val models = listOf(
-                        "best_int8_416.tflite" to "INT8 · 416 (NNAPI)"
-                    )
-                    models.forEach { (file, label) ->
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp)
-                                .clickable {
-                                    showModelPicker = false
-                                    onTest(file)
-                                }
-                        ) {
-                            Text(
-                                text = label,
-                                modifier = Modifier.padding(16.dp),
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
+    // Model picker dialog (Removed, directly using yolov11s_model.tflite)
 
     AuroraBackground {
         Scaffold(
@@ -299,7 +260,7 @@ private fun PresetDashboardContent(
                         navigationIconContentColor = MaterialTheme.colorScheme.onSurface
                     ),
                     actions = {
-                        IconButton(onClick = { showModelPicker = true }) {
+                        IconButton(onClick = { onTest("yolov11s_model.tflite") }) {
                             Icon(
                                 Icons.Default.BugReport,
                                 contentDescription = "Test Detection",

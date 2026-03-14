@@ -22,12 +22,15 @@ class PerceptionLayer(private val context: Context, modelFile: String? = null) {
 
     private var interpreter: Interpreter? = null
     
-    // Model selection: allow override, default to int8
-    val modelFilename = modelFile ?: "best_int8_416.tflite"
+    // Model selection: allow override, default to yolov11s int8
+    val modelFilename = modelFile ?: "yolov11s_model.tflite"
     private val labels = listOf("button", "icon", "input", "toggle", "radio", "checkbox", "dropdown")
     
-    // Auto-detect input size from model filename
-    val inputSize: Int = Regex("(\\d{3,4})\\.tflite").find(this.modelFilename)?.groupValues?.get(1)?.toIntOrNull() ?: 416
+    // Auto-detect input size from model filename or hardcode for known YOLO11s models
+    val inputSize: Int = when {
+        this.modelFilename.contains("yolov11s", ignoreCase = true) -> 640
+        else -> Regex("(\\d{3,4})\\.tflite").find(this.modelFilename)?.groupValues?.get(1)?.toIntOrNull() ?: 416
+    }
     private val confThreshold = 0.25f
     
     // Detect if this is a float16 model (GPU-compatible)
