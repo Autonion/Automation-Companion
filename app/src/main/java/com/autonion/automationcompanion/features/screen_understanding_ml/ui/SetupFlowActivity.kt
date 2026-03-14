@@ -182,6 +182,14 @@ class SetupFlowActivity : ComponentActivity() {
                     if (playPresetId != null) {
                         putExtra("playPresetId", playPresetId)
                     }
+                    // Forward debug mode flag
+                    if (intent.getBooleanExtra("debugMode", false)) {
+                        putExtra("debugMode", true)
+                    }
+                    // Forward model file selection
+                    intent.getStringExtra("modelFile")?.let {
+                        putExtra("modelFile", it)
+                    }
                     action = "START_CAPTURE"
                 }
                 

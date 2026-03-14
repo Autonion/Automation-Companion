@@ -264,7 +264,7 @@ class CaptureEditorActivity : ComponentActivity() {
         val flowMlJson = intent.getStringExtra("EXTRA_FLOW_ML_JSON")
         Toast.makeText(this, "Detecting UI elements...", Toast.LENGTH_SHORT).show()
         lifecycleScope.launch(Dispatchers.Default) {
-             val detectedElements = perceptionLayer?.detect(sourceBitmap!!) ?: emptyList()
+             val detectedElements = perceptionLayer?.detectWithOcr(sourceBitmap!!) ?: emptyList()
              withContext(Dispatchers.Main) {
                  val finalElements = detectedElements.toMutableList()
                  var loadedStates: List<SelectionState>? = null

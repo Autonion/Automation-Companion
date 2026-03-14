@@ -31,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ViewQuilt
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.ViewQuilt
@@ -126,6 +127,14 @@ class PresetDashboardActivity : ComponentActivity() {
                         val intent = Intent(this@PresetDashboardActivity, SetupFlowActivity::class.java).apply {
                             putExtra("ACTION_REQUEST_PERMISSION_PLAY_PRESET", preset.id)
                             putExtra("presetName", preset.name)
+                        }
+                        startActivity(intent)
+                    },
+                    onTest = { modelFile ->
+                        val intent = Intent(this@PresetDashboardActivity, SetupFlowActivity::class.java).apply {
+                            putExtra("presetName", "_debug_test")
+                            putExtra("debugMode", true)
+                            putExtra("modelFile", modelFile)
                         }
                         startActivity(intent)
                     }
@@ -225,12 +234,15 @@ private fun PresetDashboardContent(
     onBack: () -> Unit,
     onAddClick: () -> Unit,
     onDelete: (AutomationPreset) -> Unit,
-    onPlay: (AutomationPreset) -> Unit
+    onPlay: (AutomationPreset) -> Unit,
+    onTest: (String) -> Unit = {}
 ) {
     val fabScale = remember { Animatable(0f) }
     LaunchedEffect(Unit) {
         fabScale.animateTo(1f, tween(300, easing = FastOutSlowInEasing))
     }
+
+    // Model picker dialog (Removed, directly using yolov11s_model.tflite)
 
     AuroraBackground {
         Scaffold(
@@ -246,7 +258,16 @@ private fun PresetDashboardContent(
                         containerColor = Color.Transparent,
                         titleContentColor = MaterialTheme.colorScheme.onSurface,
                         navigationIconContentColor = MaterialTheme.colorScheme.onSurface
-                    )
+                    ),
+                    actions = {
+                        IconButton(onClick = { onTest("yolov11s_model.tflite") }) {
+                            Icon(
+                                Icons.Default.BugReport,
+                                contentDescription = "Test Detection",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
                 )
             },
             floatingActionButton = {

@@ -87,6 +87,36 @@ class ScreenUnderstandingService : Service() {
     private var flowMlJson: String? = null
     private var clearOnStart: Boolean = false
 
+    // Debug metrics mode
+    var isDebugMode = false
+        set(value) {
+            field = value
+            overlay?.debugMode = value
+        }
+
+    private fun readDeviceTemperature(): Float {
+        // Try thermal zone files (CPU temperature)
+        try {
+            for (i in 0..15) {
+                val file = java.io.File("/sys/class/thermal/thermal_zone$i/temp")
+                if (file.exists() && file.canRead()) {
+                    val rawTemp = file.readText().trim().toFloatOrNull() ?: continue
+                    val temp = if (rawTemp > 1000) rawTemp / 1000f else rawTemp
+                    if (temp in 10f..120f) return temp // Sanity check
+                }
+            }
+        } catch (_: Exception) {}
+
+        // Fallback: battery temperature via BatteryManager
+        try {
+            val batteryIntent = registerReceiver(null, android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED))
+            val batteryTemp = batteryIntent?.getIntExtra(android.os.BatteryManager.EXTRA_TEMPERATURE, -1) ?: -1
+            if (batteryTemp > 0) return batteryTemp / 10f // Battery temp is in tenths of °C
+        } catch (_: Exception) {}
+
+        return -1f
+    }
+
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "Service onCreate - Instance Created: $this")
@@ -96,6 +126,19 @@ class ScreenUnderstandingService : Service() {
 
     override fun onDestroy() {
         Log.d(TAG, "Service onDestroy - Instance Destroyed: $this")
+
+        // Log final inference stats to debugger
+        val avgMs = perceptionLayer?.getAverageInferenceTimeMs() ?: 0f
+        val count = perceptionLayer?.getInferenceCount() ?: 0
+        if (count > 0) {
+            DebugLogger.info(
+                this, LogCategory.SCREEN_CONTEXT_AI,
+                "Session ended",
+                "Processed $count frames, avg inference: ${"%.1f".format(avgMs)}ms/frame",
+                TAG
+            )
+        }
+
         instance = null
         isPlaying = false
         scope.cancel()
@@ -144,6 +187,11 @@ class ScreenUnderstandingService : Service() {
 
         when (intent?.action) {
             "START_CAPTURE" -> handleStartCapture(intent)
+            "DEBUG_TOGGLE" -> {
+                isDebugMode = !isDebugMode
+                Log.d(TAG, "Debug mode toggled: $isDebugMode")
+                Toast.makeText(this, "Debug Mode: ${if (isDebugMode) "ON" else "OFF"}", Toast.LENGTH_SHORT).show()
+            }
             else -> {
                 Log.w(TAG, "Unknown action: ${intent?.action}, stopping")
                 stopSelf()
@@ -185,24 +233,30 @@ class ScreenUnderstandingService : Service() {
         val data = intent.getParcelableExtra<Intent>("data")
         val presetName = intent.getStringExtra("presetName")
         val playPresetId = intent.getStringExtra("playPresetId")
+        val modelFile = intent.getStringExtra("modelFile")
         
         isFlowMode = intent.getBooleanExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_MODE, false)
         flowNodeId = intent.getStringExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_NODE_ID)
         flowMlJson = intent.getStringExtra("EXTRA_FLOW_ML_JSON")
         clearOnStart = intent.getBooleanExtra("EXTRA_CLEAR_ON_START", false)
 
-        Log.d(TAG, "Service received presetName: '$presetName', playPresetId: '$playPresetId'")
+        Log.d(TAG, "Service received presetName: '$presetName', playPresetId: '$playPresetId', modelFile: '$modelFile'")
+
+        // Check for debug mode flag
+        if (intent.getBooleanExtra("debugMode", false)) {
+            isDebugMode = true
+        }
 
         if (resultCode != 0 && data != null) {
             // Store preset info before startCapture so overlay mode is correct
             if (playPresetId != null) {
                 currentPresetId = playPresetId
             }
-            startCapture(resultCode, data, presetName, playPresetId)
+            startCapture(resultCode, data, presetName, playPresetId, modelFile)
         }
     }
 
-    private fun startCapture(resultCode: Int, data: Intent, presetName: String?, playPresetId: String?) {
+    private fun startCapture(resultCode: Int, data: Intent, presetName: String?, playPresetId: String?, modelFile: String? = null) {
         // Cleanup existing resources
         overlay?.dismiss()
         mediaProjectionCore?.stopProjection()
@@ -212,7 +266,7 @@ class ScreenUnderstandingService : Service() {
 
         mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         mediaProjectionCore = MediaProjectionCore(this, mediaProjectionManager!!)
-        perceptionLayer = PerceptionLayer(this)
+        perceptionLayer = PerceptionLayer(this, modelFile)
         temporalTracker = TemporalTracker()
 
         // Load preset if in playback mode
@@ -243,7 +297,11 @@ class ScreenUnderstandingService : Service() {
         )
 
         if (android.provider.Settings.canDrawOverlays(this)) {
-            if (playPresetId != null) {
+            if (isDebugMode) {
+                // Debug/test mode: live bounding boxes + metrics HUD, no capture controls
+                overlay?.showDebugMode()
+                Toast.makeText(this, "Debug Mode: Live detection active", Toast.LENGTH_LONG).show()
+            } else if (playPresetId != null) {
                 // Playback mode: show Play + Stop buttons
                 overlay?.showPlaybackMode()
                 Toast.makeText(this, "Navigate to the app, then tap Play ▶", Toast.LENGTH_LONG).show()
@@ -256,21 +314,65 @@ class ScreenUnderstandingService : Service() {
         mediaProjectionCore?.startProjection(resultCode, data, metrics.widthPixels, metrics.heightPixels, metrics.densityDpi)
 
         scope.launch {
-            mediaProjectionCore?.screenCaptureFlow?.collect { bitmap ->
-                Log.d(TAG, "Frame received: ${bitmap.width}x${bitmap.height}")
+            var frameCount = 0L
+            var lastFpsTime = android.os.SystemClock.elapsedRealtime()
+            var framesInWindow = 0
+            var currentFps = 0f
 
-                // Store a copy of the latest bitmap for snap capture
+            mediaProjectionCore?.screenCaptureFlow?.collect { bitmap ->
+                frameCount++
+                framesInWindow++
+
+                // Calculate FPS every second
+                val now = android.os.SystemClock.elapsedRealtime()
+                if (now - lastFpsTime >= 1000) {
+                    currentFps = framesInWindow * 1000f / (now - lastFpsTime)
+                    framesInWindow = 0
+                    lastFpsTime = now
+                }
+
+                // Store a copy of the latest bitmap for snap capture (always)
                 latestBitmap = bitmap.copy(bitmap.config ?: Bitmap.Config.ARGB_8888, false)
 
-                // Use lightweight TFLite detection for live frames
-                // OCR is too expensive for every frame — use detectWithOcr() on-demand instead
-                val detections = perceptionLayer?.detect(bitmap) ?: emptyList()
-                val tracked = temporalTracker?.update(detections) ?: emptyList()
+                // Frame skipping: run detection every 2nd frame in normal mode, every frame in debug mode
+                val shouldDetect = if (isDebugMode) true else (frameCount % 2 == 1L)
+                if (shouldDetect) {
+                    val detections = perceptionLayer?.detect(bitmap) ?: emptyList()
+                    val tracked = temporalTracker?.update(detections) ?: emptyList()
+                    latestElements = tracked
 
-                latestElements = tracked
+                    withContext(Dispatchers.Main) {
+                        overlay?.updateElements(tracked)
+                    }
+                }
 
-                withContext(Dispatchers.Main) {
-                    overlay?.updateElements(tracked)
+                // Update debug metrics overlay
+                if (isDebugMode) {
+                    val debugMetrics = com.autonion.automationcompanion.features.screen_understanding_ml.ui.DebugMetrics(
+                        fps = currentFps,
+                        inferenceMs = perceptionLayer?.getLastInferenceTimeMs() ?: 0f,
+                        avgInferenceMs = perceptionLayer?.getAverageInferenceTimeMs() ?: 0f,
+                        elementCount = latestElements.size,
+                        temperature = readDeviceTemperature(),
+                        delegate = perceptionLayer?.getDelegate() ?: "Unknown",
+                        modelName = perceptionLayer?.getModelName() ?: "Unknown",
+                        frameCount = frameCount,
+                        inferenceCount = perceptionLayer?.getInferenceCount() ?: 0
+                    )
+                    withContext(Dispatchers.Main) {
+                        overlay?.updateMetrics(debugMetrics)
+                    }
+                }
+
+                // Log stats every 20 frames
+                if (frameCount % 20 == 0L) {
+                    val avgMs = perceptionLayer?.getAverageInferenceTimeMs() ?: 0f
+                    DebugLogger.info(
+                        this@ScreenUnderstandingService, LogCategory.SCREEN_CONTEXT_AI,
+                        "Detection stats",
+                        "Frame #$frameCount: ${latestElements.size} elements, avg: ${"%.1f".format(avgMs)}ms/frame (skip every 2nd)",
+                        TAG
+                    )
                 }
             }
         }
@@ -278,6 +380,12 @@ class ScreenUnderstandingService : Service() {
 
     private fun captureSnapshot() {
         Log.d(TAG, "Snap clicked, latestBitmap=${latestBitmap != null}")
+        DebugLogger.info(
+            this, LogCategory.SCREEN_CONTEXT_AI,
+            "Snap captured",
+            "Screenshot taken for element selection",
+            TAG
+        )
         val bitmap = latestBitmap
         if (bitmap != null) {
             Toast.makeText(this, "Capturing Snapshot...", Toast.LENGTH_SHORT).show()
@@ -347,8 +455,19 @@ class ScreenUnderstandingService : Service() {
 
                         Log.d(TAG, "Looking for step ${step.orderIndex}: ${step.label}")
 
-                        // Keep searching for this element until found or stopped
-                        val foundElement = waitForElement(step)
+                        // OCR text steps: run live OCR to find text at its current position
+                        val isOcrStep = step.anchor.label.equals("Text", ignoreCase = true)
+                        val foundElement: UIElement? = if (isOcrStep && !step.anchor.text.isNullOrBlank()) {
+                            Log.d(TAG, "OCR text step — searching for '${step.anchor.text}' on current screen")
+                            findTextOnScreen(step.anchor.text)
+                        } else if (isOcrStep) {
+                            // No text stored — fall back to saved coordinates
+                            Log.d(TAG, "OCR step without text — using saved anchor coords")
+                            step.anchor
+                        } else {
+                            // ML detection step — keep searching via live detection
+                            waitForElement(step)
+                        }
 
                         if (!isPlaying) break
 
@@ -430,22 +549,76 @@ class ScreenUnderstandingService : Service() {
         val timeout = 5000L
         val startTime = System.currentTimeMillis()
         val anchorBounds = step.anchor.bounds
+        val anchorText = step.anchor.text  // OCR text from capture-time enrichment
 
         while (System.currentTimeMillis() - startTime < timeout && isPlaying) {
             val currentElements = latestElements
 
-            // Find best match: same label AND highest IoU with saved anchor bounds
-            val match = currentElements
-                .filter { it.label == step.anchor.label }  // Use anchor's actual label
-                .maxByOrNull { calculateIoU(it.bounds, anchorBounds) }
+            // Filter by label (case-insensitive)
+            val sameLabel = currentElements
+                .filter { it.label.equals(step.anchor.label, ignoreCase = true) }
+
+            // Text-aware matching: if anchor has OCR text, prefer elements whose text matches
+            val match = if (!anchorText.isNullOrBlank()) {
+                // First try: exact text + IoU
+                val textMatches = sameLabel.filter { el ->
+                    !el.text.isNullOrBlank() && el.text.contains(anchorText, ignoreCase = true)
+                }
+                textMatches.maxByOrNull { calculateIoU(it.bounds, anchorBounds) }
+                    ?: sameLabel.maxByOrNull { calculateIoU(it.bounds, anchorBounds) }  // Fallback to IoU-only
+            } else {
+                sameLabel.maxByOrNull { calculateIoU(it.bounds, anchorBounds) }
+            }
 
             // Accept if IoU > 0.1 (lenient since screen may have scrolled slightly)
             if (match != null && calculateIoU(match.bounds, anchorBounds) > 0.1f) {
+                Log.d(TAG, "waitForElement matched: label=${match.label}, text=${match.text}, IoU=${calculateIoU(match.bounds, anchorBounds)}")
                 return match
             }
 
             delay(200)
         }
+        return null
+    }
+
+    /**
+     * Run live OCR on the current screen to find where [targetText] appears right now.
+     * Returns a UIElement with the text's current bounds, or null if not found within timeout.
+     */
+    private suspend fun findTextOnScreen(targetText: String): UIElement? {
+        val timeout = 5000L
+        val startTime = System.currentTimeMillis()
+        val ocrEngine = OcrEngine()
+
+        try {
+            while (System.currentTimeMillis() - startTime < timeout && isPlaying) {
+                val bitmap = latestBitmap
+                if (bitmap != null) {
+                    val result = ocrEngine.recognizeText(bitmap)
+                    // Find the best matching block (case-insensitive contains)
+                    val matchBlock = result.blocks.firstOrNull { block ->
+                        block.text.contains(targetText, ignoreCase = true)
+                    }
+                    if (matchBlock != null && matchBlock.bounds != null) {
+                        Log.d(TAG, "findTextOnScreen: found '${matchBlock.text}' at ${matchBlock.bounds}")
+                        return UIElement(
+                            id = java.util.UUID.randomUUID().toString(),
+                            label = "Text",
+                            confidence = matchBlock.confidence ?: 0.9f,
+                            bounds = matchBlock.bounds,
+                            text = matchBlock.text
+                        )
+                    }
+                    Log.d(TAG, "findTextOnScreen: '$targetText' not found in ${result.blocks.size} blocks, retrying...")
+                }
+                delay(500)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "findTextOnScreen failed", e)
+        } finally {
+            ocrEngine.close()
+        }
+        Log.w(TAG, "findTextOnScreen: '$targetText' not found within timeout")
         return null
     }
 

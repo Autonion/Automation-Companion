@@ -8,70 +8,105 @@ import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
 import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.UIElement
 import org.tensorflow.lite.Interpreter
-import org.tensorflow.lite.gpu.GpuDelegate
 import org.tensorflow.lite.support.common.ops.NormalizeOp
 import org.tensorflow.lite.support.image.ImageProcessor
 import org.tensorflow.lite.support.image.TensorImage
 import org.tensorflow.lite.support.image.ops.ResizeOp
 import java.util.UUID
 
-class PerceptionLayer(private val context: Context) {
+class PerceptionLayer(private val context: Context, modelFile: String? = null) {
 
     private companion object {
         private const val TAG = "PerceptionLayer"
     }
 
     private var interpreter: Interpreter? = null
-    private val modelFilename = "best_float16.tflite"
-    private val labels = listOf("Button", "Input", "Image", "Toggle", "Text")
     
-    // Model specific constants
-    private val inputSize = 640 
+    // Model selection: allow override, default to yolov11s int8
+    val modelFilename = modelFile ?: "yolov11s_model.tflite"
+    private val labels = listOf("button", "icon", "input", "toggle", "radio", "checkbox", "dropdown")
+    
+    // Auto-detect input size from model filename or hardcode for known YOLO11s models
+    val inputSize: Int = when {
+        this.modelFilename.contains("yolov11s", ignoreCase = true) -> 640
+        else -> Regex("(\\d{3,4})\\.tflite").find(this.modelFilename)?.groupValues?.get(1)?.toIntOrNull() ?: 416
+    }
     private val confThreshold = 0.25f
-
-    private var gpuDelegate: GpuDelegate? = null
+    
+    // Detect if this is a float16 model (GPU-compatible)
+    private val isFloat16 = this.modelFilename.contains("float16", ignoreCase = true) || this.modelFilename.contains("fp16", ignoreCase = true)
 
     init {
         setupInterpreter()
     }
 
     private fun setupInterpreter() {
-        // Try GPU first, fall back to CPU cleanly
+        if (isFloat16) {
+            setupFloat16Interpreter()
+        } else {
+            setupQuantizedInterpreter()
+        }
+    }
+
+    private fun setupFloat16Interpreter() {
+        // GPU delegate first (best for float16)
         try {
-            val delegate = GpuDelegate()
-            val gpuOptions = Interpreter.Options().apply {
-                addDelegate(delegate)
+            val compatList = org.tensorflow.lite.gpu.CompatibilityList()
+            if (!compatList.isDelegateSupportedOnThisDevice) {
+                throw UnsupportedOperationException("GPU not supported on this device")
             }
-            val modelFile = loadModelFile(context, modelFilename)
-            interpreter = Interpreter(modelFile, gpuOptions)
-            gpuDelegate = delegate
-            Log.i(TAG, "Model loaded and interpreter created")
-            DebugLogger.success(
-                context, LogCategory.SCREEN_CONTEXT_AI,
-                "ML model loaded",
-                "TFLite interpreter ready for UI detection",
-                "PerceptionLayer"
-            )
+            val gpuDelegate = org.tensorflow.lite.gpu.GpuDelegate(compatList.bestOptionsForThisDevice)
+            val gpuOptions = Interpreter.Options().addDelegate(gpuDelegate)
+            val model = loadModelFile(context, modelFilename)
+            interpreter = Interpreter(model, gpuOptions)
+            currentDelegate = "GPU"
+            Log.i(TAG, "FP16 model loaded with GPU delegate (input: ${inputSize})")
+            DebugLogger.success(context, LogCategory.SCREEN_CONTEXT_AI, "ML model loaded",
+                "FP16 with GPU delegate (${inputSize}x${inputSize})", "PerceptionLayer")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to load model", e)
-            DebugLogger.error(
-                context, LogCategory.SCREEN_CONTEXT_AI,
-                "ML model load failed",
-                "${e.message}",
-                "PerceptionLayer"
-            )
-            Log.w("PerceptionLayer", "GPU delegate failed, falling back to CPU", e)
-            gpuDelegate?.close()
-            gpuDelegate = null
+            Log.w(TAG, "GPU failed for FP16: ${e.message}, trying NNAPI")
             try {
-                val cpuOptions = Interpreter.Options().apply {
-                    setNumThreads(4)
-                }
-                val modelFile = loadModelFile(context, modelFilename)
-                interpreter = Interpreter(modelFile, cpuOptions)
-                android.util.Log.d("PerceptionLayer", "Model loaded with CPU (4 threads)")
+                val nnapiOpts = Interpreter.Options().apply { setUseNNAPI(true) }
+                interpreter = Interpreter(loadModelFile(context, modelFilename), nnapiOpts)
+                currentDelegate = "NNAPI (FP16)"
+                Log.i(TAG, "FP16 model loaded with NNAPI")
+                DebugLogger.success(context, LogCategory.SCREEN_CONTEXT_AI, "ML model loaded",
+                    "FP16 with NNAPI (${inputSize}x${inputSize})", "PerceptionLayer")
             } catch (e2: Exception) {
-                android.util.Log.e("PerceptionLayer", "Error loading model", e2)
+                Log.w(TAG, "NNAPI failed for FP16, CPU fallback", e2)
+                try {
+                    val cpuOpts = Interpreter.Options().apply { setNumThreads(4) }
+                    interpreter = Interpreter(loadModelFile(context, modelFilename), cpuOpts)
+                    currentDelegate = "CPU (FP16, 4t)"
+                    DebugLogger.success(context, LogCategory.SCREEN_CONTEXT_AI, "ML model loaded",
+                        "FP16 with CPU 4 threads (${inputSize}x${inputSize})", "PerceptionLayer")
+                } catch (e3: Exception) {
+                    Log.e(TAG, "Failed to load FP16 model", e3)
+                    DebugLogger.error(context, LogCategory.SCREEN_CONTEXT_AI, "ML load failed", "${e3.message}", "PerceptionLayer")
+                }
+            }
+        }
+    }
+
+    private fun setupQuantizedInterpreter() {
+        try {
+            val nnapiOptions = Interpreter.Options().apply { setUseNNAPI(true) }
+            interpreter = Interpreter(loadModelFile(context, modelFilename), nnapiOptions)
+            currentDelegate = "NNAPI"
+            Log.i(TAG, "INT8 model loaded with NNAPI (input: ${inputSize})")
+            DebugLogger.success(context, LogCategory.SCREEN_CONTEXT_AI, "ML model loaded",
+                "INT8 with NNAPI (${inputSize}x${inputSize})", "PerceptionLayer")
+        } catch (e: Exception) {
+            Log.w(TAG, "NNAPI failed, falling back to CPU", e)
+            try {
+                val cpuOptions = Interpreter.Options().apply { setNumThreads(4) }
+                interpreter = Interpreter(loadModelFile(context, modelFilename), cpuOptions)
+                currentDelegate = "CPU (4 threads)"
+                DebugLogger.success(context, LogCategory.SCREEN_CONTEXT_AI, "ML model loaded",
+                    "INT8 with CPU 4 threads (${inputSize}x${inputSize})", "PerceptionLayer")
+            } catch (e2: Exception) {
+                Log.e(TAG, "Failed to load model on CPU", e2)
+                DebugLogger.error(context, LogCategory.SCREEN_CONTEXT_AI, "ML load failed", "${e2.message}", "PerceptionLayer")
             }
         }
     }
@@ -88,12 +123,36 @@ class PerceptionLayer(private val context: Context) {
 
     private val lock = Any()
     private var isClosed = false
+    private var currentDelegate = "Unknown"
+
+    fun getDelegate(): String = currentDelegate
+
+    // Inference timing stats
+    private var inferenceCount = 0L
+    private var totalInferenceTimeNs = 0L
+    private var lastInferenceTimeMs = 0f
+
+    /** Average inference time in milliseconds across all calls */
+    fun getAverageInferenceTimeMs(): Float {
+        return if (inferenceCount > 0) (totalInferenceTimeNs / 1_000_000f) / inferenceCount else 0f
+    }
+
+    /** Last single inference time in milliseconds */
+    fun getLastInferenceTimeMs(): Float = lastInferenceTimeMs
+
+    /** Total number of inference calls */
+    fun getInferenceCount(): Long = inferenceCount
+
+    /** Which delegate is being used */
+    fun getModelName(): String = modelFilename
 
     fun detect(bitmap: Bitmap): List<UIElement> {
         synchronized(lock) {
             if (isClosed || interpreter == null) return emptyList()
+
+            val frameStartNs = android.os.SystemClock.elapsedRealtimeNanos()
             
-            // 1. Preprocess
+            // 1. Preprocess — always use FLOAT32 input; TFLite handles quantization
             val imageProcessor = ImageProcessor.Builder()
                 .add(ResizeOp(inputSize, inputSize, ResizeOp.ResizeMethod.BILINEAR))
                 .add(NormalizeOp(0f, 255f))
@@ -102,28 +161,72 @@ class PerceptionLayer(private val context: Context) {
             var tensorImage = TensorImage(org.tensorflow.lite.DataType.FLOAT32)
             tensorImage.load(bitmap)
             tensorImage = imageProcessor.process(tensorImage)
+
+            val preprocessNs = android.os.SystemClock.elapsedRealtimeNanos() - frameStartNs
     
-            // 2. Inference
+            // 2. Inference — support both float and quantized output
+            val inferenceStartNs = android.os.SystemClock.elapsedRealtimeNanos()
             val outputTensor = interpreter!!.getOutputTensor(0)
             val outputShape = outputTensor.shape() 
+            val outputType = outputTensor.dataType()
             
-            // Create output array — handle different output ranks safely
-            val outputArray = if (outputShape.size == 3) {
-                 Array(outputShape[0]) { Array(outputShape[1]) { FloatArray(outputShape[2]) } }
-            } else {
-                 android.util.Log.e("PerceptionLayer", "Unexpected output rank: ${outputShape.size}")
-                 return emptyList()
-            }
-    
-            try {
-                interpreter!!.run(tensorImage.buffer, outputArray)
-            } catch (e: Exception) {
-                android.util.Log.e("PerceptionLayer", "Error running inference", e)
+            if (outputShape.size != 3) {
+                android.util.Log.e(TAG, "Unexpected output rank: ${outputShape.size}")
                 return emptyList()
             }
+
+            // Allocate output buffer matching the tensor's data type
+            val outputData: Array<Array<FloatArray>>
+            
+            try {
+                if (outputType == org.tensorflow.lite.DataType.FLOAT32) {
+                    // Float model — direct read
+                    val floatOutput = Array(outputShape[0]) { Array(outputShape[1]) { FloatArray(outputShape[2]) } }
+                    interpreter!!.run(tensorImage.buffer, floatOutput)
+                    outputData = floatOutput
+                } else {
+                    // Quantized model (INT8/UINT8) — read bytes, then dequantize
+                    val quantParams = outputTensor.quantizationParams()
+                    val scale = quantParams.scale
+                    val zeroPoint = quantParams.zeroPoint
+                    
+                    val byteOutput = Array(outputShape[0]) { Array(outputShape[1]) { ByteArray(outputShape[2]) } }
+                    interpreter!!.run(tensorImage.buffer, byteOutput)
+                    
+                    // Dequantize: float = (byte_val - zeroPoint) * scale
+                    outputData = Array(outputShape[0]) { b ->
+                        Array(outputShape[1]) { c ->
+                            FloatArray(outputShape[2]) { a ->
+                                ((byteOutput[b][c][a].toInt() and 0xFF) - zeroPoint) * scale
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                android.util.Log.e(TAG, "Error running inference", e)
+                return emptyList()
+            }
+
+            val inferenceNs = android.os.SystemClock.elapsedRealtimeNanos() - inferenceStartNs
     
             // 3. Postprocess
-            return processOutput(outputArray, bitmap.width, bitmap.height)
+            val postStartNs = android.os.SystemClock.elapsedRealtimeNanos()
+            val results = processOutput(outputData, bitmap.width, bitmap.height)
+            val postprocessNs = android.os.SystemClock.elapsedRealtimeNanos() - postStartNs
+
+            // Track timing
+            val totalNs = android.os.SystemClock.elapsedRealtimeNanos() - frameStartNs
+            inferenceCount++
+            totalInferenceTimeNs += totalNs
+            lastInferenceTimeMs = totalNs / 1_000_000f
+            Log.d(TAG, "Inference #$inferenceCount: " +
+                "preprocess=${"%.0f".format(preprocessNs / 1_000_000f)}ms, " +
+                "inference=${"%.0f".format(inferenceNs / 1_000_000f)}ms, " +
+                "postprocess=${"%.0f".format(postprocessNs / 1_000_000f)}ms, " +
+                "TOTAL=${"%.0f".format(totalNs / 1_000_000f)}ms (avg: ${"%.1f".format(getAverageInferenceTimeMs())}ms), " +
+                "${results.size} elements")
+
+            return results
         }
     }
 
@@ -134,7 +237,13 @@ class PerceptionLayer(private val context: Context) {
         val numChannels = outputData.size
         val numAnchors = outputData[0].size
 
-        android.util.Log.d("PerceptionLayer", "Output: Channels=$numChannels, Anchors=$numAnchors, Image=${imgWidth}x${imgHeight}")
+        // Landscape detection warning
+        val isLandscape = imgWidth > imgHeight
+        if (isLandscape) {
+            Log.w(TAG, "⚠️ LANDSCAPE detected (${imgWidth}x${imgHeight}). Model trained on portrait — detection will be degraded.")
+        }
+
+        android.util.Log.d("PerceptionLayer", "Output: Channels=$numChannels, Anchors=$numAnchors, Image=${imgWidth}x${imgHeight}${if (isLandscape) " [LANDSCAPE]" else ""}")
 
         // Auto-detect coordinate format by sampling high-confidence detections
         // Normalized: all values typically < 2.0;  Pixel-space (640): values > 10
@@ -324,8 +433,6 @@ class PerceptionLayer(private val context: Context) {
             isClosed = true
             interpreter?.close()
             interpreter = null
-            gpuDelegate?.close()
-            gpuDelegate = null
         }
     }
 }
