@@ -149,6 +149,18 @@ fun HomeScreen(onOpen: (String) -> Unit) {
             item {
                 StaggeredEntry(index = 6) {
                     ListCard(
+                        title = "Semantic AI Agent",
+                        description = "Natural language automation — describe a task and let the AI agent execute it.",
+                        icon = Icons.Default.AutoAwesome,
+                        iconColor = Color.White,
+                        iconContainerColor = AccentOrange,
+                        onClick = { onOpen(AutomationRoutes.SEMANTIC_AUTOMATION) }
+                    )
+                }
+            }
+            item {
+                StaggeredEntry(index = 6) {
+                    ListCard(
                         title = "System Context",
                         description = "Triggers based on location, time, battery level.",
                         icon = Icons.Default.SettingsSystemDaydream,

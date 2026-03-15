@@ -47,6 +47,7 @@ object AutomationRoutes {
     const val CROSS_DEVICE = "feature/cross_device_automation"
     const val PROFILE_LEARNING = "feature/automation_profile_learning"
     const val FLOW_BUILDER = "feature/flow_builder"
+    const val SEMANTIC_AUTOMATION = "feature/semantic_automation"
 }
 
 @Composable
@@ -217,6 +218,32 @@ fun AppNavHost() {
                     "Suggest automations based on history"
                 ),
                 onBack = {navController.popBackStack()}
+            )
+        }
+
+        composable(AutomationRoutes.SEMANTIC_AUTOMATION) {
+            val context = androidx.compose.ui.platform.LocalContext.current
+            com.autonion.automationcompanion.features.semantic_automation.ui.SemanticAutomationScreen(
+                onBack = { navController.popBackStack() },
+                onStart = { command ->
+                    // Launch the permission-handling Activity with the command
+                    val intent = android.content.Intent(
+                        context,
+                        com.autonion.automationcompanion.features.semantic_automation.ui.SemanticAutomationActivity::class.java
+                    ).apply {
+                        putExtra("command", command)
+                    }
+                    context.startActivity(intent)
+                },
+                onStop = {
+                    val stopIntent = android.content.Intent(
+                        context,
+                        com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationService::class.java
+                    ).apply {
+                        action = com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationService.ACTION_STOP
+                    }
+                    context.startService(stopIntent)
+                }
             )
         }
 
