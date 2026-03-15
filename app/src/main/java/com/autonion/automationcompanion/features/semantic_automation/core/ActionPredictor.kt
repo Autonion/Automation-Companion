@@ -27,11 +27,19 @@ class ActionPredictor {
     fun predict(goal: SemanticGoal, uiState: ScreenUIState): ActionIntent? {
         Log.d(TAG, "Predicting action for task='${goal.task}' with ${uiState.elements.size} elements")
 
+        // Debug: log all visible elements so we can troubleshoot
+        uiState.elements.forEachIndexed { i, el ->
+            Log.d(TAG, "  [$i] type=${el.type} text='${el.text}' " +
+                "clickable=${el.isClickable} checkable=${el.isChecked != null} " +
+                "checked=${el.isChecked} editable=${el.isEditable} " +
+                "class=${el.className} bounds=${el.bounds}")
+        }
+
         if (uiState.elements.isEmpty()) {
             Log.w(TAG, "No UI elements visible — suggesting scroll")
             return ActionIntent(
                 type = ActionType.SCROLL_DOWN,
-                targetPoint = PointF(540f, 1200f), // Default centre-ish
+                targetPoint = PointF(540f, 1200f),
                 description = "Scroll to reveal elements"
             )
         }
@@ -42,23 +50,121 @@ class ActionPredictor {
             "open" -> predictOpenAction(goal, uiState)
             "tap" -> predictTapAction(goal, uiState)
             "type" -> predictTypeAction(goal, uiState)
+            "enable" -> predictEnableAction(goal, uiState, targetState = true)
+            "disable" -> predictEnableAction(goal, uiState, targetState = false)
             "scroll" -> ActionIntent(
                 type = ActionType.SCROLL_DOWN,
                 targetPoint = centerOf(uiState.elements.first()),
                 description = "Scroll as requested"
             )
             "back" -> ActionIntent(
-                type = ActionType.FINISH, // Will be handled by engine via performGlobalAction(BACK)
+                type = ActionType.FINISH,
                 description = "Go back"
             )
             else -> predictGenericAction(goal, uiState)
         }
     }
 
+    // ── Enable / Disable ────────────────────────────────────
+
+    private fun predictEnableAction(goal: SemanticGoal, uiState: ScreenUIState, targetState: Boolean): ActionIntent? {
+        val queryWord = goal.query?.lowercase() ?: ""
+        val targetLabel = if (targetState) "enable" else "disable"
+
+        // Strategy 1: Find a toggle/switch/checkbox that matches the query keyword
+        //             and is not yet in the desired state.
+        val matchToggle = uiState.elements.firstOrNull { el ->
+            isToggleLike(el) && matchesQuery(el, queryWord)
+        }
+        if (matchToggle != null) {
+            if (matchToggle.isChecked == targetState) {
+                Log.d(TAG, "Toggle already ${if (targetState) "ON" else "OFF"}")
+                return ActionIntent(
+                    type = ActionType.FINISH,
+                    description = "${goal.query} is already ${if (targetState) "on" else "off"}"
+                )
+            }
+            return ActionIntent(
+                type = ActionType.CLICK,
+                targetPoint = centerOf(matchToggle),
+                description = "$targetLabel toggle '${matchToggle.text ?: matchToggle.type}'"
+            )
+        }
+
+        // Strategy 2: Find ANY toggle/switch on the page (settings pages often
+        //             have just one primary toggle at the top).
+        val anyToggle = uiState.elements.firstOrNull { el -> isToggleLike(el) }
+        if (anyToggle != null) {
+            if (anyToggle.isChecked == targetState) {
+                Log.d(TAG, "The toggle on screen is already ${if (targetState) "ON" else "OFF"}")
+                return ActionIntent(
+                    type = ActionType.FINISH,
+                    description = "${goal.query} is already ${if (targetState) "on" else "off"}"
+                )
+            }
+            return ActionIntent(
+                type = ActionType.CLICK,
+                targetPoint = centerOf(anyToggle),
+                description = "$targetLabel toggle '${anyToggle.text ?: anyToggle.type}'"
+            )
+        }
+
+        // Strategy 3: Find a clickable element whose text contains the query
+        //             (maybe the toggle text itself says "Bluetooth" or "Wi-Fi").
+        val textMatch = uiState.elements.firstOrNull { el ->
+            el.isClickable && matchesQuery(el, queryWord)
+        }
+        if (textMatch != null) {
+            return ActionIntent(
+                type = ActionType.CLICK,
+                targetPoint = centerOf(textMatch),
+                description = "Tap '${textMatch.text}' to $targetLabel"
+            )
+        }
+
+        // Strategy 4: On some phones the toggle itself is not directly accessible
+        //             but there's a clickable row/container; tap the first clickable element.
+        val firstClickable = uiState.elements.firstOrNull { el -> el.isClickable }
+        if (firstClickable != null) {
+            return ActionIntent(
+                type = ActionType.CLICK,
+                targetPoint = centerOf(firstClickable),
+                description = "Tap first interactive element to $targetLabel"
+            )
+        }
+
+        return scrollFallback(uiState)
+    }
+
+    /**
+     * Check if an element looks like a toggle/switch/checkbox.
+     */
+    private fun isToggleLike(el: UIStateElement): Boolean {
+        // Check type assigned by our mapper
+        if (el.type in listOf("toggle", "checkbox", "radio")) return true
+
+        // Check Android class name
+        val cn = el.className?.lowercase() ?: ""
+        if ("switch" in cn || "toggle" in cn || "checkbox" in cn) return true
+
+        // Check if node is checkable (isChecked != null means isCheckable was true)
+        if (el.isChecked != null) return true
+
+        return false
+    }
+
+    /**
+     * Check if an element's text matches the query keyword.
+     */
+    private fun matchesQuery(el: UIStateElement, query: String): Boolean {
+        if (query.isBlank()) return false
+        val text = el.text?.lowercase() ?: ""
+        return text.contains(query)
+    }
+
     // ── Search ──────────────────────────────────────────────
 
     private fun predictSearchAction(goal: SemanticGoal, uiState: ScreenUIState): ActionIntent? {
-        // Priority 1: Find a search input field
         val searchInput = uiState.elements.firstOrNull { el ->
             el.isEditable && (
                 el.text?.contains("search", ignoreCase = true) == true ||
@@ -75,7 +181,6 @@ class ActionPredictor {
             )
         }
 
-        // Priority 2: Find a search icon / button
         val searchButton = uiState.elements.firstOrNull { el ->
             (el.type == "button" || el.type == "icon") &&
             el.text?.contains("search", ignoreCase = true) == true
@@ -88,7 +193,6 @@ class ActionPredictor {
             )
         }
 
-        // Priority 3: Any clickable icon that might be a search magnifier
         val iconElement = uiState.elements.firstOrNull { el ->
             el.type == "icon" && el.isClickable
         }
@@ -106,7 +210,6 @@ class ActionPredictor {
     // ── Login ───────────────────────────────────────────────
 
     private fun predictLoginAction(goal: SemanticGoal, uiState: ScreenUIState): ActionIntent? {
-        // Priority 1: Find username / email input
         val usernameInput = uiState.elements.firstOrNull { el ->
             el.isEditable && (
                 el.text?.contains("username", ignoreCase = true) == true ||
@@ -123,7 +226,6 @@ class ActionPredictor {
             )
         }
 
-        // Priority 2: Find password input
         val passwordInput = uiState.elements.firstOrNull { el ->
             el.isEditable && el.text?.contains("password", ignoreCase = true) == true
         }
@@ -135,7 +237,6 @@ class ActionPredictor {
             )
         }
 
-        // Priority 3: Find login / sign in button
         val loginButton = findButtonByText(uiState, "login", "log in", "sign in", "signin", "continue", "next")
         if (loginButton != null) {
             return ActionIntent(
@@ -153,7 +254,6 @@ class ActionPredictor {
     private fun predictOpenAction(goal: SemanticGoal, uiState: ScreenUIState): ActionIntent? {
         val target = goal.targetApp ?: goal.query ?: return null
 
-        // Find any element whose text matches the target
         val matchEl = uiState.elements.firstOrNull { el ->
             el.isClickable && el.text?.contains(target, ignoreCase = true) == true
         }
@@ -203,7 +303,6 @@ class ActionPredictor {
     private fun predictGenericAction(goal: SemanticGoal, uiState: ScreenUIState): ActionIntent? {
         val query = goal.query ?: goal.rawCommand
 
-        // Try to find any element whose text matches our query
         val matchEl = uiState.elements.firstOrNull { el ->
             el.isClickable && el.text?.contains(query, ignoreCase = true) == true
         }
