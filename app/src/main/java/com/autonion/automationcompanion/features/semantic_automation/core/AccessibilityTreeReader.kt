@@ -3,6 +3,7 @@ package com.autonion.automationcompanion.features.semantic_automation.core
 import android.accessibilityservice.AccessibilityService
 import android.graphics.Rect
 import android.graphics.RectF
+import android.os.Bundle
 import android.util.Log
 import android.view.accessibility.AccessibilityNodeInfo
 import com.autonion.automationcompanion.AccessibilityFeature
@@ -14,8 +15,8 @@ import java.util.UUID
 
 /**
  * Reads the Android Accessibility tree and converts it into a [ScreenUIState].
- * Registers itself with the [AccessibilityRouter] so it always holds a ref
- * to the active AccessibilityService.
+ * Also supports performing actions directly on nodes (click, setText),
+ * bypassing coordinate-based gesture dispatch which can be blocked by overlays.
  */
 object AccessibilityTreeReader : AccessibilityFeature {
 
@@ -42,7 +43,6 @@ object AccessibilityTreeReader : AccessibilityFeature {
 
     /**
      * Capture the current accessibility tree and build a [ScreenUIState].
-     * Returns null if the service is not connected or the root window is unavailable.
      */
     fun capture(): ScreenUIState? {
         val service = serviceRef?.get() ?: run {
@@ -68,21 +68,167 @@ object AccessibilityTreeReader : AccessibilityFeature {
         )
     }
 
+    // ──────────────────────────────────────────────────────────
+    // Direct node actions — bypass coordinate taps / overlays
+    // ──────────────────────────────────────────────────────────
+
     /**
-     * Recursively traverse the accessibility node tree and collect
-     * interactive or text-bearing nodes.
+     * Find a node on screen matching the given [UIStateElement] and perform ACTION_CLICK.
+     * This uses the semantic accessibility action, NOT a coordinate-based gesture,
+     * so it works even when a notification/overlay covers the element.
+     *
+     * @return true if the click was performed successfully.
      */
+    fun performClickOnElement(element: UIStateElement): Boolean {
+        val service = serviceRef?.get() ?: return false
+        val root = service.rootInActiveWindow ?: return false
+
+        val targetNode = findMatchingNode(root, element)
+        val result = if (targetNode != null) {
+            val clicked = performClickWithFallback(targetNode)
+            Log.d(TAG, "Direct click on '${element.text}' (${element.type}): $clicked")
+            targetNode.recycle()
+            clicked
+        } else {
+            Log.w(TAG, "Could not find matching node for '${element.text}'")
+            false
+        }
+
+        root.recycle()
+        return result
+    }
+
+    /**
+     * Find a node and set text on it using ACTION_SET_TEXT.
+     * This is more reliable than focusing + typing via InputConnection.
+     */
+    fun performSetText(element: UIStateElement, text: String): Boolean {
+        val service = serviceRef?.get() ?: return false
+        val root = service.rootInActiveWindow ?: return false
+
+        val targetNode = findMatchingNode(root, element)
+        val result = if (targetNode != null) {
+            val args = Bundle().apply {
+                putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+            }
+            val success = targetNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+            Log.d(TAG, "Set text '$text' on '${element.text}': $success")
+            targetNode.recycle()
+            success
+        } else {
+            Log.w(TAG, "Could not find matching node for setText")
+            false
+        }
+
+        root.recycle()
+        return result
+    }
+
+    /**
+     * Perform a click, trying the node itself first, then walking up to find a
+     * clickable parent (Android often has clickable containers wrapping the actual widget).
+     */
+    private fun performClickWithFallback(node: AccessibilityNodeInfo): Boolean {
+        // Try clicking the node itself
+        if (node.isClickable) {
+            return node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        }
+
+        // If it's checkable but not clickable, try ACTION_CLICK anyway (toggles)
+        if (node.isCheckable) {
+            val success = node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            if (success) return true
+        }
+
+        // Walk up to find a clickable parent
+        var current = node.parent
+        var depth = 0
+        while (current != null && depth < 5) {
+            if (current.isClickable) {
+                val success = current.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                Log.d(TAG, "Clicked parent at depth $depth: $success")
+                current.recycle()
+                return success
+            }
+            val next = current.parent
+            current.recycle()
+            current = next
+            depth++
+        }
+        current?.recycle()
+
+        // Last resort: try clicking anyway even if not marked clickable
+        return node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+    }
+
+    /**
+     * Find a node in the tree that matches the given UIStateElement
+     * by bounds and text/type.
+     */
+    private fun findMatchingNode(root: AccessibilityNodeInfo, target: UIStateElement): AccessibilityNodeInfo? {
+        // Strategy 1: If we have text, find by text first (most reliable)
+        if (!target.text.isNullOrBlank()) {
+            val byText = root.findAccessibilityNodeInfosByText(target.text)
+            if (byText.isNotEmpty()) {
+                // Find the one closest to our expected bounds
+                val match = byText.minByOrNull { node ->
+                    val b = Rect()
+                    node.getBoundsInScreen(b)
+                    boundsDifference(b, target.bounds)
+                }
+                // Recycle the ones we don't use
+                byText.filter { it != match }.forEach { it.recycle() }
+                if (match != null) return match
+            }
+        }
+
+        // Strategy 2: Traverse and match by bounds
+        return findByBounds(root, target.bounds)
+    }
+
+    /**
+     * Find a node whose screen bounds closely match the target bounds.
+     */
+    private fun findByBounds(node: AccessibilityNodeInfo, targetBounds: RectF, threshold: Float = 30f): AccessibilityNodeInfo? {
+        if (!node.isVisibleToUser) return null
+
+        val bounds = Rect()
+        node.getBoundsInScreen(bounds)
+
+        val diff = boundsDifference(bounds, targetBounds)
+        if (diff < threshold && (node.isClickable || node.isCheckable || node.isEditable)) {
+            return AccessibilityNodeInfo.obtain(node)
+        }
+
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val found = findByBounds(child, targetBounds, threshold)
+            child.recycle()
+            if (found != null) return found
+        }
+
+        return null
+    }
+
+    private fun boundsDifference(actual: Rect, target: RectF): Float {
+        return Math.abs(actual.left - target.left) +
+               Math.abs(actual.top - target.top) +
+               Math.abs(actual.right - target.right) +
+               Math.abs(actual.bottom - target.bottom)
+    }
+
+    // ──────────────────────────────────────────────────────────
+    // Tree traversal for capture
+    // ──────────────────────────────────────────────────────────
+
     private fun traverseNode(node: AccessibilityNodeInfo, out: MutableList<UIStateElement>) {
-        // Skip invisible nodes
         if (!node.isVisibleToUser) return
 
         val bounds = Rect()
         node.getBoundsInScreen(bounds)
 
-        // Skip zero-area nodes
         if (bounds.width() <= 0 || bounds.height() <= 0) return
 
-        // Collect nodes that are interactive or carry text
         val text = node.text?.toString() ?: node.contentDescription?.toString()
         val isInteractive = node.isClickable || node.isEditable || node.isCheckable || node.isScrollable
 
@@ -110,7 +256,6 @@ object AccessibilityTreeReader : AccessibilityFeature {
             )
         }
 
-        // Recurse children
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
             traverseNode(child, out)
@@ -118,9 +263,6 @@ object AccessibilityTreeReader : AccessibilityFeature {
         }
     }
 
-    /**
-     * Maps Android view class names to our unified type labels.
-     */
     private fun mapClassName(className: String?, node: AccessibilityNodeInfo): String {
         if (className == null) return "unknown"
         return when {
@@ -133,7 +275,7 @@ object AccessibilityTreeReader : AccessibilityFeature {
             className.contains("ImageView", ignoreCase = true) || className.contains("ImageButton", ignoreCase = true) -> "icon"
             className.contains("TextView", ignoreCase = true) -> "text"
             className.contains("ScrollView", ignoreCase = true) || className.contains("RecyclerView", ignoreCase = true) -> "scrollable"
-            node.isClickable -> "button" // Clickable but unknown class → treat as button
+            node.isClickable -> "button"
             else -> "view"
         }
     }

@@ -158,7 +158,7 @@ class SemanticAutomationEngine(private val context: Context) {
             Log.d(TAG, "Executing: ${action.type} – ${action.description}")
 
             val success = try {
-                ActionExecutor.execute(context, action)
+                executeAction(action, uiState)
             } catch (e: Exception) {
                 Log.e(TAG, "Action execution crashed: ${e.message}", e)
                 DebugLogger.error(
@@ -250,6 +250,46 @@ class SemanticAutomationEngine(private val context: Context) {
         }
 
         return false
+    }
+
+    /**
+     * Attempts to execute the action using the most reliable method available.
+     * If the UI state came from accessibility, we try to use direct node actions
+     * (performAction CLICK / SET_TEXT) to bypass overlay/notification issues.
+     * If that fails, or if using YOLO, we fall back to coordinate-based gestures.
+     */
+    private suspend fun executeAction(action: com.autonion.automationcompanion.features.screen_understanding_ml.model.ActionIntent, uiState: com.autonion.automationcompanion.features.semantic_automation.model.ScreenUIState): Boolean {
+        // Only try direct accessibility actions if the UI state was built from it
+        if (uiState.source == com.autonion.automationcompanion.features.semantic_automation.model.ElementSource.ACCESSIBILITY && action.targetPoint != null) {
+            
+            // Find the UIStateElement that matches the exact center point
+            val targetElement = uiState.elements.firstOrNull { el -> 
+                val center = android.graphics.PointF(
+                    (el.bounds.left + el.bounds.right) / 2f,
+                    (el.bounds.top + el.bounds.bottom) / 2f
+                )
+                Math.abs(center.x - action.targetPoint.x) < 5f && Math.abs(center.y - action.targetPoint.y) < 5f
+            }
+
+            if (targetElement != null) {
+                if (action.type == ActionType.CLICK) {
+                    Log.d(TAG, "Trying direct accessibility CLICK on '${targetElement.text}'")
+                    val success = AccessibilityTreeReader.performClickOnElement(targetElement)
+                    if (success) return true
+                    Log.d(TAG, "Direct CLICK failed, falling back to gesture sweep")
+                } 
+                else if (action.type == ActionType.INPUT_TEXT && action.inputText != null) {
+                    Log.d(TAG, "Trying direct accessibility SET_TEXT on '${targetElement.text}'")
+                    val success = AccessibilityTreeReader.performSetText(targetElement, action.inputText)
+                    if (success) return true
+                    Log.d(TAG, "Direct SET_TEXT failed, falling back to gesture sweep")
+                }
+            }
+        }
+
+        // Fallback: coordinate-based gesture dispatch
+        Log.d(TAG, "Using gesture-based ActionExecutor for ${action.type}")
+        return ActionExecutor.execute(context, action)
     }
 
     fun stop() {
