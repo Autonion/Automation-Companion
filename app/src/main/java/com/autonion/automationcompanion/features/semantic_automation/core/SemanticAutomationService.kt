@@ -23,6 +23,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 /**
@@ -45,9 +46,8 @@ class SemanticAutomationService : Service() {
         const val EXTRA_DATA = "data"
         const val EXTRA_COMMAND = "command"
 
-        @Volatile
-        var instance: SemanticAutomationService? = null
-            private set
+        private val _activeEngine = kotlinx.coroutines.flow.MutableStateFlow<SemanticAutomationEngine?>(null)
+        val activeEngine: kotlinx.coroutines.flow.StateFlow<SemanticAutomationEngine?> = _activeEngine.asStateFlow()
     }
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -63,14 +63,14 @@ class SemanticAutomationService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        instance = this
         engine = SemanticAutomationEngine(this)
+        _activeEngine.value = engine
         Log.d(TAG, "Service created")
     }
 
     override fun onDestroy() {
         Log.d(TAG, "Service destroyed")
-        instance = null
+        _activeEngine.value = null
         engine?.cleanup()
         mediaProjectionCore?.stopProjection()
         scope.cancel()

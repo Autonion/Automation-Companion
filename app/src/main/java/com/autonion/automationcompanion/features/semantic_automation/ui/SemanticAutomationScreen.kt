@@ -40,8 +40,7 @@ fun SemanticAutomationScreen(
     val focusManager = LocalFocusManager.current
 
     // Observe service state
-    val serviceInstance = SemanticAutomationService.instance
-    val engine = serviceInstance?.getEngine()
+    val engine by SemanticAutomationService.activeEngine.collectAsState()
 
     val status by engine?.status?.collectAsState() ?: remember { mutableStateOf(AutomationStatus.IDLE) }
     val goal by engine?.currentGoal?.collectAsState() ?: remember { mutableStateOf(null) }

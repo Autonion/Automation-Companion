@@ -106,16 +106,27 @@ object AppLauncher {
         val packageName = PACKAGE_MAP[appAlias.lowercase()]
 
         if (packageName != null) {
-            return launchByPackage(context, packageName)
+            val success = launchByPackage(context, packageName)
+            if (success) return true
         }
 
         // Fallback: try the alias as a raw package name
         if (appAlias.contains(".")) {
-            return launchByPackage(context, appAlias)
+            val success = launchByPackage(context, appAlias)
+            if (success) return true
         }
 
-        // Last resort: search for the app name in installed apps
-        return searchAndLaunch(context, appAlias)
+        // Last resort: search for the app name in installed apps (e.g., regional package names)
+        val searchSuccess = searchAndLaunch(context, appAlias)
+        if (searchSuccess) return true
+
+        // If all local launches failed and we had a known hardcoded package, send to play store
+        if (packageName != null) {
+            Log.w(TAG, "App not found locally, opening Play Store for: $packageName")
+            launchPlayStore(context, packageName)
+        }
+
+        return false
     }
 
     private fun launchByPackage(context: Context, packageName: String): Boolean {
@@ -128,8 +139,6 @@ object AppLauncher {
                 true
             } else {
                 Log.w(TAG, "No launch intent for: $packageName")
-                // Try Play Store
-                launchPlayStore(context, packageName)
                 false
             }
         } catch (e: Exception) {
