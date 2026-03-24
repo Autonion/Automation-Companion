@@ -108,10 +108,36 @@ object AccessibilityTreeReader : AccessibilityFeature {
 
         val targetNode = findMatchingNode(root, element)
         val result = if (targetNode != null) {
-            val args = Bundle().apply {
-                putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+            // First focus the node. Many apps ignore SET_TEXT if the field isn't focused.
+            targetNode.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+            targetNode.performAction(AccessibilityNodeInfo.ACTION_CLICK) // Click to trigger IME/listeners
+
+            // 1. Clear the field (Crucial for PASTE fallback to not append text like "abc abc "!)
+            val clearArgs = Bundle().apply {
+                putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, "")
             }
-            val success = targetNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+            targetNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, clearArgs)
+            
+            // 2. Use PASTE as the primary reliable injection mechanism (Bypasses Compose/React state bugs)
+            var success = false
+            val clipboard = service.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+            if (clipboard != null) {
+                val clip = android.content.ClipData.newPlainText("automation", text)
+                clipboard.setPrimaryClip(clip)
+                success = targetNode.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+                if (success) {
+                    Log.d(TAG, "Used ACTION_PASTE to set text")
+                }
+            }
+            
+            // 3. Fallback to basic SET_TEXT if PASTE failed
+            if (!success) {
+                val args = Bundle().apply {
+                    putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+                }
+                success = targetNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+            }
+
             Log.d(TAG, "Set text '$text' on '${element.text}': $success")
             targetNode.recycle()
             success

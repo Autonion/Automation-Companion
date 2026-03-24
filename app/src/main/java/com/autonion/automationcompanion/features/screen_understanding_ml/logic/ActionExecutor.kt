@@ -98,9 +98,24 @@ object ActionExecutor : AccessibilityFeature {
         val focused = root?.findFocus(android.view.accessibility.AccessibilityNodeInfo.FOCUS_INPUT)
         
         if (focused != null) {
-             val args = android.os.Bundle()
-             args.putCharSequence(android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
-             val success = focused.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+             val clearArgs = android.os.Bundle()
+             clearArgs.putCharSequence(android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, "")
+             focused.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SET_TEXT, clearArgs)
+             
+             var success = false
+             val clipboard = s.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+             if (clipboard != null) {
+                 val clip = android.content.ClipData.newPlainText("automation", text)
+                 clipboard.setPrimaryClip(clip)
+                 success = focused.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_PASTE)
+             }
+             
+             if (!success) {
+                 val args = android.os.Bundle()
+                 args.putCharSequence(android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+                 success = focused.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+             }
+
              Log.d("ActionExecutor", "Set text on focused node: $success")
              if (success) {
                  DebugLogger.success(

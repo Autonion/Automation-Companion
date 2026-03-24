@@ -7,6 +7,7 @@ import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
 import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
 import com.autonion.automationcompanion.features.screen_understanding_ml.logic.ActionExecutor
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.ActionType
+import com.autonion.automationcompanion.features.semantic_automation.ml.MLActionPredictor
 import com.autonion.automationcompanion.features.semantic_automation.model.AutomationStatus
 import com.autonion.automationcompanion.features.semantic_automation.model.SemanticGoal
 import kotlinx.coroutines.delay
@@ -37,7 +38,17 @@ class SemanticAutomationEngine(private val context: Context) {
 
     private val goalParser = GoalParser()
     private val uiStateBuilder = UIStateBuilder(context)
-    private val actionPredictor = ActionPredictor()
+    private val fallbackPredictor = ActionPredictor()
+
+    // ML-based predictor (Phase 2) — loaded lazily, falls back to heuristics on failure
+    private var mlPredictor: MLActionPredictor? = try {
+        MLActionPredictor(context).also {
+            Log.d(TAG, "ML Action Predictor loaded successfully")
+        }
+    } catch (e: Exception) {
+        Log.e(TAG, "Failed to load ML predictor, using rule-based fallback", e)
+        null
+    }
 
     private val _status = MutableStateFlow(AutomationStatus.IDLE)
     val status: StateFlow<AutomationStatus> = _status.asStateFlow()
@@ -95,6 +106,8 @@ class SemanticAutomationEngine(private val context: Context) {
             _lastActionDescription.value = "Opened settings, looking for toggle…"
         }
 
+        var lastInputText: String? = null
+
         // ── Step 2: Screen loop ──
         var iteration = 0
         var consecutiveNoAction = 0
@@ -128,9 +141,14 @@ class SemanticAutomationEngine(private val context: Context) {
             }
             consecutiveNoAction = 0
 
-            // 2c. Predict action
+            // 2c. Predict action (ML model first, rule-based fallback)
             _status.value = AutomationStatus.PREDICTING_ACTION
-            val action = actionPredictor.predict(goal, uiState)
+            var action = try {
+                mlPredictor?.predict(goal, uiState) ?: fallbackPredictor.predict(goal, uiState)
+            } catch (e: Exception) {
+                Log.e(TAG, "ML prediction failed, using fallback", e)
+                fallbackPredictor.predict(goal, uiState)
+            }
 
             if (action == null) {
                 Log.w(TAG, "No action predicted, waiting…")
@@ -150,6 +168,22 @@ class SemanticAutomationEngine(private val context: Context) {
                     TAG
                 )
                 break
+            }
+
+            // Anti-loop safeguard for INPUT_TEXT
+            if (action.type == ActionType.INPUT_TEXT) {
+                if (action.inputText == lastInputText) {
+                    Log.d(TAG, "Anti-Loop: Downgrading INPUT_TEXT to CLICK (already typed)")
+                    // Downgrade the action to a simple CLICK. 
+                    // This forces a tap on the text field or keyboard 'Search' to submit.
+                    action = action.copy(
+                        type = ActionType.CLICK,
+                        inputText = null,
+                        description = "ML (Anti-Loop): Click to submit search"
+                    )
+                } else {
+                    lastInputText = action.inputText ?: ""
+                }
             }
 
             // 2e. Execute action
@@ -301,6 +335,7 @@ class SemanticAutomationEngine(private val context: Context) {
     fun cleanup() {
         stop()
         uiStateBuilder.close()
+        try { mlPredictor?.close() } catch (_: Exception) {}
         _status.value = AutomationStatus.IDLE
         _currentGoal.value = null
         _loopCount.value = 0

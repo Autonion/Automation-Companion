@@ -56,6 +56,10 @@ android {
         viewBinding = true
         compose = true
     }
+
+    androidResources {
+        noCompress += listOf("tflite", "onnx")
+    }
 }
 
 dependencies {
@@ -123,4 +127,7 @@ dependencies {
 
     // ML Kit Text Recognition (OCR)
     implementation(libs.mlkit.text.recognition)
+
+    // ONNX Runtime (for MiniLM sentence embedding)
+    implementation(libs.onnxruntime.android)
 }
