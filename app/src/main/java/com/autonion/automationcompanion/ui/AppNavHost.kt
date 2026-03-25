@@ -10,6 +10,10 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
@@ -26,6 +30,8 @@ import com.autonion.automationcompanion.features.automation_debugger.ui.Debugger
 import com.autonion.automationcompanion.features.automation_debugger.ui.LogDetailScreen
 import com.autonion.automationcompanion.features.flow_automation.ui.FlowBuilderMainScreen
 import com.autonion.automationcompanion.features.gesture_recording_playback.GestureRecordingScreen
+import com.autonion.automationcompanion.features.semantic_automation.ml.ModelStorageManager
+import com.autonion.automationcompanion.features.semantic_automation.ui.ModelManagerScreen
 import com.autonion.automationcompanion.features.system_context_automation.SystemContextMainScreen
 
 private const val ROUTE_HOME = "home"
@@ -48,6 +54,7 @@ object AutomationRoutes {
     const val PROFILE_LEARNING = "feature/automation_profile_learning"
     const val FLOW_BUILDER = "feature/flow_builder"
     const val SEMANTIC_AUTOMATION = "feature/semantic_automation"
+    const val MODEL_MANAGER = "feature/model_manager"
 }
 
 @Composable
@@ -225,6 +232,7 @@ fun AppNavHost() {
             val context = androidx.compose.ui.platform.LocalContext.current
             com.autonion.automationcompanion.features.semantic_automation.ui.SemanticAutomationScreen(
                 onBack = { navController.popBackStack() },
+                onOpenModelManager = { navController.navigate(AutomationRoutes.MODEL_MANAGER) },
                 onStart = { command ->
                     // Launch the permission-handling Activity with the command
                     val intent = android.content.Intent(
@@ -244,6 +252,34 @@ fun AppNavHost() {
                     }
                     context.startService(stopIntent)
                 }
+            )
+        }
+
+        composable(AutomationRoutes.MODEL_MANAGER) {
+            val context = androidx.compose.ui.platform.LocalContext.current
+            val localServerEngine = remember { com.autonion.automationcompanion.features.semantic_automation.ml.LocalServerLLMEngine.getInstance(context) }
+            val inferencePrefs = remember { context.getSharedPreferences("inference_prefs", android.content.Context.MODE_PRIVATE) }
+            var inferenceMode by remember {
+                mutableStateOf(
+                    try {
+                        com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.valueOf(
+                            inferencePrefs.getString("mode", com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.SERVER_LLM.name)!!
+                        )
+                    } catch (_: Exception) {
+                        com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.SERVER_LLM
+                    }
+                )
+            }
+
+            ModelManagerScreen(
+                storageManager = ModelStorageManager(context),
+                localServerEngine = localServerEngine,
+                inferenceMode = inferenceMode,
+                onInferenceModeChanged = { newMode ->
+                    inferenceMode = newMode
+                    inferencePrefs.edit().putString("mode", newMode.name).apply()
+                },
+                onNavigateBack = { navController.popBackStack() }
             )
         }
 

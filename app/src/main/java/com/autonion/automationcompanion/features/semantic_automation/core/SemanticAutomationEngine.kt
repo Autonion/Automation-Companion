@@ -2,14 +2,22 @@ package com.autonion.automationcompanion.features.semantic_automation.core
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.PointF
 import android.util.Log
 import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
 import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
 import com.autonion.automationcompanion.features.screen_understanding_ml.logic.ActionExecutor
+import com.autonion.automationcompanion.features.screen_understanding_ml.model.ActionIntent
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.ActionType
+import com.autonion.automationcompanion.features.semantic_automation.ml.LocalServerLLMEngine
 import com.autonion.automationcompanion.features.semantic_automation.ml.MLActionPredictor
+import com.autonion.automationcompanion.features.semantic_automation.ml.ModelStorageManager
+import com.autonion.automationcompanion.features.semantic_automation.ml.OnDeviceSLMEngine
+import com.autonion.automationcompanion.features.semantic_automation.ml.ServerConnectionStatus
+import com.autonion.automationcompanion.features.semantic_automation.ml.UIPromptFormatter
 import com.autonion.automationcompanion.features.semantic_automation.model.AutomationStatus
 import com.autonion.automationcompanion.features.semantic_automation.model.SemanticGoal
+import com.autonion.automationcompanion.features.semantic_automation.model.ScreenUIState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -49,6 +57,23 @@ class SemanticAutomationEngine(private val context: Context) {
         Log.e(TAG, "Failed to load ML predictor, using rule-based fallback", e)
         null
     }
+
+    // Phase 3: On-Device SLM (Gemma 2B) — loaded lazily if a model .bin is imported
+    private val modelStorageManager = ModelStorageManager(context)
+    private var slmEngine: OnDeviceSLMEngine? = null
+    private var slmInitialized = false
+
+    // Phase 4: Local Server LLM (Ollama via Retrofit)
+    val localServerEngine = LocalServerLLMEngine.getInstance(context)
+
+    // Inference Mode Preference: user chooses which engine to prioritize
+    enum class InferenceMode { LOCAL_SLM, SERVER_LLM }
+    private val inferencePrefs = context.getSharedPreferences("inference_prefs", Context.MODE_PRIVATE)
+    var inferenceMode: InferenceMode
+        get() = try {
+            InferenceMode.valueOf(inferencePrefs.getString("mode", InferenceMode.SERVER_LLM.name)!!)
+        } catch (_: Exception) { InferenceMode.SERVER_LLM }
+        set(value) { inferencePrefs.edit().putString("mode", value.name).apply() }
 
     private val _status = MutableStateFlow(AutomationStatus.IDLE)
     val status: StateFlow<AutomationStatus> = _status.asStateFlow()
@@ -141,14 +166,9 @@ class SemanticAutomationEngine(private val context: Context) {
             }
             consecutiveNoAction = 0
 
-            // 2c. Predict action (ML model first, rule-based fallback)
+            // 2c. Predict action (SLM first → ML model → rule-based fallback)
             _status.value = AutomationStatus.PREDICTING_ACTION
-            var action = try {
-                mlPredictor?.predict(goal, uiState) ?: fallbackPredictor.predict(goal, uiState)
-            } catch (e: Exception) {
-                Log.e(TAG, "ML prediction failed, using fallback", e)
-                fallbackPredictor.predict(goal, uiState)
-            }
+            var action = predictWithFallback(goal, uiState)
 
             if (action == null) {
                 Log.w(TAG, "No action predicted, waiting…")
@@ -336,9 +356,103 @@ class SemanticAutomationEngine(private val context: Context) {
         stop()
         uiStateBuilder.close()
         try { mlPredictor?.close() } catch (_: Exception) {}
+        try { slmEngine?.close() } catch (_: Exception) {}
+        try { localServerEngine.close() } catch (_: Exception) {}
+        slmEngine = null
+        slmInitialized = false
         _status.value = AutomationStatus.IDLE
         _currentGoal.value = null
         _loopCount.value = 0
         _lastActionDescription.value = null
+    }
+
+    /**
+     * Multi-tier prediction respecting the user's inference mode preference.
+     *
+     * SERVER_LLM mode: Server LLM → ML → Rules  (skips on-device SLM)
+     * LOCAL_SLM  mode: On-Device SLM → ML → Rules (skips server)
+     */
+    private suspend fun predictWithFallback(goal: SemanticGoal, uiState: ScreenUIState): ActionIntent? {
+        val prompt = UIPromptFormatter.buildPrompt(goal, uiState)
+
+        when (inferenceMode) {
+            InferenceMode.SERVER_LLM -> {
+                // Tier 1: Local Server LLM (Ollama via Retrofit)
+                if (localServerEngine.connectionStatus.value == ServerConnectionStatus.CONNECTED) {
+                    try {
+                        val serverAction = localServerEngine.predictNextAction(prompt)
+                        if (serverAction != null) {
+                            val resolved = resolveSlmAction(serverAction, uiState)
+                            if (resolved != null) return resolved
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Server LLM prediction failed, falling through to ML", e)
+                    }
+                } else {
+                    Log.w(TAG, "Server LLM not connected, falling through to ML")
+                }
+            }
+            InferenceMode.LOCAL_SLM -> {
+                // Tier 1: On-Device SLM (Gemma 2B)
+                if (!slmInitialized && modelStorageManager.getActiveModelPath() != null) {
+                    try {
+                        slmEngine = OnDeviceSLMEngine(context, modelStorageManager)
+                        slmEngine!!.initialize()
+                        slmInitialized = true
+                        Log.d(TAG, "On-Device SLM initialized successfully")
+                    } catch (e: Exception) {
+                        Log.e(TAG, "SLM initialization failed, falling through to ML", e)
+                        slmEngine = null
+                        slmInitialized = true
+                    }
+                }
+
+                if (slmEngine != null) {
+                    try {
+                        val slmAction = slmEngine!!.predictNextAction(prompt)
+                        if (slmAction != null) {
+                            val resolved = resolveSlmAction(slmAction, uiState)
+                            if (resolved != null) return resolved
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "SLM prediction failed, falling through to ML", e)
+                    }
+                }
+            }
+        }
+
+        // Tier 2: TFLite ML Model (fast but biased)
+        try {
+            val mlAction = mlPredictor?.predict(goal, uiState)
+            if (mlAction != null) return mlAction
+        } catch (e: Exception) {
+            Log.e(TAG, "ML prediction failed, falling through to rules", e)
+        }
+
+        // Tier 3: Rule-based fallback
+        return fallbackPredictor.predict(goal, uiState)
+    }
+
+    /**
+     * Resolves an SLM action (which has an element_index) into concrete screen coordinates.
+     */
+    private fun resolveSlmAction(action: ActionIntent, uiState: ScreenUIState): ActionIntent? {
+        // Extract element index from targetId like "slm_element_3"
+        val indexStr = action.targetId?.removePrefix("slm_element_")?.toIntOrNull()
+
+        if (indexStr != null && indexStr >= 0 && indexStr < uiState.elements.size) {
+            val el = uiState.elements[indexStr]
+            val cx = (el.bounds.left + el.bounds.right) / 2f
+            val cy = (el.bounds.top + el.bounds.bottom) / 2f
+            return action.copy(
+                targetPoint = PointF(cx, cy),
+                description = "SLM: ${action.type} on '${el.text?.take(30) ?: "element[$indexStr]"}'"
+            )
+        } else if (action.type == ActionType.FINISH) {
+            return action // FINISH doesn't need coordinates
+        }
+
+        Log.w(TAG, "SLM returned invalid element_index: $indexStr (${uiState.elements.size} elements)")
+        return null
     }
 }

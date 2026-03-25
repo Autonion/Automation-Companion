@@ -130,4 +130,11 @@ dependencies {
 
     // ONNX Runtime (for MiniLM sentence embedding)
     implementation(libs.onnxruntime.android)
+
+    // MediaPipe GenAI (for On-Device LLM / Gemma)
+    implementation(libs.mediapipe.tasks.genai)
+    
+    // Retrofit (for Local Server LLM integration later)
+    implementation(libs.retrofit)
+    implementation(libs.retrofit.converter.gson)
 }

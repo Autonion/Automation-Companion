@@ -11,7 +11,12 @@ import android.graphics.Bitmap
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import android.util.Log
+import android.view.Gravity
+import android.view.View
+import android.view.WindowManager
+import android.graphics.PixelFormat
 import androidx.core.app.NotificationCompat
 import com.autonion.automationcompanion.R
 import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
@@ -55,6 +60,8 @@ class SemanticAutomationService : Service() {
     private var mediaProjectionManager: MediaProjectionManager? = null
     private var mediaProjectionCore: MediaProjectionCore? = null
     private var engine: SemanticAutomationEngine? = null
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var keepAwakeView: View? = null
 
     @Volatile
     private var latestBitmap: Bitmap? = null
@@ -73,6 +80,18 @@ class SemanticAutomationService : Service() {
         _activeEngine.value = null
         engine?.cleanup()
         mediaProjectionCore?.stopProjection()
+        wakeLock?.let {
+            if (it.isHeld) it.release()
+        }
+        keepAwakeView?.let {
+            try {
+                val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+                windowManager.removeView(it)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to remove keepAwakeView", e)
+            }
+            keepAwakeView = null
+        }
         scope.cancel()
         super.onDestroy()
     }
@@ -112,6 +131,37 @@ class SemanticAutomationService : Service() {
             "Command: \"$command\"",
             TAG
         )
+
+        // Acquire WakeLock to keep screen on while reasoning
+        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        wakeLock = powerManager.newWakeLock(
+            PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
+            "SemanticAutomation::WakeLock"
+        )
+        wakeLock?.acquire(10 * 60 * 1000L /*10 minutes max*/)
+
+        // Inject an invisible overlay to force the screen to stay on (Robust against Chinese ROMs)
+        try {
+            val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            keepAwakeView = View(this).apply {
+                setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            }
+            val overlayParams = WindowManager.LayoutParams(
+                1, 1,
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                        WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                        WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
+                PixelFormat.TRANSPARENT
+            )
+            overlayParams.gravity = Gravity.TOP or Gravity.START
+            windowManager.addView(keepAwakeView, overlayParams)
+            Log.d(TAG, "keepAwakeView overlay injected successfully")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to inject keepAwakeView overlay", e)
+        }
 
         val metrics = resources.displayMetrics
         mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager

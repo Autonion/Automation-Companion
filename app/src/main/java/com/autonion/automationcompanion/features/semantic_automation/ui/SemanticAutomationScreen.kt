@@ -33,6 +33,7 @@ import com.autonion.automationcompanion.ui.theme.*
 @Composable
 fun SemanticAutomationScreen(
     onBack: () -> Unit,
+    onOpenModelManager: () -> Unit = {},
     onStart: (String) -> Unit,
     onStop: () -> Unit
 ) {
@@ -73,6 +74,11 @@ fun SemanticAutomationScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = onOpenModelManager) {
+                        Icon(Icons.Default.Settings, contentDescription = "SLM Hub")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
