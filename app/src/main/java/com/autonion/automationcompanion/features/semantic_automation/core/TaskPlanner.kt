@@ -49,6 +49,15 @@ class TaskPlanner {
         if (goal.task !in listOf("search", "play")) return null
         if (goal.query.isNullOrBlank()) return null
 
+        // Early success detection for 'play' goals
+        if (goal.task == "play" && isVideoPlayingOrPaused(uiState, goal)) {
+            Log.i(TAG, "TaskPlanner detected video playback screen, goal achieved!")
+            return ActionIntent(
+                type = ActionType.FINISH,
+                description = "TaskPlanner: Detected video is playing or on playback screen."
+            )
+        }
+
         val phase = determinePhase(completedActions)
         Log.d(TAG, "Task='${goal.task}', phase=$phase, query='${goal.query}'")
 
@@ -57,6 +66,41 @@ class TaskPlanner {
             Phase.TYPE_QUERY -> typeQuery(goal, uiState)
             Phase.SUBMIT_SEARCH -> submitSearch()
             Phase.LLM_TAKEOVER -> null // Let the LLM take over
+        }
+    }
+
+    /**
+     * Heuristic to determine if the media player screen is currently active.
+     */
+    private fun isVideoPlayingOrPaused(uiState: ScreenUIState, goal: SemanticGoal): Boolean {
+        // Only apply heuristic for known media apps (YouTube, Spotify, etc.) or if the goal explicitly mentioned them
+        val packages = listOf("youtube", "spotify", "music")
+        val isMediaApp = uiState.packageName?.let { pkg -> packages.any { pkg.contains(it, ignoreCase = true) } } == true
+
+        var hasTimeline = false
+        var hasPlaybackControls = false
+
+        for (el in uiState.elements) {
+            val text = el.text?.lowercase() ?: continue
+
+            // Check for timeline string e.g. "0 minutes 1 second of 1 minute 51 seconds"
+            // Ensure exact wording " of " instead of substring "of" (which triggered on "Official")
+            val hasTimeUnit = text.contains("minute") || text.contains("second") || text.contains("hour")
+            if (hasTimeUnit && text.contains(" of ") && Regex("\\d+.* of \\d+").containsMatchIn(text)) {
+                hasTimeline = true
+            }
+
+            // explicit controls
+            if (text == "pause video" || text == "pause" || text == "next video") {
+                hasPlaybackControls = true
+            }
+        }
+
+        return if (isMediaApp) {
+            hasTimeline || hasPlaybackControls
+        } else {
+            // Be more strict for unknown apps to avoid false positives
+            hasTimeline && hasPlaybackControls
         }
     }
 
