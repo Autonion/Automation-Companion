@@ -48,8 +48,12 @@ fun SemanticAutomationScreen(
     val loopCount by engine?.loopCount?.collectAsState() ?: remember { mutableStateOf(0) }
     val lastAction by engine?.lastActionDescription?.collectAsState() ?: remember { mutableStateOf(null) }
 
+    val userPromptMessage by engine?.userPromptMessage?.collectAsState() ?: remember { mutableStateOf(null) }
+    val userPromptOptions by engine?.userPromptOptions?.collectAsState() ?: remember { mutableStateOf(emptyList()) }
+
     val isActive = status !in listOf(
         AutomationStatus.IDLE,
+        AutomationStatus.AWAITING_USER_INPUT, // Paused, so not "active" in the sense of running
         AutomationStatus.COMPLETED,
         AutomationStatus.FAILED,
         AutomationStatus.CANCELLED
@@ -77,6 +81,11 @@ fun SemanticAutomationScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = { 
+                        com.autonion.automationcompanion.features.semantic_automation.ml.PredictorCache.disconnect() 
+                    }) {
+                        Icon(Icons.Default.PowerOff, contentDescription = "Disconnect ML")
+                    }
                     IconButton(onClick = onOpenModelManager) {
                         Icon(Icons.Default.Settings, contentDescription = "SLM Hub")
                     }
@@ -228,6 +237,49 @@ fun SemanticAutomationScreen(
                 }
             }
 
+            // ── Interactive User Prompt ──
+            AnimatedVisibility(visible = status == AutomationStatus.AWAITING_USER_INPUT && userPromptMessage != null) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.HelpOutline, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                userPromptMessage ?: "",
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                        }
+
+                        // Options buttons
+                        FlowRow(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            userPromptOptions.forEach { option ->
+                                Button(
+                                    onClick = { engine?.resumeWithUserChoice(option) },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.primary,
+                                        contentColor = MaterialTheme.colorScheme.onPrimary
+                                    )
+                                ) {
+                                    Text(option)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // ── Live Status Card ──
             AnimatedVisibility(
                 visible = isActive || status == AutomationStatus.COMPLETED || status == AutomationStatus.FAILED
@@ -326,6 +378,7 @@ fun SemanticAutomationScreen(
 
 private fun statusLabel(status: AutomationStatus): String = when (status) {
     AutomationStatus.IDLE -> "Idle"
+    AutomationStatus.AWAITING_USER_INPUT -> "Waiting for you…"
     AutomationStatus.PARSING_GOAL -> "Parsing goal…"
     AutomationStatus.CAPTURING_SCREEN -> "Capturing screen…"
     AutomationStatus.BUILDING_UI_STATE -> "Analysing UI…"

@@ -20,6 +20,7 @@ data class SemanticGoal(
  */
 enum class AutomationStatus {
     IDLE,
+    AWAITING_USER_INPUT,
     PARSING_GOAL,
     CAPTURING_SCREEN,
     BUILDING_UI_STATE,

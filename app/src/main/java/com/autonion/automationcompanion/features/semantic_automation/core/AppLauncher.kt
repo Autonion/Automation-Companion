@@ -129,6 +129,27 @@ object AppLauncher {
         return false
     }
 
+    /**
+     * Checks if an exact match exists for the target app alias mapped to its package name,
+     * without launching it or triggering fuzzy matching.
+     */
+    fun hasExactApp(context: Context, appAlias: String): Boolean {
+        if (appAlias == "settings") return true
+        val packageName = PACKAGE_MAP[appAlias.lowercase()]
+        if (packageName != null) return isPackageInstalled(context, packageName)
+        if (appAlias.contains(".")) return isPackageInstalled(context, appAlias) // Raw package
+        return false
+    }
+
+    private fun isPackageInstalled(context: Context, packageName: String): Boolean {
+        return try {
+            context.packageManager.getPackageInfo(packageName, 0)
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     private fun launchByPackage(context: Context, packageName: String): Boolean {
         return try {
             val intent = context.packageManager.getLaunchIntentForPackage(packageName)
@@ -178,7 +199,7 @@ object AppLauncher {
         }
     }
 
-    private fun launchPlayStore(context: Context, packageName: String) {
+    fun launchPlayStore(context: Context, packageName: String) {
         try {
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$packageName")).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

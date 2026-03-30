@@ -23,6 +23,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.CompletableDeferred
+import com.autonion.automationcompanion.features.semantic_automation.ml.PredictorCache
 import android.view.KeyEvent
 
 /**
@@ -55,20 +57,11 @@ class SemanticAutomationEngine(private val context: Context) {
     private val fallbackPredictor = ActionPredictor()
     private val taskPlanner = TaskPlanner()
 
-    // ML-based predictor (Phase 2) — loaded lazily, falls back to heuristics on failure
-    private var mlPredictor: MLActionPredictor? = try {
-        MLActionPredictor(context).also {
-            Log.d(TAG, "ML Action Predictor loaded successfully")
-        }
-    } catch (e: Exception) {
-        Log.e(TAG, "Failed to load ML predictor, using rule-based fallback", e)
-        null
-    }
+    // Phase 2/3: Lazy-loaded from global cache to avoid loading times between sessions
+    private val mlPredictor: MLActionPredictor?
+        get() = PredictorCache.getMLPredictor(context)
 
-    // Phase 3: On-Device SLM (Gemma 2B) — loaded lazily if a model .bin is imported
     private val modelStorageManager = ModelStorageManager(context)
-    private var slmEngine: OnDeviceSLMEngine? = null
-    private var slmInitialized = false
 
     // Phase 4: Local Server LLM (Ollama via Retrofit)
     val localServerEngine = LocalServerLLMEngine.getInstance(context)
@@ -94,6 +87,11 @@ class SemanticAutomationEngine(private val context: Context) {
     private val _lastActionDescription = MutableStateFlow<String?>(null)
     val lastActionDescription: StateFlow<String?> = _lastActionDescription.asStateFlow()
 
+    // ── Interactive Chat Prompt ──
+    val userPromptMessage = MutableStateFlow<String?>(null)
+    val userPromptOptions = MutableStateFlow<List<String>>(emptyList())
+    private var pendingUserChoice: CompletableDeferred<String>? = null
+
     @Volatile
     private var isRunning = false
 
@@ -106,7 +104,7 @@ class SemanticAutomationEngine(private val context: Context) {
     suspend fun runLoop(rawCommand: String, screenshotProvider: suspend () -> Bitmap?) {
         // ── Step 0: Parse goal ──
         _status.value = AutomationStatus.PARSING_GOAL
-        val goal = goalParser.parse(rawCommand)
+        var goal = goalParser.parse(rawCommand)
         _currentGoal.value = goal
         stepHistory.clear()
 
@@ -122,6 +120,9 @@ class SemanticAutomationEngine(private val context: Context) {
         // ── Step 1: Pre-actions (launch app / open settings page) ──
         _lastActionDescription.value = "Preparing…"
         val preActionDone = executePreActions(goal)
+
+        // Re-read goal in case executePreActions rerouted (e.g. Browser fallback)
+        goal = _currentGoal.value ?: goal
 
         if (preActionDone && goal.task == "open") {
             // "open settings" → app launched, we're done
@@ -146,7 +147,7 @@ class SemanticAutomationEngine(private val context: Context) {
         var previousUiState: ScreenUIState? = null
         var consecutiveFailures = 0
 
-        // Track the target package for wrong-app detection
+        // Track the target package for wrong-app detection (uses potentially rerouted goal)
         val targetPackage = resolveTargetPackage(goal)
 
         // ── Step 2: Screen loop ──
@@ -361,6 +362,30 @@ class SemanticAutomationEngine(private val context: Context) {
     }
 
     /**
+     * Resumes the engine loop if it was suspended waiting for a user choice.
+     */
+    fun resumeWithUserChoice(choice: String) {
+        pendingUserChoice?.complete(choice)
+    }
+
+    /**
+     * Suspend execution and prompt UI for user choice.
+     */
+    private suspend fun waitForUserChoice(prompt: String, options: List<String>): String {
+        _status.value = AutomationStatus.AWAITING_USER_INPUT
+        userPromptMessage.value = prompt
+        userPromptOptions.value = options
+        pendingUserChoice = CompletableDeferred()
+        val result = pendingUserChoice!!.await()
+        pendingUserChoice = null
+        userPromptMessage.value = null
+        userPromptOptions.value = emptyList()
+        // Ensure status gets out of AWAITING once resolved
+        _status.value = AutomationStatus.EXECUTING_ACTION
+        return result
+    }
+
+    /**
      * Execute pre-actions before starting the screen loop:
      *  - Launch target app
      *  - Open system settings page (wifi, bluetooth, etc.)
@@ -379,10 +404,51 @@ class SemanticAutomationEngine(private val context: Context) {
         }
 
         // App-targeted tasks (search X on amazon, open settings, etc.)
-        val targetApp = goal.targetApp
+        var targetApp = goal.targetApp
         if (targetApp != null) {
+            _lastActionDescription.value = "Checking app: $targetApp…"
+
+            // Interactive Flow: App Not Found
+            val appExists = AppLauncher.hasExactApp(context, targetApp)
+            if (!appExists) {
+                Log.w(TAG, "App '$targetApp' not found exactly. Suspending for user input.")
+                val choice = waitForUserChoice(
+                    prompt = "$targetApp is not installed. How do you want to proceed?",
+                    options = listOf("Play Store", "Browser", "Cancel")
+                )
+
+                when (choice) {
+                    "Play Store" -> {
+                        _lastActionDescription.value = "Sending to Play Store…"
+                        // PlayStore fallback
+                        AppLauncher.launchApp(context, targetApp)
+                        _status.value = AutomationStatus.COMPLETED
+                        isRunning = false
+                        return true
+                    }
+                    "Browser" -> {
+                        // Reroute via Browser: update targetApp AND rawCommand/query
+                        _lastActionDescription.value = "Rerouting to Browser…"
+                        targetApp = "chrome"
+                        val originalApp = goal.targetApp ?: "website"
+                        val browserQuery = "${goal.query ?: goal.rawCommand} on $originalApp"
+                        _currentGoal.value = _currentGoal.value?.copy(
+                            targetApp = "chrome",
+                            rawCommand = "search $browserQuery in browser",
+                            query = browserQuery
+                        )
+                        Log.d(TAG, "Rerouted to Browser with query: $browserQuery")
+                    }
+                    "Cancel" -> {
+                        stop()
+                        return false
+                    }
+                }
+            }
+
+            // Launch targetApp (either original or browser)
             _lastActionDescription.value = "Launching $targetApp…"
-            val launched = AppLauncher.launchApp(context, targetApp)
+            val launched = AppLauncher.launchApp(context, targetApp!!)
             if (launched) {
                 Log.d(TAG, "Pre-launched app: $targetApp, waiting for it to start…")
                 delay(APP_LAUNCH_DELAY_MS)
@@ -451,12 +517,9 @@ class SemanticAutomationEngine(private val context: Context) {
 
     fun cleanup() {
         stop()
+        pendingUserChoice?.cancel()
         uiStateBuilder.close()
-        try { mlPredictor?.close() } catch (_: Exception) {}
-        try { slmEngine?.close() } catch (_: Exception) {}
-        try { localServerEngine.close() } catch (_: Exception) {}
-        slmEngine = null
-        slmInitialized = false
+        // Models are no longer closed here so they persist between runs
         stepHistory.clear()
         _status.value = AutomationStatus.IDLE
         _currentGoal.value = null
@@ -509,23 +572,11 @@ class SemanticAutomationEngine(private val context: Context) {
             }
             InferenceMode.LOCAL_SLM -> {
                 // Tier 1: On-Device SLM (Gemma 2B) — uses legacy single prompt
-                if (!slmInitialized && modelStorageManager.getActiveModelPath() != null) {
-                    try {
-                        slmEngine = OnDeviceSLMEngine(context, modelStorageManager)
-                        slmEngine!!.initialize()
-                        slmInitialized = true
-                        Log.d(TAG, "On-Device SLM initialized successfully")
-                    } catch (e: Exception) {
-                        Log.e(TAG, "SLM initialization failed, falling through to ML", e)
-                        slmEngine = null
-                        slmInitialized = true
-                    }
-                }
-
-                if (slmEngine != null) {
+                val slm = PredictorCache.getSLMEngine(context, modelStorageManager)
+                if (slm != null) {
                     try {
                         val prompt = UIPromptFormatter.buildPrompt(goal, uiState)
-                        val slmAction = slmEngine!!.predictNextAction(prompt)
+                        val slmAction = slm.predictNextAction(prompt)
                         if (slmAction != null) {
                             val resolved = resolveSlmAction(slmAction, uiState)
                             if (resolved != null) return resolved
