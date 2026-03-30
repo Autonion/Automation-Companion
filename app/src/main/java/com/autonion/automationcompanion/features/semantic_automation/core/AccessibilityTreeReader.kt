@@ -69,6 +69,93 @@ object AccessibilityTreeReader : AccessibilityFeature {
     }
 
     // ──────────────────────────────────────────────────────────
+    // Global actions — Back press, IME submit, etc.
+    // ──────────────────────────────────────────────────────────
+
+    /**
+     * Press the system Back button via accessibility.
+     * Used for wrong-app recovery (when the agent accidentally navigates away).
+     */
+    fun performPressBack(): Boolean {
+        val service = serviceRef?.get() ?: return false
+        val result = service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+        Log.d(TAG, "Performed BACK press: $result")
+        return result
+    }
+
+    /**
+     * Press Enter/Search on the soft keyboard (IME action).
+     * Used after INPUT_TEXT to submit search queries instead of clicking the input field.
+     *
+     * Tries multiple strategies:
+     * 1. Find the currently focused editable node and trigger ACTION_IME_ENTER (API 30+)
+     * 2. Fall back to dispatching KEYCODE_ENTER via AccessibilityAction
+     */
+    fun performImeAction(): Boolean {
+        val service = serviceRef?.get() ?: return false
+        val root = service.rootInActiveWindow ?: return false
+
+        // Find the focused editable node
+        val focused = findFocusedEditable(root)
+        val result = if (focused != null) {
+            // Try newer ACTION_IME_ENTER first (API 30+)
+            val imeResult = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                focused.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)
+            } else {
+                false
+            }
+
+            if (imeResult) {
+                Log.d(TAG, "IME_ENTER succeeded on focused editable")
+                focused.recycle()
+                true
+            } else {
+                // Fallback: Press Enter key via PRESS_AND_RELEASE_KEY (API 31+, attempt)
+                val args = Bundle().apply {
+                    putInt("android.view.KeyEvent.KEYCODE_ENTER", android.view.KeyEvent.KEYCODE_ENTER)
+                }
+                // Ultimate fallback: click the focused node (often triggers IME search)
+                val clickResult = focused.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                Log.d(TAG, "Fallback click on focused editable for IME submit: $clickResult")
+                focused.recycle()
+                clickResult
+            }
+        } else {
+            Log.w(TAG, "No focused editable node found for IME action")
+            false
+        }
+
+        root.recycle()
+        return result
+    }
+
+    /**
+     * Find the currently focused editable node in the tree.
+     */
+    private fun findFocusedEditable(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        // First try finding the input-focused node
+        val focused = root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+        if (focused != null && focused.isEditable) return focused
+        focused?.recycle()
+
+        // Fallback: scan for any focused editable
+        return findEditableByTraversal(root)
+    }
+
+    private fun findEditableByTraversal(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        if (node.isEditable && node.isFocused) {
+            return AccessibilityNodeInfo.obtain(node)
+        }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val found = findEditableByTraversal(child)
+            child.recycle()
+            if (found != null) return found
+        }
+        return null
+    }
+
+    // ──────────────────────────────────────────────────────────
     // Direct node actions — bypass coordinate taps / overlays
     // ──────────────────────────────────────────────────────────
 

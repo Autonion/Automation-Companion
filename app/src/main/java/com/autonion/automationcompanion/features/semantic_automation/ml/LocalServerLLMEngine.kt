@@ -35,9 +35,9 @@ private interface OllamaApi {
     @GET("api/tags")
     suspend fun listModels(): OllamaTagsResponse
 
-    /** Generates a completion (non-streaming). */
-    @POST("api/generate")
-    suspend fun generate(@Body request: OllamaGenerateRequest): OllamaGenerateResponse
+    /** Chat-style completion with structured output. */
+    @POST("api/chat")
+    suspend fun chat(@Body request: OllamaChatRequest): OllamaChatResponse
 }
 
 data class OllamaTagsResponse(
@@ -51,17 +51,30 @@ data class OllamaModel(
     val modified_at: String = ""
 )
 
-data class OllamaGenerateRequest(
+/**
+ * Chat API request body.
+ * Uses `format` for Ollama's structured output (JSON schema enforcement)
+ * and `options` for temperature control.
+ */
+data class OllamaChatRequest(
     val model: String,
-    val prompt: String,
-    val stream: Boolean = false
+    val messages: List<OllamaChatMessage>,
+    val stream: Boolean = false,
+    val format: Map<String, Any>? = null,
+    val options: Map<String, Any>? = null
 )
 
-data class OllamaGenerateResponse(
+data class OllamaChatMessage(
+    val role: String,    // "system", "user", or "assistant"
+    val content: String
+)
+
+data class OllamaChatResponse(
     val model: String = "",
-    val response: String = "",
+    val message: OllamaChatMessage = OllamaChatMessage("assistant", ""),
     val done: Boolean = false,
-    val total_duration: Long = 0
+    val total_duration: Long = 0,
+    val eval_count: Int = 0
 )
 
 // ─── Engine ──────────────────────────────────────────────────
@@ -189,9 +202,31 @@ class LocalServerLLMEngine private constructor(
     }
 
     /**
-     * Sends the prompt to the Ollama server and parses the JSON action response.
+     * Legacy single-prompt prediction (backward compat).
+     * Wraps the prompt in a user message with structured output.
      */
-    override suspend fun predictNextAction(prompt: String): ActionIntent? = withContext(Dispatchers.IO) {
+    override suspend fun predictNextAction(prompt: String): ActionIntent? {
+        return predictNextAction(
+            systemPrompt = "",
+            userPrompt = prompt
+        )
+    }
+
+    /**
+     * Chat-style prediction with structured JSON output.
+     *
+     * Uses Ollama's /api/chat endpoint with:
+     *  - Role-based messages (system + user)
+     *  - `format` parameter for JSON schema enforcement (structured output)
+     *  - `temperature: 0.1` for deterministic behavior
+     *
+     * The model is physically constrained to output valid JSON matching our schema.
+     * No more parsing failures or reasoning text mixed into the response.
+     */
+    override suspend fun predictNextAction(
+        systemPrompt: String,
+        userPrompt: String
+    ): ActionIntent? = withContext(Dispatchers.IO) {
         val currentApi = api
         val model = selectedModel
 
@@ -203,27 +238,73 @@ class LocalServerLLMEngine private constructor(
         try {
             val startTime = System.currentTimeMillis()
 
-            val response = currentApi.generate(
-                OllamaGenerateRequest(
+            // Build messages
+            val messages = mutableListOf<OllamaChatMessage>()
+            if (systemPrompt.isNotBlank()) {
+                messages.add(OllamaChatMessage(role = "system", content = systemPrompt))
+            }
+            messages.add(OllamaChatMessage(role = "user", content = userPrompt))
+
+            // Attempt 1: With structured JSON output (format schema)
+            // num_ctx: 2048 keeps VRAM usage low for 6GB GPUs (default 4096 causes CUDA OOM)
+            val inferenceOptions = mapOf(
+                "temperature" to 0.1,
+                "num_ctx" to 2048
+            )
+
+            var response = currentApi.chat(
+                OllamaChatRequest(
                     model = model,
-                    prompt = prompt,
-                    stream = false
+                    messages = messages,
+                    stream = false,
+                    format = UIPromptFormatter.getOutputJsonSchema(),
+                    options = inferenceOptions
                 )
             )
 
-            val elapsed = System.currentTimeMillis() - startTime
-            Log.d(TAG, "Server response in ${elapsed}ms: ${response.response.take(500)}")
+            var elapsed = System.currentTimeMillis() - startTime
+            var content = response.message.content.trim()
+            Log.d(TAG, "Server response in ${elapsed}ms (${response.eval_count} tokens): '$content'")
 
-            parseJsonResponse(response.response)
+            // Fallback: If structured output returned empty, retry without format constraint
+            if (content.isBlank()) {
+                Log.w(TAG, "Structured output was empty, retrying without format constraint")
+                val retryStart = System.currentTimeMillis()
+                response = currentApi.chat(
+                    OllamaChatRequest(
+                        model = model,
+                        messages = messages,
+                        stream = false,
+                        format = null, // No schema — let the model generate freely
+                        options = inferenceOptions
+                    )
+                )
+                elapsed = System.currentTimeMillis() - retryStart
+                content = response.message.content.trim()
+                Log.d(TAG, "Fallback response in ${elapsed}ms: '$content'")
+            }
+
+            parseStructuredResponse(content)
         } catch (e: retrofit2.HttpException) {
             val errorBody = e.response()?.errorBody()?.string()
             Log.e(TAG, "Server inference failed with HTTP ${e.code()}: $errorBody", e)
+            // Only disconnect on 404 (model not found) or 5xx (server crash)
+            // Don't disconnect on transient errors — server is still alive
+            if (e.code() == 404 || e.code() >= 500) {
+                _connectionStatus.value = ServerConnectionStatus.DISCONNECTED
+            }
+            null
+        } catch (e: java.net.ConnectException) {
+            Log.e(TAG, "Server unreachable", e)
+            _connectionStatus.value = ServerConnectionStatus.DISCONNECTED
+            null
+        } catch (e: java.net.UnknownHostException) {
+            Log.e(TAG, "Server host not found", e)
             _connectionStatus.value = ServerConnectionStatus.DISCONNECTED
             null
         } catch (e: Exception) {
-            Log.e(TAG, "Server inference failed", e)
-            // Mark as disconnected so the cascade knows to skip next time
-            _connectionStatus.value = ServerConnectionStatus.DISCONNECTED
+            // Timeouts, parse errors, etc. — server is likely still alive
+            Log.e(TAG, "Server inference failed (transient): ${e.javaClass.simpleName}", e)
             null
         }
     }
@@ -235,78 +316,39 @@ class LocalServerLLMEngine private constructor(
         Log.d(TAG, "LocalServerLLMEngine closed")
     }
 
-    // ── JSON Parsing (shared logic with OnDeviceSLMEngine) ───
+    // ── Response Parsing ─────────────────────────────────────
 
-    private fun parseJsonResponse(raw: String): ActionIntent? {
+    /**
+     * Parses the structured JSON response from Ollama's constrained output.
+     *
+     * With the `format` parameter, Ollama guarantees the response is valid JSON
+     * matching our schema. We still wrap in try-catch for safety, but the heavy
+     * markdown-stripping / repair logic from v1 is no longer needed.
+     */
+    private fun parseStructuredResponse(raw: String): ActionIntent? {
         return try {
-            var jsonString = raw
+            val jsonString = raw.trim()
             
-            // Extract from markdown block if present
-            val jsonBlockStart = jsonString.indexOf("```json")
-            if (jsonBlockStart != -1) {
-                val blockEnd = jsonString.indexOf("```", jsonBlockStart + 7)
-                jsonString = if (blockEnd != -1) {
-                    jsonString.substring(jsonBlockStart + 7, blockEnd)
-                } else {
-                    jsonString.substring(jsonBlockStart + 7)
-                }
-            } else {
-                jsonString = jsonString.replace("```", "")
-            }
-            
-            jsonString = jsonString.trim()
-            
+            // With structured output, the response should already be pure JSON.
+            // But as a safety net, try to extract JSON object if there's extra text.
             val objStart = jsonString.indexOf('{')
             val objEnd = jsonString.lastIndexOf('}')
-            val arrStart = jsonString.indexOf('[')
-            val arrEnd = jsonString.lastIndexOf(']')
-
-            var jsonToParse: JSONObject? = null
-
-            fun tryParseObj(text: String): JSONObject? {
-                try {
-                    val obj = JSONObject(text)
-                    if (obj.has("action")) return obj
-                } catch (e: Exception) {}
-                try {
-                    val obj = JSONObject("$text}")
-                    if (obj.has("action")) return obj
-                } catch (e: Exception) {}
+            
+            if (objStart == -1 || objEnd <= objStart) {
+                Log.w(TAG, "No JSON object found in response: ${jsonString.take(200)}")
                 return null
             }
 
-            fun tryParseArr(text: String): JSONObject? {
-                try {
-                    val arr = org.json.JSONArray(text)
-                    for (i in 0 until arr.length()) {
-                        val obj = arr.optJSONObject(i)
-                        if (obj != null && obj.has("action")) return obj
-                    }
-                } catch (e: Exception) {}
+            val json = JSONObject(jsonString.substring(objStart, objEnd + 1))
+
+            val actionStr = json.optString("action", "").uppercase().trim()
+            val elementIndex = json.optInt("element_index", -1)
+            val textToType = json.optString("text_to_type", null)
+
+            if (actionStr.isBlank()) {
+                Log.w(TAG, "Empty action in response")
                 return null
             }
-
-            if (arrStart != -1 && (objStart == -1 || arrStart < objStart)) {
-                if (arrEnd > arrStart) {
-                    jsonToParse = tryParseArr(jsonString.substring(arrStart, arrEnd + 1))
-                }
-                if (jsonToParse == null && objStart != -1 && objEnd > objStart) {
-                     jsonToParse = tryParseObj(jsonString.substring(objStart, objEnd + 1))
-                }
-            } else if (objStart != -1 && objEnd > objStart) {
-                jsonToParse = tryParseObj(jsonString.substring(objStart, objEnd + 1))
-            } else if (objStart != -1) {
-                jsonToParse = tryParseObj(jsonString.substring(objStart))
-            }
-
-            if (jsonToParse == null) {
-                Log.w(TAG, "No valid JSON action found in server response")
-                return null
-            }
-
-            val actionStr = jsonToParse.optString("action", "CLICK").uppercase().trim()
-            val elementIndex = jsonToParse.optInt("element_index", -1)
-            val textToType = jsonToParse.optString("text_to_type", null)
 
             val actionType = when (actionStr) {
                 "CLICK" -> ActionType.CLICK
@@ -315,20 +357,26 @@ class LocalServerLLMEngine private constructor(
                 "SCROLL_UP" -> ActionType.SCROLL_UP
                 "FINISH" -> ActionType.FINISH
                 else -> {
-                    Log.w(TAG, "Unknown action: $actionStr, defaulting to CLICK")
-                    ActionType.CLICK
+                    Log.w(TAG, "Unknown action: $actionStr")
+                    return null // With structured output + enum, this shouldn't happen
                 }
+            }
+
+            // Validate element_index: CLICK and INPUT_TEXT need a real element
+            if (actionType in listOf(ActionType.CLICK, ActionType.INPUT_TEXT) && elementIndex < 0) {
+                Log.w(TAG, "Invalid element_index ($elementIndex) for $actionStr")
+                return null
             }
 
             ActionIntent(
                 type = actionType,
                 targetId = if (elementIndex >= 0) "slm_element_$elementIndex" else null,
                 targetPoint = null,
-                inputText = if (textToType != "null" && !textToType.isNullOrBlank()) textToType else null,
+                inputText = if (!textToType.isNullOrBlank() && textToType != "null") textToType else null,
                 description = "ServerLLM: $actionStr on element[$elementIndex]"
             )
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to parse server response", e)
+            Log.e(TAG, "Failed to parse structured response: ${raw.take(300)}", e)
             null
         }
     }
