@@ -207,4 +207,43 @@ object AppLauncher {
             context.startActivity(intent)
         } catch (_: Exception) { }
     }
+
+    /**
+     * Launch the default browser to a specific URL.
+     */
+    fun launchBrowserUrl(context: Context, url: String): Boolean {
+        return try {
+            val validUrl = if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                "https://$url"
+            } else {
+                url
+            }
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(validUrl)).apply {
+                addCategory(Intent.CATEGORY_BROWSABLE)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            }
+            
+            val pm = context.packageManager
+            val resolveInfo = pm.resolveActivity(intent, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
+
+            if (resolveInfo != null && resolveInfo.activityInfo.packageName != "android") {
+                // We have a default browser (or verified app link). Force it to that package.
+                intent.setPackage(resolveInfo.activityInfo.packageName)
+                context.startActivity(intent)
+                Log.d(TAG, "Launched browser (${resolveInfo.activityInfo.packageName}) with URL: $validUrl")
+            } else {
+                // No default browser selected. Show a chooser dialog explicitly.
+                val chooser = Intent.createChooser(intent, "Choose browser for Automation").apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                }
+                context.startActivity(chooser)
+                Log.d(TAG, "Launched browser chooser with URL: $validUrl")
+            }
+            
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to launch browser URL: $url", e)
+            false
+        }
+    }
 }

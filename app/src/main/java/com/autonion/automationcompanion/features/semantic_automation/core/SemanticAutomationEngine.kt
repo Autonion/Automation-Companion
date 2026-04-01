@@ -183,10 +183,24 @@ class SemanticAutomationEngine(private val context: Context) {
 
             // ── Wrong-app detection ──
             // If we navigated away from the target app, press Back to return
-            if (targetPackage != null && uiState.packageName != null
-                && !uiState.packageName.contains(targetPackage, ignoreCase = true)
-                && uiState.packageName != "com.autonion.automationcompanion"
-            ) {
+            val isInExpectedBrowser = targetPackage == "browser" && uiState.packageName?.let { pkg ->
+                pkg.contains("chrome", ignoreCase = true) ||
+                pkg.contains("firefox", ignoreCase = true) ||
+                pkg.contains("browser", ignoreCase = true) ||
+                pkg.contains("opera", ignoreCase = true) ||
+                pkg.contains("edge", ignoreCase = true) ||
+                pkg.contains("duckduckgo", ignoreCase = true) ||
+                pkg.contains("brave", ignoreCase = true)
+            } == true
+            
+            val exemptOwnApp = uiState.packageName == "com.autonion.automationcompanion" && iteration < 3
+            
+            val isWrongApp = targetPackage != null && uiState.packageName != null &&
+                    !isInExpectedBrowser &&
+                    !uiState.packageName.contains(targetPackage, ignoreCase = true) &&
+                     !exemptOwnApp
+            
+            if (isWrongApp) {
                 Log.w(TAG, "Wrong app detected: ${uiState.packageName} (expected $targetPackage), pressing Back")
                 _lastActionDescription.value = "Wrong app, going back…"
                 
@@ -427,17 +441,21 @@ class SemanticAutomationEngine(private val context: Context) {
                         return true
                     }
                     "Browser" -> {
-                        // Reroute via Browser: update targetApp AND rawCommand/query
-                        _lastActionDescription.value = "Rerouting to Browser…"
-                        targetApp = "chrome"
+                        // Reroute via Browser: open targetURL directly
+                        _lastActionDescription.value = "Opening in Browser…"
                         val originalApp = goal.targetApp ?: "website"
-                        val browserQuery = "${goal.query ?: goal.rawCommand} on $originalApp"
+                        targetApp = "browser_url" // Special flag to launch via URL
+                        
+                        // We ask the LLM to search FOR the query ON the website we are already at
+                        val browserQuery = goal.query ?: goal.rawCommand
+                        val rawCmd = "search $browserQuery"
+                        
                         _currentGoal.value = _currentGoal.value?.copy(
-                            targetApp = "chrome",
-                            rawCommand = "search $browserQuery in browser",
+                            targetApp = "browser", // 'browser' unlocks the special wrong-app browser list
+                            rawCommand = rawCmd,
                             query = browserQuery
                         )
-                        Log.d(TAG, "Rerouted to Browser with query: $browserQuery")
+                        Log.d(TAG, "Rerouted to Browser URL ($originalApp) with query: $browserQuery")
                     }
                     "Cancel" -> {
                         stop()
@@ -446,9 +464,15 @@ class SemanticAutomationEngine(private val context: Context) {
                 }
             }
 
-            // Launch targetApp (either original or browser)
+            // Launch targetApp (either original or browser URL)
             _lastActionDescription.value = "Launching $targetApp…"
-            val launched = AppLauncher.launchApp(context, targetApp!!)
+            val launched = if (targetApp == "browser_url" || _currentGoal.value?.targetApp == "browser" && goal.targetApp != "browser") {
+                val urlToLaunch = if (goal.targetApp?.contains(".") == true) goal.targetApp else "${goal.targetApp}.com"
+                AppLauncher.launchBrowserUrl(context, urlToLaunch!!)
+            } else {
+                AppLauncher.launchApp(context, targetApp!!)
+            }
+            
             if (launched) {
                 Log.d(TAG, "Pre-launched app: $targetApp, waiting for it to start…")
                 delay(APP_LAUNCH_DELAY_MS)
@@ -673,7 +697,7 @@ class SemanticAutomationEngine(private val context: Context) {
             "amazon" -> "amazon"
             "whatsapp" -> "whatsapp"
             "instagram" -> "instagram"
-            "chrome" -> "chrome"
+            "chrome" -> "chrome" // Note: "browser" keeps targetPackage = "browser" because it falls to the 'else' block, picking it up
             "gmail" -> "android.gm"
             "maps" -> "maps"
             "playstore" -> "vending"
