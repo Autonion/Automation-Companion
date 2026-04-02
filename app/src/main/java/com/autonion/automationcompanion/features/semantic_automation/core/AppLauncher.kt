@@ -210,29 +210,79 @@ object AppLauncher {
 
     /**
      * Launch the default browser to a specific URL.
+     * Prefers browsers that support extensions (Kiwi, Lemur, Firefox Nightly).
      */
     fun launchBrowserUrl(context: Context, url: String): Boolean {
+        return launchBrowserUrlWithCommand(context, url, null)
+    }
+
+    /**
+     * Launch the browser to a URL AND pass a command for the Autonion Extension
+     * to execute. The command is encoded as base64 JSON in the URL hash fragment:
+     *   https://amazon.com#__autonion__=eyJjbWQiOiJzZWFyY2giLCJxIjoic2hvZXMifQ==
+     * 
+     * The extension's content script (android-bridge.js) reads the hash on page
+     * load and executes the command (search, click, type, scroll).
+     * 
+     * @param context Android context
+     * @param url The target URL to open
+     * @param command A JSON-serializable map like {"cmd":"search","q":"shoes"}
+     */
+    fun launchBrowserUrlWithCommand(
+        context: Context,
+        url: String,
+        command: Map<String, String>?
+    ): Boolean {
         return try {
-            val validUrl = if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            var validUrl = if (!url.startsWith("http://") && !url.startsWith("https://")) {
                 "https://$url"
             } else {
                 url
             }
+
+            // Append Autonion command hash if provided
+            if (command != null) {
+                val json = org.json.JSONObject(command as Map<*, *>).toString()
+                val base64 = android.util.Base64.encodeToString(
+                    json.toByteArray(Charsets.UTF_8),
+                    android.util.Base64.NO_WRAP
+                )
+                validUrl = "$validUrl#__autonion__=$base64"
+                Log.d(TAG, "Appended Autonion command hash: cmd=${command["cmd"]}")
+            }
+
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(validUrl)).apply {
                 addCategory(Intent.CATEGORY_BROWSABLE)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             }
             
+            // Prefer our supported extension browsers if they are installed
+            if (isPackageInstalled(context, "com.kiwibrowser.browser")) {
+                intent.setPackage("com.kiwibrowser.browser")
+                context.startActivity(intent)
+                Log.d(TAG, "Launched Kiwi Browser with URL: $validUrl")
+                return true
+            } else if (isPackageInstalled(context, "com.lemurbrowser.exts")) {
+                intent.setPackage("com.lemurbrowser.exts")
+                context.startActivity(intent)
+                Log.d(TAG, "Launched Lemur Browser with URL: $validUrl")
+                return true
+            } else if (isPackageInstalled(context, "org.mozilla.fenix")) {
+                intent.setPackage("org.mozilla.fenix")
+                context.startActivity(intent)
+                Log.d(TAG, "Launched Firefox Nightly Browser with URL: $validUrl")
+                return true
+            }
+
+            // Fallback
             val pm = context.packageManager
             val resolveInfo = pm.resolveActivity(intent, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
 
             if (resolveInfo != null && resolveInfo.activityInfo.packageName != "android") {
-                // We have a default browser (or verified app link). Force it to that package.
                 intent.setPackage(resolveInfo.activityInfo.packageName)
                 context.startActivity(intent)
                 Log.d(TAG, "Launched browser (${resolveInfo.activityInfo.packageName}) with URL: $validUrl")
             } else {
-                // No default browser selected. Show a chooser dialog explicitly.
                 val chooser = Intent.createChooser(intent, "Choose browser for Automation").apply {
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
                 }
@@ -247,3 +297,4 @@ object AppLauncher {
         }
     }
 }
+

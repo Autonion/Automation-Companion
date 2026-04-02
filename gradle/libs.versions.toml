@@ -34,6 +34,7 @@ mlkitTextRecognition = "16.0.1"
 onnxruntimeAndroid = "1.17.0"
 mediapipeGenai = "0.10.14"
 retrofit = "2.11.0"
+javaWebsocket = "1.5.3"
 
 [libraries]
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activity" }
@@ -81,6 +82,7 @@ onnxruntime-android = { module = "com.microsoft.onnxruntime:onnxruntime-android"
 mediapipe-tasks-genai = { module = "com.google.mediapipe:tasks-genai", version.ref = "mediapipeGenai" }
 retrofit = { module = "com.squareup.retrofit2:retrofit", version.ref = "retrofit" }
 retrofit-converter-gson = { module = "com.squareup.retrofit2:converter-gson", version.ref = "retrofit" }
+java-websocket = { module = "org.java-websocket:Java-WebSocket", version.ref = "javaWebsocket" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

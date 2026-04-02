@@ -143,6 +143,17 @@ class SemanticAutomationEngine(private val context: Context) {
             _lastActionDescription.value = "Opened settings, looking for toggle…"
         }
 
+        if (goal.targetApp == "browser") {
+            // The command was already embedded in the URL hash when the browser was launched
+            // (see executePreActions → launchBrowserUrlWithCommand). The extension's
+            // content script (android-bridge.js) reads the hash and executes the action
+            // directly in the DOM. No WebSocket or server needed.
+            _lastActionDescription.value = "Command sent to browser extension via URL"
+            _status.value = AutomationStatus.COMPLETED
+            isRunning = false
+            return
+        }
+
         var lastInputText: String? = null
         var previousUiState: ScreenUIState? = null
         var consecutiveFailures = 0
@@ -466,20 +477,74 @@ class SemanticAutomationEngine(private val context: Context) {
 
             // Launch targetApp (either original or browser URL)
             _lastActionDescription.value = "Launching $targetApp…"
-            val launched = if (targetApp == "browser_url" || _currentGoal.value?.targetApp == "browser" && goal.targetApp != "browser") {
-                val urlToLaunch = if (goal.targetApp?.contains(".") == true) goal.targetApp else "${goal.targetApp}.com"
-                AppLauncher.launchBrowserUrl(context, urlToLaunch!!)
-            } else {
-                AppLauncher.launchApp(context, targetApp!!)
-            }
+            val isBrowserLaunch = targetApp == "browser_url" || (_currentGoal.value?.targetApp == "browser" && goal.targetApp != "browser")
             
-            if (launched) {
-                Log.d(TAG, "Pre-launched app: $targetApp, waiting for it to start…")
-                delay(APP_LAUNCH_DELAY_MS)
-                return true
+            if (isBrowserLaunch) {
+                // BROWSER PREREQUISITE CHECK
+                val hasKiwi = AppLauncher.hasExactApp(context, "com.kiwibrowser.browser")
+                val hasLemur = AppLauncher.hasExactApp(context, "com.lemurbrowser.exts")
+                val hasFenix = AppLauncher.hasExactApp(context, "org.mozilla.fenix")
+                
+                if (!hasKiwi && !hasLemur && !hasFenix) {
+                    Log.w(TAG, "No supported extension browser found. Suspending for user input.")
+                    val installChoice = waitForUserChoice(
+                        prompt = "To use web automation, please install a supported browser.",
+                        options = listOf("Install Kiwi (Recommended)", "Install Firefox Nightly", "Install Lemur", "Cancel")
+                    )
+                    
+                    when (installChoice) {
+                        "Install Kiwi (Recommended)" -> {
+                            AppLauncher.launchPlayStore(context, "com.kiwibrowser.browser")
+                            stop()
+                            return false
+                        }
+                        "Install Firefox Nightly" -> {
+                            AppLauncher.launchPlayStore(context, "org.mozilla.fenix")
+                            stop()
+                            return false
+                        }
+                        "Install Lemur" -> {
+                            AppLauncher.launchPlayStore(context, "com.lemurbrowser.exts")
+                            stop()
+                            return false
+                        }
+                        else -> {
+                            stop()
+                            return false
+                        }
+                    }
+                }
+                
+                val urlToLaunch = if (goal.targetApp?.contains(".") == true) goal.targetApp else "${goal.targetApp}.com"
+                
+                // Build a command for the extension's content script
+                // Always include the raw user prompt so the extension can handle complex tasks
+                val browserQuery = _currentGoal.value?.query ?: goal.query
+                val rawPrompt = _currentGoal.value?.rawCommand ?: goal.rawCommand
+                val extensionCommand = mutableMapOf(
+                    "cmd" to (goal.task ?: "prompt"),
+                    "raw" to (rawPrompt ?: ""),
+                )
+                if (!browserQuery.isNullOrBlank()) {
+                    extensionCommand["q"] = browserQuery
+                }
+                
+                val launched = AppLauncher.launchBrowserUrlWithCommand(context, urlToLaunch!!, extensionCommand)
+                if (launched) {
+                    Log.d(TAG, "Pre-launched browser: $urlToLaunch with command: $extensionCommand")
+                    delay(APP_LAUNCH_DELAY_MS)
+                    return true
+                }
             } else {
-                Log.w(TAG, "Failed to launch app: $targetApp")
-                _lastActionDescription.value = "Could not find app: $targetApp"
+                val launched = AppLauncher.launchApp(context, targetApp!!)
+                if (launched) {
+                    Log.d(TAG, "Pre-launched app: $targetApp, waiting for it to start…")
+                    delay(APP_LAUNCH_DELAY_MS)
+                    return true
+                } else {
+                    Log.w(TAG, "Failed to launch app: $targetApp")
+                    _lastActionDescription.value = "Could not find app: $targetApp"
+                }
             }
         }
 
