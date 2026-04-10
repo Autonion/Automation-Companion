@@ -138,7 +138,22 @@ object AppLauncher {
         val packageName = PACKAGE_MAP[appAlias.lowercase()]
         if (packageName != null) return isPackageInstalled(context, packageName)
         if (appAlias.contains(".")) return isPackageInstalled(context, appAlias) // Raw package
-        return false
+        // Search installed apps by label (covers apps not in PACKAGE_MAP like flipkart, zomato, etc.)
+        return hasAppByLabel(context, appAlias)
+    }
+
+    /**
+     * Checks if any installed app's label contains the given name.
+     */
+    private fun hasAppByLabel(context: Context, appName: String): Boolean {
+        return try {
+            val pm = context.packageManager
+            val mainIntent = Intent(Intent.ACTION_MAIN, null).addCategory(Intent.CATEGORY_LAUNCHER)
+            val apps = pm.queryIntentActivities(mainIntent, 0)
+            apps.any { it.loadLabel(pm).toString().contains(appName, ignoreCase = true) }
+        } catch (e: Exception) {
+            false
+        }
     }
 
     private fun isPackageInstalled(context: Context, packageName: String): Boolean {

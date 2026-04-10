@@ -27,7 +27,8 @@ data class UIStateElement(
 
 enum class ElementSource {
     ACCESSIBILITY,
-    YOLO_OCR
+    YOLO_OCR,
+    EXTENSION_DOM    // DOM elements from the browser extension bridge
 }
 
 /**

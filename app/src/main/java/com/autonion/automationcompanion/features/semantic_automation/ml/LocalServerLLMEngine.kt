@@ -309,6 +309,59 @@ class LocalServerLLMEngine private constructor(
         }
     }
 
+    /**
+     * Generic chat method that returns raw JSON string for any schema.
+     * Allows callers (like GoalParser) to use their own output schemas
+     * without coupling to ActionIntent parsing.
+     *
+     * @param systemPrompt Role-based system instructions
+     * @param userPrompt The user's input
+     * @param jsonSchema Ollama structured output schema to constrain the response
+     * @return Raw JSON string from the model, or null on failure
+     */
+    suspend fun chatWithSchema(
+        systemPrompt: String,
+        userPrompt: String,
+        jsonSchema: Map<String, Any>
+    ): String? = withContext(Dispatchers.IO) {
+        val currentApi = api
+        val model = selectedModel
+
+        if (currentApi == null || model.isNullOrBlank()) {
+            Log.w(TAG, "chatWithSchema: Server not connected or no model selected")
+            return@withContext null
+        }
+
+        try {
+            val messages = mutableListOf<OllamaChatMessage>()
+            if (systemPrompt.isNotBlank()) {
+                messages.add(OllamaChatMessage(role = "system", content = systemPrompt))
+            }
+            messages.add(OllamaChatMessage(role = "user", content = userPrompt))
+
+            val response = currentApi.chat(
+                OllamaChatRequest(
+                    model = model,
+                    messages = messages,
+                    stream = false,
+                    format = jsonSchema,
+                    options = mapOf("temperature" to 0.1, "num_ctx" to 2048)
+                )
+            )
+
+            val content = response.message.content.trim()
+            Log.d(TAG, "chatWithSchema response (${response.eval_count} tokens): $content")
+
+            if (content.isBlank()) null else content
+        } catch (e: Exception) {
+            Log.e(TAG, "chatWithSchema failed: ${e.javaClass.simpleName}", e)
+            if (e is java.net.ConnectException || e is java.net.UnknownHostException) {
+                _connectionStatus.value = ServerConnectionStatus.DISCONNECTED
+            }
+            null
+        }
+    }
+
     override fun close() {
         api = null
         _connectionStatus.value = ServerConnectionStatus.DISCONNECTED

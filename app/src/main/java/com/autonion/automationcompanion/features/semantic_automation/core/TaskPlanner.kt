@@ -39,6 +39,9 @@ class TaskPlanner {
         LLM_TAKEOVER      // Planner has done its job; LLM picks the result
     }
 
+    // Track how many times submitSearch has been attempted without advancing
+    private var submitAttempts = 0
+
     /**
      * Attempts to predict the next action deterministically.
      *
@@ -63,8 +66,19 @@ class TaskPlanner {
 
         return when (phase) {
             Phase.FIND_SEARCH -> findSearchElement(uiState)
-            Phase.TYPE_QUERY -> typeQuery(goal, uiState)
-            Phase.SUBMIT_SEARCH -> submitSearch()
+            Phase.TYPE_QUERY -> {
+                submitAttempts = 0 // Reset submit counter when entering TYPE phase
+                typeQuery(goal, uiState)
+            }
+            Phase.SUBMIT_SEARCH -> {
+                submitAttempts++
+                if (submitAttempts > 2) {
+                    Log.d(TAG, "Submit attempts exhausted ($submitAttempts), advancing to LLM_TAKEOVER")
+                    null // Let LLM take over
+                } else {
+                    submitSearch()
+                }
+            }
             Phase.LLM_TAKEOVER -> null // Let the LLM take over
         }
     }
@@ -173,23 +187,25 @@ class TaskPlanner {
     }
 
     /**
-     * Phase 3: Submit the search by pressing Enter via IME.
-     * Returns a special FINISH-like marker; the engine handles the actual IME press.
+     * Phase 3: Submit the search by pressing Enter via IME, or clicking a submit button.
      *
-     * Instead of returning an action, we directly trigger the IME action.
+     * The IME action is performed internally. If it succeeds, we return null
+     * to tell the engine "action was handled, just re-capture on next iteration."
+     * If IME fails, we look for a visible search/submit button to click.
      */
     private fun submitSearch(): ActionIntent? {
         val success = AccessibilityTreeReader.performImeAction()
         Log.d(TAG, "Submit search via IME: $success")
-        // Return null to signal the engine that we handled it internally
-        // The engine will see the UI change on next iteration and proceed
-        return if (success) {
-            ActionIntent(
-                type = ActionType.CLICK, // Placeholder — the IME was already pressed
-                targetPoint = PointF(0f, 0f), // Dummy
-                description = "TaskPlanner: Submitted search via Enter key"
-            )
-        } else null
+
+        if (success) {
+            // IME action was already performed internally — no need to return a gesture action.
+            // Return null so the engine advances to the next iteration naturally.
+            // The step history will record this via the engine's anti-loop/submit tracking.
+            return null
+        }
+
+        // IME failed entirely — look for a visible search/submit/go button to click
+        return null // Let LLM handle finding the submit button
     }
 
     private fun makeAction(type: ActionType, el: UIStateElement, index: Int, description: String): ActionIntent {

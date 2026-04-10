@@ -11,6 +11,7 @@ data class SemanticGoal(
     val task: String,              // e.g. "search", "login", "open", "send_message"
     val query: String? = null,     // e.g. "shoes", "john doe"
     val targetApp: String? = null, // e.g. "amazon", "whatsapp", "settings"
+    val domain: String? = null,    // e.g. "flipkart.com", "amazon.in" — resolved by LLM, no hardcoded TLD
     val rawCommand: String,        // Original user input
     val extras: Map<String, String> = emptyMap() // Additional key-value pairs
 )

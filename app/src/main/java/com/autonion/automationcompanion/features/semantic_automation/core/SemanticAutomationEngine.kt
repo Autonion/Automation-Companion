@@ -66,6 +66,9 @@ class SemanticAutomationEngine(private val context: Context) {
     // Phase 4: Local Server LLM (Ollama via Retrofit)
     val localServerEngine = LocalServerLLMEngine.getInstance(context)
 
+    // Phase 5: Browser Extension Bridge (starts WebSocket server on port 54321)
+    val extensionBridge: ExtensionBridgeServer = ExtensionBridgeServer.getInstance(context)
+
     // Inference Mode Preference: user chooses which engine to prioritize
     enum class InferenceMode { LOCAL_SLM, SERVER_LLM }
     private val inferencePrefs = context.getSharedPreferences("inference_prefs", Context.MODE_PRIVATE)
@@ -102,16 +105,31 @@ class SemanticAutomationEngine(private val context: Context) {
      * Parse a raw user command and kick off the screen loop.
      */
     suspend fun runLoop(rawCommand: String, screenshotProvider: suspend () -> Bitmap?) {
-        // ── Step 0: Parse goal ──
+        // ── Step 0: Parse goal via LLM ──
         _status.value = AutomationStatus.PARSING_GOAL
-        var goal = goalParser.parse(rawCommand)
-        _currentGoal.value = goal
         stepHistory.clear()
+
+        val parsedGoal = goalParser.parse(rawCommand, localServerEngine)
+        if (parsedGoal == null) {
+            // LLM server not connected — cannot parse any prompt
+            _status.value = AutomationStatus.FAILED
+            _lastActionDescription.value = "Connect to Ollama server to use automation"
+            DebugLogger.error(
+                context, LogCategory.SCREEN_CONTEXT_AI,
+                "Goal parsing failed",
+                "Ollama server not connected. Please configure the server in Settings.",
+                TAG
+            )
+            return
+        }
+
+        var goal = parsedGoal
+        _currentGoal.value = goal
 
         DebugLogger.info(
             context, LogCategory.SCREEN_CONTEXT_AI,
             "Semantic goal parsed",
-            "task=${goal.task}, query=${goal.query}, app=${goal.targetApp}",
+            "task=${goal.task}, query=${goal.query}, app=${goal.targetApp}, domain=${goal.domain}",
             TAG
         )
 
@@ -124,8 +142,9 @@ class SemanticAutomationEngine(private val context: Context) {
         // Re-read goal in case executePreActions rerouted (e.g. Browser fallback)
         goal = _currentGoal.value ?: goal
 
-        if (preActionDone && goal.task == "open") {
-            // "open settings" → app launched, we're done
+        if (preActionDone && goal.task == "open" && goal.targetApp != "browser") {
+            // "open settings" / "open youtube" → native app launched, we're done.
+            // Browser targets skip this — they need the agentic loop to interact with the page.
             _lastActionDescription.value = "App launched"
             _status.value = AutomationStatus.COMPLETED
             DebugLogger.success(
@@ -143,16 +162,10 @@ class SemanticAutomationEngine(private val context: Context) {
             _lastActionDescription.value = "Opened settings, looking for toggle…"
         }
 
-        if (goal.targetApp == "browser") {
-            // The command was already embedded in the URL hash when the browser was launched
-            // (see executePreActions → launchBrowserUrlWithCommand). The extension's
-            // content script (android-bridge.js) reads the hash and executes the action
-            // directly in the DOM. No WebSocket or server needed.
-            _lastActionDescription.value = "Command sent to browser extension via URL"
-            _status.value = AutomationStatus.COMPLETED
-            isRunning = false
-            return
-        }
+        // NOTE: Browser targets now go through the full agentic loop.
+        // The extension bridge provides DOM snapshots and the Android app drives
+        // browser actions via ExtensionBridgeServer.executeAction().
+        // The old URL-hash shortcut has been removed.
 
         var lastInputText: String? = null
         var previousUiState: ScreenUIState? = null
@@ -173,9 +186,9 @@ class SemanticAutomationEngine(private val context: Context) {
             _status.value = AutomationStatus.CAPTURING_SCREEN
             val screenshot = screenshotProvider()
 
-            // 2b. Build UI state
+            // 2b. Build UI state — prefer extension DOM when in a browser
             _status.value = AutomationStatus.BUILDING_UI_STATE
-            val uiState = uiStateBuilder.build(screenshot)
+            val uiState = uiStateBuilder.build(screenshot, extensionBridge)
             Log.d(TAG, "UI state: ${uiState.elements.size} elements (source=${uiState.source})")
 
             if (uiState.elements.isEmpty()) {
@@ -197,11 +210,15 @@ class SemanticAutomationEngine(private val context: Context) {
             val isInExpectedBrowser = targetPackage == "browser" && uiState.packageName?.let { pkg ->
                 pkg.contains("chrome", ignoreCase = true) ||
                 pkg.contains("firefox", ignoreCase = true) ||
+                pkg.contains("fenix", ignoreCase = true) ||    // Firefox Nightly = org.mozilla.fenix
+                pkg.contains("mozilla", ignoreCase = true) ||   // Any Mozilla browser
                 pkg.contains("browser", ignoreCase = true) ||
                 pkg.contains("opera", ignoreCase = true) ||
                 pkg.contains("edge", ignoreCase = true) ||
                 pkg.contains("duckduckgo", ignoreCase = true) ||
-                pkg.contains("brave", ignoreCase = true)
+                pkg.contains("brave", ignoreCase = true) ||
+                pkg.contains("kiwi", ignoreCase = true) ||     // Kiwi Browser
+                pkg.contains("lemur", ignoreCase = true)        // Lemur Browser
             } == true
             
             val exemptOwnApp = uiState.packageName == "com.autonion.automationcompanion" && iteration < 3
@@ -463,10 +480,11 @@ class SemanticAutomationEngine(private val context: Context) {
                         
                         _currentGoal.value = _currentGoal.value?.copy(
                             targetApp = "browser", // 'browser' unlocks the special wrong-app browser list
+                            task = if (browserQuery.isNullOrBlank()) "open" else "search", // Update task so loop doesn't early-exit
                             rawCommand = rawCmd,
                             query = browserQuery
                         )
-                        Log.d(TAG, "Rerouted to Browser URL ($originalApp) with query: $browserQuery")
+                        Log.d(TAG, "Rerouted to Browser URL ($originalApp) with query: $browserQuery, task updated to 'search'")
                     }
                     "Cancel" -> {
                         stop()
@@ -515,23 +533,29 @@ class SemanticAutomationEngine(private val context: Context) {
                     }
                 }
                 
-                val urlToLaunch = if (goal.targetApp?.contains(".") == true) goal.targetApp else "${goal.targetApp}.com"
-                
+                // Use LLM-resolved domain (e.g. flipkart.com, amazon.in)
+                val rGoal = _currentGoal.value ?: goal
+                val baseDomain = rGoal.domain ?: goal.domain ?: goal.targetApp
+                val browserQuery = rGoal.query ?: goal.query
+                val rawPrompt = rGoal.rawCommand ?: goal.rawCommand
+                val taskType = rGoal.task ?: goal.task
+
+                // Always launch the base domain. The agentic loop will wait for the extension
+                // to connect and provide the DOM to click the website's search box and interact.
+                val urlToLaunch = baseDomain
+
                 // Build a command for the extension's content script
-                // Always include the raw user prompt so the extension can handle complex tasks
-                val browserQuery = _currentGoal.value?.query ?: goal.query
-                val rawPrompt = _currentGoal.value?.rawCommand ?: goal.rawCommand
                 val extensionCommand = mutableMapOf(
-                    "cmd" to (goal.task ?: "prompt"),
+                    "cmd" to (taskType ?: "prompt"),
                     "raw" to (rawPrompt ?: ""),
                 )
                 if (!browserQuery.isNullOrBlank()) {
                     extensionCommand["q"] = browserQuery
                 }
-                
+
                 val launched = AppLauncher.launchBrowserUrlWithCommand(context, urlToLaunch!!, extensionCommand)
                 if (launched) {
-                    Log.d(TAG, "Pre-launched browser: $urlToLaunch with command: $extensionCommand")
+                    Log.d(TAG, "Launched browser with URL: $urlToLaunch and command: $extensionCommand")
                     delay(APP_LAUNCH_DELAY_MS)
                     return true
                 }
@@ -565,6 +589,66 @@ class SemanticAutomationEngine(private val context: Context) {
      * Attempts to execute the action using the most reliable method available.
      */
     private suspend fun executeAction(action: ActionIntent, uiState: ScreenUIState): Boolean {
+        // ── Extension DOM path: route actions through the browser extension ──
+        // When the UI state came from DOM snapshots, actions must go through the extension
+        // because Android accessibility can't interact with web page content inside Firefox/Chrome.
+        if (uiState.source == com.autonion.automationcompanion.features.semantic_automation.model.ElementSource.EXTENSION_DOM
+            && extensionBridge.isConnected()) {
+
+            val targetElement = if (action.targetId != null) {
+                uiState.elements.firstOrNull { it.id == action.targetId }
+            } else if (action.targetPoint != null) {
+                // Find element by center point match
+                uiState.elements.firstOrNull { el ->
+                    val center = android.graphics.PointF(
+                        (el.bounds.left + el.bounds.right) / 2f,
+                        (el.bounds.top + el.bounds.bottom) / 2f
+                    )
+                    Math.abs(center.x - action.targetPoint.x) < 5f &&
+                    Math.abs(center.y - action.targetPoint.y) < 5f
+                }
+            } else null
+
+            val elementId = targetElement?.id ?: action.targetId
+
+            val result = when (action.type) {
+                ActionType.CLICK -> {
+                    if (elementId != null) {
+                        Log.d(TAG, "Extension bridge CLICK on '$elementId' (${targetElement?.text})")
+                        extensionBridge.clickElement(elementId)
+                    } else {
+                        Log.w(TAG, "No element ID for extension CLICK, falling through to gesture")
+                        null
+                    }
+                }
+                ActionType.INPUT_TEXT -> {
+                    if (elementId != null && action.inputText != null) {
+                        Log.d(TAG, "Extension bridge TYPE into '$elementId': '${action.inputText}'")
+                        extensionBridge.typeInto(elementId, action.inputText, pressEnter = false)
+                    } else {
+                        Log.w(TAG, "Missing element/text for extension TYPE")
+                        null
+                    }
+                }
+                ActionType.SCROLL_DOWN -> {
+                    Log.d(TAG, "Extension bridge SCROLL_DOWN")
+                    extensionBridge.scrollDown()
+                }
+                ActionType.SCROLL_UP -> {
+                    Log.d(TAG, "Extension bridge SCROLL_UP")
+                    extensionBridge.scrollUp()
+                }
+                else -> null
+            }
+
+            if (result != null) {
+                Log.d(TAG, "Extension bridge action result: success=${result.success}, msg=${result.message ?: result.error}")
+                return result.success
+            }
+            Log.d(TAG, "Extension bridge could not handle ${action.type}, falling through to accessibility")
+        }
+
+        // ── Accessibility path: native Android UI actions ──
         // Only try direct accessibility actions if the UI state was built from it
         if (uiState.source == com.autonion.automationcompanion.features.semantic_automation.model.ElementSource.ACCESSIBILITY && action.targetPoint != null) {
             
@@ -784,4 +868,9 @@ class SemanticAutomationEngine(private val context: Context) {
             else -> alias // Try the alias itself as a substring match
         }
     }
+
+    // buildSearchUrl() has been REMOVED.
+    // The LLM-based GoalParser now provides the correct domain (via goal.domain)
+    // and when the extension is not connected, we use a simple Google search
+    // with the user's query + app name. No hardcoded URL patterns needed.
 }

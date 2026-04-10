@@ -41,6 +41,19 @@ object AccessibilityTreeReader : AccessibilityFeature {
     /** Returns true when we can read the accessibility tree right now. */
     fun isAvailable(): Boolean = serviceRef?.get()?.rootInActiveWindow != null
 
+    /** Returns the current foreground app's package name (e.g. "org.mozilla.fenix"). */
+    fun getCurrentPackageName(): String? {
+        val service = serviceRef?.get() ?: return null
+        // Prefer the actual application window rather than system/keyboard windows
+        val windows = try { service.windows } catch (e: Exception) { null }
+        val window = windows?.find { it.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION }
+        val root = window?.root ?: service.rootInActiveWindow ?: return null
+        
+        val pkg = root.packageName?.toString()
+        root.recycle()
+        return pkg
+    }
+
     /**
      * Capture the current accessibility tree and build a [ScreenUIState].
      */
@@ -89,44 +102,92 @@ object AccessibilityTreeReader : AccessibilityFeature {
      *
      * Tries multiple strategies:
      * 1. Find the currently focused editable node and trigger ACTION_IME_ENTER (API 30+)
-     * 2. Fall back to dispatching KEYCODE_ENTER via AccessibilityAction
+     * 2. If no focused editable: find ANY editable, re-focus it, then retry IME
+     * 3. Fall back to dispatching KEYCODE_ENTER via global key event
      */
     fun performImeAction(): Boolean {
         val service = serviceRef?.get() ?: return false
         val root = service.rootInActiveWindow ?: return false
 
-        // Find the focused editable node
-        val focused = findFocusedEditable(root)
-        val result = if (focused != null) {
+        // Strategy 1: Find the focused editable node
+        var target = findFocusedEditable(root)
+
+        // Strategy 2: No focused editable → find ANY editable and re-focus it
+        if (target == null) {
+            Log.d(TAG, "No focused editable found, searching for any editable to re-focus")
+            target = findAnyEditable(root)
+            if (target != null) {
+                // Re-focus the editable node so IME actions work
+                target.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+                target.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                // Small wait for focus to settle (accessibility dispatch is async)
+                Thread.sleep(300)
+                Log.d(TAG, "Re-focused editable node: '${target.text}'")
+            }
+        }
+
+        if (target != null) {
             // Try newer ACTION_IME_ENTER first (API 30+)
             val imeResult = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-                focused.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)
+                target.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)
             } else {
                 false
             }
 
             if (imeResult) {
-                Log.d(TAG, "IME_ENTER succeeded on focused editable")
-                focused.recycle()
-                true
-            } else {
-                // Fallback: Press Enter key via PRESS_AND_RELEASE_KEY (API 31+, attempt)
-                val args = Bundle().apply {
-                    putInt("android.view.KeyEvent.KEYCODE_ENTER", android.view.KeyEvent.KEYCODE_ENTER)
-                }
-                // Ultimate fallback: click the focused node (often triggers IME search)
-                val clickResult = focused.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                Log.d(TAG, "Fallback click on focused editable for IME submit: $clickResult")
-                focused.recycle()
-                clickResult
+                Log.d(TAG, "IME_ENTER succeeded on editable node")
+                target.recycle()
+                root.recycle()
+                return true
             }
+
+            // Fallback: click the focused node (often triggers IME search on some apps)
+            val clickResult = target.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            Log.d(TAG, "Fallback click on editable for IME submit: $clickResult")
+            target.recycle()
+
+            // If click worked as an IME trigger, return
+            if (clickResult) {
+                root.recycle()
+                return true
+            }
+        }
+
+        // Strategy 3: Global KEYCODE_ENTER via dispatchGesture/key event
+        // This sends Enter at the system level, reaching whatever is focused
+        Log.d(TAG, "Falling back to global KEYCODE_ENTER key event")
+        val enterResult = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            // API 33+: use soft keyboard action
+            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_KEYCODE_HEADSETHOOK)
+            // Not ideal — last resort: try sending Enter via instrumentation-like approach
+            false
         } else {
-            Log.w(TAG, "No focused editable node found for IME action")
             false
         }
 
+        // Strategy 4: Send KEYCODE_ENTER via InputConnection simulation
+        if (!enterResult) {
+            try {
+                val inst = android.app.Instrumentation()
+                Thread {
+                    try {
+                        inst.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_ENTER)
+                        Log.d(TAG, "Sent KEYCODE_ENTER via Instrumentation")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Instrumentation KEYCODE_ENTER failed: ${e.message}")
+                    }
+                }.start()
+                root.recycle()
+                Thread.sleep(500) // Wait for key event to be processed
+                return true
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not dispatch KEYCODE_ENTER: ${e.message}")
+            }
+        }
+
         root.recycle()
-        return result
+        Log.w(TAG, "All IME submit strategies exhausted")
+        return false
     }
 
     /**
@@ -139,16 +200,24 @@ object AccessibilityTreeReader : AccessibilityFeature {
         focused?.recycle()
 
         // Fallback: scan for any focused editable
-        return findEditableByTraversal(root)
+        return findEditableByTraversal(root, requireFocus = true)
     }
 
-    private fun findEditableByTraversal(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
-        if (node.isEditable && node.isFocused) {
+    /**
+     * Find ANY editable node in the tree (focused or not).
+     * Used as fallback when no focused editable is found.
+     */
+    private fun findAnyEditable(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        return findEditableByTraversal(root, requireFocus = false)
+    }
+
+    private fun findEditableByTraversal(node: AccessibilityNodeInfo, requireFocus: Boolean): AccessibilityNodeInfo? {
+        if (node.isEditable && (!requireFocus || node.isFocused)) {
             return AccessibilityNodeInfo.obtain(node)
         }
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
-            val found = findEditableByTraversal(child)
+            val found = findEditableByTraversal(child, requireFocus)
             child.recycle()
             if (found != null) return found
         }
@@ -199,30 +268,40 @@ object AccessibilityTreeReader : AccessibilityFeature {
             targetNode.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
             targetNode.performAction(AccessibilityNodeInfo.ACTION_CLICK) // Click to trigger IME/listeners
 
-            // 1. Clear the field (Crucial for PASTE fallback to not append text like "abc abc "!)
+            // Small delay for focus to settle
+            Thread.sleep(200)
+
+            // 1. Clear the field first
             val clearArgs = Bundle().apply {
                 putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, "")
             }
             targetNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, clearArgs)
-            
-            // 2. Use PASTE as the primary reliable injection mechanism (Bypasses Compose/React state bugs)
-            var success = false
-            val clipboard = service.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
-            if (clipboard != null) {
-                val clip = android.content.ClipData.newPlainText("automation", text)
-                clipboard.setPrimaryClip(clip)
-                success = targetNode.performAction(AccessibilityNodeInfo.ACTION_PASTE)
-                if (success) {
-                    Log.d(TAG, "Used ACTION_PASTE to set text")
-                }
+
+            // 2. PRIMARY: Use ACTION_SET_TEXT (doesn't need clipboard access, works from background)
+            val setTextArgs = Bundle().apply {
+                putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
             }
-            
-            // 3. Fallback to basic SET_TEXT if PASTE failed
+            var success = targetNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, setTextArgs)
+            if (success) {
+                Log.d(TAG, "Used ACTION_SET_TEXT to set text")
+            }
+
+            // 3. FALLBACK: Try ACTION_PASTE if SET_TEXT failed (some Compose/React apps need it)
             if (!success) {
-                val args = Bundle().apply {
-                    putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+                Log.d(TAG, "ACTION_SET_TEXT failed, trying ACTION_PASTE fallback")
+                val clipboard = service.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                if (clipboard != null) {
+                    try {
+                        val clip = android.content.ClipData.newPlainText("automation", text)
+                        clipboard.setPrimaryClip(clip)
+                        success = targetNode.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+                        if (success) {
+                            Log.d(TAG, "Used ACTION_PASTE to set text")
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "ACTION_PASTE failed (clipboard access denied): ${e.message}")
+                    }
                 }
-                success = targetNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
             }
 
             Log.d(TAG, "Set text '$text' on '${element.text}': $success")
