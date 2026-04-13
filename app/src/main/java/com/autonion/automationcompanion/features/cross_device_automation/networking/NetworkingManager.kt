@@ -58,6 +58,8 @@ class NetworkingManager(
     private val _responseFlow = MutableSharedFlow<PromptResponse>(extraBufferCapacity = 16)
     val responseFlow: SharedFlow<PromptResponse> = _responseFlow.asSharedFlow()
 
+    fun hasActiveConnections(): Boolean = activeConnections.isNotEmpty()
+
     fun start() {
         if (collectionJob?.isActive == true) return
 

@@ -92,7 +92,7 @@ fun AppNavHost() {
     // ── OmniChatbot Setup ──
     val intentClassifier = remember { IntentClassifier.getInstance(context) }
     val crossDeviceManager = remember {
-        com.autonion.automationcompanion.features.cross_device_automation.CrossDeviceAutomationManager(context)
+        com.autonion.automationcompanion.features.cross_device_automation.CrossDeviceAutomationManager.getInstance(context)
     }
     val omniViewModel = remember {
         OmniChatbotViewModel(

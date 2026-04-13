@@ -16,6 +16,8 @@ import com.autonion.automationcompanion.features.omni_chatbot.knowledge.FAQMatch
 import com.autonion.automationcompanion.features.omni_chatbot.knowledge.KnowledgeStore
 import com.autonion.automationcompanion.features.omni_chatbot.knowledge.RAGPromptBuilder
 import com.autonion.automationcompanion.features.omni_chatbot.model.*
+import com.autonion.automationcompanion.features.semantic_automation.ml.LocalServerLLMEngine
+import com.autonion.automationcompanion.features.semantic_automation.ml.ServerConnectionStatus
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -108,17 +110,34 @@ class OmniChatbotViewModel(
 
         viewModelScope.launch {
             try {
-                val result = intentClassifier.classify(prompt)
-                Log.d(TAG, "Classified: ${result.intent} (${result.confidence})")
+                // Determine explicit routing
+                var resolvedPrompt = prompt
+                var forcedIntent: IntentType? = null
+                
+                if (prompt.startsWith("/android ", ignoreCase = true)) {
+                    resolvedPrompt = prompt.substring(9).trim()
+                    forcedIntent = IntentType.DEVICE_AUTOMATION
+                } else if (prompt.startsWith("/desktop ", ignoreCase = true)) {
+                    resolvedPrompt = prompt.substring(9).trim()
+                    forcedIntent = IntentType.CROSS_DEVICE
+                }
 
-                when (result.intent) {
-                    IntentType.DIRECT_KEY_ACTION -> handleKeyAction(result)
-                    IntentType.DIRECT_TOGGLE -> handleToggle(result)
-                    IntentType.SCHEDULED_ACTION -> handleScheduledAction(result)
-                    IntentType.DEVICE_AUTOMATION -> handleDeviceAutomation(result)
-                    IntentType.CROSS_DEVICE -> handleCrossDevice(result)
-                    IntentType.FAQ -> handleFAQ(result)
-                    IntentType.Q_AND_A -> handleQAndA(result)
+                val result = intentClassifier.classify(resolvedPrompt)
+                val finalIntent = forcedIntent ?: result.intent
+                
+                Log.d(TAG, "Classified: ${result.intent} (${result.confidence}), Forced: $forcedIntent -> Final: $finalIntent")
+
+                // Update result to hold the original rawPrompt and the final chosen intent
+                val finalResult = result.copy(rawPrompt = resolvedPrompt, intent = finalIntent)
+
+                when (finalResult.intent) {
+                    IntentType.DIRECT_KEY_ACTION -> handleKeyAction(finalResult)
+                    IntentType.DIRECT_TOGGLE -> handleToggle(finalResult)
+                    IntentType.SCHEDULED_ACTION -> handleScheduledAction(finalResult)
+                    IntentType.DEVICE_AUTOMATION -> handleDeviceAutomation(finalResult)
+                    IntentType.CROSS_DEVICE -> handleCrossDevice(finalResult)
+                    IntentType.FAQ -> handleFAQ(finalResult)
+                    IntentType.Q_AND_A -> handleQAndA(finalResult)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error processing prompt", e)
@@ -270,6 +289,16 @@ class OmniChatbotViewModel(
     }
 
     private fun handleDeviceAutomation(result: IntentResult) {
+        val llmEngine = LocalServerLLMEngine.getInstance(context)
+        if (llmEngine.connectionStatus.value != ServerConnectionStatus.CONNECTED) {
+            addMessage(OmniChatMessage(
+                text = "⚠️ No LLM server connected. Please connect to a local LLM (like Ollama) in settings to enable automation reasoning.",
+                isUser = false,
+                mode = ResponseMode.SYSTEM
+            ))
+            return
+        }
+
         addMessage(OmniChatMessage(
             text = "🤖 Starting automation agent...",
             isUser = false,
@@ -281,6 +310,15 @@ class OmniChatbotViewModel(
     }
 
     private fun handleCrossDevice(result: IntentResult) {
+        if (!crossDeviceManager.networkingManager.hasActiveConnections()) {
+            addMessage(OmniChatMessage(
+                text = "⚠️ No Desktop Agent detected. Make sure the Autonion desktop app is running and connected to the same WiFi network.",
+                isUser = false,
+                mode = ResponseMode.SYSTEM
+            ))
+            return
+        }
+
         val device = result.entities.targetDevice ?: "desktop"
 
         addMessage(OmniChatMessage(
@@ -320,34 +358,62 @@ class OmniChatbotViewModel(
         ))
 
         viewModelScope.launch {
-            // 1. First, try FAQ matching (fast path)
+            // 1. Try FAQ matching (fast path)
             val faqMatch = faqMatcher.match(result.rawPrompt)
             if (faqMatch != null) {
                 updateLastBotMessage(faqMatch.answer, ResponseMode.FAQ)
                 return@launch
             }
 
-            // 2. Try RAG: retrieve relevant knowledge chunks
+            // 2. Try RAG & LLM contextual synthesis
             val chunks = knowledgeStore.search(result.rawPrompt, topK = 3)
-            if (chunks.isNotEmpty()) {
-                // Build context-augmented answer from chunks
+            val llmEngine = LocalServerLLMEngine.getInstance(context)
+            
+            if (chunks.isEmpty() || llmEngine.connectionStatus.value != ServerConnectionStatus.CONNECTED) {
+                // Fallback if no context or no LLM
                 val contextAnswer = buildString {
-                    append("📚 Here's what I found:\n\n")
-                    for (chunk in chunks.take(2)) {
-                        append(chunk.text.take(500))
-                        append("\n\n")
+                    if (chunks.isNotEmpty()) {
+                        append("📚 Here's what I found (LLM synthesis unavailable):\n\n")
+                        for (chunk in chunks.take(2)) {
+                            append(chunk.text.take(500))
+                            append("\n\n")
+                        }
+                    } else {
+                        append("I don't have information about that in my knowledge base. Try asking about app features or troubleshooting!")
                     }
                 }
                 updateLastBotMessage(contextAnswer.trim(), ResponseMode.KNOWLEDGE)
                 return@launch
             }
 
-            // 3. Fallback: no relevant context found
-            updateLastBotMessage(
-                "I don't have information about that in my knowledge base. " +
-                "Try asking about app features, setup, or troubleshooting!",
-                ResponseMode.KNOWLEDGE
+            // Generate contextual answer via LLM
+            val contextText = chunks.joinToString("\n") { it.text }
+            val systemPrompt = """
+                You are Autonion, an AI built into an Android automation app. 
+                Answer the user's question concisely using ONLY the provided knowledge. 
+                User is currently at screen/route: ${currentRoute.value ?: "unknown"}.
+                
+                Knowledge:
+                $contextText
+            """.trimIndent()
+            
+            val jsonSchema = mapOf(
+                "type" to "object",
+                "properties" to mapOf("answer" to mapOf("type" to "string")),
+                "required" to listOf("answer")
             )
+            
+            val responseStr = llmEngine.chatWithSchema(systemPrompt, result.rawPrompt, jsonSchema)
+            if (responseStr != null) {
+                try {
+                    val answer = org.json.JSONObject(responseStr).getString("answer")
+                    updateLastBotMessage(answer, ResponseMode.KNOWLEDGE)
+                } catch (e: Exception) {
+                    updateLastBotMessage("⚠️ Error parsing answer.", ResponseMode.SYSTEM)
+                }
+            } else {
+                 updateLastBotMessage("⚠️ LLM server failed to respond.", ResponseMode.SYSTEM)
+            }
         }
     }
 
