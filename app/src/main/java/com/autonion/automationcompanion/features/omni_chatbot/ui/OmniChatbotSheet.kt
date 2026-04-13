@@ -566,37 +566,66 @@ private fun ChatInputBar(
     onValueChange: (String) -> Unit,
     onSend: () -> Unit
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 8.dp)
-            .clip(RoundedCornerShape(28.dp))
-            .background(InputBarBg)
-            .padding(horizontal = 6.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        TextField(
-            value = value,
-            onValueChange = onValueChange,
-            modifier = Modifier.weight(1f),
-            placeholder = {
-                Text(
-                    "Ask anything...",
-                    color = Color.White.copy(alpha = 0.3f)
-                )
-            },
-            colors = TextFieldDefaults.colors(
-                focusedContainerColor = Color.Transparent,
-                unfocusedContainerColor = Color.Transparent,
-                focusedIndicatorColor = Color.Transparent,
-                unfocusedIndicatorColor = Color.Transparent,
-                cursorColor = AccentPurple,
-                focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White
-            ),
-            maxLines = 3,
-            textStyle = LocalTextStyle.current.copy(fontSize = 14.sp)
-        )
+    Column {
+        androidx.compose.animation.AnimatedVisibility(
+            visible = value.startsWith("/") && value.length < 8,
+            enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandVertically(),
+            exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkVertically()
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                listOf("/android ", "/desktop ").forEach { cmd ->
+                    Surface(
+                        color = CardGlass,
+                        shape = RoundedCornerShape(12.dp),
+                        onClick = { onValueChange(cmd) }
+                    ) {
+                        Text(
+                            text = cmd.trim(),
+                            color = AccentPurple,
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+                .clip(RoundedCornerShape(28.dp))
+                .background(InputBarBg)
+                .padding(horizontal = 6.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextField(
+                value = value,
+                onValueChange = onValueChange,
+                modifier = Modifier.weight(1f),
+                placeholder = {
+                    Text(
+                        "Ask anything...",
+                        color = Color.White.copy(alpha = 0.3f)
+                    )
+                },
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent,
+                    focusedIndicatorColor = Color.Transparent,
+                    unfocusedIndicatorColor = Color.Transparent,
+                    cursorColor = AccentPurple,
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White
+                ),
+                maxLines = 3,
+                textStyle = LocalTextStyle.current.copy(fontSize = 14.sp)
+            )
 
         // Send button with pulse animation
         val hasText = value.isNotBlank()
@@ -624,6 +653,7 @@ private fun ChatInputBar(
                 tint = Color.White.copy(alpha = if (hasText) 1f else 0.3f),
                 modifier = Modifier.size(18.dp)
             )
+        }
         }
     }
 }

@@ -60,6 +60,9 @@ class OmniChatbotViewModel(
     /** Active scheduled task jobs, keyed by task ID */
     private val scheduledJobs = mutableMapOf<String, Job>()
 
+    /** Track completed transactions to prevent duplicate completion messages */
+    private val completedTransactions = mutableSetOf<String>()
+
     // ─── RAG + FAQ (initialized lazily) ─────────────────────
     private val faqMatcher: FAQMatcher by lazy {
         FAQMatcher(intentClassifier.embedder).also {
@@ -74,6 +77,20 @@ class OmniChatbotViewModel(
     }
 
     private val ragPromptBuilder = RAGPromptBuilder()
+
+    // ─── Init: Wire up Desktop response flow ────────────────
+    init {
+        viewModelScope.launch {
+            try {
+                crossDeviceManager.networkingManager.responseFlow.collect { response ->
+                    Log.d(TAG, "Desktop response received: ${response.status} - ${response.message}")
+                    onDesktopResponse(response)
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error collecting desktop responses", e)
+            }
+        }
+    }
 
     // ─── Input Handling ─────────────────────────────────────
 
@@ -427,6 +444,20 @@ class OmniChatbotViewModel(
      */
     fun onDesktopResponse(response: PromptResponse) {
         val mode = ResponseMode.DESKTOP
+
+        // Deduplicate terminal statuses (completed/failed) per transaction
+        if (response.status == ResponseStatus.COMPLETED || response.status == ResponseStatus.FAILED) {
+            if (completedTransactions.contains(response.transactionId)) {
+                Log.d(TAG, "Skipping duplicate ${response.status} for txn=${response.transactionId}")
+                return
+            }
+            completedTransactions.add(response.transactionId)
+            // Cap at 50 to prevent memory leak
+            if (completedTransactions.size > 50) {
+                completedTransactions.remove(completedTransactions.first())
+            }
+        }
+
         val emoji = when (response.status) {
             ResponseStatus.STARTED -> "🔗"
             ResponseStatus.IN_PROGRESS -> "⏳"
