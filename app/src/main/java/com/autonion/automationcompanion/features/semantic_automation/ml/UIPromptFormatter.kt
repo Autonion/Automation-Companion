@@ -3,6 +3,7 @@ package com.autonion.automationcompanion.features.semantic_automation.ml
 import com.autonion.automationcompanion.features.semantic_automation.model.SemanticGoal
 import com.autonion.automationcompanion.features.semantic_automation.model.ScreenUIState
 import com.autonion.automationcompanion.features.semantic_automation.model.UIStateElement
+import com.autonion.automationcompanion.features.semantic_automation.model.ElementSource
 
 /**
  * Record of one completed step, used to build context for the LLM.
@@ -108,12 +109,17 @@ object UIPromptFormatter {
                 if (el.isChecked != null) caps.add(if (el.isChecked) "Checked" else "Unchecked")
                 append("(${caps.joinToString(", ")}) ")
 
-                // Type
-                append("[${el.type}] ")
+                // Type or HTML tag
+                if (el.source == ElementSource.EXTENSION_DOM && !el.className.isNullOrBlank()) {
+                    append("<${el.className}> ")
+                } else {
+                    append("[${el.type}] ")
+                }
 
                 // Text content (truncated to keep prompt compact)
+                val fallbackText = if (el.source != ElementSource.EXTENSION_DOM) el.className?.substringAfterLast(".") else null
                 val rawText = el.text?.ifBlank { null }
-                    ?: el.className?.substringAfterLast(".")
+                    ?: fallbackText
                     ?: "no text"
                 val contentText = rawText.replace("\n", " ").trim().take(60)
                 append("\"$contentText\"\n")

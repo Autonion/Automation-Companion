@@ -54,7 +54,7 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
         }
         
         networkingManager = NetworkingManager(context, deviceRepository, eventReceiverProxy)
-        networkingManager.setListener(this)
+        networkingManager.listener = this
         actionExecutor = ActionExecutor(context, networkingManager)
         
         ruleEngine = RuleEngine(context, ruleRepository, actionExecutor) 

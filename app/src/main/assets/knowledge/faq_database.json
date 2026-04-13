@@ -1,0 +1,62 @@
+[
+  {
+    "question": "How do I connect my desktop to the Android app?",
+    "answer": "To connect your desktop:\n1. Install and run the Autonion Desktop Agent on your PC/Mac.\n2. Make sure both devices are on the same Wi-Fi network.\n3. Open the Autonion app on Android and go to Cross-Device Automation.\n4. The desktop should appear automatically via mDNS discovery.\n5. Tap the device name to connect. You'll see a 'Connected' status.\n\nIf auto-discovery fails, you can manually enter the IP address shown in the Desktop Agent window.",
+    "tags": ["connection", "setup", "desktop", "cross-device"]
+  },
+  {
+    "question": "What is Semantic Automation?",
+    "answer": "Semantic Automation is Autonion's AI-powered feature that understands natural language commands and executes them on your device. For example, you can say 'search for shoes on Flipkart' and the AI agent will open Flipkart, find the search bar, type your query, and submit it — all autonomously.\n\nIt uses a combination of:\n- On-device accessibility tree reading to understand screen elements\n- LLM (Large Language Model) via local Ollama for action prediction\n- Rule-based heuristics for common tasks like search, toggle, and navigation",
+    "tags": ["semantic", "automation", "ai", "agent"]
+  },
+  {
+    "question": "How do I set up Ollama for the AI features?",
+    "answer": "Ollama provides the local LLM that powers AI features:\n1. Download Ollama from https://ollama.ai and install it on your PC.\n2. Open a terminal and run: ollama pull qwen2.5:3b (or your preferred model).\n3. Ollama starts a server at http://localhost:11434 automatically.\n4. In the Autonion Android app, go to Semantic Automation > Model Manager.\n5. Enter your PC's IP address (e.g., 192.168.x.x:11434) as the server URL.\n6. Tap 'Test Connection' to verify it works.\n\nRecommended models: qwen2.5:3b for speed, qwen2.5:7b for accuracy.",
+    "tags": ["ollama", "setup", "ai", "llm", "model"]
+  },
+  {
+    "question": "Why is the automation doing random actions?",
+    "answer": "This usually happens when:\n1. **Model too small**: Smaller models (1-3B parameters) may hallucinate on complex tasks. Try upgrading to a 7B model.\n2. **Complex prompts**: Break down complex requests into simpler steps instead of one long prompt.\n3. **Screen noise**: Too many UI elements confuse the model. Try closing unnecessary apps.\n4. **Network timeout**: If the LLM takes too long, the engine may fall back to rule-based actions which may not match the intent.\n\nTip: Use the Omni-Chatbot to send structured commands (like 'press next' or 'turn off wifi') which bypass the LLM entirely.",
+    "tags": ["troubleshooting", "semantic", "hallucination", "random"]
+  },
+  {
+    "question": "How do I sync clipboard between devices?",
+    "answer": "Clipboard sync works automatically when devices are connected:\n1. Connect your Android device to the Desktop Agent (see device connection FAQ).\n2. Clipboard sync starts automatically — any text copied on one device appears on the other.\n3. For privacy, clipboard data is only synced locally over your Wi-Fi network and is never sent to any cloud server.\n\nNote: Only text content is synced. Images and files are not supported yet.",
+    "tags": ["clipboard", "sync", "cross-device"]
+  },
+  {
+    "question": "What automations can I create?",
+    "answer": "Autonion supports several automation types:\n\n🎯 **Direct Actions**: Press keys, toggle settings (wifi, bluetooth, etc.)\n🤖 **Semantic Automation**: AI-driven app interactions ('search shoes on Flipkart')\n🔗 **Cross-Device**: Send commands to your desktop ('on my laptop open Chrome')\n⏱️ **Scheduled Tasks**: Repeat actions on a timer ('click next every 1 minute')\n📋 **Flow Builder**: Create visual automation workflows with drag-and-drop\n👋 **Gesture Recording**: Record and replay touch gestures\n📡 **System Context**: Location-aware automations\n🔍 **Visual Triggers**: Screen-pattern-based automations",
+    "tags": ["features", "overview", "capabilities"]
+  },
+  {
+    "question": "How to use the Flow Builder?",
+    "answer": "The Flow Builder lets you create visual automation workflows:\n1. Go to Flow Builder from the home screen.\n2. Tap '+' to create a new flow.\n3. Add trigger events (e.g., time-based, app launch, notification).\n4. Add action blocks (e.g., open app, type text, press button).\n5. Connect triggers to actions by dragging connections.\n6. Tap 'Run' to execute or 'Schedule' for automatic execution.\n\nTip: Enable the Accessibility Service before running flows that interact with UI elements.",
+    "tags": ["flow", "builder", "workflow", "tutorial"]
+  },
+  {
+    "question": "How to record and replay gestures?",
+    "answer": "Gesture recording lets you capture and replay touch interactions:\n1. Go to Gesture Recording from the home screen.\n2. Tap 'Record' to start. The overlay will appear.\n3. Perform your gestures (taps, swipes, long presses).\n4. Tap the overlay stop button when done.\n5. Name your recording and save it.\n6. To replay, select the recording and tap 'Play'.\n\nNote: Gesture recording requires the Accessibility Service to be enabled.",
+    "tags": ["gesture", "recording", "playback", "tutorial"]
+  },
+  {
+    "question": "How does the browser extension work?",
+    "answer": "The Autonion browser extension enables web automation:\n1. Install the extension in your browser (Lemur/Chrome-based browsers work best).\n2. The extension connects to the Desktop Agent via WebSocket.\n3. When you send a browser-related command, the extension captures the webpage DOM.\n4. The AI agent reads the page structure and interacts with elements (clicks, types, scrolls).\n5. Results are sent back to your Android app.\n\nThe extension is needed because the Accessibility Service can only see native Android UI elements, not web page content.",
+    "tags": ["browser", "extension", "web", "automation"]
+  },
+  {
+    "question": "How to stop a running automation?",
+    "answer": "There are several ways to stop automations:\n\n1. **Omni-Chat Stop Button**: For scheduled tasks, tap the 'Stop' button shown in the chat.\n2. **Notification**: Tap the 'Stop' action in the persistent automation notification.\n3. **Semantic Automation Screen**: Tap the stop button on the automation screen.\n4. **Kill Switch**: In cross-device mode, send a 'stop' command to halt remote automation.\n\nEmergency: If everything freezes, disable the Accessibility Service from Android Settings > Accessibility.",
+    "tags": ["stop", "cancel", "automation", "emergency"]
+  },
+  {
+    "question": "What is the Automation Debugger?",
+    "answer": "The Automation Debugger helps you understand what happened during an automation:\n1. Go to Automation Debugger from the home screen.\n2. View logs categorized by: Accessibility Events, Cross-Device Sync, Semantic Actions, etc.\n3. Tap any log category to see detailed entries with timestamps.\n4. Use this to diagnose why an automation failed or behaved unexpectedly.\n\nThe debugger is essential for troubleshooting complex automations.",
+    "tags": ["debugger", "logs", "troubleshooting", "debug"]
+  },
+  {
+    "question": "Is my data private and secure?",
+    "answer": "Yes! Autonion is designed with privacy in mind:\n- **100% Local**: All AI processing happens on your local network via Ollama. No cloud APIs.\n- **No Telemetry**: The app does not collect or send any usage data.\n- **Local Network Only**: Cross-device communication uses your local Wi-Fi only.\n- **No Account Required**: No sign-up, login, or cloud services needed.\n- **Open Source**: You can inspect the code yourself.\n\nNote: The Accessibility Service has broad permissions by nature — it can read all screen content. Only enable it when actively using automations.",
+    "tags": ["privacy", "security", "data", "local"]
+  }
+]

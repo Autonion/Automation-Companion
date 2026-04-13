@@ -8,10 +8,15 @@ import com.autonion.automationcompanion.features.automation_debugger.data.LogCat
 import com.autonion.automationcompanion.features.cross_device_automation.domain.Device
 import com.autonion.automationcompanion.features.cross_device_automation.domain.DeviceRepository
 import com.autonion.automationcompanion.features.cross_device_automation.domain.RawEvent
+import com.autonion.automationcompanion.features.cross_device_automation.domain.PromptResponse
+import com.autonion.automationcompanion.features.cross_device_automation.domain.ResponseStatus
 import com.autonion.automationcompanion.features.cross_device_automation.event_pipeline.EventReceiver
 import com.google.gson.Gson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
@@ -30,6 +35,13 @@ class NetworkingManager(
     companion object {
         private const val TAG = "NetworkingManager"
     }
+
+    interface NetworkingListener {
+        fun onDeviceConnected(device: Device)
+        fun onDeviceDisconnected(deviceId: String)
+        fun onMessageReceived(deviceId: String, rawJson: String)
+    }
+
     private val client = OkHttpClient.Builder()
         .readTimeout(0, TimeUnit.MILLISECONDS)
         .pingInterval(30, TimeUnit.SECONDS) // Keep-alive for background stability
@@ -40,6 +52,11 @@ class NetworkingManager(
     private val scope = CoroutineScope(Dispatchers.IO)
 
     private var collectionJob: kotlinx.coroutines.Job? = null
+    var listener: NetworkingListener? = null
+
+    // ── Two-Way Communication: Prompt Response Flow ──
+    private val _responseFlow = MutableSharedFlow<PromptResponse>(extraBufferCapacity = 16)
+    val responseFlow: SharedFlow<PromptResponse> = _responseFlow.asSharedFlow()
 
     fun start() {
         if (collectionJob?.isActive == true) return
@@ -55,17 +72,7 @@ class NetworkingManager(
         }
     }
 
-    interface NetworkingListener {
-        fun onDeviceConnected(device: Device)
-        fun onDeviceDisconnected(deviceId: String)
-        fun onMessageReceived(deviceId: String, message: String)
-    }
 
-    private var listener: NetworkingListener? = null
-
-    fun setListener(listener: NetworkingListener) {
-        this.listener = listener
-    }
 
     private fun connectToDevice(device: Device) {
         val request = Request.Builder()
@@ -131,7 +138,39 @@ class NetworkingManager(
                         return // Don't try to parse as RawEvent
                     }
 
-                    // 3. Handle Data Events
+                    // 3. Handle Prompt Response (two-way communication from Desktop)
+                    if (type == "prompt_response") {
+                        val transactionId = jsonObject.get("transactionId")?.asString ?: ""
+                        val status = jsonObject.get("status")?.asString ?: "unknown"
+                        val message = jsonObject.get("message")?.asString ?: ""
+
+                        val responseStatus = try {
+                            ResponseStatus.valueOf(status.uppercase())
+                        } catch (_: Exception) {
+                            ResponseStatus.IN_PROGRESS
+                        }
+
+                        val response = PromptResponse(
+                            transactionId = transactionId,
+                            status = responseStatus,
+                            message = message
+                        )
+
+                        scope.launch {
+                            _responseFlow.emit(response)
+                        }
+
+                        Log.d(TAG, "Prompt response: $status - $message")
+                        DebugLogger.info(
+                            context, LogCategory.CROSS_DEVICE_SYNC,
+                            "Desktop Response",
+                            "[$status] $message (txn=$transactionId)",
+                            TAG
+                        )
+                        return
+                    }
+
+                    // 4. Handle Data Events
                     // Only try to parse as RawEvent if it looks like one, or let the listener handle it exclusively?
                     // For now, we still try to parse standard events for the eventPipeline.
                     if (type.startsWith("clipboard.") || type.contains("event")) {

@@ -60,7 +60,7 @@ data class OllamaChatRequest(
     val model: String,
     val messages: List<OllamaChatMessage>,
     val stream: Boolean = false,
-    val format: Map<String, Any>? = null,
+    val format: Any? = null,
     val options: Map<String, Any>? = null
 )
 
@@ -159,8 +159,8 @@ class LocalServerLLMEngine private constructor(
         try {
             val okHttpClient = OkHttpClient.Builder()
                 .connectTimeout(120, TimeUnit.SECONDS)
-                .readTimeout(120, TimeUnit.SECONDS)
-                .writeTimeout(120, TimeUnit.SECONDS)
+                .readTimeout(300, TimeUnit.SECONDS)
+                .writeTimeout(300, TimeUnit.SECONDS)
                 .build()
 
             api = Retrofit.Builder()
@@ -275,7 +275,7 @@ class LocalServerLLMEngine private constructor(
                         model = model,
                         messages = messages,
                         stream = false,
-                        format = null, // No schema — let the model generate freely
+                        format = "json", // Basic JSON output mode
                         options = inferenceOptions
                     )
                 )
@@ -339,7 +339,7 @@ class LocalServerLLMEngine private constructor(
             }
             messages.add(OllamaChatMessage(role = "user", content = userPrompt))
 
-            val response = currentApi.chat(
+            var response = currentApi.chat(
                 OllamaChatRequest(
                     model = model,
                     messages = messages,
@@ -349,8 +349,27 @@ class LocalServerLLMEngine private constructor(
                 )
             )
 
-            val content = response.message.content.trim()
+            var content = response.message.content.trim()
             Log.d(TAG, "chatWithSchema response (${response.eval_count} tokens): $content")
+
+            // Fallback: If structured output returned empty, retry with simpler "json" constraint
+            if (content.isBlank()) {
+                Log.w(TAG, "chatWithSchema: Structured output was empty, retrying with 'json' constraint")
+                val fallbackMessages = messages.toMutableList()
+                fallbackMessages.add(0, OllamaChatMessage(role = "system", content = "Return only valid JSON. Do not return markdown or comments outside the JSON object."))
+                
+                response = currentApi.chat(
+                    OllamaChatRequest(
+                        model = model,
+                        messages = fallbackMessages,
+                        stream = false,
+                        format = "json",
+                        options = mapOf("temperature" to 0.1, "num_ctx" to 2048)
+                    )
+                )
+                content = response.message.content.trim()
+                Log.d(TAG, "chatWithSchema Fallback response (${response.eval_count} tokens): $content")
+            }
 
             if (content.isBlank()) null else content
         } catch (e: Exception) {

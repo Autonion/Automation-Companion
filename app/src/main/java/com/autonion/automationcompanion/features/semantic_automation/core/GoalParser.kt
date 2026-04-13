@@ -1,5 +1,6 @@
 package com.autonion.automationcompanion.features.semantic_automation.core
 
+import android.content.Context
 import android.util.Log
 import com.autonion.automationcompanion.features.semantic_automation.ml.LocalServerLLMEngine
 import com.autonion.automationcompanion.features.semantic_automation.ml.ServerConnectionStatus
@@ -21,7 +22,10 @@ import org.json.JSONObject
  * Requires the Ollama server to be connected. If not connected, returns null
  * to signal the caller to show a "connect to server" message.
  */
-class GoalParser {
+import com.autonion.automationcompanion.features.nlu.IntentClassifier
+import com.autonion.automationcompanion.features.nlu.IntentType
+
+class GoalParser(private val context: Context) {
 
     companion object {
         private const val TAG = "GoalParser"
@@ -80,8 +84,32 @@ class GoalParser {
      */
     suspend fun parse(rawCommand: String, llmEngine: LocalServerLLMEngine): SemanticGoal? {
         val command = rawCommand.trim()
-        Log.d(TAG, "Parsing with LLM: \"$command\"")
+        Log.d(TAG, "Parsing with semantic engine: \"$command\"")
 
+        // ── Phase 1: Local NLU via IntentClassifier ──
+        try {
+            val classifier = IntentClassifier.getInstance(context)
+            val localResult = classifier.classify(command)
+
+            if (localResult.intent == IntentType.DIRECT_TOGGLE) {
+                val task = if (localResult.entities.toggleDesiredState == false) "disable" else "enable"
+                val target = localResult.entities.toggleTarget
+                Log.d(TAG, "Local parsed → task=$task, query=$target (DIRECT_TOGGLE)")
+                return SemanticGoal(task = task, query = target, targetApp = null, domain = null, rawCommand = command)
+            } else if (localResult.intent == IntentType.DEVICE_AUTOMATION && localResult.confidence >= 0.85f) {
+                val app = localResult.entities.appName
+                val query = localResult.entities.searchQuery
+                if (app != null) {
+                    val task = if (!query.isNullOrBlank()) "search" else "open"
+                    Log.d(TAG, "Local parsed → task=$task, app=$app, query=$query (DEVICE_AUTOMATION)")
+                    return SemanticGoal(task = task, query = query, targetApp = app, domain = null, rawCommand = command)
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Local intent classification failed, falling back to LLM", e)
+        }
+
+        // ── Phase 2: LLM Fallback for complex prompts ──
         if (llmEngine.connectionStatus.value != ServerConnectionStatus.CONNECTED) {
             Log.w(TAG, "LLM server not connected — cannot parse goal")
             return null

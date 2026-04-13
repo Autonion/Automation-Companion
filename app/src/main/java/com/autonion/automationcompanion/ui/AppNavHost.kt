@@ -16,6 +16,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -30,6 +31,9 @@ import com.autonion.automationcompanion.features.automation_debugger.ui.Debugger
 import com.autonion.automationcompanion.features.automation_debugger.ui.LogDetailScreen
 import com.autonion.automationcompanion.features.flow_automation.ui.FlowBuilderMainScreen
 import com.autonion.automationcompanion.features.gesture_recording_playback.GestureRecordingScreen
+import com.autonion.automationcompanion.features.nlu.IntentClassifier
+import com.autonion.automationcompanion.features.omni_chatbot.OmniChatbotViewModel
+import com.autonion.automationcompanion.features.omni_chatbot.ui.OmniChatbotScaffold
 import com.autonion.automationcompanion.features.semantic_automation.ml.ModelStorageManager
 import com.autonion.automationcompanion.features.semantic_automation.ui.ModelManagerScreen
 import com.autonion.automationcompanion.features.system_context_automation.SystemContextMainScreen
@@ -65,6 +69,7 @@ fun AppNavHost() {
     val activity = view.context as? Activity
     val colorScheme = MaterialTheme.colorScheme
     val isDark = isSystemInDarkTheme()
+    val context = LocalContext.current
 
     SideEffect {
         activity?.let { act ->
@@ -84,25 +89,43 @@ fun AppNavHost() {
     // Shared ViewModel for Debugger screens
     val debuggerViewModel: DebuggerViewModel = viewModel()
 
-    NavHost(
-        navController = navController,
-        startDestination = ROUTE_HOME,
-        enterTransition = {
-            slideInHorizontally(animationSpec = tween(NAV_ANIM_DURATION)) { fullWidth -> fullWidth } + fadeIn(animationSpec = tween(NAV_ANIM_DURATION))
-        },
-        exitTransition = {
-            slideOutHorizontally(animationSpec = tween(NAV_ANIM_DURATION)) { fullWidth -> -fullWidth } + fadeOut(animationSpec = tween(NAV_ANIM_DURATION))
-        },
-        popEnterTransition = {
-            slideInHorizontally(animationSpec = tween(NAV_ANIM_DURATION)) { fullWidth -> -fullWidth } + fadeIn(animationSpec = tween(NAV_ANIM_DURATION))
-        },
-        popExitTransition = {
-            slideOutHorizontally(animationSpec = tween(NAV_ANIM_DURATION)) { fullWidth -> fullWidth } + fadeOut(animationSpec = tween(NAV_ANIM_DURATION))
-        }
+    // ── OmniChatbot Setup ──
+    val intentClassifier = remember { IntentClassifier.getInstance(context) }
+    val crossDeviceManager = remember {
+        com.autonion.automationcompanion.features.cross_device_automation.CrossDeviceAutomationManager(context)
+    }
+    val omniViewModel = remember {
+        OmniChatbotViewModel(
+            context = context,
+            intentClassifier = intentClassifier,
+            crossDeviceManager = crossDeviceManager
+        )
+    }
+
+    // ── Wrap everything in OmniChatbot scaffold ──
+    OmniChatbotScaffold(
+        viewModel = omniViewModel,
+        currentRoute = currentRoute
     ) {
-        composable(ROUTE_HOME) {
-            HomeScreen(onOpen = { route -> navController.navigate(route) })
-        }
+        NavHost(
+            navController = navController,
+            startDestination = ROUTE_HOME,
+            enterTransition = {
+                slideInHorizontally(animationSpec = tween(NAV_ANIM_DURATION)) { fullWidth -> fullWidth } + fadeIn(animationSpec = tween(NAV_ANIM_DURATION))
+            },
+            exitTransition = {
+                slideOutHorizontally(animationSpec = tween(NAV_ANIM_DURATION)) { fullWidth -> -fullWidth } + fadeOut(animationSpec = tween(NAV_ANIM_DURATION))
+            },
+            popEnterTransition = {
+                slideInHorizontally(animationSpec = tween(NAV_ANIM_DURATION)) { fullWidth -> -fullWidth } + fadeIn(animationSpec = tween(NAV_ANIM_DURATION))
+            },
+            popExitTransition = {
+                slideOutHorizontally(animationSpec = tween(NAV_ANIM_DURATION)) { fullWidth -> fullWidth } + fadeOut(animationSpec = tween(NAV_ANIM_DURATION))
+            }
+        ) {
+            composable(ROUTE_HOME) {
+                HomeScreen(onOpen = { route -> navController.navigate(route) })
+            }
 
         composable(AutomationRoutes.GESTURE) {
             GestureRecordingScreen(onBack = { navController.popBackStack() })
@@ -295,7 +318,7 @@ fun AppNavHost() {
             )
         }
 
-    }
+        } // NavHost
+    } // OmniChatbotScaffold
 
 }
-

@@ -52,7 +52,7 @@ class SemanticAutomationEngine(private val context: Context) {
         private const val MAX_CONSECUTIVE_FAILURES = 3
     }
 
-    private val goalParser = GoalParser()
+    private val goalParser = GoalParser(context)
     private val uiStateBuilder = UIStateBuilder(context)
     private val fallbackPredictor = ActionPredictor()
     private val taskPlanner = TaskPlanner()
@@ -595,7 +595,12 @@ class SemanticAutomationEngine(private val context: Context) {
         if (uiState.source == com.autonion.automationcompanion.features.semantic_automation.model.ElementSource.EXTENSION_DOM
             && extensionBridge.isConnected()) {
 
-            val targetElement = if (action.targetId != null) {
+            val targetElement = if (action.targetId != null && action.targetId.startsWith("slm_element_")) {
+                val index = action.targetId.removePrefix("slm_element_").toIntOrNull()
+                if (index != null && index >= 0 && index < uiState.elements.size) {
+                    uiState.elements[index]
+                } else null
+            } else if (action.targetId != null) {
                 uiState.elements.firstOrNull { it.id == action.targetId }
             } else if (action.targetPoint != null) {
                 // Find element by center point match
@@ -815,9 +820,9 @@ class SemanticAutomationEngine(private val context: Context) {
         // Different package → app switch
         if (oldState.packageName != newState.packageName) return true
 
-        // Compare a fingerprint of element texts (fast heuristic)
-        val oldFingerprint = oldState.elements.take(10).mapNotNull { it.text }.joinToString("|")
-        val newFingerprint = newState.elements.take(10).mapNotNull { it.text }.joinToString("|")
+        // Compare a fingerprint of element texts and checkout state
+        val oldFingerprint = oldState.elements.take(10).joinToString("|") { "${it.text}_${it.isChecked}" }
+        val newFingerprint = newState.elements.take(10).joinToString("|") { "${it.text}_${it.isChecked}" }
         return oldFingerprint != newFingerprint
     }
 
@@ -840,6 +845,7 @@ class SemanticAutomationEngine(private val context: Context) {
      * this substring, we know the agent drifted and should press Back.
      */
     private fun resolveTargetPackage(goal: SemanticGoal): String? {
+        if (goal.task == "enable" || goal.task == "disable") return "settings"
         val alias = goal.targetApp ?: return null
         return when (alias.lowercase()) {
             "youtube" -> "youtube"
