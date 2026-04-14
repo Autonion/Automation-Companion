@@ -23,6 +23,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.transformWhile
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -43,6 +44,23 @@ class OmniChatbotViewModel(
     companion object {
         private const val TAG = "OmniChatbot"
     }
+
+    // ─── LLM Engine (exposed for in-chat settings) ──────────
+    private val llmEngine = LocalServerLLMEngine.getInstance(context)
+    // For reading/writing inference mode prefs (uses SharedPreferences — instance doesn't matter)
+    private val inferencePrefsEngine = com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine(context)
+
+    val llmConnectionStatus = llmEngine.connectionStatus
+    val llmServerUrl = llmEngine.serverUrl
+    val llmSelectedModel = llmEngine.selectedModelName
+    val llmAvailableModels = llmEngine.availableModels
+
+    // Inference mode: LOCAL_SLM vs SERVER_LLM
+    private val _inferenceMode = MutableStateFlow(inferencePrefsEngine.inferenceMode)
+    val inferenceMode: StateFlow<com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode> = _inferenceMode.asStateFlow()
+
+    private val _showSettings = MutableStateFlow(false)
+    val showSettings: StateFlow<Boolean> = _showSettings.asStateFlow()
 
     // ─── State ──────────────────────────────────────────────
     private val _inputText = MutableStateFlow("")
@@ -104,14 +122,65 @@ class OmniChatbotViewModel(
 
     fun collapse() {
         _isExpanded.value = false
+        _showSettings.value = false
     }
 
     fun expand() {
         _isExpanded.value = true
+        autoConnectIfNeeded()
     }
 
     fun updateRoute(route: String?) {
         _currentRoute.value = route
+    }
+
+    fun toggleSettings() {
+        _showSettings.value = !_showSettings.value
+    }
+
+    // ─── LLM Connection Management ──────────────────────────
+
+    /**
+     * Connect to an Ollama server by IP address or full URL.
+     * Called from the in-chat settings panel.
+     */
+    fun connectToServer(ipOrUrl: String) {
+        val url = if (ipOrUrl.startsWith("http")) ipOrUrl
+                  else "http://$ipOrUrl:11434"
+        llmEngine.setServerUrl(url)
+        viewModelScope.launch {
+            llmEngine.initialize()
+        }
+    }
+
+    /**
+     * Select which Ollama model to use for generation.
+     */
+    fun selectModel(modelName: String) {
+        llmEngine.setModel(modelName)
+    }
+
+    /**
+     * Switch inference mode between on-device SLM and server LLM.
+     */
+    fun setInferenceMode(mode: com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode) {
+        inferencePrefsEngine.inferenceMode = mode
+        _inferenceMode.value = mode
+    }
+
+    /**
+     * Auto-reconnect using saved URL when chat is opened.
+     * Only triggers if there's a saved URL but the engine is disconnected.
+     */
+    private fun autoConnectIfNeeded() {
+        if (llmEngine.connectionStatus.value == ServerConnectionStatus.DISCONNECTED
+            && llmEngine.serverUrl.value.isNotBlank()
+        ) {
+            Log.d(TAG, "Auto-reconnecting to saved LLM server: ${llmEngine.serverUrl.value}")
+            viewModelScope.launch {
+                llmEngine.initialize()
+            }
+        }
     }
 
     // ─── Main Entry Point ───────────────────────────────────
@@ -306,10 +375,9 @@ class OmniChatbotViewModel(
     }
 
     private fun handleDeviceAutomation(result: IntentResult) {
-        val llmEngine = LocalServerLLMEngine.getInstance(context)
         if (llmEngine.connectionStatus.value != ServerConnectionStatus.CONNECTED) {
             addMessage(OmniChatMessage(
-                text = "⚠️ No LLM server connected. Please connect to a local LLM (like Ollama) in settings to enable automation reasoning.",
+                text = "⚠️ No LLM server connected. Tap ⚙️ above to connect to your Ollama server.",
                 isUser = false,
                 mode = ResponseMode.SYSTEM
             ))
@@ -324,6 +392,69 @@ class OmniChatbotViewModel(
         ))
 
         launchSemanticAutomation(result.rawPrompt)
+
+        // Observe the service's active engine status to update the chat message
+        viewModelScope.launch {
+            // Wait for the engine to become available (service starts asynchronously)
+            var engine: com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine? = null
+            for (i in 1..20) { // Wait up to 10 seconds
+                engine = com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationService.activeEngine.value
+                if (engine != null) break
+                kotlinx.coroutines.delay(500)
+            }
+            if (engine == null) {
+                updateLastBotMessage(
+                    "⚠️ Automation service didn't start. Check permissions.",
+                    ResponseMode.AGENT
+                )
+                return@launch
+            }
+
+            // Use transformWhile to STOP collecting after a terminal state.
+            // Plain return@collect does NOT cancel StateFlow collection, so the
+            // collector would keep running and see CANCELLED when the service
+            // destroys itself — overwriting the COMPLETED message.
+            engine.status.transformWhile { status ->
+                emit(status)
+                // Continue collecting only while NOT in a terminal state
+                status != com.autonion.automationcompanion.features.semantic_automation.model.AutomationStatus.COMPLETED &&
+                status != com.autonion.automationcompanion.features.semantic_automation.model.AutomationStatus.FAILED &&
+                status != com.autonion.automationcompanion.features.semantic_automation.model.AutomationStatus.CANCELLED
+            }.collect { status ->
+                when (status) {
+                    com.autonion.automationcompanion.features.semantic_automation.model.AutomationStatus.COMPLETED -> {
+                        updateLastBotMessage(
+                            "✅ Automation completed successfully.",
+                            ResponseMode.AGENT
+                        )
+                    }
+                    com.autonion.automationcompanion.features.semantic_automation.model.AutomationStatus.FAILED -> {
+                        val desc = engine.lastActionDescription.value ?: "Unknown error"
+                        updateLastBotMessage(
+                            "❌ Automation failed: $desc",
+                            ResponseMode.AGENT
+                        )
+                    }
+                    com.autonion.automationcompanion.features.semantic_automation.model.AutomationStatus.CANCELLED -> {
+                        updateLastBotMessage(
+                            "⏹️ Automation cancelled.",
+                            ResponseMode.AGENT
+                        )
+                    }
+                    com.autonion.automationcompanion.features.semantic_automation.model.AutomationStatus.EXECUTING_ACTION -> {
+                        val desc = engine.lastActionDescription.value
+                        if (!desc.isNullOrBlank()) {
+                            updateLastBotMessage(
+                                "🤖 $desc",
+                                ResponseMode.AGENT,
+                                streaming = true
+                            )
+                        }
+                    }
+                    else -> { /* Still in progress */ }
+                }
+            }
+        }
     }
 
     private fun handleCrossDevice(result: IntentResult) {
@@ -382,55 +513,90 @@ class OmniChatbotViewModel(
                 return@launch
             }
 
-            // 2. Try RAG & LLM contextual synthesis
-            val chunks = knowledgeStore.search(result.rawPrompt, topK = 3)
-            val llmEngine = LocalServerLLMEngine.getInstance(context)
-            
-            if (chunks.isEmpty() || llmEngine.connectionStatus.value != ServerConnectionStatus.CONNECTED) {
-                // Fallback if no context or no LLM
-                val contextAnswer = buildString {
-                    if (chunks.isNotEmpty()) {
-                        append("📚 Here's what I found (LLM synthesis unavailable):\n\n")
-                        for (chunk in chunks.take(2)) {
-                            append(chunk.text.take(500))
-                            append("\n\n")
-                        }
-                    } else {
-                        append("I don't have information about that in my knowledge base. Try asking about app features or troubleshooting!")
-                    }
-                }
-                updateLastBotMessage(contextAnswer.trim(), ResponseMode.KNOWLEDGE)
+            // 2. Try RAG — get the single BEST chunk only
+            val chunks = knowledgeStore.search(result.rawPrompt, topK = 1)
+
+            // Case A: No knowledge chunks found at all
+            if (chunks.isEmpty()) {
+                updateLastBotMessage(
+                    "I don't have information about that in my knowledge base. " +
+                    "Try asking about app features, automation, or troubleshooting!",
+                    ResponseMode.KNOWLEDGE
+                )
                 return@launch
             }
 
-            // Generate contextual answer via LLM
-            val contextText = chunks.joinToString("\n") { it.text }
-            val systemPrompt = """
-                You are Autonion, an AI built into an Android automation app. 
-                Answer the user's question concisely using ONLY the provided knowledge. 
-                User is currently at screen/route: ${currentRoute.value ?: "unknown"}.
-                
-                Knowledge:
-                $contextText
-            """.trimIndent()
-            
-            val jsonSchema = mapOf(
-                "type" to "object",
-                "properties" to mapOf("answer" to mapOf("type" to "string")),
-                "required" to listOf("answer")
-            )
-            
-            val responseStr = llmEngine.chatWithSchema(systemPrompt, result.rawPrompt, jsonSchema)
-            if (responseStr != null) {
-                try {
-                    val answer = org.json.JSONObject(responseStr).getString("answer")
-                    updateLastBotMessage(answer, ResponseMode.KNOWLEDGE)
-                } catch (e: Exception) {
-                    updateLastBotMessage("⚠️ Error parsing answer.", ResponseMode.SYSTEM)
+            val bestChunk = chunks.first()
+            // Truncate chunk to ~1000 chars to leave room for system prompt + answer within 8192 ctx
+            val contextText = bestChunk.text.take(1000)
+
+            // Case B: Chunks found but no LLM — show clean fallback
+            if (llmEngine.connectionStatus.value != ServerConnectionStatus.CONNECTED) {
+                val cleanText = cleanKnowledgeChunk(contextText, maxLength = 600)
+                val fallback = buildString {
+                    append(cleanText)
+                    append("\n\n💡 Connect to an LLM server in ⚙️ settings for better answers.")
                 }
-            } else {
-                 updateLastBotMessage("⚠️ LLM server failed to respond.", ResponseMode.SYSTEM)
+                updateLastBotMessage(fallback, ResponseMode.KNOWLEDGE)
+                return@launch
             }
+
+            // Case C: Full RAG + LLM synthesis (plain text, no JSON schema)
+            // /no_think disables Qwen3's internal reasoning mode, which otherwise
+            // consumes all output tokens on <think> tags and produces no answer.
+            val systemPrompt = buildString {
+                append("/no_think\n")
+                append("You are Autonion, an AI assistant built into an Android automation app. ")
+                append("Answer the user's question concisely using ONLY the provided knowledge. ")
+                append("Be direct and use bullet points where appropriate. ")
+                append("Do NOT use <think> tags or internal reasoning. Answer immediately.\n\n")
+                append("Knowledge:\n")
+                append(contextText)
+            }
+
+            val answer = llmEngine.chatForQA(systemPrompt, result.rawPrompt)
+
+            if (!answer.isNullOrBlank()) {
+                updateLastBotMessage(answer, ResponseMode.KNOWLEDGE)
+            } else {
+                // LLM failed — show clean chunk fallback
+                val fallback = cleanKnowledgeChunk(contextText, maxLength = 600)
+                updateLastBotMessage(
+                    "$fallback\n\n💡 LLM didn't respond. Showing knowledge base excerpt.",
+                    ResponseMode.KNOWLEDGE
+                )
+            }
+        }
+    }
+
+    /**
+     * Cleans up a raw knowledge chunk for display as a fallback answer.
+     * Removes excessive markdown formatting, normalizes whitespace,
+     * and truncates cleanly at sentence boundaries.
+     */
+    private fun cleanKnowledgeChunk(raw: String, maxLength: Int = 600): String {
+        var text = raw.trim()
+        // Remove markdown headers (## title)
+        text = text.replace(Regex("^#{1,4}\\s+", RegexOption.MULTILINE), "")
+        // Collapse multiple newlines into double newline
+        text = text.replace(Regex("\n{3,}"), "\n\n")
+        // Clean up bullet formatting: normalize "- " to "• "
+        text = text.replace(Regex("^-\\s+", RegexOption.MULTILINE), "• ")
+        // Remove stray markdown bold/italic artifacts leaving broken text
+        text = text.replace(Regex("\\*{2,}"), "")
+
+        if (text.length <= maxLength) return text
+
+        // Truncate at last sentence boundary before maxLength
+        val truncated = text.take(maxLength)
+        val lastPeriod = truncated.lastIndexOf('.')
+        val lastNewline = truncated.lastIndexOf('\n')
+        val cutPoint = maxOf(lastPeriod, lastNewline)
+
+        return if (cutPoint > maxLength / 2) {
+            truncated.substring(0, cutPoint + 1).trim() + "\n\n…"
+        } else {
+            truncated.trim() + "…"
         }
     }
 
@@ -586,18 +752,18 @@ class OmniChatbotViewModel(
         _messages.value = current
     }
 
-    private fun updateLastBotMessage(text: String, mode: ResponseMode) {
+    private fun updateLastBotMessage(text: String, mode: ResponseMode, streaming: Boolean = false) {
         val current = _messages.value.toMutableList()
         val lastBotIdx = current.indexOfFirst { !it.isUser }
         if (lastBotIdx >= 0) {
             current[lastBotIdx] = current[lastBotIdx].copy(
                 text = text,
                 mode = mode,
-                isStreaming = false
+                isStreaming = streaming
             )
             _messages.value = current
         } else {
-            addMessage(OmniChatMessage(text = text, isUser = false, mode = mode))
+            addMessage(OmniChatMessage(text = text, isUser = false, mode = mode, isStreaming = streaming))
         }
     }
 

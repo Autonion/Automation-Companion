@@ -3,6 +3,7 @@ package com.autonion.automationcompanion.features.omni_chatbot.ui
 import android.text.format.DateFormat
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -33,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.autonion.automationcompanion.features.omni_chatbot.OmniChatbotViewModel
 import com.autonion.automationcompanion.features.omni_chatbot.model.*
+import com.autonion.automationcompanion.features.semantic_automation.ml.ServerConnectionStatus
 import java.util.Date
 
 // ─── Colors ──────────────────────────────────────────────
@@ -157,6 +159,7 @@ private fun OmniChatSheet(viewModel: OmniChatbotViewModel) {
     val messages by viewModel.messages.collectAsState()
     val inputText by viewModel.inputText.collectAsState()
     val currentRoute by viewModel.currentRoute.collectAsState()
+    val showSettings by viewModel.showSettings.collectAsState()
     val listState = rememberLazyListState()
 
     val faqChips = remember(currentRoute) {
@@ -166,7 +169,7 @@ private fun OmniChatSheet(viewModel: OmniChatbotViewModel) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .fillMaxHeight(0.6f), // 60% of screen
+            .fillMaxHeight(), // Full screen when expanded
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
         color = SheetBg,
         tonalElevation = 8.dp,
@@ -174,10 +177,24 @@ private fun OmniChatSheet(viewModel: OmniChatbotViewModel) {
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             // ── Handle & Header ──
-            ChatSheetHeader(onClose = { viewModel.collapse() })
+            ChatSheetHeader(
+                onClose = { viewModel.collapse() },
+                onSettingsClick = { viewModel.toggleSettings() },
+                connectionStatus = viewModel.llmConnectionStatus.collectAsState().value,
+                showSettings = showSettings
+            )
+
+            // ── LLM Settings Panel ──
+            AnimatedVisibility(
+                visible = showSettings,
+                enter = expandVertically(tween(300)) + fadeIn(tween(200)),
+                exit = shrinkVertically(tween(250)) + fadeOut(tween(150))
+            ) {
+                LLMSettingsPanel(viewModel = viewModel)
+            }
 
             // ── FAQ Chips ──
-            AnimatedVisibility(visible = messages.isEmpty()) {
+            AnimatedVisibility(visible = messages.isEmpty() && !showSettings) {
                 FAQChipRow(
                     chips = faqChips,
                     onChipClick = { viewModel.processPrompt(it.question) }
@@ -185,7 +202,7 @@ private fun OmniChatSheet(viewModel: OmniChatbotViewModel) {
             }
 
             // ── Messages ──
-            if (messages.isEmpty()) {
+            if (messages.isEmpty() && !showSettings) {
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -227,7 +244,12 @@ private fun OmniChatSheet(viewModel: OmniChatbotViewModel) {
 // ─── Header ──────────────────────────────────────────────
 
 @Composable
-private fun ChatSheetHeader(onClose: () -> Unit) {
+private fun ChatSheetHeader(
+    onClose: () -> Unit,
+    onSettingsClick: () -> Unit,
+    connectionStatus: ServerConnectionStatus,
+    showSettings: Boolean
+) {
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -280,12 +302,427 @@ private fun ChatSheetHeader(onClose: () -> Unit) {
                 )
             }
 
+            // Connection status dot + Settings gear
+            val statusColor = when (connectionStatus) {
+                ServerConnectionStatus.CONNECTED -> AccentGreen
+                ServerConnectionStatus.CONNECTING -> AccentOrange
+                ServerConnectionStatus.DISCONNECTED -> AccentRed
+            }
+
+            // Settings button with status indicator
+            IconButton(onClick = onSettingsClick) {
+                Box {
+                    Icon(
+                        if (showSettings) Icons.Default.Close else Icons.Default.Settings,
+                        contentDescription = "LLM Settings",
+                        tint = if (showSettings) Color.White.copy(alpha = 0.8f)
+                               else Color.White.copy(alpha = 0.6f),
+                        modifier = Modifier.size(22.dp)
+                    )
+                    // Status dot overlay
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .align(Alignment.TopEnd)
+                            .clip(CircleShape)
+                            .background(statusColor)
+                    )
+                }
+            }
+
             IconButton(onClick = onClose) {
                 Icon(
                     Icons.Default.KeyboardArrowDown,
                     contentDescription = "Minimize",
                     tint = Color.White.copy(alpha = 0.6f)
                 )
+            }
+        }
+    }
+}
+
+// ─── LLM Settings Panel ─────────────────────────────────
+
+@Composable
+private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
+    val connectionStatus by viewModel.llmConnectionStatus.collectAsState()
+    val serverUrl by viewModel.llmServerUrl.collectAsState()
+    val selectedModel by viewModel.llmSelectedModel.collectAsState()
+    val availableModels by viewModel.llmAvailableModels.collectAsState()
+    val inferenceMode by viewModel.inferenceMode.collectAsState()
+
+    // Local IP input state — pre-fill from saved URL
+    var ipInput by remember(serverUrl) {
+        mutableStateOf(
+            serverUrl
+                .removePrefix("http://")
+                .removePrefix("https://")
+                .removeSuffix("/")
+                .removeSuffix(":11434")
+                .ifBlank { "" }
+        )
+    }
+    var showModelDropdown by remember { mutableStateOf(false) }
+
+    val isSLM = inferenceMode == com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.LOCAL_SLM
+    val isLLM = inferenceMode == com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.SERVER_LLM
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        Color(0xFF151829),
+                        SheetBg
+                    )
+                )
+            )
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // ── Inference Mode Toggle ──
+        Text(
+            "AI Engine",
+            color = Color.White.copy(alpha = 0.5f),
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // SLM chip
+            Surface(
+                onClick = {
+                    viewModel.setInferenceMode(
+                        com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.LOCAL_SLM
+                    )
+                },
+                color = if (isSLM) AccentPurple.copy(alpha = 0.25f) else CardGlass,
+                shape = RoundedCornerShape(20.dp),
+                border = if (isSLM) BorderStroke(1.dp, AccentPurple) else null,
+                modifier = Modifier.weight(1f)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        Icons.Default.PhoneAndroid,
+                        contentDescription = null,
+                        tint = if (isSLM) AccentPurple else Color.White.copy(alpha = 0.5f),
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        "On-Device SLM",
+                        color = if (isSLM) Color.White else Color.White.copy(alpha = 0.5f),
+                        fontSize = 12.sp,
+                        fontWeight = if (isSLM) FontWeight.SemiBold else FontWeight.Normal
+                    )
+                }
+            }
+            // LLM chip
+            Surface(
+                onClick = {
+                    viewModel.setInferenceMode(
+                        com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.SERVER_LLM
+                    )
+                },
+                color = if (isLLM) AccentPurple.copy(alpha = 0.25f) else CardGlass,
+                shape = RoundedCornerShape(20.dp),
+                border = if (isLLM) BorderStroke(1.dp, AccentPurple) else null,
+                modifier = Modifier.weight(1f)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        Icons.Default.Cloud,
+                        contentDescription = null,
+                        tint = if (isLLM) AccentPurple else Color.White.copy(alpha = 0.5f),
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        "Server LLM",
+                        color = if (isLLM) Color.White else Color.White.copy(alpha = 0.5f),
+                        fontSize = 12.sp,
+                        fontWeight = if (isLLM) FontWeight.SemiBold else FontWeight.Normal
+                    )
+                }
+            }
+        }
+
+        // ── SLM Mode Content ──
+        AnimatedVisibility(
+            visible = isSLM,
+            enter = expandVertically(tween(200)) + fadeIn(),
+            exit = shrinkVertically(tween(150)) + fadeOut()
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(AccentPurple.copy(alpha = 0.12f))
+                        .padding(horizontal = 14.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Memory,
+                        contentDescription = null,
+                        tint = AccentPurple,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "On-Device AI (Gemma 2B)",
+                            color = Color.White,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 14.sp
+                        )
+                        Text(
+                            "Runs locally on your phone. No server needed.",
+                            color = Color.White.copy(alpha = 0.5f),
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+                Text(
+                    "\uD83D\uDCA1 Import a .bin model from the SLM Hub in Settings → AI Model Manager to enable on-device inference.",
+                    color = Color.White.copy(alpha = 0.35f),
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp
+                )
+            }
+        }
+
+        // ── Server LLM Mode Content ──
+        AnimatedVisibility(
+            visible = isLLM,
+            enter = expandVertically(tween(200)) + fadeIn(),
+            exit = shrinkVertically(tween(150)) + fadeOut()
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                // Status Banner
+                val statusConfig = when (connectionStatus) {
+                    ServerConnectionStatus.CONNECTED -> Triple(
+                        "Connected", AccentGreen, Icons.Default.Cloud
+                    )
+                    ServerConnectionStatus.CONNECTING -> Triple(
+                        "Connecting…", AccentOrange, Icons.Default.Wifi
+                    )
+                    ServerConnectionStatus.DISCONNECTED -> Triple(
+                        "No AI Server", AccentRed, Icons.Default.CloudOff
+                    )
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(statusConfig.second.copy(alpha = 0.12f))
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        statusConfig.third,
+                        contentDescription = null,
+                        tint = statusConfig.second,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            statusConfig.first,
+                            color = Color.White,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 14.sp
+                        )
+                        if (connectionStatus == ServerConnectionStatus.CONNECTED && selectedModel.isNotBlank()) {
+                            Text(
+                                "Model: $selectedModel",
+                                color = Color.White.copy(alpha = 0.6f),
+                                fontSize = 11.sp
+                            )
+                        }
+                        if (connectionStatus == ServerConnectionStatus.DISCONNECTED) {
+                            Text(
+                                "Enter your Ollama server IP to connect",
+                                color = Color.White.copy(alpha = 0.5f),
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+
+                    if (connectionStatus == ServerConnectionStatus.CONNECTING) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = AccentOrange
+                        )
+                    }
+                }
+
+                // Server IP Input
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextField(
+                        value = ipInput,
+                        onValueChange = { ipInput = it },
+                        placeholder = {
+                            Text("192.168.1.x", color = Color.White.copy(alpha = 0.25f))
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = CardGlass,
+                            unfocusedContainerColor = CardGlass,
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent,
+                            cursorColor = AccentPurple,
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        ),
+                        singleLine = true,
+                        textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Dns,
+                                contentDescription = null,
+                                tint = Color.White.copy(alpha = 0.4f),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    )
+
+                    Button(
+                        onClick = { viewModel.connectToServer(ipInput) },
+                        enabled = ipInput.isNotBlank() && connectionStatus != ServerConnectionStatus.CONNECTING,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = AccentPurple,
+                            disabledContainerColor = AccentPurple.copy(alpha = 0.3f)
+                        ),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp),
+                        modifier = Modifier.height(48.dp)
+                    ) {
+                        Text(
+                            if (connectionStatus == ServerConnectionStatus.CONNECTED) "Reconnect" else "Connect",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+
+                // Model Selector
+                AnimatedVisibility(
+                    visible = connectionStatus == ServerConnectionStatus.CONNECTED && availableModels.isNotEmpty(),
+                    enter = expandVertically(tween(200)) + fadeIn(),
+                    exit = shrinkVertically(tween(150)) + fadeOut()
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            "AI Model",
+                            color = Color.White.copy(alpha = 0.5f),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+
+                        Box {
+                            Surface(
+                                onClick = { showModelDropdown = true },
+                                color = CardGlass,
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Default.Psychology,
+                                        contentDescription = null,
+                                        tint = AccentPurple,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(Modifier.width(10.dp))
+                                    Text(
+                                        text = selectedModel.ifBlank { "Select a model…" },
+                                        color = if (selectedModel.isNotBlank()) Color.White
+                                                else Color.White.copy(alpha = 0.4f),
+                                        fontSize = 13.sp,
+                                        modifier = Modifier.weight(1f),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Icon(
+                                        Icons.Default.KeyboardArrowDown,
+                                        contentDescription = null,
+                                        tint = Color.White.copy(alpha = 0.4f),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+
+                            DropdownMenu(
+                                expanded = showModelDropdown,
+                                onDismissRequest = { showModelDropdown = false },
+                                modifier = Modifier.background(CardGlass)
+                            ) {
+                                availableModels.forEach { model ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                if (model == selectedModel) {
+                                                    Icon(
+                                                        Icons.Default.CheckCircle,
+                                                        contentDescription = null,
+                                                        tint = AccentGreen,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                    Spacer(Modifier.width(8.dp))
+                                                }
+                                                Text(
+                                                    model,
+                                                    color = Color.White,
+                                                    fontSize = 13.sp
+                                                )
+                                            }
+                                        },
+                                        onClick = {
+                                            viewModel.selectModel(model)
+                                            showModelDropdown = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Help hint
+                if (connectionStatus == ServerConnectionStatus.DISCONNECTED) {
+                    Text(
+                        "\uD83D\uDCA1 Run Ollama on your PC and enter its LAN IP above. Both devices must be on the same WiFi network.",
+                        color = Color.White.copy(alpha = 0.35f),
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp
+                    )
+                }
             }
         }
     }

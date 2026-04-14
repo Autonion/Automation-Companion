@@ -61,7 +61,8 @@ data class OllamaChatRequest(
     val messages: List<OllamaChatMessage>,
     val stream: Boolean = false,
     val format: Any? = null,
-    val options: Map<String, Any>? = null
+    val options: Map<String, Any>? = null,
+    val think: Boolean? = null  // Qwen3: set to false to disable <think> reasoning
 )
 
 data class OllamaChatMessage(
@@ -374,6 +375,71 @@ class LocalServerLLMEngine private constructor(
             if (content.isBlank()) null else content
         } catch (e: Exception) {
             Log.e(TAG, "chatWithSchema failed: ${e.javaClass.simpleName}", e)
+            if (e is java.net.ConnectException || e is java.net.UnknownHostException) {
+                _connectionStatus.value = ServerConnectionStatus.DISCONNECTED
+            }
+            null
+        }
+    }
+
+    /**
+     * Q&A-optimized chat: plain text answer, larger context window, no JSON schema.
+     *
+     * Unlike chatWithSchema (designed for action prediction with 2048 tokens),
+     * this uses 4096 tokens and returns a free-form text answer — ideal for
+     * RAG-based Q&A where the response doesn't need to be structured JSON.
+     *
+     * @param systemPrompt Role instructions + knowledge context
+     * @param userPrompt The user's question
+     * @return Plain text answer, or null on failure
+     */
+    suspend fun chatForQA(
+        systemPrompt: String,
+        userPrompt: String
+    ): String? = withContext(Dispatchers.IO) {
+        val currentApi = api
+        val model = selectedModel
+
+        if (currentApi == null || model.isNullOrBlank()) {
+            Log.w(TAG, "chatForQA: Server not connected or no model selected")
+            return@withContext null
+        }
+
+        try {
+            val messages = listOf(
+                OllamaChatMessage(role = "system", content = systemPrompt),
+                OllamaChatMessage(role = "user", content = userPrompt)
+            )
+
+            val response = currentApi.chat(
+                OllamaChatRequest(
+                    model = model,
+                    messages = messages,
+                    stream = false,
+                    format = null, // No schema — plain text answer
+                    think = false, // Disable Qwen3 thinking mode for Q&A
+                    options = mapOf(
+                        "temperature" to 0.3,
+                        "num_ctx" to 8192,
+                        "num_predict" to 1024   // Reserve tokens for answer generation
+                    )
+                )
+            )
+
+            var content = response.message.content.trim()
+            // Qwen-style models wrap reasoning in <think>…</think> tags;
+            // strip them to get the actual user-facing answer.
+            if (content.contains("</think>")) {
+                content = content.substringAfter("</think>").trim()
+            } else if (content.startsWith("<think>")) {
+                // Model is still "thinking" with no answer produced
+                content = ""
+            }
+            Log.d(TAG, "chatForQA response (${response.eval_count} tokens, ${content.length} chars)")
+
+            if (content.isBlank()) null else content
+        } catch (e: Exception) {
+            Log.e(TAG, "chatForQA failed: ${e.javaClass.simpleName}", e)
             if (e is java.net.ConnectException || e is java.net.UnknownHostException) {
                 _connectionStatus.value = ServerConnectionStatus.DISCONNECTED
             }
