@@ -180,6 +180,12 @@ class EntityExtractor {
         RegexOption.IGNORE_CASE
     )
 
+    /** Catches indirect questions: "I have a doubt...", "I was wondering..." */
+    private val indirectQuestionIndicators = Regex(
+        """(i\s+have\s+a\s+doubt|i\s+was\s+wondering|i('m|\s+am)\s+confused|can\s+i|is\s+it\s+possible|could\s+you\s+explain|wondering\s+if|i\s+want\s+to\s+know|doubt\s+about|question\s+about)""",
+        RegexOption.IGNORE_CASE
+    )
+
     // ═══════════════════════════════════════════════════════════
     //  PUBLIC API
     // ═══════════════════════════════════════════════════════════
@@ -256,7 +262,7 @@ class EntityExtractor {
     fun extractAppName(lower: String): String? {
         // Check for direct app name mentions
         for ((appName, _) in commonApps) {
-            if (lower.contains(appName)) return appName
+            if (lower.containsWord(appName)) return appName
         }
         // Check "on/in <app>" pattern
         for (prep in appPrepositions) {
@@ -301,7 +307,7 @@ class EntityExtractor {
 
     fun extractToggleTarget(lower: String): String? {
         for ((target, aliases) in toggleTargets) {
-            if (lower.contains(target) || aliases.any { lower.contains(it) }) {
+            if (lower.containsWord(target) || aliases.any { lower.containsWord(it) }) {
                 return target
             }
         }
@@ -309,8 +315,8 @@ class EntityExtractor {
     }
 
     fun extractToggleState(lower: String): Boolean? {
-        val hasEnable = enableWords.any { lower.contains(it) }
-        val hasDisable = disableWords.any { lower.contains(it) }
+        val hasEnable = enableWords.any { lower.containsWord(it) }
+        val hasDisable = disableWords.any { lower.containsWord(it) }
         return when {
             hasEnable && !hasDisable -> true
             hasDisable && !hasEnable -> false
@@ -337,7 +343,7 @@ class EntityExtractor {
 
     fun extractTargetDevice(lower: String): String? {
         for (indicator in crossDeviceIndicators) {
-            if (lower.contains(indicator)) {
+            if (lower.containsWord(indicator)) {
                 return when {
                     indicator.contains("desktop") || indicator.contains("pc") -> "desktop"
                     indicator.contains("laptop") -> "laptop"
@@ -352,7 +358,7 @@ class EntityExtractor {
     }
 
     fun extractSemanticModifiers(lower: String): List<String> {
-        return semanticModifiers.filter { lower.contains(it) }
+        return semanticModifiers.filter { lower.containsWord(it) }
     }
 
     fun extractTaskVerb(lower: String): String? {
@@ -373,7 +379,7 @@ class EntityExtractor {
 
     /** True if the prompt looks like a toggle command */
     fun isLikelyToggle(lower: String): Boolean {
-        val hasToggleWord = (enableWords + disableWords).any { lower.contains(it) }
+        val hasToggleWord = (enableWords + disableWords).any { lower.containsWord(it) }
         val hasTarget = extractToggleTarget(lower) != null
         return hasToggleWord && hasTarget
     }
@@ -386,12 +392,17 @@ class EntityExtractor {
 
     /** True if the prompt references a remote device */
     fun isLikelyCrossDevice(lower: String): Boolean {
-        return crossDeviceIndicators.any { lower.contains(it) }
+        return crossDeviceIndicators.any { lower.containsWord(it) }
     }
 
     /** True if the prompt looks like a question */
     fun isLikelyQuestion(lower: String): Boolean {
         return questionIndicators.containsMatchIn(lower) ||
+               indirectQuestionIndicators.containsMatchIn(lower) ||
                lower.endsWith("?")
+    }
+
+    private fun String.containsWord(word: String): Boolean {
+        return Regex("\\b${Regex.escape(word)}\\b", RegexOption.IGNORE_CASE).containsMatchIn(this)
     }
 }

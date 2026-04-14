@@ -365,6 +365,12 @@ class OmniChatbotViewModel(
     }
 
     fun stopScheduledTask(taskId: String) {
+        if (taskId == "semantic_engine") {
+            com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationService.activeEngine.value?.stop()
+            removeActionWidget(taskId)
+            return
+        }
+
         scheduledJobs[taskId]?.cancel()
         scheduledJobs.remove(taskId)
         addMessage(OmniChatMessage(
@@ -425,20 +431,23 @@ class OmniChatbotViewModel(
                     com.autonion.automationcompanion.features.semantic_automation.model.AutomationStatus.COMPLETED -> {
                         updateLastBotMessage(
                             "✅ Automation completed successfully.",
-                            ResponseMode.AGENT
+                            ResponseMode.AGENT,
+                            clearWidget = true
                         )
                     }
                     com.autonion.automationcompanion.features.semantic_automation.model.AutomationStatus.FAILED -> {
                         val desc = engine.lastActionDescription.value ?: "Unknown error"
                         updateLastBotMessage(
                             "❌ Automation failed: $desc",
-                            ResponseMode.AGENT
+                            ResponseMode.AGENT,
+                            clearWidget = true
                         )
                     }
                     com.autonion.automationcompanion.features.semantic_automation.model.AutomationStatus.CANCELLED -> {
                         updateLastBotMessage(
                             "⏹️ Automation cancelled.",
-                            ResponseMode.AGENT
+                            ResponseMode.AGENT,
+                            clearWidget = true
                         )
                     }
                     com.autonion.automationcompanion.features.semantic_automation.model.AutomationStatus.EXECUTING_ACTION -> {
@@ -447,6 +456,7 @@ class OmniChatbotViewModel(
                             updateLastBotMessage(
                                 "🤖 $desc",
                                 ResponseMode.AGENT,
+                                actionWidget = ActionWidget.StopButton("semantic_engine"),
                                 streaming = true
                             )
                         }
@@ -752,18 +762,40 @@ class OmniChatbotViewModel(
         _messages.value = current
     }
 
-    private fun updateLastBotMessage(text: String, mode: ResponseMode, streaming: Boolean = false) {
+    private fun updateLastBotMessage(
+        text: String, 
+        mode: ResponseMode, 
+        streaming: Boolean = false,
+        actionWidget: ActionWidget? = null,
+        clearWidget: Boolean = false
+    ) {
         val current = _messages.value.toMutableList()
         val lastBotIdx = current.indexOfFirst { !it.isUser }
         if (lastBotIdx >= 0) {
             current[lastBotIdx] = current[lastBotIdx].copy(
                 text = text,
                 mode = mode,
-                isStreaming = streaming
+                isStreaming = streaming,
+                actionWidget = if (clearWidget) null else actionWidget ?: current[lastBotIdx].actionWidget
             )
             _messages.value = current
         } else {
-            addMessage(OmniChatMessage(text = text, isUser = false, mode = mode, isStreaming = streaming))
+            addMessage(OmniChatMessage(
+                text = text, 
+                isUser = false, 
+                mode = mode, 
+                isStreaming = streaming,
+                actionWidget = actionWidget
+            ))
+        }
+    }
+
+    private fun removeActionWidget(taskId: String) {
+        val current = _messages.value.toMutableList()
+        val idx = current.indexOfFirst { !it.isUser && (it.actionWidget as? ActionWidget.StopButton)?.taskId == taskId }
+        if (idx >= 0) {
+            current[idx] = current[idx].copy(actionWidget = null)
+            _messages.value = current
         }
     }
 

@@ -115,7 +115,12 @@ class IntentClassifier(context: Context) {
             "how to use the flow builder",
             "why is the automation doing random things",
             "how to sync clipboard",
-            "what is the browser extension for"
+            "what is the browser extension for",
+            "I have a doubt about this feature",
+            "can I capture a specific part of the screen",
+            "is it possible to automate an action",
+            "I was wondering how to use this",
+            "can you explain how automation works"
         )
     )
 
@@ -226,7 +231,7 @@ class IntentClassifier(context: Context) {
         val promptEmbedding = embedder.encode(prompt)
 
         // Find the best matching intent by max cosine similarity
-        var bestIntent = IntentType.DEVICE_AUTOMATION // default fallback
+        var bestIntent = IntentType.Q_AND_A // safe default fallback (won't perform actions)
         var bestScore = 0f
 
         for ((intentType, embeddings) in intentEmbeddings) {
@@ -239,12 +244,27 @@ class IntentClassifier(context: Context) {
 
         Log.d(TAG, "Embedding classification: $bestIntent (score=${"%.3f".format(bestScore)})")
 
-        // If confidence is too low, default to DEVICE_AUTOMATION
-        // (let the SemanticAutomationEngine handle it with LLM)
+        // If confidence is too low, fall back to Q_AND_A
         if (bestScore < EMBEDDING_THRESHOLD) {
-            Log.d(TAG, "Low confidence (${"%.3f".format(bestScore)}), defaulting to DEVICE_AUTOMATION")
-            bestIntent = IntentType.DEVICE_AUTOMATION
+            Log.d(TAG, "Low confidence (${"%.3f".format(bestScore)}), defaulting to Q_AND_A")
+            bestIntent = IntentType.Q_AND_A
             bestScore = EMBEDDING_THRESHOLD
+        }
+
+        // ── VALIDATION GATE ──────────────────────────────────
+        // Embedding similarity can match the TOPIC of a prompt (e.g. "automation",
+        // "bluetooth") without distinguishing whether the user wants to PERFORM an
+        // action or ASK about it.  Instead of hardcoding question patterns, we
+        // validate that DEVICE_AUTOMATION prompts contain *concrete actionable
+        // content*: a target (app/toggle) + command-form verb.  If not, reclassify
+        // to Q_AND_A.  This is structural, not pattern-based — so every future
+        // prompt is covered.
+        if (bestIntent == IntentType.DEVICE_AUTOMATION ||
+            bestIntent == IntentType.DIRECT_TOGGLE) {
+            if (!hasActionableContent(lower, entities)) {
+                Log.d(TAG, "Validation gate: no actionable content → reclassifying to Q_AND_A")
+                bestIntent = IntentType.Q_AND_A
+            }
         }
 
         return IntentResult(
@@ -253,6 +273,77 @@ class IntentClassifier(context: Context) {
             entities = entities,
             rawPrompt = lower
         )
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  VALIDATION GATE
+    // ═══════════════════════════════════════════════════════════
+
+    /**
+     * Checks whether a prompt has concrete, executable content that justifies
+     * routing to DEVICE_AUTOMATION or DIRECT_TOGGLE.
+     *
+     * This is a structural check, not a pattern check:
+     *  - A concrete app/toggle target  (e.g. "flipkart", "bluetooth")
+     *  - A task verb in *command* form  (e.g. "open", "search")
+     *  - NOT phrased as a question/inquiry about capabilities
+     *
+     * Decision matrix:
+     *  app target + verb  → actionable ✓  ("search shoes on flipkart")
+     *  app target only    → actionable ✓  ("flipkart" — likely wants to open it)
+     *  toggle target      → actionable ✓  ("turn on wifi")
+     *  verb + question    → NOT actionable ("can I automate a screen action?")
+     *  no target, no verb → NOT actionable ("I have a doubt about bluetooth")
+     */
+    private fun hasActionableContent(lower: String, entities: ExtractedEntities): Boolean {
+        val hasAppTarget = entities.appName != null
+        val hasToggleTarget = entities.toggleTarget != null
+        val hasTaskVerb = entities.taskVerb != null
+
+        // Toggle commands are always actionable if heuristic didn't catch them
+        if (hasToggleTarget && entities.toggleDesiredState != null) return true
+
+        // Concrete app target → the user wants to interact with that app
+        if (hasAppTarget) return true
+
+        // Task verb in command position, but only if prompt is NOT in question form
+        if (hasTaskVerb && !isInquiryForm(lower)) return true
+
+        // Nothing concrete to act on
+        return false
+    }
+
+    /**
+     * Detects whether a prompt is an inquiry/question rather than a command.
+     *
+     * This is intentionally broad: ANY interrogative signal disqualifies a prompt
+     * from being treated as an actionable command (unless overridden by having a
+     * concrete app target, which is checked before this in hasActionableContent).
+     *
+     * Uses structural signals, not hardcoded phrases:
+     *  - Interrogative markers (question words, modal verbs in question context)
+     *  - Sentence-ending "?"
+     *  - First-person inquiry patterns ("I want to know", "I'm curious")
+     */
+    private fun isInquiryForm(lower: String): Boolean {
+        // Question mark is the strongest signal
+        if (lower.endsWith("?")) return true
+
+        // Interrogative word anywhere in the first half of the prompt
+        // (question words at the end are often part of commands: "search how to cook")
+        val firstHalf = lower.take(lower.length / 2 + 10)
+        val interrogatives = listOf(
+            "how", "what", "why", "when", "where", "which", "who"
+        )
+        if (interrogatives.any { firstHalf.contains(Regex("\\b$it\\b")) }) return true
+
+        // Modal verbs in question context: "can I", "could I", "is it", "should I"
+        if (lower.contains(Regex("\\b(can|could|should|would|is|are|does|do)\\s+(i|it|this|we|you)\\b"))) return true
+
+        // First-person inquiry markers: "I have a doubt", "I want to know", "wondering"
+        if (lower.contains(Regex("\\b(doubt|wondering|confused|curious|understand|explain|tell me|help me|guide)\\b"))) return true
+
+        return false
     }
 
     // ═══════════════════════════════════════════════════════════
