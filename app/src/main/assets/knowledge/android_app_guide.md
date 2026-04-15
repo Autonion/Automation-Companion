@@ -13,7 +13,7 @@ Autonion has 8 core features. Here is a complete list:
 3. Cross-Device Automation - Send commands from Android to a desktop computer. Requires the Autonion Desktop Agent app to be installed on the target device. Source code is available at github.com/Autonion/Autonion-Agent.
 4. Gesture Recording and Playback - Record touch interactions (taps, swipes, long presses, drags) and replay them automatically. Coordinate-based replay.
 5. Flow Builder - Visual drag-and-drop automation workflow builder. Create flows with triggers, actions, conditions, and connections.
-6. System Context Automation - Automations that respond to system-level context changes including location (geofence), time schedules, battery percentage levels, and WiFi connectivity changes.
+6. System Context Automation - Automations that respond to system-level context changes including location (geofence), time schedules, battery percentage levels, WiFi connectivity changes, and app-specific automations that trigger when a specific app is opened or closed.
 7. Visual Trigger Automation - Screen-pattern-based automations that use image matching to detect specific visual elements on screen and trigger actions automatically. This is the feature for triggering automation based on images.
 8. Screen Context AI (Screen ML) - AI-powered screen understanding using YOLO object detection and OCR (Optical Character Recognition). Detects UI elements dynamically, handles UI changes, and can automate clicks and interactions based on recognized text and visual elements.
 
@@ -194,13 +194,14 @@ How to create a flow:
 Tip: Enable the Accessibility Service before running flows that interact with UI elements.
 
 ### System Context Automation
-Automations that respond to system-level context changes. This feature allows you to set automations based on battery percentage, location, time, and WiFi connectivity.
+Automations that respond to system-level context changes. This feature allows you to set automations based on battery percentage, location, time, WiFi connectivity, and specific apps. If you want to automate something based on battery percentage, location, time of day, WiFi, or a specific app, System Context Automation is the feature to use.
 
 Supported contexts and triggers:
-- Battery level triggers: Run automations when battery reaches a certain percentage level. For example, enable power saving mode when battery drops to 20%, or send a notification when battery reaches 100%. You can set any battery percentage as a trigger threshold.
-- Location-based triggers (geofence): Enter or exit a geographic area to start an automation. Example: Turn on WiFi when arriving home, turn off WiFi when leaving home.
+- Battery level triggers: Run automations when battery reaches a certain percentage level. For example, enable power saving mode when battery drops to 20%, or send a notification when battery reaches 100%. You can set any battery percentage as a trigger threshold. This is how you automate actions based on battery percentage.
+- Location-based triggers (geofence): Enter or exit a geographic area to start an automation. Example: Turn on WiFi when arriving home, turn off WiFi when leaving home. This is how you automate actions based on a specific location.
 - Time-based triggers: Schedule automations to run at specific times or intervals. Example: Toggle DND at 10 PM every night.
 - WiFi connectivity changes: Trigger automations when WiFi connects or disconnects. Example: Open a specific app when connected to office WiFi.
+- App Specific Automation: Set automations that trigger when a specific app is opened or closed. You can configure actions to run automatically when you open a particular app. For example, enable Do Not Disturb when you open a gaming app, or start screen recording when you open a streaming app. This is how you set automation for a specific app.
 
 ### Visual Trigger Automation
 Screen-pattern-based automations that watch for specific visual elements on screen. This is the feature for triggering automation based on images. Visual Triggers use image template matching to detect when a specific image pattern appears on screen and then automatically execute a configured action.

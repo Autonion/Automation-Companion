@@ -176,13 +176,13 @@ class EntityExtractor {
     // ═══════════════════════════════════════════════════════════
 
     private val questionIndicators = Regex(
-        """^(how|what|why|when|where|who|which|can|does|is|are|do|explain|tell\s+me|help|guide)""",
+        """^(how|what|why|when|where|who|which|can|does|is|are|do|explain|tell\s+me|help|guide|is\s+there|are\s+there)""",
         RegexOption.IGNORE_CASE
     )
 
     /** Catches indirect questions: "I have a doubt...", "I was wondering..." */
     private val indirectQuestionIndicators = Regex(
-        """(i\s+have\s+a\s+doubt|i\s+was\s+wondering|i('m|\s+am)\s+confused|can\s+i|is\s+it\s+possible|could\s+you\s+explain|wondering\s+if|i\s+want\s+to\s+know|doubt\s+about|question\s+about)""",
+        """(i\s+have\s+a\s+doubt|i\s+was\s+wondering|i('m|\s+am)\s+confused|can\s+i|is\s+it\s+possible|is\s+there\s+(a|any)|are\s+there\s+(a|any)|could\s+you\s+explain|wondering\s+if|i\s+want\s+to\s+know|doubt\s+about|question\s+about)""",
         RegexOption.IGNORE_CASE
     )
 

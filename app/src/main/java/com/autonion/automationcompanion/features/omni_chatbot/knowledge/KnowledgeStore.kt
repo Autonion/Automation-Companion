@@ -75,29 +75,74 @@ class KnowledgeStore(private val embedder: SentenceEmbedder) {
     }
 
     /**
-     * Semantic search: find the top-K most relevant chunks for a query.
-     * Only returns chunks above the minimum similarity threshold to
-     * avoid feeding irrelevant context to the LLM (which causes hallucinations).
+     * Hybrid search: combines semantic similarity (MiniLM embeddings) with
+     * keyword overlap (BM25-like) for robust retrieval.
+     *
+     * Pure embedding search fails when the MiniLM model can't associate
+     * user terms (e.g., "image match") with document phrases (e.g., "Visual
+     * Trigger Automation using image template matching"). Keyword boosting
+     * fixes this by directly rewarding chunks that contain the query terms.
      */
-    fun search(query: String, topK: Int = 3, minSimilarity: Float = 0.35f): List<KnowledgeChunk> {
+    fun search(query: String, topK: Int = 3, minSimilarity: Float = 0.30f): List<KnowledgeChunk> {
         if (!isLoaded || chunks.isEmpty()) return emptyList()
 
         val queryEmbedding = embedder.encode(query)
+        val queryKeywords = extractKeywords(query)
 
-        val scored = chunks
-            .map { chunk -> chunk to cosineSimilarity(queryEmbedding, chunk.embedding) }
-            .sortedByDescending { it.second }
+        val scored = chunks.map { chunk ->
+            val semanticScore = cosineSimilarity(queryEmbedding, chunk.embedding)
+            val keywordScore = computeKeywordScore(queryKeywords, chunk.text)
+            // Hybrid: 60% semantic + 40% keyword
+            val hybridScore = (semanticScore * 0.6f) + (keywordScore * 0.4f)
+            Triple(chunk, hybridScore, semanticScore)
+        }.sortedByDescending { it.second }
 
-        // Log top 3 scores for debugging
-        scored.take(3).forEachIndexed { i, (chunk, score) ->
-            Log.d(TAG, "RAG #$i: score=${"%.3f".format(score)} src=${chunk.source}[${chunk.chunkIndex}] " +
-                  "text=\"${chunk.text.take(60)}...\"")
+        // Log top 5 scores for debugging
+        scored.take(5).forEachIndexed { i, (chunk, hybrid, semantic) ->
+            Log.d(TAG, "RAG #$i: hybrid=${"%.3f".format(hybrid)} sem=${"%.3f".format(semantic)} " +
+                  "src=${chunk.source}[${chunk.chunkIndex}] text=\"${chunk.text.take(60)}...\"")
         }
 
         return scored
             .filter { it.second >= minSimilarity }
             .take(topK)
             .map { it.first }
+    }
+
+    /**
+     * Extract meaningful keywords from a query (lowercase, stop-words removed).
+     */
+    private fun extractKeywords(query: String): List<String> {
+        val stopWords = setOf(
+            "i", "me", "my", "we", "our", "you", "your", "it", "its", "the",
+            "a", "an", "is", "are", "was", "were", "be", "been", "being",
+            "have", "has", "had", "do", "does", "did", "will", "would",
+            "could", "should", "can", "may", "might", "shall", "to", "of",
+            "in", "for", "on", "with", "at", "by", "from", "as", "into",
+            "through", "during", "before", "after", "above", "below",
+            "this", "that", "these", "those", "and", "but", "or", "nor",
+            "not", "so", "if", "then", "than", "too", "very", "just",
+            "about", "up", "out", "off", "over", "under", "again",
+            "there", "here", "any", "each", "few", "more", "most",
+            "some", "such", "only", "own", "same", "no", "how", "what",
+            "when", "where", "why", "which", "who", "whom", "all", "many",
+            "much", "way", "thing", "things", "help", "use", "using"
+        )
+        return query.lowercase()
+            .replace(Regex("[^a-z0-9\\s]"), "")
+            .split(Regex("\\s+"))
+            .filter { it.length > 2 && it !in stopWords }
+    }
+
+    /**
+     * Compute a keyword overlap score between query keywords and a chunk text.
+     * Returns 0.0 to 1.0 — the fraction of query keywords found in the chunk.
+     */
+    private fun computeKeywordScore(queryKeywords: List<String>, chunkText: String): Float {
+        if (queryKeywords.isEmpty()) return 0f
+        val chunkLower = chunkText.lowercase()
+        val matches = queryKeywords.count { keyword -> chunkLower.contains(keyword) }
+        return matches.toFloat() / queryKeywords.size.toFloat()
     }
 
     /**

@@ -166,7 +166,21 @@ class IntentClassifier(context: Context) {
     // ═══════════════════════════════════════════════════════════
 
     private fun heuristicClassify(lower: String, entities: ExtractedEntities): IntentResult? {
-        // 1. Scheduled action (check BEFORE key action — "click next every 1 min" has both)
+        // ── 1. Question check FIRST ──────────────────────────
+        // Must run before toggle/action checks because prompts like
+        // "is there any way I can automate based ON a LOCATION?"
+        // false-match against toggle targets ("on" + "location").
+        // Questions should NEVER trigger system actions.
+        if (entityExtractor.isLikelyQuestion(lower)) {
+            return IntentResult(
+                intent = IntentType.Q_AND_A,
+                confidence = 0.90f,
+                entities = entities,
+                rawPrompt = lower
+            )
+        }
+
+        // 2. Scheduled action (check BEFORE key action — "click next every 1 min" has both)
         if (entityExtractor.isLikelyScheduled(lower)) {
             return IntentResult(
                 intent = IntentType.SCHEDULED_ACTION,
@@ -176,7 +190,7 @@ class IntentClassifier(context: Context) {
             )
         }
 
-        // 2. Direct key action
+        // 3. Direct key action
         if (entityExtractor.isLikelyKeyAction(lower)) {
             return IntentResult(
                 intent = IntentType.DIRECT_KEY_ACTION,
@@ -186,7 +200,7 @@ class IntentClassifier(context: Context) {
             )
         }
 
-        // 3. Toggle
+        // 4. Toggle
         if (entityExtractor.isLikelyToggle(lower)) {
             return IntentResult(
                 intent = IntentType.DIRECT_TOGGLE,
@@ -196,21 +210,11 @@ class IntentClassifier(context: Context) {
             )
         }
 
-        // 4. Cross-device (explicit device mention)
+        // 5. Cross-device (explicit device mention)
         if (entityExtractor.isLikelyCrossDevice(lower)) {
             return IntentResult(
                 intent = IntentType.CROSS_DEVICE,
                 confidence = HEURISTIC_CONFIDENCE,
-                entities = entities,
-                rawPrompt = lower
-            )
-        }
-
-        // 5. Question → Q_AND_A (but actual FAQ matching happens later in the ViewModel)
-        if (entityExtractor.isLikelyQuestion(lower) && entities.appName == null) {
-            return IntentResult(
-                intent = IntentType.Q_AND_A,
-                confidence = 0.80f,
                 entities = entities,
                 rawPrompt = lower
             )
