@@ -4,6 +4,19 @@
 
 Autonion Automation Companion is an Android application that enables intelligent device automation through natural language commands, gesture recording, cross-device control, and AI-powered task execution. It runs entirely locally with no cloud dependencies - all AI inference happens on your local network via Ollama, and all cross-device communication stays on your local WiFi.
 
+## Feature Summary
+
+Autonion has 8 core features. Here is a complete list:
+
+1. Omni-Chat (Unified Chatbot Interface) - The main interaction point. Accessible via the floating action button (FAB). Routes commands to the appropriate engine using on-device NLU.
+2. Semantic Automation (AI-Powered Agent) - Autonomous multi-step task execution powered by LLM. Uses an agentic loop to interact with device UI.
+3. Cross-Device Automation - Send commands from Android to a desktop computer. Requires the Autonion Desktop Agent app to be installed on the target device. Source code is available at github.com/Autonion/Autonion-Agent.
+4. Gesture Recording and Playback - Record touch interactions (taps, swipes, long presses, drags) and replay them automatically. Coordinate-based replay.
+5. Flow Builder - Visual drag-and-drop automation workflow builder. Create flows with triggers, actions, conditions, and connections.
+6. System Context Automation - Automations that respond to system-level context changes including location (geofence), time schedules, battery percentage levels, and WiFi connectivity changes.
+7. Visual Trigger Automation - Screen-pattern-based automations that use image matching to detect specific visual elements on screen and trigger actions automatically. This is the feature for triggering automation based on images.
+8. Screen Context AI (Screen ML) - AI-powered screen understanding using YOLO object detection and OCR (Optical Character Recognition). Detects UI elements dynamically, handles UI changes, and can automate clicks and interactions based on recognized text and visual elements.
+
 ## Core Architecture
 
 Autonion uses a layered architecture:
@@ -42,6 +55,11 @@ Forcing a specific device:
 Contextual FAQ chips:
 - When you open Omni-Chat, suggested question chips appear at the top based on which screen you are on.
 - On the home screen you see general tips. On the Semantic Automation screen you see AI-related tips. On Cross-Device you see connection tips. On Flow Builder you see workflow tips.
+
+FAQ Browser:
+- Tap the book icon in the chat header to open the FAQ Browser.
+- Browse all 150+ frequently asked questions organized with tags.
+- Tap any question to see its answer instantly without needing an LLM.
 
 LLM settings inside Omni-Chat:
 - Tap the gear icon in the chat header to open in-chat settings.
@@ -112,7 +130,7 @@ Intent types:
 - Q_AND_A: General knowledge question answered via RAG or LLM. Examples: "what features does this app have?", "how to set up Ollama?"
 
 ### Cross-Device Automation
-Send commands from your Android device to your desktop computer and receive real-time responses.
+Send commands from your Android device to your desktop computer and receive real-time responses. Cross-device automation requires a separate companion app called the Autonion Desktop Agent (also known as Autonion-Agent) to be installed and running on the target computer. You must download and install the Autonion Desktop Agent from github.com/Autonion/Autonion-Agent. Without the Desktop Agent running on the target computer, cross-device automation will not work.
 
 How cross-device communication works:
 1. Discovery: The Desktop Agent broadcasts its presence on the local network using mDNS (Bonjour service type: _autonion._tcp). The Android app scans for this service automatically.
@@ -129,8 +147,8 @@ Cross-device features:
 - Structured commands. For simple key presses, the command is sent with structured data (key name, key code) so the Desktop can execute it directly without LLM involvement. This is faster and more reliable.
 
 Setup steps:
-1. Install and run the Autonion Desktop Agent on your Windows PC.
-2. Make sure both your Android device and PC are on the same WiFi network.
+1. Download and install the Autonion Desktop Agent from github.com/Autonion/Autonion-Agent on your Windows PC (Flutter-based app, also called Autonion-Agent).
+2. Run the Desktop Agent on your PC. Make sure both your Android device and PC are on the same WiFi network.
 3. Open Cross-Device Automation in the Android app.
 4. The desktop should appear automatically via mDNS discovery within a few seconds.
 5. Tap the device name to connect. You will see a "Connected" status.
@@ -176,23 +194,56 @@ How to create a flow:
 Tip: Enable the Accessibility Service before running flows that interact with UI elements.
 
 ### System Context Automation
-Automations that respond to system-level context changes.
+Automations that respond to system-level context changes. This feature allows you to set automations based on battery percentage, location, time, and WiFi connectivity.
 
-Supported contexts:
-- Location-based triggers: Enter or exit a geographic area (geofence) to start an automation
-- Time-based triggers: Schedule automations to run at specific times or intervals
-- Battery level triggers: Run automations when battery reaches a certain level (e.g., enable power saving at 20%)
-- WiFi connectivity changes: Trigger automations when WiFi connects or disconnects
+Supported contexts and triggers:
+- Battery level triggers: Run automations when battery reaches a certain percentage level. For example, enable power saving mode when battery drops to 20%, or send a notification when battery reaches 100%. You can set any battery percentage as a trigger threshold.
+- Location-based triggers (geofence): Enter or exit a geographic area to start an automation. Example: Turn on WiFi when arriving home, turn off WiFi when leaving home.
+- Time-based triggers: Schedule automations to run at specific times or intervals. Example: Toggle DND at 10 PM every night.
+- WiFi connectivity changes: Trigger automations when WiFi connects or disconnects. Example: Open a specific app when connected to office WiFi.
 
-### Visual Triggers
-Screen-pattern-based automations that watch for specific visual elements.
+### Visual Trigger Automation
+Screen-pattern-based automations that watch for specific visual elements on screen. This is the feature for triggering automation based on images. Visual Triggers use image template matching to detect when a specific image pattern appears on screen and then automatically execute a configured action.
 
 How it works:
 1. Capture a screen region as a trigger pattern (take a screenshot and crop the area of interest).
-2. The system continuously monitors the screen using template matching.
-3. When the pattern appears on screen, the configured action executes automatically.
+2. The system continuously monitors the screen using template matching (image comparison).
+3. When the matching pattern is detected on screen, the configured action executes automatically.
+4. The matching is image-based, meaning it compares pixel patterns to find visual elements.
 
-Use cases: Detecting notification badges, waiting for a specific loading screen to finish, auto-clicking when a button appears.
+Use cases:
+- Detecting notification badges on app icons and auto-opening the app
+- Waiting for a specific loading screen to finish before proceeding
+- Auto-clicking when a specific button or dialog appears on screen
+- Monitoring for visual changes like new messages, alerts, or status changes
+- Game automation: detecting specific game states or UI elements and responding
+
+Important notes:
+- Requires the Accessibility Service to be enabled for action execution
+- The trigger pattern must be a clear, distinctive image region for reliable matching
+- Works with any app or screen on the device
+- Can be combined with other automations like Flow Builder for complex workflows
+
+### Screen Context AI (Screen ML)
+AI-powered screen understanding using machine learning models. This feature uses YOLO (You Only Look Once) object detection model and OCR (Optical Character Recognition) to understand and interact with screen content dynamically.
+
+Key capabilities:
+- YOLO object detection: Detects and classifies UI elements on screen in real-time using a trained YOLO model. Can identify buttons, text fields, images, icons, and other UI components even when the accessibility tree is unavailable or incomplete.
+- OCR text recognition: Reads and recognizes text displayed on screen. Can automate clicks and interactions based on recognized text content. Useful for interacting with elements that lack accessibility labels.
+- Dynamic UI handling: Handles UI changes in real-time. Unlike coordinate-based approaches (gesture recording), Screen ML adapts to layout changes because it visually detects elements rather than relying on fixed positions.
+- Element detection: Identifies interactive elements visually, providing an alternative to the accessibility tree for element detection.
+
+How Screen Context AI helps with automation:
+- Can automate clicks on elements identified by OCR text recognition
+- Provides visual element detection as a fallback when the accessibility tree does not expose certain elements
+- Handles dynamic and changing UIs because it re-detects elements each time rather than using stored coordinates
+- Works across all apps including those with custom or non-standard UI frameworks
+
+Use cases:
+- Automating clicks on text identified by OCR (e.g., click on a specific label or price)
+- Detecting and interacting with UI elements in apps that have poor accessibility support
+- Handling dynamic UIs that change layout frequently
+- Supplementing the Semantic Automation engine with visual element detection
 
 ### Browser Automation (Extension Bridge)
 For web browsing tasks, Autonion supports an extension-based approach:
@@ -234,11 +285,11 @@ Omni-Chat can answer questions about the app using a built-in knowledge system.
 How it works:
 1. Knowledge documents (like this guide) are loaded from the app assets at startup.
 2. Documents are split into chunks and each chunk is embedded using MiniLM sentence embeddings.
-3. When you ask a question, the system finds the most semantically similar knowledge chunk via cosine similarity search (vector search).
-4. If an LLM is connected, the chunk is used as context for the LLM to generate a natural language answer.
+3. When you ask a question, the system finds the most semantically similar knowledge chunks via cosine similarity search (vector search).
+4. If an LLM is connected, the chunks are used as context for the LLM to generate a natural language answer.
 5. If no LLM is connected, the raw knowledge chunk is shown directly as a fallback.
 
-The FAQ database provides instant answers via semantic matching (threshold 0.82 cosine similarity). It covers common questions about setup, features, troubleshooting, and usage patterns. FAQ answers are returned instantly without needing an LLM.
+The FAQ Browser provides instant static answers for 150+ common questions. You can browse FAQs by tapping the book icon in the chat header. FAQ answers are returned instantly without needing an LLM.
 
 ## Setup Guide
 
@@ -273,7 +324,9 @@ Important: Use your PC's local network IP (starts with 192.168.x.x or 10.x.x.x),
 - Inference Mode: SERVER_LLM (uses Ollama) is recommended over LOCAL_SLM (on-device) for better quality
 
 ### Connecting to Desktop Agent
-1. Install the Autonion Desktop Agent on your Windows PC (download or build from Flutter source).
+To use cross-device automation, you must install the Autonion Desktop Agent app on your computer. Download it from github.com/Autonion/Autonion-Agent.
+
+1. Install the Autonion Desktop Agent on your Windows PC (download from github.com/Autonion/Autonion-Agent or build from Flutter source).
 2. Run the Desktop Agent. It will show its WebSocket server port and local IP addresses.
 3. Make sure both devices are on the same WiFi network.
 4. In the Android app, go to Cross-Device Automation. The desktop should appear automatically.
@@ -290,6 +343,7 @@ This is usually caused by the LLM making poor predictions:
 - Use Omni-Chat for simple commands (like "press next" or "turn off wifi") which bypass the AI agent entirely and execute instantly.
 
 ### Cannot connect to desktop
+- Make sure the Autonion Desktop Agent (from github.com/Autonion/Autonion-Agent) is installed and running on your PC.
 - Ensure both devices are on the same WiFi network. Mobile data or different networks will not work.
 - Check if the Desktop Agent is running and shows a port number and IP address in its window.
 - Try manual IP entry if mDNS auto-discovery does not find the desktop.
@@ -320,7 +374,7 @@ Android aggressively kills background services to save battery. To prevent this:
 ### Omni-Chat answers are not helpful
 - Make sure your Ollama server is connected. Without an LLM, answers come from raw knowledge chunks which may not be as clear.
 - Try rephrasing your question. The RAG system matches your question against knowledge documents using semantic similarity.
-- For specific feature questions, use the FAQ chips shown at the top of the chat. These are pre-matched to instant answers.
+- For specific feature questions, use the FAQ Browser (book icon in chat header) to browse all available questions and answers instantly.
 - If you get "I don't have information about that", the topic may not be covered in the knowledge base.
 
 ### Scheduled tasks do not run

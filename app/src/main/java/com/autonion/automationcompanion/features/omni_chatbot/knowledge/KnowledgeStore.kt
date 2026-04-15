@@ -76,15 +76,26 @@ class KnowledgeStore(private val embedder: SentenceEmbedder) {
 
     /**
      * Semantic search: find the top-K most relevant chunks for a query.
+     * Only returns chunks above the minimum similarity threshold to
+     * avoid feeding irrelevant context to the LLM (which causes hallucinations).
      */
-    fun search(query: String, topK: Int = 5): List<KnowledgeChunk> {
+    fun search(query: String, topK: Int = 3, minSimilarity: Float = 0.35f): List<KnowledgeChunk> {
         if (!isLoaded || chunks.isEmpty()) return emptyList()
 
         val queryEmbedding = embedder.encode(query)
 
-        return chunks
+        val scored = chunks
             .map { chunk -> chunk to cosineSimilarity(queryEmbedding, chunk.embedding) }
             .sortedByDescending { it.second }
+
+        // Log top 3 scores for debugging
+        scored.take(3).forEachIndexed { i, (chunk, score) ->
+            Log.d(TAG, "RAG #$i: score=${"%.3f".format(score)} src=${chunk.source}[${chunk.chunkIndex}] " +
+                  "text=\"${chunk.text.take(60)}...\"")
+        }
+
+        return scored
+            .filter { it.second >= minSimilarity }
             .take(topK)
             .map { it.first }
     }

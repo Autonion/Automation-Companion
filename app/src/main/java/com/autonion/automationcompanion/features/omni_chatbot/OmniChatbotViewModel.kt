@@ -533,8 +533,8 @@ class OmniChatbotViewModel(
         ))
 
         viewModelScope.launch {
-            // 2. Try RAG — get the single BEST chunk only
-            val chunks = knowledgeStore.search(result.rawPrompt, topK = 1)
+            // Retrieve top 3 relevant chunks (filtered by min similarity 0.35)
+            val chunks = knowledgeStore.search(result.rawPrompt, topK = 3)
 
             // Case A: No knowledge chunks found at all
             if (chunks.isEmpty()) {
@@ -546,13 +546,18 @@ class OmniChatbotViewModel(
                 return@launch
             }
 
-            val bestChunk = chunks.first()
-            // Truncate chunk to ~1000 chars to leave room for system prompt + answer within 8192 ctx
-            val contextText = bestChunk.text.take(1000)
+            // Combine up to 3 chunks, truncating total to ~2500 chars for context window
+            val contextText = buildString {
+                for ((i, chunk) in chunks.withIndex()) {
+                    if (this.length > 2500) break
+                    if (i > 0) append("\n---\n")
+                    append(chunk.text.take(900))
+                }
+            }
 
             // Case B: Chunks found but no LLM — show clean fallback
             if (llmEngine.connectionStatus.value != ServerConnectionStatus.CONNECTED) {
-                val cleanText = cleanKnowledgeChunk(contextText, maxLength = 600)
+                val cleanText = cleanKnowledgeChunk(chunks.first().text.take(1000), maxLength = 600)
                 val fallback = buildString {
                     append(cleanText)
                     append("\n\n💡 Connect to an LLM server in ⚙️ settings for better answers.")
@@ -566,11 +571,14 @@ class OmniChatbotViewModel(
             // consumes all output tokens on <think> tags and produces no answer.
             val systemPrompt = buildString {
                 append("/no_think\n")
-                append("You are Autonion, an AI assistant built into an Android automation app. ")
-                append("Answer the user's question concisely using ONLY the provided knowledge. ")
-                append("Be direct and use bullet points where appropriate. ")
-                append("Do NOT use <think> tags or internal reasoning. Answer immediately.\n\n")
-                append("Knowledge:\n")
+                append("You are Autonion, an AI assistant built into an Android automation app.\n\n")
+                append("STRICT RULES:\n")
+                append("1. Answer ONLY using the knowledge provided below. Do NOT add information that is not in the knowledge.\n")
+                append("2. If the knowledge below does NOT contain information to answer the question, say exactly: \"I don't have specific information about that in my knowledge base.\"\n")
+                append("3. Do NOT make up features, capabilities, or instructions that are not explicitly described in the knowledge.\n")
+                append("4. Be concise and direct. Use bullet points where appropriate.\n")
+                append("5. Do NOT use <think> tags or internal reasoning. Answer immediately.\n\n")
+                append("KNOWLEDGE:\n")
                 append(contextText)
             }
 
@@ -580,7 +588,7 @@ class OmniChatbotViewModel(
                 updateLastBotMessage(answer, ResponseMode.KNOWLEDGE)
             } else {
                 // LLM failed — show clean chunk fallback
-                val fallback = cleanKnowledgeChunk(contextText, maxLength = 600)
+                val fallback = cleanKnowledgeChunk(chunks.first().text.take(1000), maxLength = 600)
                 updateLastBotMessage(
                     "$fallback\n\n💡 LLM didn't respond. Showing knowledge base excerpt.",
                     ResponseMode.KNOWLEDGE
