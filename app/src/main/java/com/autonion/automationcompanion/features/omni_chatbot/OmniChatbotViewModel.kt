@@ -81,23 +81,20 @@ class OmniChatbotViewModel(
     /** Track completed transactions to prevent duplicate completion messages */
     private val completedTransactions = mutableSetOf<String>()
 
-    // ─── RAG + FAQ (initialized lazily) ─────────────────────
-    private val faqMatcher: FAQMatcher by lazy {
-        FAQMatcher(intentClassifier.embedder).also {
-            it.loadFAQs(context)
-        }
-    }
-
-    private val knowledgeStore: KnowledgeStore by lazy {
-        KnowledgeStore(intentClassifier.embedder).also {
-            it.loadFromAssets(context)
-        }
-    }
+    // ─── RAG + FAQ (initialized synchronously, loaded asynchronously) ─────
+    private val faqMatcher = FAQMatcher(intentClassifier.embedder)
+    private val knowledgeStore = KnowledgeStore(intentClassifier.embedder)
 
     private val ragPromptBuilder = RAGPromptBuilder()
 
     // ─── Init: Wire up Desktop response flow ────────────────
     init {
+        viewModelScope.launch {
+            // Load large embeddings in background immediately without blocking UI
+            faqMatcher.loadFAQs(context)
+            knowledgeStore.loadFromAssets(context)
+        }
+
         viewModelScope.launch {
             try {
                 crossDeviceManager.networkingManager.responseFlow.collect { response ->

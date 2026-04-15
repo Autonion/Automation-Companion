@@ -28,6 +28,7 @@ class KnowledgeStore(private val embedder: SentenceEmbedder) {
     )
 
     private val chunks = mutableListOf<KnowledgeChunk>()
+    @Volatile
     var isLoaded = false
         private set
 
@@ -35,8 +36,8 @@ class KnowledgeStore(private val embedder: SentenceEmbedder) {
      * Load all markdown documents from assets/knowledge/ directory,
      * chunk them, and compute embeddings.
      */
-    fun loadFromAssets(context: Context) {
-        if (isLoaded) return
+    suspend fun loadFromAssets(context: Context) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+        if (isLoaded) return@withContext
 
         try {
             val start = System.currentTimeMillis()

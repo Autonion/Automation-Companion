@@ -15,7 +15,7 @@ class RAGPromptBuilder {
         private const val SYSTEM_INSTRUCTION = """You are Autonion's helpful AI assistant.
 Answer the user's question based ONLY on the provided context.
 If the context doesn't contain enough information, say so honestly.
-Be concise and direct. Use bullet points where appropriate.
+Be concise and direct. Use plain text formatting with dashes (-) for lists. Do NOT use Markdown formatting (no asterisks for bold or italics).
 Do not make up information that isn't in the context."""
 
         private const val MAX_CONTEXT_CHARS = 3000

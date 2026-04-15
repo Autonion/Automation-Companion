@@ -35,6 +35,7 @@ class FAQMatcher(private val embedder: SentenceEmbedder) {
     )
 
     private val embeddedFAQs = mutableListOf<EmbeddedFAQ>()
+    @Volatile
     var isLoaded = false
         private set
 
@@ -42,8 +43,8 @@ class FAQMatcher(private val embedder: SentenceEmbedder) {
      * Load FAQ database from assets and precompute question embeddings.
      * Call this once at startup (or first chatbot expansion).
      */
-    fun loadFAQs(context: Context) {
-        if (isLoaded) return
+    suspend fun loadFAQs(context: Context) = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+        if (isLoaded) return@withContext
 
         try {
             val jsonStr = context.assets.open(FAQ_ASSET_PATH).bufferedReader().readText()
