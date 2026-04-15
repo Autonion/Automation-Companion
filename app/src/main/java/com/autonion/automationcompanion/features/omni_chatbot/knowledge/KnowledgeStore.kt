@@ -91,19 +91,28 @@ class KnowledgeStore(private val embedder: SentenceEmbedder) {
 
     /**
      * Split a markdown document into overlapping word-based chunks.
-     * Respects paragraph boundaries where possible.
+     * Preserves section headers by prepending them to the following content
+     * so that the embedding captures the topic context.
      */
     private fun chunkDocument(content: String, source: String): List<String> {
-        // Split by double newlines (paragraphs) first
+        // Split by double newlines (paragraphs)
         val paragraphs = content.split(Regex("\n{2,}"))
             .map { it.trim() }
-            .filter { it.isNotBlank() && !it.startsWith("#") } // Skip headers as standalone
+            .filter { it.isNotBlank() }
 
         val result = mutableListOf<String>()
         val currentChunk = StringBuilder()
         var wordCount = 0
+        var lastHeader = "" // Track the most recent section header
 
         for (paragraph in paragraphs) {
+            // If this paragraph is a markdown header, remember it
+            // but don't add it as a standalone chunk
+            if (paragraph.startsWith("#")) {
+                lastHeader = paragraph.replace(Regex("^#+\\s*"), "").trim()
+                continue
+            }
+
             val paraWords = paragraph.split(Regex("\\s+")).size
 
             if (wordCount + paraWords > CHUNK_SIZE_WORDS && currentChunk.isNotEmpty()) {
@@ -120,6 +129,17 @@ class KnowledgeStore(private val embedder: SentenceEmbedder) {
                 } else {
                     wordCount = 0
                 }
+                // Re-inject header context at the start of the new chunk
+                if (lastHeader.isNotBlank()) {
+                    currentChunk.insert(0, "Topic: $lastHeader\n\n")
+                    wordCount += lastHeader.split(Regex("\\s+")).size + 1
+                }
+            }
+
+            // If starting a new chunk and we have a header, prepend it
+            if (currentChunk.isEmpty() && lastHeader.isNotBlank()) {
+                currentChunk.append("Topic: $lastHeader\n\n")
+                wordCount += lastHeader.split(Regex("\\s+")).size + 1
             }
 
             currentChunk.append(paragraph).append("\n\n")
