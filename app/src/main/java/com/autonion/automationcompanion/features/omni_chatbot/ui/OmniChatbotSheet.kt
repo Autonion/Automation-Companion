@@ -162,6 +162,9 @@ private fun OmniChatSheet(viewModel: OmniChatbotViewModel) {
     val showSettings by viewModel.showSettings.collectAsState()
     val listState = rememberLazyListState()
 
+    val showFAQBrowser by viewModel.showFAQBrowser.collectAsState()
+    val faqList by viewModel.faqList.collectAsState()
+
     val faqChips = remember(currentRoute) {
         ContextualFAQs.getChipsForRoute(currentRoute)
     }
@@ -180,8 +183,10 @@ private fun OmniChatSheet(viewModel: OmniChatbotViewModel) {
             ChatSheetHeader(
                 onClose = { viewModel.collapse() },
                 onSettingsClick = { viewModel.toggleSettings() },
+                onFAQBrowserClick = { viewModel.toggleFAQBrowser() },
                 connectionStatus = viewModel.llmConnectionStatus.collectAsState().value,
-                showSettings = showSettings
+                showSettings = showSettings,
+                showFAQBrowser = showFAQBrowser
             )
 
             // ── LLM Settings Panel ──
@@ -193,8 +198,17 @@ private fun OmniChatSheet(viewModel: OmniChatbotViewModel) {
                 LLMSettingsPanel(viewModel = viewModel)
             }
 
+            // ── FAQ Browser Panel ──
+            AnimatedVisibility(
+                visible = showFAQBrowser,
+                enter = expandVertically(tween(300)) + fadeIn(tween(200)),
+                exit = shrinkVertically(tween(250)) + fadeOut(tween(150))
+            ) {
+                FAQBrowserUI(faqList = faqList, onFAQSelected = { viewModel.onFAQSelected(it) })
+            }
+
             // ── FAQ Chips ──
-            AnimatedVisibility(visible = messages.isEmpty() && !showSettings) {
+            AnimatedVisibility(visible = messages.isEmpty() && !showSettings && !showFAQBrowser) {
                 FAQChipRow(
                     chips = faqChips,
                     onChipClick = { viewModel.processPrompt(it.question) }
@@ -202,7 +216,7 @@ private fun OmniChatSheet(viewModel: OmniChatbotViewModel) {
             }
 
             // ── Messages ──
-            if (messages.isEmpty() && !showSettings) {
+            if (messages.isEmpty() && !showSettings && !showFAQBrowser) {
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -247,8 +261,10 @@ private fun OmniChatSheet(viewModel: OmniChatbotViewModel) {
 private fun ChatSheetHeader(
     onClose: () -> Unit,
     onSettingsClick: () -> Unit,
+    onFAQBrowserClick: () -> Unit,
     connectionStatus: ServerConnectionStatus,
-    showSettings: Boolean
+    showSettings: Boolean,
+    showFAQBrowser: Boolean
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -307,6 +323,17 @@ private fun ChatSheetHeader(
                 ServerConnectionStatus.CONNECTED -> AccentGreen
                 ServerConnectionStatus.CONNECTING -> AccentOrange
                 ServerConnectionStatus.DISCONNECTED -> AccentRed
+            }
+
+            // FAQ Browser button
+            IconButton(onClick = onFAQBrowserClick) {
+                Icon(
+                    if (showFAQBrowser) Icons.Default.Close else Icons.Default.MenuBook,
+                    contentDescription = "Browse FAQs",
+                    tint = if (showFAQBrowser) Color.White.copy(alpha = 0.8f)
+                           else Color.White.copy(alpha = 0.6f),
+                    modifier = Modifier.size(22.dp)
+                )
             }
 
             // Settings button with status indicator
@@ -1113,3 +1140,74 @@ private fun getModeColor(mode: ResponseMode): Color = when (mode) {
 private fun formatTime(timestamp: Long): String {
     return DateFormat.format("hh:mm a", Date(timestamp)).toString()
 }
+
+// ─── FAQ Browser ─────────────────────────────────────────
+
+@Composable
+private fun FAQBrowserUI(
+    faqList: List<com.autonion.automationcompanion.features.omni_chatbot.knowledge.FAQRepository.FAQ>,
+    onFAQSelected: (com.autonion.automationcompanion.features.omni_chatbot.knowledge.FAQRepository.FAQ) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .fillMaxHeight(0.8f)
+            .background(SheetBg)
+            .padding(horizontal = 16.dp)
+    ) {
+        val listState = rememberLazyListState()
+        
+        Text(
+            "FAQ Library",
+            color = Color.White.copy(alpha = 0.8f),
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 18.sp,
+            modifier = Modifier.padding(top = 8.dp, bottom = 12.dp)
+        )
+
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            contentPadding = PaddingValues(bottom = 16.dp)
+        ) {
+            items(faqList, key = { it.question }) { faq ->
+                Surface(
+                    color = CardGlass,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = { onFAQSelected(faq) }
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = faq.question,
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        if (faq.tags.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                faq.tags.take(3).forEach { tag ->
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(AccentPurple.copy(alpha = 0.2f))
+                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    ) {
+                                        Text(
+                                            tag, 
+                                            color = AccentPurple, 
+                                            fontSize = 10.sp
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+

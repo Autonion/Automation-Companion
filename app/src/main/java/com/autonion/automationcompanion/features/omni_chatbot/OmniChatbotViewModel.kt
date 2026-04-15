@@ -12,7 +12,7 @@ import com.autonion.automationcompanion.features.cross_device_automation.domain.
 import com.autonion.automationcompanion.features.nlu.IntentClassifier
 import com.autonion.automationcompanion.features.nlu.IntentResult
 import com.autonion.automationcompanion.features.nlu.IntentType
-import com.autonion.automationcompanion.features.omni_chatbot.knowledge.FAQMatcher
+import com.autonion.automationcompanion.features.omni_chatbot.knowledge.FAQRepository
 import com.autonion.automationcompanion.features.omni_chatbot.knowledge.KnowledgeStore
 import com.autonion.automationcompanion.features.omni_chatbot.knowledge.RAGPromptBuilder
 import com.autonion.automationcompanion.features.omni_chatbot.model.*
@@ -82,16 +82,25 @@ class OmniChatbotViewModel(
     private val completedTransactions = mutableSetOf<String>()
 
     // ─── RAG + FAQ (initialized synchronously, loaded asynchronously) ─────
-    private val faqMatcher = FAQMatcher(intentClassifier.embedder)
+    private val faqRepository = FAQRepository()
     private val knowledgeStore = KnowledgeStore(intentClassifier.embedder)
 
     private val ragPromptBuilder = RAGPromptBuilder()
+
+    // ─── FAQ Browser State ──────────────────────────────────
+    private val _showFAQBrowser = MutableStateFlow(false)
+    val showFAQBrowser: StateFlow<Boolean> = _showFAQBrowser.asStateFlow()
+
+    private val _faqList = MutableStateFlow<List<FAQRepository.FAQ>>(emptyList())
+    val faqList: StateFlow<List<FAQRepository.FAQ>> = _faqList.asStateFlow()
 
     // ─── Init: Wire up Desktop response flow ────────────────
     init {
         viewModelScope.launch {
             // Load large embeddings in background immediately without blocking UI
-            faqMatcher.loadFAQs(context)
+            faqRepository.loadFAQs(context)
+            _faqList.value = faqRepository.getAllFAQs()
+            
             knowledgeStore.loadFromAssets(context)
         }
 
@@ -133,6 +142,28 @@ class OmniChatbotViewModel(
 
     fun toggleSettings() {
         _showSettings.value = !_showSettings.value
+        if (_showSettings.value) _showFAQBrowser.value = false
+    }
+
+    fun toggleFAQBrowser() {
+        _showFAQBrowser.value = !_showFAQBrowser.value
+        if (_showFAQBrowser.value) _showSettings.value = false
+    }
+
+    fun onFAQSelected(faq: FAQRepository.FAQ) {
+        _showFAQBrowser.value = false
+        // Echo user selection
+        addMessage(OmniChatMessage(
+            text = faq.question,
+            isUser = true,
+            mode = ResponseMode.DIRECT
+        ))
+        // Immediate static response from FAQ repository
+        addMessage(OmniChatMessage(
+            text = faq.answer,
+            isUser = false,
+            mode = ResponseMode.FAQ
+        ))
     }
 
     // ─── LLM Connection Management ──────────────────────────
@@ -489,19 +520,8 @@ class OmniChatbotViewModel(
     }
 
     private fun handleFAQ(result: IntentResult) {
-        viewModelScope.launch {
-            val match = faqMatcher.match(result.rawPrompt)
-            if (match != null) {
-                addMessage(OmniChatMessage(
-                    text = match.answer,
-                    isUser = false,
-                    mode = ResponseMode.FAQ
-                ))
-            } else {
-                // No close FAQ match — fall back to RAG
-                handleQAndA(result)
-            }
-        }
+        // Fallback to Q&A if FAQ intent triggers
+        handleQAndA(result)
     }
 
     private fun handleQAndA(result: IntentResult) {
@@ -513,13 +533,6 @@ class OmniChatbotViewModel(
         ))
 
         viewModelScope.launch {
-            // 1. Try FAQ matching (fast path)
-            val faqMatch = faqMatcher.match(result.rawPrompt)
-            if (faqMatch != null) {
-                updateLastBotMessage(faqMatch.answer, ResponseMode.FAQ)
-                return@launch
-            }
-
             // 2. Try RAG — get the single BEST chunk only
             val chunks = knowledgeStore.search(result.rawPrompt, topK = 1)
 
