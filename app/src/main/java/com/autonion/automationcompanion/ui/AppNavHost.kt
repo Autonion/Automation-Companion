@@ -9,16 +9,21 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -37,6 +42,8 @@ import com.autonion.automationcompanion.features.omni_chatbot.ui.OmniChatbotScaf
 import com.autonion.automationcompanion.features.semantic_automation.ml.ModelStorageManager
 import com.autonion.automationcompanion.features.semantic_automation.ui.ModelManagerScreen
 import com.autonion.automationcompanion.features.system_context_automation.SystemContextMainScreen
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 private const val ROUTE_HOME = "home"
 private const val NAV_ANIM_DURATION = 300
@@ -100,6 +107,22 @@ fun AppNavHost() {
             intentClassifier = intentClassifier,
             crossDeviceManager = crossDeviceManager
         )
+    }
+
+    // ── Global Clipboard Sync (works on every screen, not just Cross-Device) ──
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val clipboardScope = rememberCoroutineScope()
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                clipboardScope.launch {
+                    delay(200)
+                    crossDeviceManager.syncClipboard(context)
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     // ── Wrap everything in OmniChatbot scaffold ──

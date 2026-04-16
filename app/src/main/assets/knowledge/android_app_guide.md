@@ -324,6 +324,35 @@ Important: Use your PC's local network IP (starts with 192.168.x.x or 10.x.x.x),
 - For vision: models with vision support can use screenshots alongside the accessibility tree
 - Inference Mode: SERVER_LLM (uses Ollama) is recommended over LOCAL_SLM (on-device) for better quality
 
+### On-Device SLM Setup (Installing SLM on Mobile)
+To run AI models directly on your Android phone without any server, you can install an on-device Small Language Model (SLM). This is called Local SLM mode and it runs entirely on your phone with no network connection needed.
+
+Step-by-step guide to install an SLM model on your mobile device:
+1. Open the AI Engine Hub: From the home screen, go to Semantic Automation and tap the gear/SLM Hub icon in the top-right corner. Alternatively, open Omni-Chat settings (gear icon in chat header) and switch to "On-Device SLM" mode to see instructions.
+2. Check your device hardware: The AI Engine Hub shows your device's total RAM. Models require a minimum amount of RAM to run. Gemma 2B needs at least 4GB RAM. Gemma 7B needs at least 8GB RAM.
+3. Browse the model catalog: The AI Engine Hub lists available models with their size, RAM requirements, quantization type, and runtime (CPU or GPU). Models marked as "Recommended for your device" are the best fit for your hardware.
+4. Download the model file: Tap the "Download" button on a compatible model. This opens the model's page on Kaggle or HuggingFace in your browser. Download the .bin model file to your phone's storage. The download size ranges from 1.3GB to 3.8GB depending on the model.
+5. Import the model: Go back to the AI Engine Hub in the app. Scroll down to the "Installed Models" section and tap "Import .bin/.task". Use the file picker to select the downloaded .bin file. The app will copy the model into its internal storage. This may take a minute depending on the file size.
+6. Set the model as active: After import, the model appears in the "Installed Models" list. Tap on it to set it as the active model. It will show an "ACTIVE" badge.
+7. Switch to On-Device SLM mode: In the "Inference Engine" section at the top of the AI Engine Hub, tap "On-Device SLM" to switch from Server LLM to local inference. You can also switch modes from Omni-Chat settings.
+8. Start using it: The SLM model is now ready. Go to Omni-Chat or Semantic Automation and give a command. The on-device model will process it locally.
+
+Available SLM models for mobile:
+- Gemma 2B IT (CPU): Lightweight, fast. Best for devices with 4-6GB RAM. About 1.35GB download.
+- Gemma 2B IT (GPU): Same model but GPU-accelerated for faster inference. Requires a device with GPU support.
+- Gemma 7B IT (CPU): Significantly smarter reasoning. Needs 8GB+ RAM. About 3.8GB download.
+- Gemma 7B IT (GPU): Best quality with GPU acceleration. For flagship devices with 12GB+ RAM.
+- Gemma 2 2B IT: Next-generation Gemma with better reasoning at the same size as Gemma 2B.
+- Phi-2: Microsoft's compact model with strong code and reasoning skills. About 1.6GB download.
+
+Important notes about on-device SLM:
+- SLM runs entirely on your phone. No WiFi, no server, no PC needed.
+- SLM inference is slower than Server LLM (Ollama). Expect 10-30 seconds per response depending on your device.
+- SLM is less accurate than larger server models for complex multi-step tasks. For best results, use simple commands.
+- The model file stays in app storage. You can delete it from the AI Engine Hub if you need space.
+- If your device has less than 4GB RAM, SLM models may cause crashes or extreme slowness.
+- For faster and more accurate AI, use Server LLM mode with Ollama on your PC instead.
+
 ### Connecting to Desktop Agent
 To use cross-device automation, you must install the Autonion Desktop Agent app on your computer. Download it from github.com/Autonion/Autonion-Agent.
 

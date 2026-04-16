@@ -26,8 +26,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -169,25 +173,55 @@ private fun OmniChatSheet(viewModel: OmniChatbotViewModel) {
         ContextualFAQs.getChipsForRoute(currentRoute)
     }
 
+    val density = LocalDensity.current
+    val dragThresholdPx = with(density) { 50.dp.toPx() }
+    var dragOffsetY by remember { mutableStateOf(0f) }
+
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .fillMaxHeight(), // Full screen when expanded
+            .fillMaxHeight()
+            .graphicsLayer {
+                translationY = dragOffsetY.coerceAtLeast(0f)
+                alpha = 1f - (dragOffsetY.coerceAtLeast(0f) / (dragThresholdPx * 3)).coerceIn(0f, 0.3f)
+            },
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
         color = SheetBg,
         tonalElevation = 8.dp,
         shadowElevation = 16.dp
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // ── Handle & Header ──
-            ChatSheetHeader(
-                onClose = { viewModel.collapse() },
-                onSettingsClick = { viewModel.toggleSettings() },
-                onFAQBrowserClick = { viewModel.toggleFAQBrowser() },
-                connectionStatus = viewModel.llmConnectionStatus.collectAsState().value,
-                showSettings = showSettings,
-                showFAQBrowser = showFAQBrowser
-            )
+            // ── Drag Handle Zone ──
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .pointerInput(Unit) {
+                        detectVerticalDragGestures(
+                            onDragStart = { dragOffsetY = 0f },
+                            onDragEnd = {
+                                if (dragOffsetY > dragThresholdPx) {
+                                    viewModel.collapse()
+                                }
+                                dragOffsetY = 0f
+                            },
+                            onDragCancel = { dragOffsetY = 0f },
+                            onVerticalDrag = { change, dragAmount ->
+                                change.consume()
+                                dragOffsetY = (dragOffsetY + dragAmount).coerceAtLeast(0f)
+                            }
+                        )
+                    }
+            ) {
+                ChatSheetHeader(
+                    onClose = { viewModel.collapse() },
+                    onSettingsClick = { viewModel.toggleSettings() },
+                    onFAQBrowserClick = { viewModel.toggleFAQBrowser() },
+                    connectionStatus = viewModel.llmConnectionStatus.collectAsState().value,
+                    showSettings = showSettings,
+                    showFAQBrowser = showFAQBrowser,
+                    isDragging = dragOffsetY > 0f
+                )
+            }
 
             // ── LLM Settings Panel ──
             AnimatedVisibility(
@@ -264,20 +298,21 @@ private fun ChatSheetHeader(
     onFAQBrowserClick: () -> Unit,
     connectionStatus: ServerConnectionStatus,
     showSettings: Boolean,
-    showFAQBrowser: Boolean
+    showFAQBrowser: Boolean,
+    isDragging: Boolean = false
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Drag handle
+        // Drag handle indicator
         Box(
             modifier = Modifier
                 .padding(top = 8.dp)
                 .width(40.dp)
                 .height(4.dp)
                 .clip(RoundedCornerShape(2.dp))
-                .background(Color.White.copy(alpha = 0.2f))
+                .background(Color.White.copy(alpha = if (isDragging) 0.5f else 0.2f))
         )
 
         Row(
