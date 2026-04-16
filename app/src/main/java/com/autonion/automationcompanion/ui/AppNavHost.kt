@@ -10,6 +10,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -107,6 +108,12 @@ fun AppNavHost() {
             intentClassifier = intentClassifier,
             crossDeviceManager = crossDeviceManager
         )
+    }
+
+    // Warm up the NLU model in background (ONNX load + intent embeddings)
+    // UI renders immediately; heuristic classification works while this runs
+    LaunchedEffect(Unit) {
+        intentClassifier.warmUp()
     }
 
     // ── Global Clipboard Sync (works on every screen, not just Cross-Device) ──

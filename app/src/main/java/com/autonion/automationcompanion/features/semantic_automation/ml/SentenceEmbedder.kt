@@ -24,30 +24,47 @@ class SentenceEmbedder(context: Context) {
         private const val MAX_SEQ_LEN = 128
     }
 
+    private val appContext = context.applicationContext
     private val tokenizer = WordPieceTokenizer(context)
     private val ortEnv: OrtEnvironment = OrtEnvironment.getEnvironment()
-    private val ortSession: OrtSession
 
-    init {
-        val modelBytes = context.assets.open(MODEL_ASSET).use { it.readBytes() }
+    // Lazy-loaded ONNX session — defers heavy model I/O from startup to first use
+    @Volatile
+    private var _ortSession: OrtSession? = null
+    private val ortSession: OrtSession
+        get() = _ortSession ?: synchronized(this) {
+            _ortSession ?: createSession().also { _ortSession = it }
+        }
+
+    @Volatile
+    private var _modelInputNames: List<String>? = null
+    private val modelInputNames: List<String>
+        get() = _modelInputNames ?: ortSession.inputNames.toList().also { _modelInputNames = it }
+
+    private var loggedFirstCall = false
+
+    private fun createSession(): OrtSession {
+        val start = System.currentTimeMillis()
+        val modelBytes = appContext.assets.open(MODEL_ASSET).use { it.readBytes() }
         val opts = OrtSession.SessionOptions().apply {
             setIntraOpNumThreads(4)
         }
-        ortSession = ortEnv.createSession(modelBytes, opts)
-        Log.d(TAG, "ONNX MiniLM session created (${modelBytes.size / 1024}KB)")
-
-        // Log input/output names for debugging
-        ortSession.inputNames.forEach { Log.d(TAG, "  Input: $it") }
-        ortSession.outputNames.forEach { Log.d(TAG, "  Output: $it") }
+        val session = ortEnv.createSession(modelBytes, opts)
+        val elapsed = System.currentTimeMillis() - start
+        Log.d(TAG, "ONNX MiniLM session created (${modelBytes.size / 1024}KB) in ${elapsed}ms")
+        session.inputNames.forEach { Log.d(TAG, "  Input: $it") }
+        session.outputNames.forEach { Log.d(TAG, "  Output: $it") }
+        Log.d(TAG, "Model expects ${session.inputNames.size} inputs: ${session.inputNames.toList()}")
+        return session
     }
 
-    /** Cached ordered list of the model's expected input names. */
-    private val modelInputNames: List<String> = ortSession.inputNames.toList()
-    private val numModelInputs: Int = modelInputNames.size
-    private var loggedFirstCall = false
-
-    init {
-        Log.d(TAG, "Model expects $numModelInputs inputs: $modelInputNames")
+    /**
+     * Pre-initialize the ONNX session from a background thread.
+     * Call this early to warm up without blocking the main thread.
+     */
+    fun ensureInitialized() {
+        // Accessing ortSession triggers lazy creation
+        ortSession
     }
 
     /**

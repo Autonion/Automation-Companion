@@ -125,19 +125,35 @@ class IntentClassifier(context: Context) {
     )
 
     /** Precomputed embeddings for all intent examples: Map<IntentType, List<FloatArray>> */
-    private val intentEmbeddings: Map<IntentType, List<FloatArray>>
+    @Volatile
+    private var intentEmbeddings: Map<IntentType, List<FloatArray>> = emptyMap()
 
-    init {
-        Log.d(TAG, "Precomputing intent embeddings...")
+    @Volatile
+    var isWarmedUp = false
+        private set
+
+    /**
+     * Pre-compute all intent embeddings in the background.
+     * Call from a coroutine to avoid blocking the main thread.
+     * Until warmUp() completes, classify() uses heuristic-only mode.
+     */
+    suspend fun warmUp() = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+        if (isWarmedUp) return@withContext
+
+        Log.d(TAG, "Warming up: loading ONNX model + precomputing intent embeddings...")
         val start = System.currentTimeMillis()
+
+        // This triggers lazy ONNX session creation if not yet initialized
+        embedder.ensureInitialized()
 
         intentEmbeddings = intentExamples.mapValues { (_, examples) ->
             examples.map { embedder.encode(it) }
         }
 
+        isWarmedUp = true
         val elapsed = System.currentTimeMillis() - start
         val totalExamples = intentExamples.values.sumOf { it.size }
-        Log.d(TAG, "Precomputed $totalExamples intent embeddings in ${elapsed}ms")
+        Log.d(TAG, "Warm-up complete: $totalExamples intent embeddings in ${elapsed}ms")
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -232,6 +248,17 @@ class IntentClassifier(context: Context) {
         lower: String,
         entities: ExtractedEntities
     ): IntentResult {
+        // If embeddings haven't been warmed up yet, fall back to Q&A
+        if (!isWarmedUp || intentEmbeddings.isEmpty()) {
+            Log.d(TAG, "Embeddings not ready — defaulting to Q_AND_A")
+            return IntentResult(
+                intent = IntentType.Q_AND_A,
+                confidence = 0.5f,
+                entities = entities,
+                rawPrompt = lower
+            )
+        }
+
         val promptEmbedding = embedder.encode(prompt)
 
         // Find the best matching intent by max cosine similarity
