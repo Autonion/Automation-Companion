@@ -1,0 +1,1508 @@
+[
+  {
+    "question": "How do I connect my desktop to the Android app?",
+    "answer": "To connect your desktop:\n1. Install and run the Autonion Desktop Agent on your PC/Mac.\n2. Make sure both devices are on the same Wi-Fi network.\n3. Open the Autonion app on Android and go to Cross-Device Automation.\n4. The desktop should appear automatically via mDNS discovery.\n5. Tap the device name to connect. You'll see a 'Connected' status.\n\nIf auto-discovery fails, you can manually enter the IP address shown in the Desktop Agent window.",
+    "tags": [
+      "connection",
+      "setup",
+      "desktop",
+      "cross-device"
+    ]
+  },
+  {
+    "question": "What is Semantic Automation?",
+    "answer": "Semantic Automation is Autonion's AI-powered feature that understands natural language commands and executes them on your device. For example, you can say 'search for shoes on Flipkart' and the AI agent will open Flipkart, find the search bar, type your query, and submit it \u2014 all autonomously.\n\nIt uses a combination of:\n- On-device accessibility tree reading to understand screen elements\n- LLM (Large Language Model) via local Ollama for action prediction\n- Rule-based heuristics for common tasks like search, toggle, and navigation",
+    "tags": [
+      "semantic",
+      "automation",
+      "ai",
+      "agent"
+    ]
+  },
+  {
+    "question": "How do I set up Ollama for the AI features?",
+    "answer": "Ollama provides the local LLM that powers AI features:\n1. Download Ollama from https://ollama.ai and install it on your PC.\n2. Open a terminal and run: ollama pull qwen2.5:3b (or your preferred model).\n3. Ollama starts a server at http://localhost:11434 automatically.\n4. In the Autonion Android app, go to Semantic Automation > Model Manager.\n5. Enter your PC's IP address (e.g., 192.168.x.x:11434) as the server URL.\n6. Tap 'Test Connection' to verify it works.\n\nRecommended models: qwen2.5:3b for speed, qwen2.5:7b for accuracy.",
+    "tags": [
+      "ollama",
+      "setup",
+      "ai",
+      "llm",
+      "model"
+    ]
+  },
+  {
+    "question": "Why is the automation doing random actions?",
+    "answer": "This usually happens when:\n1. **Model too small**: Smaller models (1-3B parameters) may hallucinate on complex tasks. Try upgrading to a 7B model.\n2. **Complex prompts**: Break down complex requests into simpler steps instead of one long prompt.\n3. **Screen noise**: Too many UI elements confuse the model. Try closing unnecessary apps.\n4. **Network timeout**: If the LLM takes too long, the engine may fall back to rule-based actions which may not match the intent.\n\nTip: Use the Omni-Chatbot to send structured commands (like 'press next' or 'turn off wifi') which bypass the LLM entirely.",
+    "tags": [
+      "troubleshooting",
+      "semantic",
+      "hallucination",
+      "random"
+    ]
+  },
+  {
+    "question": "How do I sync clipboard between devices?",
+    "answer": "Clipboard sync works automatically when devices are connected:\n1. Connect your Android device to the Desktop Agent (see device connection FAQ).\n2. Clipboard sync starts automatically \u2014 any text copied on one device appears on the other.\n3. For privacy, clipboard data is only synced locally over your Wi-Fi network and is never sent to any cloud server.\n\nNote: Only text content is synced. Images and files are not supported yet.",
+    "tags": [
+      "clipboard",
+      "sync",
+      "cross-device"
+    ]
+  },
+  {
+    "question": "What automations can I create?",
+    "answer": "Autonion supports several automation types:\n\n\ud83c\udfaf **Direct Actions**: Press keys, toggle settings (wifi, bluetooth, etc.)\n\ud83e\udd16 **Semantic Automation**: AI-driven app interactions ('search shoes on Flipkart')\n\ud83d\udd17 **Cross-Device**: Send commands to your desktop ('on my laptop open Chrome')\n\u23f1\ufe0f **Scheduled Tasks**: Repeat actions on a timer ('click next every 1 minute')\n\ud83d\udccb **Flow Builder**: Create visual automation workflows with drag-and-drop\n\ud83d\udc4b **Gesture Recording**: Record and replay touch gestures\n\ud83d\udce1 **System Context**: Location-aware automations\n\ud83d\udd0d **Visual Triggers**: Screen-pattern-based automations",
+    "tags": [
+      "features",
+      "overview",
+      "capabilities"
+    ]
+  },
+  {
+    "question": "How to use the Flow Builder?",
+    "answer": "The Flow Builder lets you create visual automation workflows:\n1. Go to Flow Builder from the home screen.\n2. Tap '+' to create a new flow.\n3. Add trigger events (e.g., time-based, app launch, notification).\n4. Add action blocks (e.g., open app, type text, press button).\n5. Connect triggers to actions by dragging connections.\n6. Tap 'Run' to execute or 'Schedule' for automatic execution.\n\nTip: Enable the Accessibility Service before running flows that interact with UI elements.",
+    "tags": [
+      "flow",
+      "builder",
+      "workflow",
+      "tutorial"
+    ]
+  },
+  {
+    "question": "How to record and replay gestures?",
+    "answer": "Gesture recording lets you capture and replay touch interactions:\n1. Go to Gesture Recording from the home screen.\n2. Tap 'Record' to start. The overlay will appear.\n3. Perform your gestures (taps, swipes, long presses).\n4. Tap the overlay stop button when done.\n5. Name your recording and save it.\n6. To replay, select the recording and tap 'Play'.\n\nNote: Gesture recording requires the Accessibility Service to be enabled.",
+    "tags": [
+      "gesture",
+      "recording",
+      "playback",
+      "tutorial"
+    ]
+  },
+  {
+    "question": "How does the browser extension work?",
+    "answer": "The Autonion browser extension enables web automation:\n1. Install the extension in your browser (Lemur/Chrome-based browsers work best).\n2. The extension connects to the Desktop Agent via WebSocket.\n3. When you send a browser-related command, the extension captures the webpage DOM.\n4. The AI agent reads the page structure and interacts with elements (clicks, types, scrolls).\n5. Results are sent back to your Android app.\n\nThe extension is needed because the Accessibility Service can only see native Android UI elements, not web page content.",
+    "tags": [
+      "browser",
+      "extension",
+      "web",
+      "automation"
+    ]
+  },
+  {
+    "question": "How to stop a running automation?",
+    "answer": "There are several ways to stop automations:\n\n1. **Omni-Chat Stop Button**: For scheduled tasks, tap the 'Stop' button shown in the chat.\n2. **Notification**: Tap the 'Stop' action in the persistent automation notification.\n3. **Semantic Automation Screen**: Tap the stop button on the automation screen.\n4. **Kill Switch**: In cross-device mode, send a 'stop' command to halt remote automation.\n\nEmergency: If everything freezes, disable the Accessibility Service from Android Settings > Accessibility.",
+    "tags": [
+      "stop",
+      "cancel",
+      "automation",
+      "emergency"
+    ]
+  },
+  {
+    "question": "What is the Automation Debugger?",
+    "answer": "The Automation Debugger helps you understand what happened during an automation:\n1. Go to Automation Debugger from the home screen.\n2. View logs categorized by: Accessibility Events, Cross-Device Sync, Semantic Actions, etc.\n3. Tap any log category to see detailed entries with timestamps.\n4. Use this to diagnose why an automation failed or behaved unexpectedly.\n\nThe debugger is essential for troubleshooting complex automations.",
+    "tags": [
+      "debugger",
+      "logs",
+      "troubleshooting",
+      "debug"
+    ]
+  },
+  {
+    "question": "Is my data private and secure?",
+    "answer": "Yes! Autonion is designed with privacy in mind:\n- **100% Local**: All AI processing happens on your local network via Ollama. No cloud APIs.\n- **No Telemetry**: The app does not collect or send any usage data.\n- **Local Network Only**: Cross-device communication uses your local Wi-Fi only.\n- **No Account Required**: No sign-up, login, or cloud services needed.\n- **Open Source**: You can inspect the code yourself.\n\nNote: The Accessibility Service has broad permissions by nature \u2014 it can read all screen content. Only enable it when actively using automations.",
+    "tags": [
+      "privacy",
+      "security",
+      "data",
+      "local"
+    ]
+  },
+  {
+    "question": "What is Autonion?",
+    "answer": "Autonion is a local-first, privacy-focused automation platform that allows you to control your Android device, desktop, and web browser using natural language commands or predefined workflows.",
+    "tags": [
+      "general",
+      "overview",
+      "what is"
+    ]
+  },
+  {
+    "question": "Is Autonion free to use?",
+    "answer": "Autonion is completely free and open-source. There are no subscriptions, cloud fees, or premium features hidden behind paywalls.",
+    "tags": [
+      "pricing",
+      "cost",
+      "free",
+      "open source"
+    ]
+  },
+  {
+    "question": "Do I need an internet connection to use Autonion?",
+    "answer": "No internet connection is required for local automations and cross-device control, provided you have downloaded the necessary LLM models via Ollama. It operates entirely on your local Wi-Fi network.",
+    "tags": [
+      "internet",
+      "offline",
+      "local network"
+    ]
+  },
+  {
+    "question": "What operating systems are supported by the Desktop Agent?",
+    "answer": "The Desktop Agent currently supports Windows, macOS, and Linux. Ensure you have the latest version for your specific OS.",
+    "tags": [
+      "os",
+      "desktop",
+      "windows",
+      "macos",
+      "linux",
+      "support"
+    ]
+  },
+  {
+    "question": "How do I install the Desktop Agent?",
+    "answer": "Download the corresponding executable for your OS from the official repository releases page. Run the installer or extract the portable version and launch the application.",
+    "tags": [
+      "install",
+      "desktop agent",
+      "setup"
+    ]
+  },
+  {
+    "question": "What are the system requirements for the Desktop Agent?",
+    "answer": "The Desktop Agent requires at least 4GB of RAM and a modern multi-core processor. For AI features, a dedicated GPU is recommended to run Ollama smoothly, though it can run on CPU with reduced speed.",
+    "tags": [
+      "requirements",
+      "hardware",
+      "desktop agent"
+    ]
+  },
+  {
+    "question": "How do I connect my Android app to the Desktop Agent?",
+    "answer": "Ensure both devices are on the same Wi-Fi network. Open the Android app, go to Cross-Device, and select your desktop from the list of discovered devices. If it doesn't appear, you can manually enter the desktop's IP. \n\nSee 'How do I connect my desktop to the Android app?' for more details.",
+    "tags": [
+      "connect",
+      "android",
+      "desktop",
+      "pairing"
+    ]
+  },
+  {
+    "question": "Why can't my Android app find my Desktop Agent?",
+    "answer": "This can happen due to: \n- Devices on different Wi-Fi networks (e.g., 2.4GHz vs 5GHz isolation).\n- Windows Firewall blocking port 4545.\n- VPNs active on either device.\n- mDNS discovery being blocked by your router.\nTry entering the IP manually.",
+    "tags": [
+      "troubleshoot",
+      "connection",
+      "discovery",
+      "mdns"
+    ]
+  },
+  {
+    "question": "What port does the WebSocket server use?",
+    "answer": "The WebSocket server on the Desktop Agent runs on port 4545 by default. Ensure this port is not blocked by your firewall or antivirus.",
+    "tags": [
+      "port",
+      "websocket",
+      "network",
+      "firewall"
+    ]
+  },
+  {
+    "question": "Can I change the WebSocket port?",
+    "answer": "Currently, port 4545 is hardcoded in the application settings to simplify discovery. Changing it requires modifying the source code.",
+    "tags": [
+      "port",
+      "websocket",
+      "change",
+      "settings"
+    ]
+  },
+  {
+    "question": "How do I install Ollama?",
+    "answer": "Visit ollama.com, download the installer for your OS (Windows, macOS, or Linux), and run it. Once installed, you can open a terminal and run 'ollama run qwen2.5:3b' to start a model.",
+    "tags": [
+      "ollama",
+      "install",
+      "setup"
+    ]
+  },
+  {
+    "question": "Which LLM model should I use?",
+    "answer": "For most users with a mid-range PC, 'qwen2.5:3b' or 'gemma:2b' offers a good balance of speed and accuracy. If you have a powerful GPU (8GB+ VRAM), 'qwen2.5:7b' or 'llama3' will provide much better reasoning capabilities.",
+    "tags": [
+      "llm",
+      "model",
+      "recommendation",
+      "ollama"
+    ]
+  },
+  {
+    "question": "How do I start the Ollama server?",
+    "answer": "On Windows/macOS, Ollama starts automatically in the background when you launch the application. You can verify it's running by visiting http://localhost:11434 in your browser.",
+    "tags": [
+      "ollama",
+      "server",
+      "start"
+    ]
+  },
+  {
+    "question": "My phone says 'Ollama Unreachable'. What do it do?",
+    "answer": "1. Ensure Ollama is running on your desktop.\n2. Ensure your phone and desktop are on the same network.\n3. Make sure the Ollama host is bound to 0.0.0.0, not just localhost, so external devices can access it. Set the environment variable OLLAMA_HOST=0.0.0.0 on your desktop and restart Ollama.",
+    "tags": [
+      "ollama",
+      "connection",
+      "unreachable",
+      "error"
+    ]
+  },
+  {
+    "question": "What is the Omni-Chatbot?",
+    "answer": "The Omni-Chatbot is your central interface for Autonion. You can type natural language questions or commands to interact with the knowledge base, control local device settings, or send automation tasks to other connected devices.",
+    "tags": [
+      "omni-chatbot",
+      "what is",
+      "interface"
+    ]
+  },
+  {
+    "question": "Can the Omni-Chatbot answer questions about my phone?",
+    "answer": "Yes, the Omni-Chatbot leverages the built-in knowledge base. Ask questions like 'How do I use the flow builder?' or 'How do I sync my clipboard?' and it will provide answers.",
+    "tags": [
+      "omni-chatbot",
+      "questions",
+      "knowledge base"
+    ]
+  },
+  {
+    "question": "What is an 'Intent' in the context of the Omni-Chatbot?",
+    "answer": "An Intent defines the category of your message. Autonion classifies your request into: \n- DIRECT_ACTION (e.g., turn on Wi-Fi)\n- SEMANTIC_AUTOMATION (e.g., open an app and do something)\n- CROSS_DEVICE (e.g., remote control desktop)\n- QUESTION (e.g., asking for help).",
+    "tags": [
+      "intent",
+      "omni-chatbot",
+      "classification"
+    ]
+  },
+  {
+    "question": "How do I force a specific intent in Omni-Chatbot?",
+    "answer": "While intent classification is automatic, you can often guide it by using clear keywords. For cross-device, start with 'On my pc...'. For direct actions, use 'Turn on/off...'. For questions, use 'How to...'.",
+    "tags": [
+      "intent",
+      "force",
+      "omni-chatbot",
+      "keywords"
+    ]
+  },
+  {
+    "question": "Why did Omni-Chatbot misunderstand my command?",
+    "answer": "Misclassification can happen if the sentence structure is ambiguous. If a command like 'search for a flight' is classified as a Question instead of Semantic Automation, try rephrasing it to include a clear verb: 'Open the browser and search for a flight.'",
+    "tags": [
+      "intent",
+      "error",
+      "misunderstanding",
+      "omni-chatbot"
+    ]
+  },
+  {
+    "question": "What is Accessibility Service on Android?",
+    "answer": "The Android Accessibility Service is a system feature that allows Autonion to read the screen content (UI elements) and perform actions (taps, swipes) on your behalf. It is strictly required for Semantic Automation and Flow Builder tasks.",
+    "tags": [
+      "accessibility",
+      "service",
+      "android",
+      "permission"
+    ]
+  },
+  {
+    "question": "How do I enable the Accessibility Service?",
+    "answer": "Go to Android Settings -> Accessibility -> Installed Apps (or Downloaded Apps) -> Autonion Automation Companion. Toggle 'Use Autonion' to ON. You may need to bypass Android's 'Restricted Setting' warning by tapping the 3 dots in the app information screen.",
+    "tags": [
+      "accessibility",
+      "enable",
+      "setup",
+      "permission"
+    ]
+  },
+  {
+    "question": "Is it safe to give Autonion Accessibility Access?",
+    "answer": "Yes. Autonion is designed to be 100% local. It reads your screen to perform the automations YOU request, but it never sends any of this data, or your personal information, to external cloud servers.",
+    "tags": [
+      "accessibility",
+      "safety",
+      "privacy",
+      "security"
+    ]
+  },
+  {
+    "question": "Why does the Accessibility Service disable itself?",
+    "answer": "Android's battery optimization might kill background services. To prevent this, go to App Info for Autonion -> Battery, and select 'Unrestricted'. Also, ensure 'Pause app activity if unused' is toggled off.",
+    "tags": [
+      "accessibility",
+      "disabled",
+      "battery",
+      "optimization"
+    ]
+  },
+  {
+    "question": "What happens if I don't grant Accessibility permission?",
+    "answer": "Without Accessibility permission, Autonion cannot read the screen or perform taps/swipes. Semantic Automation, Flow Builder, and Gesture Recording will fail to operate, though basic features like Intent classification and RAG Q&A will still work.",
+    "tags": [
+      "accessibility",
+      "permission",
+      "missing",
+      "consequences"
+    ]
+  },
+  {
+    "question": "How does the Python Bridge work on Desktop?",
+    "answer": "The Desktop Agent uses a background Python process (the 'bridge') to interact with the OS. It uses libraries like `uiautomation` and `pyautogui` to scan the UI elements, read the screen, and execute mouse/keyboard events autonomously.",
+    "tags": [
+      "python bridge",
+      "desktop agent",
+      "architecture"
+    ]
+  },
+  {
+    "question": "Do I need to install Python manually?",
+    "answer": "No. The Autonion Desktop Agent automatically sets up an isolated Python virtual environment (venv) and installs the necessary dependencies on its first run.",
+    "tags": [
+      "python",
+      "install",
+      "desktop agent",
+      "dependencies"
+    ]
+  },
+  {
+    "question": "The Python bridge failed to start. What do I do?",
+    "answer": "1. Check your internet connection (needed for the first-time pip install).\n2. Open the Autonion Desktop Agent logs to see the exact error.\n3. Make sure your antivirus isn't blocking the creation of the virtual environment in the app directory.",
+    "tags": [
+      "python bridge",
+      "error",
+      "start",
+      "troubleshoot"
+    ]
+  },
+  {
+    "question": "Can I use my own Python environment?",
+    "answer": "Currently, the setup strictly uses an internal venv to maintain compatibility and prevent dependency conflicts with your host system. Modifying it requires source code adjustments.",
+    "tags": [
+      "python",
+      "environment",
+      "venv"
+    ]
+  },
+  {
+    "question": "How does mDNS discovery work?",
+    "answer": "mDNS (Multicast DNS) allows devices on the same local network to find each other without needing centralized servers or manual IP entry. The Desktop Agent broadcasts its presence, and the Android app listens for it.",
+    "tags": [
+      "mdns",
+      "discovery",
+      "network"
+    ]
+  },
+  {
+    "question": "When should I use Manual IP entry?",
+    "answer": "If your network blocks multi-cast traffic (common on public Wi-Fi or restrictive corporate networks), mDNS won't work. In these cases, you must manually enter the Desktop Agent's IP address in the Android app to connect.",
+    "tags": [
+      "manual ip",
+      "connection",
+      "network",
+      "mdns"
+    ]
+  },
+  {
+    "question": "What permissions does the Android app need?",
+    "answer": "Autonion requires:\n- Accessibility Service (for automation)\n- Notifications (to show active status and stop button)\n- Network Access (for websocket and Ollama connections)\n- Overlay / Display over other apps (for gesture recording indicators).",
+    "tags": [
+      "permissions",
+      "android",
+      "requirements"
+    ]
+  },
+  {
+    "question": "Why do I need the 'Display over other apps' permission?",
+    "answer": "This permission allows Autonion to draw floating buttons and overlays, which are necessary for the Gesture Recording interface and for showing the active automation status while you are in other apps.",
+    "tags": [
+      "overlay",
+      "permission",
+      "display over other apps"
+    ]
+  },
+  {
+    "question": "Can I trigger automations using voice?",
+    "answer": "Yes, if your keyboard supports voice-to-text, you can use it within the Omni-Chatbot input field. A native voice recording feature is planned for future updates.",
+    "tags": [
+      "voice",
+      "speech",
+      "input"
+    ]
+  },
+  {
+    "question": "What is the difference between Direct Action and Semantic Automation?",
+    "answer": "A Direct Action is a hardcoded response to a command (like turning bluetooth on/off). Semantic Automation involves the AI Agent analyzing the screen, planning steps, and actually simulating taps/swipes to accomplish a complex goal like 'order an uber'.",
+    "tags": [
+      "direct action",
+      "semantic automation",
+      "difference"
+    ]
+  },
+  {
+    "question": "How do I turn on Dark Mode in the app?",
+    "answer": "Autonion automatically respects your system's Dark/Light mode theme. To change it, go to your Android device's Display Settings and toggle the theme there.",
+    "tags": [
+      "dark mode",
+      "theme",
+      "ui"
+    ]
+  },
+  {
+    "question": "Where are the log files stored for the Android app?",
+    "answer": "Logs are kept in memory and can be viewed via the Automation Debugger screen in the app. They are not stored persistently in a file to save space and ensure privacy.",
+    "tags": [
+      "logs",
+      "android",
+      "debugger",
+      "location"
+    ]
+  },
+  {
+    "question": "Where are the log files stored for the Desktop Agent?",
+    "answer": "Desktop logs can be viewed in the app's Debugger view. If you are running the source code, terminal output is your primary logging source.",
+    "tags": [
+      "logs",
+      "desktop",
+      "debugger"
+    ]
+  },
+  {
+    "question": "What triggers an auto-fallback in Omni-Chatbot?",
+    "answer": "If the NLU classifier determines a prompt isn't a valid command (e.g., confidence is too low) or if a semantic automation task fails multiple times to resolve elements, the system invokes a fallback telling you to clarify or that the task couldn't be completed.",
+    "tags": [
+      "fallback",
+      "omni-chatbot",
+      "error handling"
+    ]
+  },
+  {
+    "question": "What is the UI State Builder?",
+    "answer": "The UI State Builder is an engine running on your device that scans the current screen content (using Accessibility Services). It translates buttons, text boxes, and icons into a structured text format (DOM-like string) that the AI model can read and understand.",
+    "tags": [
+      "ui state",
+      "builder",
+      "accessibility",
+      "dom"
+    ]
+  },
+  {
+    "question": "Why does Semantic Automation take a few seconds to start?",
+    "answer": "When you issue a command, Autonion must first scan your screen (UI State Building), send this state along with your prompt to the local LLM (Ollama), wait for the model to predict the next action, and then execute it. This inference roundtrip causes the delay.",
+    "tags": [
+      "delay",
+      "speed",
+      "semantic automation",
+      "performance"
+    ]
+  },
+  {
+    "question": "What is a 'Predictor Fallback'?",
+    "answer": "Prediction fallback is a reliability mechanism. If the powerful external LLM fails, times out, or returns invalid JSON, Autonion falls back to smaller, faster heuristic methods or local on-device miniature models to guess the intent, though it's less accurate.",
+    "tags": [
+      "fallback",
+      "predictor",
+      "reliability",
+      "failover"
+    ]
+  },
+  {
+    "question": "Can Semantic Automation read text from images?",
+    "answer": "Currently, the standard UI state builder only reads native Android text elements. For images, you need to use an Ollama model equipped with Vision capabilities (like llava or qwen-vl), though visual processing is significantly slower.",
+    "tags": [
+      "vision",
+      "images",
+      "text",
+      "ocr",
+      "semantic"
+    ]
+  },
+  {
+    "question": "Why did the agent tap the wrong button?",
+    "answer": "This can happen if two buttons have identical or missing text labels. The LLM guesses based on the bounding box location. Using a smarter LLM model (like 7B parameters) reduces these hallucinations.",
+    "tags": [
+      "tap",
+      "wrong",
+      "hallucination",
+      "button",
+      "error"
+    ]
+  },
+  {
+    "question": "How do I make the agent type text?",
+    "answer": "You don't need to do anything special. Just describe the task (e.g., 'send a message to John saying Hello'). The AI agent will detect the input field, focus it, and automatically invoke the type action.",
+    "tags": [
+      "type",
+      "text",
+      "input",
+      "keyboard"
+    ]
+  },
+  {
+    "question": "What is the NLU Intent Classifier?",
+    "answer": "NLU stands for Natural Language Understanding. Instead of sending every chat message straight to Semantic Automation, Autonion uses a fast keyword/regex-based classifier to check if the message is a simple direct query before involving the heavy LLM.",
+    "tags": [
+      "nlu",
+      "intent",
+      "classifier",
+      "nlp"
+    ]
+  },
+  {
+    "question": "How do I chain multiple actions?",
+    "answer": "Autonion's agentic loop is designed to automatically chain actions. If you say 'Find a recipe for lasagna and save it', the agent will search, wait for the page to load, click the result, and then try to find a save button over multiple steps.",
+    "tags": [
+      "chain",
+      "multiple",
+      "actions",
+      "workflow"
+    ]
+  },
+  {
+    "question": "What is the maximum number of steps an agent will take?",
+    "answer": "To prevent runaway loops, the Semantic Automation agent has a hard limit of 15 consecutive steps. If it hasn't achieved the goal by then, it will stop and notify you.",
+    "tags": [
+      "limit",
+      "steps",
+      "loop",
+      "runaway"
+    ]
+  },
+  {
+    "question": "How does the agent know when it's done?",
+    "answer": "After every action, the agent re-evaluates the screen. If it detects UI elements confirming success (like a 'Sent' message or the target app's home screen) or if its reasoning output declares the goal achieved, it emits a 'terminate' action.",
+    "tags": [
+      "done",
+      "terminate",
+      "completion",
+      "success"
+    ]
+  },
+  {
+    "question": "Why does the agent get stuck in a loop?",
+    "answer": "Sometimes the agent taps a button that doesn't change the screen state, so it tries tapping it again indefinitely. Upgrading to a smarter LLM helps prevent this. You can also press the 'Stop' button to manually interrupt it.",
+    "tags": [
+      "loop",
+      "stuck",
+      "troubleshoot",
+      "agent"
+    ]
+  },
+  {
+    "question": "Can I automate games with Autonion?",
+    "answer": "No, semantic automation cannot automate 3D games or games that use custom drawing canvases (like Unity/Unreal). The accessibility service can only read standard UI components (like standard Android buttons and text).",
+    "tags": [
+      "games",
+      "gaming",
+      "unsupported",
+      "canvas"
+    ]
+  },
+  {
+    "question": "What is the 'System Prompt' in the Model Manager?",
+    "answer": "The System Prompt is a hidden set of instructions sent to the LLM (like 'You are a helpful UI agent. Return only JSON.'). You shouldn't need to change it unless you are experimenting with unsupported LLMs.",
+    "tags": [
+      "system prompt",
+      "llm",
+      "settings",
+      "model manager"
+    ]
+  },
+  {
+    "question": "Why is the generated JSON invalid?",
+    "answer": "Smaller models (e.g., 1.5B parameters) sometimes struggle to follow strict JSON formatting rules. Autonion has a built-in JSON repair tool, but if the model's output is completely broken, the action will fail. Use recommended models like qwen2.5:3b.",
+    "tags": [
+      "json",
+      "format",
+      "invalid",
+      "error",
+      "model"
+    ]
+  },
+  {
+    "question": "Does Autonion support context tracking in chat?",
+    "answer": "Yes, the Omni-Chatbot maintains conversation history. If you ask 'What's the weather in London?' and then 'What about Paris?', it understands you mean the weather in Paris.",
+    "tags": [
+      "context",
+      "memory",
+      "chat",
+      "history"
+    ]
+  },
+  {
+    "question": "How do I clear the chat history?",
+    "answer": "You can clear the chat history by tapping the trash icon or overflow menu in the Omni-Chatbot UI and selecting 'Clear Chat'. This wipes the LLM's memory of past turns.",
+    "tags": [
+      "clear",
+      "history",
+      "reset",
+      "chat"
+    ]
+  },
+  {
+    "question": "Is there a limit to chat history length?",
+    "answer": "Yes, memory is strictly capped to the last 10 messages to ensure the prompt doesn't exceed the context window constraints of local LLM models.",
+    "tags": [
+      "limit",
+      "history",
+      "context window",
+      "chat"
+    ]
+  },
+  {
+    "question": "What happens if the LLM context window is exceeded?",
+    "answer": "If the screen has too many elements or the chat history is too long, the prompt might exceed the model's token limit. Autonion will truncate the oldest chat history or prune non-essential UI elements to fit the payload.",
+    "tags": [
+      "context window",
+      "exceeded",
+      "limit",
+      "tokens"
+    ]
+  },
+  {
+    "question": "Can I control my desktop's file explorer?",
+    "answer": "Yes, using cross-device mode you can instruct the Desktop Agent to open folders or run applications. The python bridge uses local Windows UIAutomation to interact with the system.",
+    "tags": [
+      "desktop",
+      "file explorer",
+      "cross-device"
+    ]
+  },
+  {
+    "question": "Can I use Autonion to type my essays or emails?",
+    "answer": "While the LLM is capable of generating text, Autonion is primarily a screen-automation tool. You can instruct it to 'Draft an email to X about Y', and it will open your mail app and type the generated text.",
+    "tags": [
+      "typing",
+      "generation",
+      "text",
+      "email"
+    ]
+  },
+  {
+    "question": "How does the Desktop Agent handle multiple monitors?",
+    "answer": "The UIAutomation bridge scans the entire unified desktop namespace. However, targeting specific elements works best on the primary monitor. Multi-monitor support for element coordinates can sometimes behave unpredictably.",
+    "tags": [
+      "multiple monitors",
+      "desktop",
+      "display",
+      "limitations"
+    ]
+  },
+  {
+    "question": "Why does the Desktop Agent need Mouse/Keyboard permissions on Mac?",
+    "answer": "On macOS, any application that wants to simulate mouse clicks and keystrokes must be explicitly granted 'Accessibility' permissions in System Settings -> Privacy & Security. Without this, automation will silently fail.",
+    "tags": [
+      "macos",
+      "permissions",
+      "mouse",
+      "keyboard",
+      "accessibility"
+    ]
+  },
+  {
+    "question": "Why can't the Android agent read a password field?",
+    "answer": "For security reasons, the Android Accessibility Service obfuscates text in fields marked as passwords (e.g., `<EditText password='true'>`). The agent sees that there is a field, but cannot read its contents.",
+    "tags": [
+      "password",
+      "security",
+      "accessibility",
+      "hidden"
+    ]
+  },
+  {
+    "question": "Can Autonion bypass lock screens?",
+    "answer": "No. Autonion cannot bypass your device's lock screen or PIN prompts natively. It requires the device to be unlocked to perform screen automations.",
+    "tags": [
+      "lock screen",
+      "security",
+      "bypass",
+      "pin"
+    ]
+  },
+  {
+    "question": "How do visual triggers work?",
+    "answer": "Visual triggers constantly monitor the screen (at a low frame rate) for specific image patterns. When the target UI appears, it triggers the associated automation flow. Note: This feature is battery intensive.",
+    "tags": [
+      "visual triggers",
+      "screen monitoring",
+      "patterns",
+      "flow builder"
+    ]
+  },
+  {
+    "question": "What is the difference between visual triggers and UI node triggers?",
+    "answer": "Visual triggers use OpenCV pattern matching to find literal pictures on screen. UI Node triggers listen to Accessibility Events for specific text or IDs. Node triggers are highly efficient and recommended over visual triggers.",
+    "tags": [
+      "visual triggers",
+      "node triggers",
+      "comparison",
+      "efficiency"
+    ]
+  },
+  {
+    "question": "Can I schedule tasks to run at night?",
+    "answer": "Yes, using the Flow Builder you can attach a Time Trigger. Ensure your device is connected to a charger and set not to go into deep sleep, or the OS might delay the task.",
+    "tags": [
+      "schedule",
+      "time",
+      "night",
+      "cron",
+      "flow builder"
+    ]
+  },
+  {
+    "question": "Why did my scheduled task not run on time?",
+    "answer": "Android's 'Doze Mode' limits background activity to save battery. If the phone is idle with the screen off, your timer might be delayed until the next system 'maintenance window'.",
+    "tags": [
+      "schedule",
+      "delayed",
+      "doze mode",
+      "battery",
+      "android"
+    ]
+  },
+  {
+    "question": "How does the Agentic Loop recover from errors?",
+    "answer": "If an action fails (e.g., clicking a button that just vanished), the loop captures a fresh screen snapshot and replans. It adjusts its strategy based on the new UI state.",
+    "tags": [
+      "agentic loop",
+      "error recovery",
+      "replanning"
+    ]
+  },
+  {
+    "question": "What is a 'Scroll' action?",
+    "answer": "If the agent determines that the target element might be off-screen, it emits a 'scroll' action. The engine then simulates a swipe up/down and sends the newly revealed UI state back to the model.",
+    "tags": [
+      "scroll",
+      "swipe",
+      "action",
+      "off-screen"
+    ]
+  },
+  {
+    "question": "Why does the agent scroll randomly?",
+    "answer": "If the LLM can't find a way to achieve the goal on the current screen, it often defaults to scrolling up or down in hopes of finding new information. If it does this endlessly, the model might be hallucinating.",
+    "tags": [
+      "scroll",
+      "random",
+      "hallucination",
+      "troubleshoot"
+    ]
+  },
+  {
+    "question": "Can I remote control my Android from my PC?",
+    "answer": "Currently, the connection is primary Android-to-PC (Android sending commands to PC). Full bi-directional remote control (PC clicking Android screen) is not currently implemented in the Desktop Agent.",
+    "tags": [
+      "remote control",
+      "pc to android",
+      "direction",
+      "support"
+    ]
+  },
+  {
+    "question": "Will Autonion drain my battery?",
+    "answer": "When idle, Autonion has negligible battery impact. However, during active Semantic Automation runs involving continuous screen scanning and network requests, battery drain is higher. Visual Triggers will cause significant continuous drain.",
+    "tags": [
+      "battery",
+      "drain",
+      "power",
+      "efficiency"
+    ]
+  },
+  {
+    "question": "How to backup my flows and recorded gestures?",
+    "answer": "Go to settings and tap 'Export Data'. This creates a JSON backup of your Flow Builder workflows and Gesture recordings. You can 'Import' them later or on a new device.",
+    "tags": [
+      "backup",
+      "export",
+      "import",
+      "data",
+      "flows"
+    ]
+  },
+  {
+    "question": "What is 'System Context' in automations?",
+    "answer": "System context refers to device-level states like whether you are connected to a specific Wi-Fi, your current location, or battery level. These can be used as conditions in the Flow Builder.",
+    "tags": [
+      "system context",
+      "state",
+      "conditions",
+      "flow builder"
+    ]
+  },
+  {
+    "question": "How do I trigger an automation when I arrive home?",
+    "answer": "In Flow Builder, add a 'Location Trigger' and set your home address or coordinate radius. Ensure Autonion has 'Allow all the time' location permissions in Android settings.",
+    "tags": [
+      "location",
+      "trigger",
+      "home",
+      "geofence",
+      "flow builder"
+    ]
+  },
+  {
+    "question": "Can I integrate Autonion with Tasker?",
+    "answer": "Yes! Autonion can receive implicit intents from Tasker. You can use Tasker to launch an Autonion flow, or have Autonion broadcast an intent that Tasker intercepts.",
+    "tags": [
+      "tasker",
+      "integration",
+      "intents",
+      "third-party"
+    ]
+  },
+  {
+    "question": "Is it possible to run Bash scripts on the desktop via Autonion?",
+    "answer": "Yes. If you have a script on your desktop, you can use Omni-Chatbot to run it by typing: 'On my pc, open terminal and run my_script.sh'. The agent will automate the necessary UI steps.",
+    "tags": [
+      "bash",
+      "scripts",
+      "desktop",
+      "terminal",
+      "execute"
+    ]
+  },
+  {
+    "question": "Why does Autonion need a Browser Extension?",
+    "answer": "The Android Accessibility Service can only read the native outer shell of a web browser. It cannot see the internal HTML structure or target specific web elements reliably. The extension injects a content script that reads the true DOM and exposes it to the agent.",
+    "tags": [
+      "browser extension",
+      "dom",
+      "accessibility",
+      "web"
+    ]
+  },
+  {
+    "question": "Which Android browsers support the Autonion extension?",
+    "answer": "Most major Android browsers don't support Chrome extensions. We highly recommend using Lemur Browser or Kiwi Browser, as both fully support Chromium extensions and background service workers on Android.",
+    "tags": [
+      "browser support",
+      "lemur",
+      "kiwi",
+      "extension"
+    ]
+  },
+  {
+    "question": "How do I install the extension on Lemur/Kiwi?",
+    "answer": "1. Go to extensions settings and enable 'Developer Mode'.\n2. Tap 'Load unpacked' (or equivalent).\n3. Select the Autonion extension folder saved on your device storage.\n4. Ensure the extension is switched ON.",
+    "tags": [
+      "install",
+      "extension",
+      "lemur",
+      "kiwi",
+      "mobile"
+    ]
+  },
+  {
+    "question": "How does the extension connect to the app?",
+    "answer": "The background.js script in the browser extension opens a continuous WebSocket connection to the Autonion Desktop Agent (or directly to the Android app if hosted locally) on port 4545 to send DOM snapshots and receive action commands.",
+    "tags": [
+      "connection",
+      "websocket",
+      "extension",
+      "background script"
+    ]
+  },
+  {
+    "question": "Why is the browser agent failing to click a button?",
+    "answer": "This happens if the DOM IDs in the extension don't match the IDs expected by the Android action execution layer. The extension wraps target elements with a specific `node_X` format. If it fails, check the debugger for 'element resolution error'.",
+    "tags": [
+      "browser",
+      "click",
+      "fail",
+      "dom",
+      "node"
+    ]
+  },
+  {
+    "question": "What is semantic-dom.js?",
+    "answer": "It is the core content script injected by the extension. It strips away irrelevant tags (like scripts, styles, and empty divs) and returns a clean, compact view of interactable elements (buttons, inputs, links) to keep the LLM prompt small.",
+    "tags": [
+      "semantic-dom",
+      "script",
+      "dom",
+      "compact"
+    ]
+  },
+  {
+    "question": "Why are LLM timeouts higher for web tasks?",
+    "answer": "Web pages are incredibly complex. Even after `semantic-dom.js` cleans the page, the resulting text sent to the LLM is much larger than a typical Android settings screen. Reading this context takes the local Ollama instance longer.",
+    "tags": [
+      "timeout",
+      "web",
+      "dom",
+      "llm",
+      "speed"
+    ]
+  },
+  {
+    "question": "What happens if a webpage requires logging in?",
+    "answer": "The agent operates within your browser session. If you are already logged into a website (via saved cookies), the agent bypasses the login step automatically. If not, the agent can type your credentials if you instruct it to, but this requires you to provide them in the prompt.",
+    "tags": [
+      "login",
+      "authentication",
+      "cookies",
+      "browser"
+    ]
+  },
+  {
+    "question": "Does Autonion store my passwords?",
+    "answer": "No. Autonion never stores your passwords or sends them anywhere. They are processed live by the local LLM and immediately discarded when the step finishes.",
+    "tags": [
+      "passwords",
+      "security",
+      "storage",
+      "privacy"
+    ]
+  },
+  {
+    "question": "Can the browser agent handle pop-ups?",
+    "answer": "Yes. If a pop-up modifies the active DOM, the next snapshot sent by the extension will contain the pop-up's buttons (e.g., 'Accept All Cookies'). The agent will read this and can decide to click it to proceed.",
+    "tags": [
+      "popups",
+      "dialogs",
+      "browser",
+      "dom"
+    ]
+  },
+  {
+    "question": "Can I use the extension on Desktop Chrome?",
+    "answer": "Yes. The same extension works on Desktop Chrome. Load it via 'Load unpacked' in Chrome extensions. The Desktop Agent can then use the extension for fast, direct DOM manipulation instead of relying on slow UIAutomation for web tasks.",
+    "tags": [
+      "desktop",
+      "chrome",
+      "extension",
+      "cross-platform"
+    ]
+  },
+  {
+    "question": "Why isn't the extension connecting to WebSocket?",
+    "answer": "Browser security features block connections to insecure local websockets (ws://) from secure pages (https://). The extension bypasses this by initiating the ws:// connection from the background.js service worker, which is allowed. Ensure the service worker isn't dormant.",
+    "tags": [
+      "websocket",
+      "security",
+      "https",
+      "connection",
+      "error"
+    ]
+  },
+  {
+    "question": "What is 'Service Worker Dormancy'?",
+    "answer": "Chrome (and Lemur/Kiwi) kills background service workers after 5 minutes of inactivity to save RAM. If this happens, DOM injection fails until the worker restarts. This is a known Chrome limitation.",
+    "tags": [
+      "service worker",
+      "dormant",
+      "sleep",
+      "chrome"
+    ]
+  },
+  {
+    "question": "How does Autonion keep the extension alive?",
+    "answer": "We implemented a 'keep-alive' ping mechanism over the WebSocket. The Desktop/Android server sends a small ping every 25 seconds to trick the browser into keeping the service worker active permanently.",
+    "tags": [
+      "keep-alive",
+      "ping",
+      "service worker",
+      "fix"
+    ]
+  },
+  {
+    "question": "What is the 'ExtensionBridgeServer'?",
+    "answer": "It is an architectural component that bridges the gap between the Android Accessibility Service and the active Browser window. When the Android app detects you are inside a browser, it reroutes the scan request through the bridge to pull the DOM instead of the native Android UI.",
+    "tags": [
+      "bridge",
+      "architecture",
+      "android",
+      "dom"
+    ]
+  },
+  {
+    "question": "Can I have multiple extensions connected?",
+    "answer": "Yes! The WebSocket server manages a list of connected clients. If you have the extension on your phone and your desktop, both connect. The agent routes actions to the correct device ID.",
+    "tags": [
+      "multiple",
+      "clients",
+      "extensions",
+      "websocket"
+    ]
+  },
+  {
+    "question": "What is the 'Action Execution' stage?",
+    "answer": "After the LLM predicts an action (e.g., `{\"action\": \"click\", \"id\": \"node_5\"}`), the engine enters execution. It sends this JSON over the WebSocket to the extension, which runs native Javascript `document.getElementById('node_5').click()`.",
+    "tags": [
+      "action",
+      "execution",
+      "javascript",
+      "click"
+    ]
+  },
+  {
+    "question": "Are there any websites Autonion cannot automate?",
+    "answer": "Highly interactive sites using canvas (Google Maps) or sites with extreme anti-bot protection (Complex captchas or Shadow DOMs that obfuscate all standard elements) are very difficult for the agent to navigate.",
+    "tags": [
+      "limitations",
+      "websites",
+      "canvas",
+      "captchas",
+      "shadow dom"
+    ]
+  },
+  {
+    "question": "Can the agent solve Captchas?",
+    "answer": "No. The agent relies purely on the text DOM. Without the addition of an advanced Vision model and specific solver integrations, the semantic agent cannot analyze and click image-based Captcha puzzles.",
+    "tags": [
+      "captcha",
+      "limitations",
+      "vision",
+      "solve"
+    ]
+  },
+  {
+    "question": "How to uninstall the Autonion Agent completely?",
+    "answer": "Android: Standard app uninstall. Desktop: Delete the downloaded folder. The Python virtual environment is self-contained inside that folder, so deleting it cleans up everything. Ollama must be uninstalled separately.",
+    "tags": [
+      "uninstall",
+      "remove",
+      "clean",
+      "delete"
+    ]
+  },
+  {
+    "question": "Will Autonion slow down my phone?",
+    "answer": "Only when an automation is actively running. Reading the screen with Accessibility services can cause minor UI micro-stutters. If you are not actively using Omni-chatbot or flows, overhead is virtually zero.",
+    "tags": [
+      "performance",
+      "speed",
+      "lag",
+      "resources"
+    ]
+  },
+  {
+    "question": "Why is 'run in background' required?",
+    "answer": "To listen for Time Triggers, Location Triggers, or WebSocket commands from your PC when the app is closed, Android requires Autonion to run a persistent foreground service (which is why you see a permanent notification).",
+    "tags": [
+      "background",
+      "service",
+      "notification",
+      "android"
+    ]
+  },
+  {
+    "question": "Can I hide the persistent notification?",
+    "answer": "You can long-press the notification and minimize it or hide the channel in Android settings. However, doing so increases the risk that Android will forcefully kill the background process.",
+    "tags": [
+      "notification",
+      "hide",
+      "persistent",
+      "service"
+    ]
+  },
+  {
+    "question": "How do I update Autonion?",
+    "answer": "For Android, download the latest APK from the releases page and install over the old one. For Desktop, download the latest zip, extract it, and replace your existing folder. Settings are saved in persistent storage and won't be lost.",
+    "tags": [
+      "update",
+      "upgrade",
+      "new version",
+      "apk",
+      "desktop"
+    ]
+  },
+  {
+    "question": "What is 'Local Loopback Blocking' on Android?",
+    "answer": "Newer Android versions aggressively block an app's background extension from connecting to a websocket server hosted on `localhost` (127.0.0.1) on the same phone. This requires special workarounds and port configuration to bypass.",
+    "tags": [
+      "local loopback",
+      "android",
+      "network",
+      "localhost",
+      "block"
+    ]
+  },
+  {
+    "question": "Are cloud AI models better than Ollama?",
+    "answer": "Cloud models (like GPT-4) are drastically smarter than local 3B/7B models. They will almost never fail at reasoning out UI states. However, using them means your private screen data leaves your device. Autonion prioritizes local models for privacy.",
+    "tags": [
+      "cloud",
+      "gpt4",
+      "ollama",
+      "comparison",
+      "privacy"
+    ]
+  },
+  {
+    "question": "How do I switch to a Cloud Provider in Autonion?",
+    "answer": "Autonion supports switching the AI Service Provider in the app settings. You can choose 'Cloud API' and input your own strict API key. Note: Doing this waives the 'local-first' privacy guarantee.",
+    "tags": [
+      "cloud",
+      "api key",
+      "provider",
+      "settings",
+      "switch"
+    ]
+  },
+  {
+    "question": "Does Omni-Chat work entirely offline?",
+    "answer": "Yes. If the LLM is hosted locally via Ollama on your PC, you can completely disconnect your router from the internet and the Omni-Chat and automations will still function over the local LAN.",
+    "tags": [
+      "offline",
+      "lan",
+      "no internet",
+      "local"
+    ]
+  },
+  {
+    "question": "Why is the Python virtual environment (venv) hidden?",
+    "answer": "The venv is created in a hidden folder (e.g., .venv) to prevent cluttering the user directory and to distinguish it actively from global python packages, avoiding permission and version conflicting errors.",
+    "tags": [
+      "venv",
+      "python",
+      "hidden",
+      "folder"
+    ]
+  },
+  {
+    "question": "Can Autonion read QR codes?",
+    "answer": "No. The standard agent reads structured text. QR codes require image processing and a specific QR decoding library, which is outside the scope of current semantic agent loop.",
+    "tags": [
+      "qr code",
+      "vision",
+      "limitations"
+    ]
+  },
+  {
+    "question": "What is the 'Wait for DOM load' error?",
+    "answer": "If an agent clicks a link, the extension must wait until the new page finishes loading before sending another snapshot. If the network is slow, this wait times out, resulting in a 'Wait for DOM load' error. The agent will usually retry.",
+    "tags": [
+      "error",
+      "dom load",
+      "timeout",
+      "network"
+    ]
+  },
+  {
+    "question": "Why does the browser scroll back to the top?",
+    "answer": "When the DOM is injected and re-rendered by the Android Accessibility view, it sometimes forces a layout refresh. This can cause the browser to temporarily reset its scroll position. It is a known visual glitch.",
+    "tags": [
+      "glitch",
+      "scroll",
+      "refresh",
+      "jump",
+      "ui"
+    ]
+  },
+  {
+    "question": "How do I report a bug?",
+    "answer": "You can export your Automation Debugger logs via the settings menu. Include these logs and a description of the issue in a Github Issue on the official repository. Please redact any personal info from the logs.",
+    "tags": [
+      "bug",
+      "report",
+      "github",
+      "logs",
+      "support"
+    ]
+  },
+  {
+    "question": "Can I use Autonion to buy things autonomously?",
+    "answer": "Yes, but this is dangerous because AI hallucinations might lead to incorrect purchases or quantities. It is highly recommended to ONLY use Autonion for read-only or low-risk tasks, or ensure manual confirmation steps exist in your flows.",
+    "tags": [
+      "purchase",
+      "dangerous",
+      "risk",
+      "disclaimer",
+      "purchase"
+    ]
+  },
+  {
+    "question": "How to contribute to Autonion?",
+    "answer": "Autonion is open-source! Check the Github repository. You can tackle open 'Good First Issue' tickets. Contributions to the Android Kotlin app, Desktop Flutter app, or Python bridge are welcome via Pull Requests.",
+    "tags": [
+      "contribute",
+      "open source",
+      "github",
+      "development"
+    ]
+  },
+  {
+    "question": "What language is the Desktop Agent built in?",
+    "answer": "The main UI and service orchestration is built in Flutter/Dart for cross-platform compatibility. The system-level automation relies on a small Python bridge executed under the hood.",
+    "tags": [
+      "language",
+      "code",
+      "desktop",
+      "flutter",
+      "python"
+    ]
+  },
+  {
+    "question": "What if Python is blocked by my corporate firewall?",
+    "answer": "If execution of unrecognized python binaries or installing pip packages is blocked by organizational policies, the Desktop Agent's system automation will fail to start. Try running it as Administrator or whitelisting the app folder.",
+    "tags": [
+      "firewall",
+      "blocked",
+      "python",
+      "corporate",
+      "admin"
+    ]
+  },
+  {
+    "question": "Can the agent extract data to a CSV?",
+    "answer": "Currently, the semantic agent doesn't have a native 'Data Extraction' mode to CSV. It can extract data and answer in the chat, but formatting it formally and saving it locally requires a custom script execution via the desktop.",
+    "tags": [
+      "data extraction",
+      "csv",
+      "export",
+      "limitations"
+    ]
+  },
+  {
+    "question": "Can I run Ollama on a Raspberry Pi?",
+    "answer": "Yes, but performance will be extremely slow. Semantic Automation requires low latency to be usable. Unless you use a very small model (like Qwen 0.5B), running Ollama on an SBC like a Raspberry Pi without a hardware accelerator is not recommended.",
+    "tags": [
+      "raspberry pi",
+      "hardware",
+      "performance",
+      "ollama"
+    ]
+  },
+  {
+    "question": "How to map custom Desktop shortcuts to Autonion flows?",
+    "answer": "Autonion Desktop Agent allows binding system-wide hotkeys to specific 'Trigger Rules'. Go to Desktop Settings -> Shortcuts, then map a keyboard combination (like Ctrl+Shift+A) to initiate your cross-device flow.",
+    "tags": [
+      "shortcuts",
+      "hotkeys",
+      "desktop",
+      "trigger"
+    ]
+  },
+  {
+    "question": "Why does memory usage spike when running a flow?",
+    "answer": "Constructing the Accessibility JSON Tree requires significant object allocation in Android RAM. For complex screens with hundreds of elements (like a long scrollable list), this temporary memory spike is normal and will be garbage collected.",
+    "tags": [
+      "ram",
+      "memory",
+      "performance",
+      "spike",
+      "android"
+    ]
+  },
+  {
+    "question": "What is 'Strict JSON Mode' in settings?",
+    "answer": "Strict JSON Mode enforces standard JSON parsing constraints. If disabled, the app uses relaxed parsing to handle common LLM formatting mistakes (like unescaped quotes or trailing commas). We recommend keeping Strict Mode OFF for smaller models.",
+    "tags": [
+      "json",
+      "strict mode",
+      "parsing",
+      "settings"
+    ]
+  },
+  {
+    "question": "How do I silence Autonion notifications?",
+    "answer": "You can long press the notification and set it to 'Silent' to stop it from buzzing, but do not turn it off completely. Completely disabling notifications will cause the foreground service to crash on modern Android versions.",
+    "tags": [
+      "notifications",
+      "silent",
+      "foreground service",
+      "crash"
+    ]
+  },
+  {
+    "question": "Why is the Agent typing so slowly on Android?",
+    "answer": "Autonion simulates human typing by injecting characters with a slight delay to bypass bot-detection algorithms on certain apps. If this is an issue, you can decrease the 'Typing Delay' in the semantic automation settings.",
+    "tags": [
+      "typing",
+      "delay",
+      "slow",
+      "bot detection"
+    ]
+  },
+  {
+    "question": "Can I use Autonion to read my WhatsApp messages aloud?",
+    "answer": "Yes, if you configure a flow triggered by a WhatsApp notification. The flow can extract the message text from the Accessibility event and use Android's native Text-To-Speech (TTS) to read it. Currently, the Omni-Chatbot does not have native global voice output.",
+    "tags": [
+      "whatsapp",
+      "tts",
+      "voice",
+      "read aloud",
+      "flow"
+    ]
+  },
+  {
+    "question": "How does cross-device URL sharing work?",
+    "answer": "If you send a 'Open link' command via Omni-Chat to your desktop, the Android app sends the URL over WebSocket. The Desktop Agent parses the intent and launches your default system browser with that URL securely.",
+    "tags": [
+      "url",
+      "share",
+      "cross-device",
+      "browser"
+    ]
+  },
+  {
+    "question": "Why is the 'Find on Screen' action failing?",
+    "answer": "The 'Find on Screen' action requires exact text matching. If a button says 'Submit   ' (with trailing spaces) but your prompt asks to find 'Submit', the standard matcher might fail. The AI-driven Semantic Agent handles fuzzy matching better than standard rules.",
+    "tags": [
+      "find on screen",
+      "fuzzy matching",
+      "exact match",
+      "error"
+    ]
+  },
+  {
+    "question": "Can Autonion interact with Android System UI elements?",
+    "answer": "Yes, it can interact with the notification shade, quick settings, and navigation bar. However, Android restricts interaction with certain secure overlays (like the permission dialog itself or the power-off menu) for safety.",
+    "tags": [
+      "system ui",
+      "notifications",
+      "quick settings",
+      "secure"
+    ]
+  },
+  {
+    "question": "What does 'Unable to build UI state' mean in the logs?",
+    "answer": "This error occurs when the Accessibility Service returns an empty node tree. This usually happens if the active app is drawing on a secure surface (like banking apps using FLAG_SECURE) or if the screen is locked.",
+    "tags": [
+      "error",
+      "ui state",
+      "flag_secure",
+      "banking"
+    ]
+  },
+  {
+    "question": "Will Autonion work on rooted Android devices?",
+    "answer": "Yes, Autonion works on both rooted and non-rooted devices identically. It does not strictly require root access because it leverages Accessibility services instead of raw input injection.",
+    "tags": [
+      "root",
+      "rooted",
+      "android",
+      "capabilities"
+    ]
+  },
+  {
+    "question": "How do I clear the cached ML Models?",
+    "answer": "The Sentence Embedder for RAG Q&A stores a miniature model locally (approx 20MB). You can clear this by going to Android App Info -> Storage -> Clear Data, but the app will redownload the model on the next launch.",
+    "tags": [
+      "cache",
+      "ml model",
+      "storage",
+      "embeddings"
+    ]
+  },
+  {
+    "question": "Why do some RAG answers look weird in the Chat?",
+    "answer": "If an answer contains special Markdown rendering artifacts (like stray asterisks), it implies the text extracted from the knowledge base was processed incorrectly. The latest Omni-Chatbot updates strictly prohibit Markdown to ensure clean typography.",
+    "tags": [
+      "rag",
+      "chat",
+      "markdown",
+      "asterisks"
+    ]
+  },
+  {
+    "question": "Is the RAG system sending my data to the cloud?",
+    "answer": "No. The entire RAG (Retrieval-Augmented Generation) pipeline\u2014including document chunking, semantic embedding (using a local MiniLM model), and similarity matching\u2014happens on your device processor.",
+    "tags": [
+      "rag",
+      "privacy",
+      "local",
+      "cloud"
+    ]
+  },
+  {
+    "question": "What does a 'Confidence Score' mean in the Debugger?",
+    "answer": "The Confidence Score (from 0.0 to 1.0) is the intent classifier's certainty about which category your prompt belongs to. If it drops below 0.65, the system might refuse the action or fall back to general chat to avoid mistakes.",
+    "tags": [
+      "confidence",
+      "score",
+      "nlu",
+      "classifier",
+      "debugger"
+    ]
+  },
+  {
+    "question": "Can the Desktop Agent run multiple Python scripts at once?",
+    "answer": "Currently, the Python bridge processes commands sequentially. If you send a command while another is executing, it queues up. Concurrent execution of multiple UI automations is not supported as they would fight for mouse/keyboard control.",
+    "tags": [
+      "python",
+      "scripts",
+      "concurrent",
+      "queue",
+      "desktop"
+    ]
+  },
+  {
+    "question": "Why does my screen flash when the Agent clicks?",
+    "answer": "If enabled in Android developer options or Accessibility settings, 'Show Taps' or similar visual feedback might cause flashes. Disable those settings if you find the visual feedback during automation distracting.",
+    "tags": [
+      "flash",
+      "screen",
+      "taps",
+      "visual feedback"
+    ]
+  },
+  {
+    "question": "Does Autonion support Task Scheduling with conditions?",
+    "answer": "Yes, within the Flow Builder you can chain a Time Trigger -> Condition Node (e.g. 'Is Battery > 50%') -> Action Node. If the condition fails, the flow simply aborts.",
+    "tags": [
+      "schedule",
+      "conditions",
+      "flow",
+      "trigger"
+    ]
+  },
+  {
+    "question": "What is the 'Action Delay' slider for?",
+    "answer": "This controls the baseline pause between consecutive steps in a semantic flow. Increasing it gives your system more time to render animations or load data before the agent attempts the next action. Default is 500ms.",
+    "tags": [
+      "delay",
+      "action",
+      "speed",
+      "settings"
+    ]
+  },
+  {
+    "question": "Can I export chat logs to share?",
+    "answer": "Currently, there is no direct 'Export Chat' button. However, you can copy specific answers from the Omni-Chatbot UI by long-pressing on the message bubble.",
+    "tags": [
+      "export",
+      "chat logs",
+      "copy",
+      "share"
+    ]
+  },
+  {
+    "question": "How do I upgrade the internal LLM?",
+    "answer": "The internal NLP classifier uses static patterns and local embeddings. To upgrade the 'brain' of Semantic Automation, you simply pull a new model via the Ollama CLI on your desktop and update the model name in the Android app settings.",
+    "tags": [
+      "upgrade",
+      "model",
+      "llm",
+      "update"
+    ]
+  },
+  {
+    "question": "What should I do if the app crashes repeatedly?",
+    "answer": "Ensure you are running the latest version. Try clearing the app cache. If that fails, clear the app data (this will delete your scheduled flows and chat history). If the issue persists, please report it on GitHub with your device details.",
+    "tags": [
+      "crash",
+      "troubleshooting",
+      "clear data",
+      "bug"
+    ]
+  },
+  {
+    "question": "Does the app support multiple languages?",
+    "answer": "The Omni-Chatbot and underlying intents currently rely on English keywords and English-dominant LLMs. Attempting to use Semantic Automation in other languages might result in significantly lower success rates.",
+    "tags": [
+      "language",
+      "english",
+      "localization",
+      "support"
+    ]
+  }
+]

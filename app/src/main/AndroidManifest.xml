@@ -285,7 +285,16 @@
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
 
+        <!-- Semantic Automation -->
+        <activity
+            android:name=".features.semantic_automation.ui.SemanticAutomationActivity"
+            android:exported="false" />
 
+        <service
+            android:name=".features.semantic_automation.core.SemanticAutomationService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
 
     </application>
 

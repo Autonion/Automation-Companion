@@ -77,6 +77,9 @@ class AutomationService : AccessibilityService() {
 
         // Start Cross-Device Automation Manager (Background Persistence)
         com.autonion.automationcompanion.features.cross_device_automation.CrossDeviceAutomationManager.getInstance(this).start()
+
+        // Start ExtensionBridgeServer (Semantic Automation) in the background so the browser extension can instantly connect anytime
+        com.autonion.automationcompanion.features.semantic_automation.core.ExtensionBridgeServer.getInstance(this)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {

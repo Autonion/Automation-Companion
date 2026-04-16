@@ -56,9 +56,14 @@ android {
         viewBinding = true
         compose = true
     }
+
+    androidResources {
+        noCompress += listOf("tflite", "onnx")
+    }
 }
 
 dependencies {
+    implementation(libs.java.websocket)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.appcompat)
@@ -123,4 +128,14 @@ dependencies {
 
     // ML Kit Text Recognition (OCR)
     implementation(libs.mlkit.text.recognition)
+
+    // ONNX Runtime (for MiniLM sentence embedding)
+    implementation(libs.onnxruntime.android)
+
+    // MediaPipe GenAI (for On-Device LLM / Gemma)
+    implementation(libs.mediapipe.tasks.genai)
+    
+    // Retrofit (for Local Server LLM integration later)
+    implementation(libs.retrofit)
+    implementation(libs.retrofit.converter.gson)
 }

@@ -98,9 +98,24 @@ object ActionExecutor : AccessibilityFeature {
         val focused = root?.findFocus(android.view.accessibility.AccessibilityNodeInfo.FOCUS_INPUT)
         
         if (focused != null) {
-             val args = android.os.Bundle()
-             args.putCharSequence(android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
-             val success = focused.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+             val clearArgs = android.os.Bundle()
+             clearArgs.putCharSequence(android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, "")
+             focused.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SET_TEXT, clearArgs)
+             
+             var success = false
+             val clipboard = s.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+             if (clipboard != null) {
+                 val clip = android.content.ClipData.newPlainText("automation", text)
+                 clipboard.setPrimaryClip(clip)
+                 success = focused.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_PASTE)
+             }
+             
+             if (!success) {
+                 val args = android.os.Bundle()
+                 args.putCharSequence(android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+                 success = focused.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+             }
+
              Log.d("ActionExecutor", "Set text on focused node: $success")
              if (success) {
                  DebugLogger.success(
@@ -154,35 +169,34 @@ object ActionExecutor : AccessibilityFeature {
     
     private suspend fun dispatchScroll(service: AccessibilityService, point: PointF, direction: String): Boolean {
         val path = Path()
-        val startX = point.x
-        val startY = point.y
-        // Scroll Down content = Swipe Up gesture
-        // Scroll Up content = Swipe Down gesture
-        // Wait, "Scroll Down" usually means "Move content down" (Swipe down) or "Go to bottom" (Swipe up)?
-        // User said "Scroll (up/down)". usually "Scroll Down" means "I want to see what is below", so I swipe UP.
-        
-        val displayHeight = service.resources.displayMetrics.heightPixels
-        val distance = displayHeight * 0.5f // Swipe 50% of screen
-        
+        val displayWidth = service.resources.displayMetrics.widthPixels.toFloat()
+        val displayHeight = service.resources.displayMetrics.heightPixels.toFloat()
+        val distance = displayHeight * 0.3f // Swipe 30% of screen height
+
+        // Clamp the anchor point to valid screen area (avoid edges)
+        val safeX = point.x.coerceIn(10f, displayWidth - 10f)
+
+        val fromY: Float
+        val toY: Float
+
         if (direction == "down") {
-            // Visualize: Content moves UP, we see bottom. Gesture: Swipe UP from bottom to top? 
-            // Standard convention: "Scroll Down" -> List goes UP. Finger moves UP? No, finger moves UP drags content UP.
-            // Wait. Finger moves UP -> Content moves UP -> We see what's BELOW.
-            // So for "Scroll Down" (reveal bottom), we swipe UP.
-            path.moveTo(startX, startY + 200) 
-            path.lineTo(startX, startY - distance)
+            // "Scroll Down" = reveal bottom content = finger swipes UP
+            fromY = (point.y + 100f).coerceIn(10f, displayHeight - 10f)
+            toY = (fromY - distance).coerceAtLeast(10f)
         } else {
-            // "Scroll Up" -> Reveal top. Content moves DOWN. Finger moves DOWN.
-            path.moveTo(startX, startY - 200)
-            path.lineTo(startX, startY + distance)
+            // "Scroll Up" = reveal top content = finger swipes DOWN
+            fromY = (point.y - 100f).coerceIn(10f, displayHeight - 10f)
+            toY = (fromY + distance).coerceAtMost(displayHeight - 10f)
         }
-        
-        // Clamp to screen? dispatchGesture clips automatically usually, but safer to start from safe area.
-        // Actually, let's just use the element center as anchor.
-        
+
+        Log.d("ActionExecutor", "Scroll $direction: ($safeX, $fromY) → ($safeX, $toY)")
+
+        path.moveTo(safeX, fromY)
+        path.lineTo(safeX, toY)
+
         val stroke = GestureDescription.StrokeDescription(path, 0, 500)
         val gesture = GestureDescription.Builder().addStroke(stroke).build()
-        
+
         return suspendCoroutine { continuation ->
             service.dispatchGesture(gesture, object : AccessibilityService.GestureResultCallback() {
                  override fun onCompleted(gestureDescription: GestureDescription?) {

@@ -9,11 +9,22 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -26,7 +37,14 @@ import com.autonion.automationcompanion.features.automation_debugger.ui.Debugger
 import com.autonion.automationcompanion.features.automation_debugger.ui.LogDetailScreen
 import com.autonion.automationcompanion.features.flow_automation.ui.FlowBuilderMainScreen
 import com.autonion.automationcompanion.features.gesture_recording_playback.GestureRecordingScreen
+import com.autonion.automationcompanion.features.nlu.IntentClassifier
+import com.autonion.automationcompanion.features.omni_chatbot.OmniChatbotViewModel
+import com.autonion.automationcompanion.features.omni_chatbot.ui.OmniChatbotScaffold
+import com.autonion.automationcompanion.features.semantic_automation.ml.ModelStorageManager
+import com.autonion.automationcompanion.features.semantic_automation.ui.ModelManagerScreen
 import com.autonion.automationcompanion.features.system_context_automation.SystemContextMainScreen
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 private const val ROUTE_HOME = "home"
 private const val NAV_ANIM_DURATION = 300
@@ -47,6 +65,8 @@ object AutomationRoutes {
     const val CROSS_DEVICE = "feature/cross_device_automation"
     const val PROFILE_LEARNING = "feature/automation_profile_learning"
     const val FLOW_BUILDER = "feature/flow_builder"
+    const val SEMANTIC_AUTOMATION = "feature/semantic_automation"
+    const val MODEL_MANAGER = "feature/model_manager"
 }
 
 @Composable
@@ -57,6 +77,7 @@ fun AppNavHost() {
     val activity = view.context as? Activity
     val colorScheme = MaterialTheme.colorScheme
     val isDark = isSystemInDarkTheme()
+    val context = LocalContext.current
 
     SideEffect {
         activity?.let { act ->
@@ -76,25 +97,65 @@ fun AppNavHost() {
     // Shared ViewModel for Debugger screens
     val debuggerViewModel: DebuggerViewModel = viewModel()
 
-    NavHost(
-        navController = navController,
-        startDestination = ROUTE_HOME,
-        enterTransition = {
-            slideInHorizontally(animationSpec = tween(NAV_ANIM_DURATION)) { fullWidth -> fullWidth } + fadeIn(animationSpec = tween(NAV_ANIM_DURATION))
-        },
-        exitTransition = {
-            slideOutHorizontally(animationSpec = tween(NAV_ANIM_DURATION)) { fullWidth -> -fullWidth } + fadeOut(animationSpec = tween(NAV_ANIM_DURATION))
-        },
-        popEnterTransition = {
-            slideInHorizontally(animationSpec = tween(NAV_ANIM_DURATION)) { fullWidth -> -fullWidth } + fadeIn(animationSpec = tween(NAV_ANIM_DURATION))
-        },
-        popExitTransition = {
-            slideOutHorizontally(animationSpec = tween(NAV_ANIM_DURATION)) { fullWidth -> fullWidth } + fadeOut(animationSpec = tween(NAV_ANIM_DURATION))
+    // ── OmniChatbot Setup ──
+    val intentClassifier = remember { IntentClassifier.getInstance(context) }
+    val crossDeviceManager = remember {
+        com.autonion.automationcompanion.features.cross_device_automation.CrossDeviceAutomationManager.getInstance(context)
+    }
+    val omniViewModel = remember {
+        OmniChatbotViewModel(
+            context = context,
+            intentClassifier = intentClassifier,
+            crossDeviceManager = crossDeviceManager
+        )
+    }
+
+    // Warm up the NLU model in background (ONNX load + intent embeddings)
+    // UI renders immediately; heuristic classification works while this runs
+    LaunchedEffect(Unit) {
+        intentClassifier.warmUp()
+    }
+
+    // ── Global Clipboard Sync (works on every screen, not just Cross-Device) ──
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val clipboardScope = rememberCoroutineScope()
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                clipboardScope.launch {
+                    delay(200)
+                    crossDeviceManager.syncClipboard(context)
+                }
+            }
         }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // ── Wrap everything in OmniChatbot scaffold ──
+    OmniChatbotScaffold(
+        viewModel = omniViewModel,
+        currentRoute = currentRoute
     ) {
-        composable(ROUTE_HOME) {
-            HomeScreen(onOpen = { route -> navController.navigate(route) })
-        }
+        NavHost(
+            navController = navController,
+            startDestination = ROUTE_HOME,
+            enterTransition = {
+                slideInHorizontally(animationSpec = tween(NAV_ANIM_DURATION)) { fullWidth -> fullWidth } + fadeIn(animationSpec = tween(NAV_ANIM_DURATION))
+            },
+            exitTransition = {
+                slideOutHorizontally(animationSpec = tween(NAV_ANIM_DURATION)) { fullWidth -> -fullWidth } + fadeOut(animationSpec = tween(NAV_ANIM_DURATION))
+            },
+            popEnterTransition = {
+                slideInHorizontally(animationSpec = tween(NAV_ANIM_DURATION)) { fullWidth -> -fullWidth } + fadeIn(animationSpec = tween(NAV_ANIM_DURATION))
+            },
+            popExitTransition = {
+                slideOutHorizontally(animationSpec = tween(NAV_ANIM_DURATION)) { fullWidth -> fullWidth } + fadeOut(animationSpec = tween(NAV_ANIM_DURATION))
+            }
+        ) {
+            composable(ROUTE_HOME) {
+                HomeScreen(onOpen = { route -> navController.navigate(route) })
+            }
 
         composable(AutomationRoutes.GESTURE) {
             GestureRecordingScreen(onBack = { navController.popBackStack() })
@@ -220,6 +281,61 @@ fun AppNavHost() {
             )
         }
 
+        composable(AutomationRoutes.SEMANTIC_AUTOMATION) {
+            val context = androidx.compose.ui.platform.LocalContext.current
+            com.autonion.automationcompanion.features.semantic_automation.ui.SemanticAutomationScreen(
+                onBack = { navController.popBackStack() },
+                onOpenModelManager = { navController.navigate(AutomationRoutes.MODEL_MANAGER) },
+                onStart = { command ->
+                    // Launch the permission-handling Activity with the command
+                    val intent = android.content.Intent(
+                        context,
+                        com.autonion.automationcompanion.features.semantic_automation.ui.SemanticAutomationActivity::class.java
+                    ).apply {
+                        putExtra("command", command)
+                    }
+                    context.startActivity(intent)
+                },
+                onStop = {
+                    val stopIntent = android.content.Intent(
+                        context,
+                        com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationService::class.java
+                    ).apply {
+                        action = com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationService.ACTION_STOP
+                    }
+                    context.startService(stopIntent)
+                }
+            )
+        }
+
+        composable(AutomationRoutes.MODEL_MANAGER) {
+            val context = androidx.compose.ui.platform.LocalContext.current
+            val localServerEngine = remember { com.autonion.automationcompanion.features.semantic_automation.ml.LocalServerLLMEngine.getInstance(context) }
+            val inferencePrefs = remember { context.getSharedPreferences("inference_prefs", android.content.Context.MODE_PRIVATE) }
+            var inferenceMode by remember {
+                mutableStateOf(
+                    try {
+                        com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.valueOf(
+                            inferencePrefs.getString("mode", com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.SERVER_LLM.name)!!
+                        )
+                    } catch (_: Exception) {
+                        com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.SERVER_LLM
+                    }
+                )
+            }
+
+            ModelManagerScreen(
+                storageManager = ModelStorageManager(context),
+                localServerEngine = localServerEngine,
+                inferenceMode = inferenceMode,
+                onInferenceModeChanged = { newMode ->
+                    inferenceMode = newMode
+                    inferencePrefs.edit().putString("mode", newMode.name).apply()
+                },
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+
         composable(AutomationRoutes.FLOW_BUILDER) {
             FlowBuilderMainScreen(
                 onBack = { navController.popBackStack() }
@@ -232,7 +348,7 @@ fun AppNavHost() {
             )
         }
 
-    }
+        } // NavHost
+    } // OmniChatbotScaffold
 
 }
-

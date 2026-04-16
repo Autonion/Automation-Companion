@@ -1,5 +1,5 @@
 [versions]
-agp = "9.1.0"
+agp = "9.1.1"
 biometric = "1.1.0"
 composeBom = "2026.02.00"
 kotlin = "2.3.10"
@@ -31,6 +31,10 @@ litertGpu = "1.4.1"
 litertSupportApi = "1.4.1"
 okhttp = "5.3.2"
 mlkitTextRecognition = "16.0.1"
+onnxruntimeAndroid = "1.17.0"
+mediapipeGenai = "0.10.14"
+retrofit = "2.11.0"
+javaWebsocket = "1.5.3"
 
 [libraries]
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activity" }
@@ -74,6 +78,11 @@ litert-gpu-api = { group = "com.google.ai.edge.litert", name = "litert-gpu-api",
 litert-gpu = { group = "com.google.ai.edge.litert", name = "litert-gpu", version.ref = "litertGpu" }
 litert-support-api = { group = "com.google.ai.edge.litert", name = "litert-support-api", version.ref = "litertSupportApi" }
 mlkit-text-recognition = { module = "com.google.mlkit:text-recognition", version.ref = "mlkitTextRecognition" }
+onnxruntime-android = { module = "com.microsoft.onnxruntime:onnxruntime-android", version.ref = "onnxruntimeAndroid" }
+mediapipe-tasks-genai = { module = "com.google.mediapipe:tasks-genai", version.ref = "mediapipeGenai" }
+retrofit = { module = "com.squareup.retrofit2:retrofit", version.ref = "retrofit" }
+retrofit-converter-gson = { module = "com.squareup.retrofit2:converter-gson", version.ref = "retrofit" }
+java-websocket = { module = "org.java-websocket:Java-WebSocket", version.ref = "javaWebsocket" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

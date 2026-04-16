@@ -64,21 +64,10 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
         }
     }
 
-    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
 
-    DisposableEffect(lifecycleOwner) {
-        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-                scope.launch {
-                    kotlinx.coroutines.delay(500)
-                    CrossDeviceAutomationManager.getInstance(context).syncClipboard(context)
-                }
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
+    // NOTE: Clipboard sync lifecycle observer has been moved to AppNavHost
+    // so it runs globally across all screens, not just this one.
 
     if (showPermissionDialog) {
         AlertDialog(

@@ -30,6 +30,8 @@ object AccessibilityRouter {
     
     fun isServiceConnected(): Boolean = connectedServiceRef?.get() != null
 
+    fun getService(): AccessibilityService? = connectedServiceRef?.get()
+
     fun onEvent(service: AccessibilityService, event: AccessibilityEvent) {
         features.forEach { it.onEvent(service, event) }
     }
