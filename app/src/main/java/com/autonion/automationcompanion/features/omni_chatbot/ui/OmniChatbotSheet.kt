@@ -645,8 +645,7 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                             Text("192.168.1.x", color = Color.White.copy(alpha = 0.25f))
                         },
                         modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp),
+                            .weight(1f),
                         shape = RoundedCornerShape(12.dp),
                         colors = TextFieldDefaults.colors(
                             focusedContainerColor = CardGlass,
@@ -678,7 +677,7 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                             disabledContainerColor = AccentPurple.copy(alpha = 0.3f)
                         ),
                         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp),
-                        modifier = Modifier.height(48.dp)
+                        modifier = Modifier.height(56.dp)
                     ) {
                         Text(
                             if (connectionStatus == ServerConnectionStatus.CONNECTED) "Reconnect" else "Connect",
