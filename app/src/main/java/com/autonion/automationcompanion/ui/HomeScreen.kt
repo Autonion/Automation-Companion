@@ -158,21 +158,7 @@ fun HomeScreen(onOpen: (String) -> Unit) {
                     )
                 }
             }
-            item {
-                StaggeredEntry(index = 6) {
-                    ListCard(
-                        title = "System Context",
-                        description = "Triggers based on location, time, battery level.",
-                        icon = Icons.Default.SettingsSystemDaydream,
-                        iconColor = Color.White,
-                        iconContainerColor = AccentBlue, // Reusing Blue or maybe different shade
-                        onClick = { onOpen(AutomationRoutes.SYSTEM_CONTEXT) }
-                    )
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-
-            // Grid Row: Emergency & Debugger
+            // Grid Row: System Context & Debugger
             item {
                 StaggeredEntry(index = 7) {
                     Row(
@@ -181,16 +167,16 @@ fun HomeScreen(onOpen: (String) -> Unit) {
                             .padding(horizontal = 24.dp),
                         horizontalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        // Custom styling for Emergency to match screenshot (Light Red bg)
+                        // Custom styling for System Context (Light Blue bg)
                         StatusCard(
-                            title = "Emergency Trigger",
-                            subtitle = "Panic gestures setup",
-                            icon = Icons.Default.Warning,
+                            title = "System Context",
+                            subtitle = "Location, time, battery",
+                            icon = Icons.Default.SettingsSystemDaydream,
                             iconColor = Color.White,
-                            iconContainerColor = AccentRed,
-                            backgroundColor = if (isDark) DarkAccentRedContainer else AccentRedContainer,
-                            titleColor = if (isDark) MaterialTheme.colorScheme.onSurface else Color(0xFFB71C1C),
-                            onClick = { onOpen(AutomationRoutes.EMERGENCY) },
+                            iconContainerColor = AccentBlue,
+                            backgroundColor = if (isDark) Color(0xFF003B5C) else AccentBlueContainer,
+                            titleColor = if (isDark) MaterialTheme.colorScheme.onSurface else KeyBlue,
+                            onClick = { onOpen(AutomationRoutes.SYSTEM_CONTEXT) },
                             modifier = Modifier.weight(1f)
                         )
                         
