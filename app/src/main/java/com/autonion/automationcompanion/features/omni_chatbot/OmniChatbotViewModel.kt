@@ -23,6 +23,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.transformWhile
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -198,15 +199,34 @@ class OmniChatbotViewModel(
 
     /**
      * Auto-reconnect using saved URL when chat is opened.
-     * Only triggers if there's a saved URL but the engine is disconnected.
+     * If no URL is saved, attempts auto-discovery from cross-device connected devices.
      */
     private fun autoConnectIfNeeded() {
-        if (llmEngine.connectionStatus.value == ServerConnectionStatus.DISCONNECTED
-            && llmEngine.serverUrl.value.isNotBlank()
-        ) {
+        if (llmEngine.connectionStatus.value != ServerConnectionStatus.DISCONNECTED) return
+
+        if (llmEngine.serverUrl.value.isNotBlank()) {
+            // Case 1: Saved URL exists — just reconnect
             Log.d(TAG, "Auto-reconnecting to saved LLM server: ${llmEngine.serverUrl.value}")
             viewModelScope.launch {
                 llmEngine.initialize()
+            }
+        } else {
+            // Case 2: No saved URL — try auto-discovery from cross-device connected devices
+            viewModelScope.launch {
+                try {
+                    val devices = crossDeviceManager.deviceRepository.getAllDevices().first()
+                    val onlineDevice = devices.firstOrNull {
+                        it.status == com.autonion.automationcompanion.features.cross_device_automation.domain.DeviceStatus.ONLINE
+                    }
+                    onlineDevice?.let { device ->
+                        val url = "http://${device.ipAddress}:11434"
+                        Log.d(TAG, "Auto-discovered desktop LLM server from cross-device: $url")
+                        llmEngine.setServerUrl(url)
+                        llmEngine.initialize()
+                    }
+                } catch (e: Exception) {
+                    Log.d(TAG, "Cross-device auto-discovery skipped: ${e.message}")
+                }
             }
         }
     }
@@ -533,6 +553,26 @@ class OmniChatbotViewModel(
         ))
 
         viewModelScope.launch {
+            // Wait for the knowledge store to finish loading (handles the race
+            // condition where the user sends a question before background init
+            // completes — previously this returned "I don't have information").
+            if (!knowledgeStore.isLoaded) {
+                Log.d(TAG, "Q&A: Knowledge store still loading, waiting...")
+                val waitStart = System.currentTimeMillis()
+                while (!knowledgeStore.isLoaded && System.currentTimeMillis() - waitStart < 10_000) {
+                    delay(200)
+                }
+                if (!knowledgeStore.isLoaded) {
+                    Log.w(TAG, "Q&A: Knowledge store didn't load within 10s")
+                    updateLastBotMessage(
+                        "⏳ Knowledge base is still loading. Please try again in a moment.",
+                        ResponseMode.KNOWLEDGE
+                    )
+                    return@launch
+                }
+                Log.d(TAG, "Q&A: Knowledge store ready after ${System.currentTimeMillis() - waitStart}ms")
+            }
+
             // Retrieve top 3 relevant chunks (filtered by min similarity 0.35)
             val chunks = knowledgeStore.search(result.rawPrompt, topK = 3)
 
