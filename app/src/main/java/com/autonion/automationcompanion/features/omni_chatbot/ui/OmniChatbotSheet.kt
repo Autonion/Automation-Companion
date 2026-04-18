@@ -36,6 +36,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.text.ClickableText
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.platform.LocalUriHandler
+import android.util.Patterns
 import com.autonion.automationcompanion.features.omni_chatbot.OmniChatbotViewModel
 import com.autonion.automationcompanion.features.omni_chatbot.model.*
 import com.autonion.automationcompanion.features.semantic_automation.ml.ServerConnectionStatus
@@ -888,6 +895,7 @@ private fun ChatBubble(
     onStopTask: (String) -> Unit
 ) {
     val isUser = message.isUser
+    val uriHandler = LocalUriHandler.current
 
     // Entrance animation
     var visible by remember { mutableStateOf(false) }
@@ -973,11 +981,49 @@ private fun ChatBubble(
                     .padding(horizontal = 14.dp, vertical = 10.dp)
             ) {
                 Column {
-                    Text(
-                        text = message.text,
-                        color = Color.White,
-                        fontSize = 14.sp,
-                        lineHeight = 20.sp
+                    val annotatedText = buildAnnotatedString {
+                        val matcher = Patterns.WEB_URL.matcher(message.text)
+                        var lastIndex = 0
+                        while (matcher.find()) {
+                            val start = matcher.start()
+                            val end = matcher.end()
+                            val url = matcher.group()
+                            append(message.text.substring(lastIndex, start))
+                            pushStringAnnotation(tag = "URL", annotation = url)
+                            withStyle(style = SpanStyle(
+                                color = AccentBlue, 
+                                textDecoration = TextDecoration.Underline,
+                                fontWeight = FontWeight.Bold
+                            )) {
+                                append(url)
+                            }
+                            pop()
+                            lastIndex = end
+                        }
+                        append(message.text.substring(lastIndex))
+                    }
+
+                    ClickableText(
+                        text = annotatedText,
+                        style = androidx.compose.ui.text.TextStyle(
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            lineHeight = 20.sp
+                        ),
+                        onClick = { offset ->
+                            annotatedText.getStringAnnotations("URL", offset, offset)
+                                .firstOrNull()?.let { annotation ->
+                                    var uri = annotation.item
+                                    if (!uri.startsWith("http://") && !uri.startsWith("https://")) {
+                                        uri = "https://$uri"
+                                    }
+                                    try {
+                                        uriHandler.openUri(uri)
+                                    } catch (e: Exception) {
+                                        // Ignore exception if URL is invalid
+                                    }
+                                }
+                        }
                     )
 
                     // Action widget

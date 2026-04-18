@@ -815,8 +815,9 @@ class OmniChatbotViewModel(
     // ═══════════════════════════════════════════════════════════
 
     private fun addMessage(message: OmniChatMessage) {
+        val cleaned = if (!message.isUser) message.copy(text = stripMarkdown(message.text)) else message
         val current = _messages.value.toMutableList()
-        current.add(0, message) // Newest first (for reverseLayout)
+        current.add(0, cleaned) // Newest first (for reverseLayout)
         _messages.value = current
     }
 
@@ -827,11 +828,12 @@ class OmniChatbotViewModel(
         actionWidget: ActionWidget? = null,
         clearWidget: Boolean = false
     ) {
+        val cleanedText = stripMarkdown(text)
         val current = _messages.value.toMutableList()
         val lastBotIdx = current.indexOfFirst { !it.isUser }
         if (lastBotIdx >= 0) {
             current[lastBotIdx] = current[lastBotIdx].copy(
-                text = text,
+                text = cleanedText,
                 mode = mode,
                 isStreaming = streaming,
                 actionWidget = if (clearWidget) null else actionWidget ?: current[lastBotIdx].actionWidget
@@ -839,13 +841,25 @@ class OmniChatbotViewModel(
             _messages.value = current
         } else {
             addMessage(OmniChatMessage(
-                text = text, 
+                text = cleanedText, 
                 isUser = false, 
                 mode = mode, 
                 isStreaming = streaming,
                 actionWidget = actionWidget
             ))
         }
+    }
+
+    /** Strip common markdown formatting so chat bubbles show clean plaintext. */
+    private fun stripMarkdown(text: String): String {
+        return text
+            .replace(Regex("\\*\\*(.+?)\\*\\*"), "$1")   // **bold**
+            .replace(Regex("__(.+?)__"), "$1")             // __bold__
+            .replace(Regex("\\*(.+?)\\*"), "$1")           // *italic*
+            .replace(Regex("_(.+?)_"), "$1")               // _italic_
+            .replace(Regex("~~(.+?)~~"), "$1")             // ~~strikethrough~~
+            .replace(Regex("^#{1,6}\\s+", RegexOption.MULTILINE), "") // # headings
+            .replace(Regex("`(.+?)`"), "$1")               // `inline code`
     }
 
     private fun removeActionWidget(taskId: String) {
