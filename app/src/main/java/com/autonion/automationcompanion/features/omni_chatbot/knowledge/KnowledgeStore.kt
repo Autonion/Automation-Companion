@@ -50,6 +50,7 @@ class KnowledgeStore(private val embedder: SentenceEmbedder) {
                     .open("$KNOWLEDGE_DIR/$fileName")
                     .bufferedReader()
                     .readText()
+                    .replace("\r\n", "\n")  // Normalize Windows line endings
 
                 val docChunks = chunkDocument(content, fileName)
                 for ((index, chunkText) in docChunks.withIndex()) {
