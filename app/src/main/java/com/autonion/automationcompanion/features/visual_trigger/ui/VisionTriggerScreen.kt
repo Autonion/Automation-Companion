@@ -1,10 +1,12 @@
 package com.autonion.automationcompanion.features.visual_trigger.ui
 
+import android.graphics.BitmapFactory
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.*
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -18,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.BrokenImage
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Visibility
@@ -28,7 +31,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -37,6 +42,9 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.autonion.automationcompanion.features.visual_trigger.models.VisionPreset
 import com.autonion.automationcompanion.ui.components.AuroraBackground
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -65,6 +73,9 @@ fun VisionTriggerScreen(
 
     // Delete confirmation state
     var presetToDelete by remember { mutableStateOf<VisionPreset?>(null) }
+
+    // Detail sheet state — shows captured image gallery and region crops
+    var detailPreset by remember { mutableStateOf<VisionPreset?>(null) }
 
     // Name dialog state
     var showNameDialog by remember { mutableStateOf(false) }
@@ -148,7 +159,7 @@ fun VisionTriggerScreen(
                                 preset = preset,
                                 isDark = isDark,
                                 primary = primary,
-                                onClick = { onEditPreset(preset.id) },
+                                onClick = { detailPreset = preset },
                                 onRun = { onRunPreset(preset.id) },
                                 onDelete = { presetToDelete = preset },
                                 onToggleActive = { viewModel.togglePresetActive(preset.id) }
@@ -249,6 +260,21 @@ fun VisionTriggerScreen(
             }
         )
     }
+
+    // Preset detail sheet — shows captured images and region templates
+    if (detailPreset != null) {
+        val currentPreset = detailPreset!!
+        VisionPresetDetailSheet(
+            preset = currentPreset,
+            onDismiss = { detailPreset = null },
+            onEdit = { onEditPreset(currentPreset.id) },
+            onRun = { onRunPreset(currentPreset.id) },
+            onDelete = {
+                presetToDelete = currentPreset
+                detailPreset = null
+            }
+        )
+    }
 }
 
 @Composable
@@ -333,6 +359,24 @@ fun VisionPresetCard(
     val isPressed by interactionSource.collectIsPressedAsState()
     val scale by animateFloatAsState(targetValue = if (isPressed) 0.97f else 1f, label = "scale")
 
+    // Load thumbnail asynchronously
+    var thumbnail by remember(preset.captureImagePath) {
+        mutableStateOf<android.graphics.Bitmap?>(null)
+    }
+    var thumbnailLoaded by remember(preset.captureImagePath) { mutableStateOf(false) }
+
+    LaunchedEffect(preset.captureImagePath) {
+        val path = preset.captureImagePath
+        if (path != null && File(path).exists()) {
+            withContext(Dispatchers.IO) {
+                // Decode a down-sampled thumbnail to save memory
+                val options = BitmapFactory.Options().apply { inSampleSize = 4 }
+                thumbnail = BitmapFactory.decodeFile(path, options)
+            }
+        }
+        thumbnailLoaded = true
+    }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -349,83 +393,119 @@ fun VisionPresetCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         border = if (isDark) BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)) else null
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+        Row(modifier = Modifier.fillMaxWidth()) {
+            // ─── Thumbnail ──────────────────────────
+            Box(
+                modifier = Modifier
+                    .width(80.dp)
+                    .fillMaxHeight()
+                    .heightIn(min = 90.dp)
+                    .clip(RoundedCornerShape(topStart = 20.dp, bottomStart = 20.dp))
+                    .background(
+                        if (isDark) Color(0xFF15171C) else Color(0xFFE8E8EC)
+                    ),
+                contentAlignment = Alignment.Center
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = preset.name,
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        ),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                if (thumbnail != null) {
+                    Image(
+                        bitmap = thumbnail!!.asImageBitmap(),
+                        contentDescription = "Capture preview",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
                     )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "${preset.regions.size} region${if (preset.regions.size != 1) "s" else ""} • ${preset.executionMode.name.replace("_", " ").lowercase().replaceFirstChar { it.uppercase() }}",
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 12.sp
+                } else if (thumbnailLoaded) {
+                    Icon(
+                        Icons.Default.BrokenImage,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f),
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
+
+            // ─── Content ────────────────────────────
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 14.dp, vertical = 12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = preset.name,
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "${preset.regions.size} region${if (preset.regions.size != 1) "s" else ""} • ${preset.executionMode.name.replace("_", " ").lowercase().replaceFirstChar { it.uppercase() }}",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 12.sp
+                            )
+                        )
+                    }
+                    Switch(
+                        checked = preset.isActive,
+                        onCheckedChange = { onToggleActive() },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = primary,
+                            uncheckedThumbColor = Color.Gray,
+                            uncheckedTrackColor = Color.Gray.copy(alpha = 0.2f)
                         )
                     )
                 }
-                Switch(
-                    checked = preset.isActive,
-                    onCheckedChange = { onToggleActive() },
-                    colors = SwitchDefaults.colors(
-                        checkedThumbColor = Color.White,
-                        checkedTrackColor = primary,
-                        uncheckedThumbColor = Color.Gray,
-                        uncheckedTrackColor = Color.Gray.copy(alpha = 0.2f)
-                    )
-                )
-            }
 
-            Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
-            // Action buttons row
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Run button
-                FilledTonalButton(
-                    onClick = onRun,
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.filledTonalButtonColors(
-                        containerColor = primary.copy(alpha = 0.12f),
-                        contentColor = primary
-                    ),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
+                // Action buttons row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        Icons.Default.PlayArrow,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Run", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                }
+                    // Run button
+                    FilledTonalButton(
+                        onClick = onRun,
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = primary.copy(alpha = 0.12f),
+                            contentColor = primary
+                        ),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Run", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                    }
 
-                Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
 
-                // Delete button
-                IconButton(
-                    onClick = onDelete,
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Delete,
-                        contentDescription = "Delete",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                        modifier = Modifier.size(20.dp)
-                    )
+                    // Delete button
+                    IconButton(
+                        onClick = onDelete,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = "Delete",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
             }
         }
