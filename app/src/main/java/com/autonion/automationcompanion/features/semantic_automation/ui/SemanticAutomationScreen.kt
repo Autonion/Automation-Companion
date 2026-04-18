@@ -69,13 +69,13 @@ fun SemanticAutomationScreen(
     // Observe service state
     val engine by SemanticAutomationService.activeEngine.collectAsState()
 
-    val status by engine?.status?.collectAsState() ?: remember { mutableStateOf(AutomationStatus.IDLE) }
-    val goal by engine?.currentGoal?.collectAsState() ?: remember { mutableStateOf(null) }
-    val loopCount by engine?.loopCount?.collectAsState() ?: remember { mutableStateOf(0) }
-    val lastAction by engine?.lastActionDescription?.collectAsState() ?: remember { mutableStateOf(null) }
+    val status by remember(engine) { engine?.status ?: kotlinx.coroutines.flow.MutableStateFlow(AutomationStatus.IDLE) }.collectAsState()
+    val goal by remember(engine) { engine?.currentGoal ?: kotlinx.coroutines.flow.MutableStateFlow(null) }.collectAsState()
+    val loopCount by remember(engine) { engine?.loopCount ?: kotlinx.coroutines.flow.MutableStateFlow(0) }.collectAsState()
+    val lastAction by remember(engine) { engine?.lastActionDescription ?: kotlinx.coroutines.flow.MutableStateFlow(null) }.collectAsState()
 
-    val userPromptMessage by engine?.userPromptMessage?.collectAsState() ?: remember { mutableStateOf(null) }
-    val userPromptOptions by engine?.userPromptOptions?.collectAsState() ?: remember { mutableStateOf(emptyList()) }
+    val userPromptMessage by remember(engine) { engine?.userPromptMessage ?: kotlinx.coroutines.flow.MutableStateFlow(null) }.collectAsState()
+    val userPromptOptions by remember(engine) { engine?.userPromptOptions ?: kotlinx.coroutines.flow.MutableStateFlow(emptyList()) }.collectAsState()
 
     val isActive = status !in listOf(
         AutomationStatus.IDLE,

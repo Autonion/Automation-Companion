@@ -145,6 +145,7 @@ fun HomeScreen(onOpen: (String) -> Unit) {
                         onClick = { onOpen(AutomationRoutes.FLOW_BUILDER) }
                     )
                 }
+                Spacer(modifier = Modifier.height(16.dp))
             }
             item {
                 StaggeredEntry(index = 6) {
@@ -157,6 +158,7 @@ fun HomeScreen(onOpen: (String) -> Unit) {
                         onClick = { onOpen(AutomationRoutes.SEMANTIC_AUTOMATION) }
                     )
                 }
+                Spacer(modifier = Modifier.height(16.dp))
             }
             // Grid Row: System Context & Debugger
             item {
