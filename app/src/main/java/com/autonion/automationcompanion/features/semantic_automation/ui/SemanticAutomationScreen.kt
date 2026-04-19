@@ -31,6 +31,8 @@ import androidx.compose.ui.unit.sp
 import com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationService
 import com.autonion.automationcompanion.features.semantic_automation.model.AutomationStatus
 import com.autonion.automationcompanion.ui.components.AuroraBackground
+import androidx.compose.material.icons.outlined.Info
+import com.autonion.automationcompanion.features.omni_chatbot.ui.LocalStartWalkthrough
 import com.autonion.automationcompanion.ui.theme.*
 import java.util.*
 
@@ -61,6 +63,7 @@ fun SemanticAutomationScreen(
 ) {
     var command by remember { mutableStateOf("") }
     var showLiveStatus by remember { mutableStateOf(true) }
+    val startWalkthrough = LocalStartWalkthrough.current
 
     // Chat state
     val messages = remember { mutableStateListOf<SemanticMessage>() }
@@ -159,6 +162,9 @@ fun SemanticAutomationScreen(
                         }
                     },
                     actions = {
+                        IconButton(onClick = { startWalkthrough("semantic_automation") }) {
+                            Icon(Icons.Outlined.Info, contentDescription = "Take a Walkthrough", tint = Color.White)
+                        }
                         IconButton(onClick = { showLiveStatus = !showLiveStatus }) {
                             Icon(
                                 if (showLiveStatus) Icons.Default.Visibility else Icons.Default.VisibilityOff,

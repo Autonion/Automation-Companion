@@ -42,6 +42,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import com.autonion.automationcompanion.features.screen_understanding_ml.logic.PresetRepository
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.AutomationPreset
 import com.autonion.automationcompanion.ui.components.AuroraBackground
+import androidx.compose.material.icons.outlined.Info
+import com.autonion.automationcompanion.features.omni_chatbot.ui.LocalStartWalkthrough
 import kotlinx.coroutines.launch
 
 /**
@@ -124,6 +126,7 @@ private fun ScreenMLDashboardContent(
     onTest: (String) -> Unit = {}
 ) {
     val fabScale = remember { Animatable(0f) }
+    val startWalkthrough = LocalStartWalkthrough.current
     LaunchedEffect(Unit) {
         fabScale.animateTo(1f, tween(300, easing = FastOutSlowInEasing))
     }
@@ -144,6 +147,9 @@ private fun ScreenMLDashboardContent(
                         navigationIconContentColor = MaterialTheme.colorScheme.onSurface
                     ),
                     actions = {
+                        IconButton(onClick = { startWalkthrough("screen_ml") }) {
+                            Icon(Icons.Outlined.Info, contentDescription = "Take a Walkthrough", tint = MaterialTheme.colorScheme.onSurface)
+                        }
                         IconButton(onClick = { onTest("yolov11s_model.tflite") }) {
                             Icon(
                                 Icons.Default.BugReport,

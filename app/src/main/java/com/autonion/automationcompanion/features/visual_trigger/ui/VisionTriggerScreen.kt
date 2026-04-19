@@ -42,6 +42,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.autonion.automationcompanion.features.visual_trigger.models.VisionPreset
 import com.autonion.automationcompanion.ui.components.AuroraBackground
+import androidx.compose.material.icons.outlined.Info
+import com.autonion.automationcompanion.features.omni_chatbot.ui.LocalStartWalkthrough
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -58,6 +60,7 @@ fun VisionTriggerScreen(
     val presets by viewModel.presets.collectAsState()
     val isDark = isSystemInDarkTheme()
     val primary = MaterialTheme.colorScheme.primary
+    val startWalkthrough = LocalStartWalkthrough.current
 
     // Auto-refresh presets every time the screen resumes
     val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
@@ -106,6 +109,11 @@ fun VisionTriggerScreen(
                                 contentDescription = "Back",
                                 tint = MaterialTheme.colorScheme.onSurface
                             )
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = { startWalkthrough("visual_trigger") }) {
+                            Icon(Icons.Outlined.Info, contentDescription = "Take a Walkthrough", tint = MaterialTheme.colorScheme.onSurface)
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(

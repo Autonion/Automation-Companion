@@ -34,6 +34,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.autonion.automationcompanion.features.cross_device_automation.CrossDeviceAutomationManager
 import com.autonion.automationcompanion.ui.components.AuroraBackground
+import androidx.compose.material.icons.outlined.Info
+import com.autonion.automationcompanion.features.omni_chatbot.ui.LocalStartWalkthrough
 import kotlinx.coroutines.launch
 import java.util.Date
 
@@ -65,6 +67,7 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
     }
 
     val scope = rememberCoroutineScope()
+    val startWalkthrough = LocalStartWalkthrough.current
 
     // NOTE: Clipboard sync lifecycle observer has been moved to AppNavHost
     // so it runs globally across all screens, not just this one.
@@ -103,6 +106,11 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = { startWalkthrough("cross_device") }) {
+                            Icon(Icons.Outlined.Info, contentDescription = "Take a Walkthrough", tint = Color.White)
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(

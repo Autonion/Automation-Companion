@@ -30,6 +30,8 @@ import androidx.compose.ui.unit.sp
 import com.autonion.automationcompanion.features.automation_debugger.CategorySummary
 import com.autonion.automationcompanion.features.automation_debugger.DebuggerViewModel
 import com.autonion.automationcompanion.ui.components.AuroraBackground
+import androidx.compose.material.icons.outlined.Info
+import com.autonion.automationcompanion.features.omni_chatbot.ui.LocalStartWalkthrough
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -43,6 +45,7 @@ fun DebuggerScreen(
     val totalCount by viewModel.totalLogCount.collectAsState()
     val isDark = isSystemInDarkTheme()
     var showClearDialog by remember { mutableStateOf(false) }
+    val startWalkthrough = LocalStartWalkthrough.current
 
     if (showClearDialog) {
         AlertDialog(
@@ -74,6 +77,11 @@ fun DebuggerScreen(
                                 contentDescription = "Back",
                                 tint = MaterialTheme.colorScheme.onBackground
                             )
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = { startWalkthrough("debugger") }) {
+                            Icon(Icons.Outlined.Info, contentDescription = "Take a Walkthrough", tint = MaterialTheme.colorScheme.onBackground)
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(

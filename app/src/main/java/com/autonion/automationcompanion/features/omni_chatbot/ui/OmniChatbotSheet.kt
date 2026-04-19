@@ -61,6 +61,12 @@ private val UserBubbleGrad = listOf(AccentPurple, AccentBlue)
 private val SystemBubbleBg = Color(0xFF1E2030)
 
 /**
+ * CompositionLocal that provides the walkthrough trigger to any feature screen.
+ * Consume it with: val startWalkthrough = LocalStartWalkthrough.current
+ */
+val LocalStartWalkthrough = compositionLocalOf<(String) -> Unit> { {} }
+
+/**
  * Global Omni-Chatbot overlay.
  * Place this in the app root so the FAB is visible on every screen.
  *
@@ -101,8 +107,12 @@ fun OmniChatbotScaffold(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // ── App Content ──
-        content()
+        // ── App Content (with walkthrough trigger available to all screens) ──
+        CompositionLocalProvider(
+            LocalStartWalkthrough provides { featureId -> viewModel.startWalkthrough(featureId) }
+        ) {
+            content()
+        }
 
         // ── FAB (visible when chatbot is collapsed and not on blocked routes) ──
         AnimatedVisibility(
