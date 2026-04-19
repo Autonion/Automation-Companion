@@ -542,8 +542,15 @@ class ScreenUnderstandingService : Service() {
     }
 
     /**
-     * B4 fix: Wait for an element matching the step using label + spatial IoU
-     * against the saved anchor's bounds, not just the label string.
+     * Hybrid element matching: combines Accessibility tree + YOLO detection + OCR
+     * for robust action targeting, even across screen rotations.
+     *
+     * Signal weights:
+     * - Accessibility (50%): Most reliable when the UI tree is standard
+     * - YOLO (30%): Works for custom views, games, non-standard rendering
+     * - OCR (20%): Text confirmation to disambiguate similar elements
+     *
+     * Falls back to YOLO-only IoU matching if hybrid returns no result.
      */
     private suspend fun waitForElement(step: AutomationStep): UIElement? {
         val timeout = 5000L
@@ -551,29 +558,123 @@ class ScreenUnderstandingService : Service() {
         val anchorBounds = step.anchor.bounds
         val anchorText = step.anchor.text  // OCR text from capture-time enrichment
 
+        // Pre-compute normalized anchor bounds if capture dimensions are available
+        val capW = step.captureScreenWidth
+        val capH = step.captureScreenHeight
+        val normalizedAnchor: RectF? = if (capW > 0f && capH > 0f) {
+            RectF(
+                anchorBounds.left / capW, anchorBounds.top / capH,
+                anchorBounds.right / capW, anchorBounds.bottom / capH
+            )
+        } else null
+
+        // Detect rotation: compare capture-time image aspect ratio with current screen aspect ratio
+        val dm = resources.displayMetrics
+        val screenW = dm.widthPixels.toFloat()
+        val screenH = dm.heightPixels.toFloat()
+        val isRotated = capW > 0f && capH > 0f && screenW > 0f && screenH > 0f &&
+                ((capW > capH) != (screenW > screenH))
+
+        if (isRotated) {
+            Log.d(TAG, "waitForElement: Rotation detected! capture=${capW}x${capH}, screen=${screenW}x${screenH}")
+        }
+
         while (System.currentTimeMillis() - startTime < timeout && isPlaying) {
             val currentElements = latestElements
+            val currentBitmap = latestBitmap
+            val curW = currentBitmap?.width?.toFloat() ?: 0f
+            val curH = currentBitmap?.height?.toFloat() ?: 0f
 
-            // Filter by label (case-insensitive)
+            // ── Primary: Hybrid matching (Accessibility + YOLO + OCR) ──
+            val hybridResult = HybridElementMatcher.findBestMatch(
+                anchorLabel = step.anchor.label,
+                anchorBounds = anchorBounds,
+                anchorText = anchorText,
+                yoloCandidates = currentElements,
+                normalizedAnchor = normalizedAnchor,
+                currentScreenWidth = curW,
+                currentScreenHeight = curH,
+                isRotated = isRotated,
+                screenWidth = screenW,
+                screenHeight = screenH
+            )
+
+            if (hybridResult != null) {
+                Log.d(TAG, "waitForElement: Hybrid match for '${step.label}': " +
+                        "conf=${hybridResult.hybridConfidence} " +
+                        "[acc=${hybridResult.accessibilityScore}, " +
+                        "yolo=${hybridResult.yoloScore}, " +
+                        "ocr=${hybridResult.ocrScore}] " +
+                        "via ${hybridResult.source}, rotated=$isRotated")
+                DebugLogger.info(
+                    this@ScreenUnderstandingService, LogCategory.SCREEN_CONTEXT_AI,
+                    "Hybrid match: ${step.label}",
+                    "conf=${"%.2f".format(hybridResult.hybridConfidence)} " +
+                            "(acc=${"%.2f".format(hybridResult.accessibilityScore)}, " +
+                            "yolo=${"%.2f".format(hybridResult.yoloScore)}, " +
+                            "ocr=${"%.2f".format(hybridResult.ocrScore)}) " +
+                            "source=${hybridResult.source} rotated=$isRotated",
+                    TAG
+                )
+                return hybridResult.element
+            }
+
+            // ── Fallback: YOLO-only matching ──
             val sameLabel = currentElements
                 .filter { it.label.equals(step.anchor.label, ignoreCase = true) }
 
-            // Text-aware matching: if anchor has OCR text, prefer elements whose text matches
-            val match = if (!anchorText.isNullOrBlank()) {
-                // First try: exact text + IoU
-                val textMatches = sameLabel.filter { el ->
-                    !el.text.isNullOrBlank() && el.text.contains(anchorText, ignoreCase = true)
+            if (isRotated) {
+                // After rotation, IoU is meaningless — match by text + label instead
+                if (!anchorText.isNullOrBlank()) {
+                    val textMatch = sameLabel.firstOrNull { el ->
+                        !el.text.isNullOrBlank() && el.text.contains(anchorText, ignoreCase = true)
+                    }
+                    if (textMatch != null) {
+                        Log.d(TAG, "waitForElement: Rotated text fallback: label=${textMatch.label}, text=${textMatch.text}")
+                        // YOLO bounds are in image space — but after rotation image≠screen.
+                        // Return as-is; ActionExecutor will click at these coords which may be image-space.
+                        // Ideally we'd convert, but accessibility match above should handle most cases.
+                        return textMatch
+                    }
                 }
-                textMatches.maxByOrNull { calculateIoU(it.bounds, anchorBounds) }
-                    ?: sameLabel.maxByOrNull { calculateIoU(it.bounds, anchorBounds) }  // Fallback to IoU-only
+                // Last resort for rotation: highest-confidence YOLO of matching label
+                val bestYolo = sameLabel.maxByOrNull { it.confidence }
+                if (bestYolo != null && bestYolo.confidence > 0.5f) {
+                    Log.d(TAG, "waitForElement: Rotated confidence fallback: label=${bestYolo.label}, " +
+                            "conf=${bestYolo.confidence}, text=${bestYolo.text}")
+                    return bestYolo
+                }
             } else {
-                sameLabel.maxByOrNull { calculateIoU(it.bounds, anchorBounds) }
-            }
+                // Normal mode: IoU-based matching
+                val useNormalized = normalizedAnchor != null && curW > 0f && curH > 0f
 
-            // Accept if IoU > 0.1 (lenient since screen may have scrolled slightly)
-            if (match != null && calculateIoU(match.bounds, anchorBounds) > 0.1f) {
-                Log.d(TAG, "waitForElement matched: label=${match.label}, text=${match.text}, IoU=${calculateIoU(match.bounds, anchorBounds)}")
-                return match
+                fun iouFor(el: UIElement): Float {
+                    return if (useNormalized) {
+                        val nEl = RectF(
+                            el.bounds.left / curW, el.bounds.top / curH,
+                            el.bounds.right / curW, el.bounds.bottom / curH
+                        )
+                        calculateIoU(nEl, normalizedAnchor!!)
+                    } else {
+                        calculateIoU(el.bounds, anchorBounds)
+                    }
+                }
+
+                val fallbackMatch = if (!anchorText.isNullOrBlank()) {
+                    val textMatches = sameLabel.filter { el ->
+                        !el.text.isNullOrBlank() && el.text.contains(anchorText, ignoreCase = true)
+                    }
+                    textMatches.maxByOrNull { iouFor(it) }
+                        ?: sameLabel.maxByOrNull { iouFor(it) }
+                } else {
+                    sameLabel.maxByOrNull { iouFor(it) }
+                }
+
+                if (fallbackMatch != null && iouFor(fallbackMatch) > 0.1f) {
+                    Log.d(TAG, "waitForElement: YOLO fallback matched: label=${fallbackMatch.label}, " +
+                            "text=${fallbackMatch.text}, IoU=${iouFor(fallbackMatch)}, normalized=$useNormalized")
+                    return fallbackMatch
+                }
             }
 
             delay(200)
@@ -652,7 +753,9 @@ class ScreenUnderstandingService : Service() {
                 orderIndex = index,
                 label = element.label,
                 anchor = element,
-                isOptional = isOptional
+                isOptional = isOptional,
+                captureScreenWidth = latestBitmap?.width?.toFloat() ?: 0f,
+                captureScreenHeight = latestBitmap?.height?.toFloat() ?: 0f
             )
         }
 

@@ -363,7 +363,9 @@ class CaptureEditorActivity : ComponentActivity() {
                  anchor = selected[i],
                  isOptional = configs.getOrElse(i) { false },
                  actionType = actionTypes.getOrElse(i) { ActionType.CLICK },
-                 inputText = inputTexts.getOrElse(i) { null }
+                 inputText = inputTexts.getOrElse(i) { null },
+                 captureScreenWidth = sourceBitmap?.width?.toFloat() ?: 0f,
+                 captureScreenHeight = sourceBitmap?.height?.toFloat() ?: 0f
              )
         }
         
