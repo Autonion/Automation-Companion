@@ -50,6 +50,7 @@ import java.io.File
 import java.util.UUID
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract
+import com.autonion.automationcompanion.features.screen_understanding_ml.model.CapturedTextNode
 
 enum class EditorDisplayMode { ELEMENTS, TEXT }
 
@@ -62,6 +63,10 @@ class CaptureEditorActivity : ComponentActivity() {
     
     // OCR state
     private var ocrElements: List<UIElement>? = null // Cached OCR results
+    
+    // Pre-captured accessibility text nodes from the target app
+    // Captured by the service BEFORE opening this editor (while target app was visible)
+    private var preCapturedTextNodes: List<CapturedTextNode> = emptyList()
     
     // Flow mode state
     private var isFlowMode = false
@@ -76,6 +81,17 @@ class CaptureEditorActivity : ComponentActivity() {
         isFlowMode = intent.getBooleanExtra(FlowOverlayContract.EXTRA_FLOW_MODE, false)
         flowNodeId = intent.getStringExtra(FlowOverlayContract.EXTRA_FLOW_NODE_ID)
         currentImagePath = imagePath
+        
+        // Parse pre-captured accessibility text from service
+        val accTextJson = intent.getStringExtra("ACC_TEXT_DATA")
+        if (!accTextJson.isNullOrEmpty()) {
+            try {
+                preCapturedTextNodes = Json.decodeFromString<List<CapturedTextNode>>(accTextJson)
+                android.util.Log.d("CaptureEditor", "Loaded ${preCapturedTextNodes.size} pre-captured accessibility text nodes")
+            } catch (e: Exception) {
+                android.util.Log.w("CaptureEditor", "Failed to parse pre-captured acc text: ${e.message}")
+            }
+        }
         
         if (imagePath == null) {
             Toast.makeText(this, "No image provided", Toast.LENGTH_SHORT).show()
@@ -355,12 +371,37 @@ class CaptureEditorActivity : ComponentActivity() {
         
         val count = selected.size
         
+        // Enrich YOLO elements with text so the matcher can disambiguate by text.
+        // Priority: 1) detectWithOcr text, 2) pre-captured accessibility text, 3) OCR tab cache
+        android.util.Log.d("CaptureEditor", "Enriching ${selected.size} elements. " +
+                "PreCapturedAcc=${preCapturedTextNodes.size} nodes, OCR cache=${ocrElements?.size ?: "null"}")
+        val enrichedElements = selected.map { element ->
+            if (!element.text.isNullOrBlank()) {
+                android.util.Log.d("CaptureEditor", "  Element '${element.label}': already has text='${element.text}'")
+                element // Already has text from detectWithOcr
+            } else {
+                // Try pre-captured accessibility text first (most reliable, captured from target app)
+                val accText = findAccessibilityText(element)
+                // Then try OCR text cache
+                val ocrText = if (accText == null) findOverlappingOcrText(element) else null
+                val resolvedText = accText ?: ocrText
+                if (resolvedText != null) {
+                    val source = if (accText != null) "PRE_ACC" else "OCR"
+                    android.util.Log.d("CaptureEditor", "  Element '${element.label}': enriched with text='$resolvedText' (source=$source)")
+                    element.copy(text = resolvedText)
+                } else {
+                    android.util.Log.w("CaptureEditor", "  Element '${element.label}': NO TEXT FOUND (bounds=${element.bounds})")
+                    element
+                }
+            }
+        }
+        
         val steps = (0 until count).map { i ->
              AutomationStep(
                  id = UUID.randomUUID().toString(),
                  orderIndex = i,
-                 label = selected[i].label,
-                 anchor = selected[i],
+                 label = enrichedElements[i].label,
+                 anchor = enrichedElements[i],
                  isOptional = configs.getOrElse(i) { false },
                  actionType = actionTypes.getOrElse(i) { ActionType.CLICK },
                  inputText = inputTexts.getOrElse(i) { null },
@@ -400,6 +441,60 @@ class CaptureEditorActivity : ComponentActivity() {
             Toast.makeText(this, "Error: Service not running! Elements lost.", Toast.LENGTH_LONG).show()
             android.util.Log.e("CaptureEditor", "Service instance is null")
         }
+    }
+    
+    /**
+     * Find OCR text that overlaps with the given element's bounds.
+     * Uses the cached OCR results from the last OCR scan.
+     */
+    private fun findOverlappingOcrText(element: UIElement): String? {
+        val ocr = ocrElements ?: return null
+        // Find the OCR block that overlaps most with this element
+        val bestOcr = ocr
+            .filter { !it.text.isNullOrBlank() && android.graphics.RectF.intersects(it.bounds, element.bounds) }
+            .maxByOrNull { 
+                // Prefer the one with highest overlap area
+                val interLeft = maxOf(it.bounds.left, element.bounds.left)
+                val interTop = maxOf(it.bounds.top, element.bounds.top)
+                val interRight = minOf(it.bounds.right, element.bounds.right)
+                val interBottom = minOf(it.bounds.bottom, element.bounds.bottom)
+                if (interRight > interLeft && interBottom > interTop) 
+                    (interRight - interLeft) * (interBottom - interTop)
+                else 0f
+            }
+        return bestOcr?.text
+    }
+    
+    /**
+     * Find text from the pre-captured accessibility data that overlaps the element's bounds.
+     * This data was captured by the service while the target app was in the foreground,
+     * so it correctly represents the target app's UI (not the Editor's own UI).
+     */
+    private fun findAccessibilityText(element: UIElement): String? {
+        if (preCapturedTextNodes.isEmpty()) {
+            android.util.Log.d("CaptureEditor", "No pre-captured acc text nodes available")
+            return null
+        }
+        // Find the pre-captured text node that best overlaps the element's bounds
+        val bestNode = preCapturedTextNodes
+            .filter { node ->
+                val nodeBounds = android.graphics.RectF(node.boundsLeft, node.boundsTop, node.boundsRight, node.boundsBottom)
+                android.graphics.RectF.intersects(nodeBounds, element.bounds)
+            }
+            .maxByOrNull { node ->
+                val nodeBounds = android.graphics.RectF(node.boundsLeft, node.boundsTop, node.boundsRight, node.boundsBottom)
+                val interLeft = maxOf(nodeBounds.left, element.bounds.left)
+                val interTop = maxOf(nodeBounds.top, element.bounds.top)
+                val interRight = minOf(nodeBounds.right, element.bounds.right)
+                val interBottom = minOf(nodeBounds.bottom, element.bounds.bottom)
+                if (interRight > interLeft && interBottom > interTop)
+                    (interRight - interLeft) * (interBottom - interTop)
+                else 0f
+            }
+        if (bestNode != null) {
+            android.util.Log.d("CaptureEditor", "Pre-captured acc text match: '${bestNode.text}' for element at ${element.bounds}")
+        }
+        return bestNode?.text
     }
     
     override fun onResume() {

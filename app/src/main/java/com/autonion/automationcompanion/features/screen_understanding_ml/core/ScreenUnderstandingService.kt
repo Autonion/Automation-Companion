@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
+import com.autonion.automationcompanion.AccessibilityRouter
 import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
 import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
 import android.content.Intent
@@ -42,6 +43,9 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
+import com.autonion.automationcompanion.features.screen_understanding_ml.model.CapturedTextNode
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.encodeToString
 
 class ScreenUnderstandingService : Service() {
 
@@ -403,6 +407,19 @@ class ScreenUnderstandingService : Service() {
                 bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
             }
 
+            // Pre-capture accessibility text WHILE the target app is still in the foreground.
+            // Once the Editor opens, rootInActiveWindow will point to the Editor, not the target.
+            val accTextNodes = captureAccessibilityTextNodes()
+            val accTextJson = if (accTextNodes.isNotEmpty()) {
+                try {
+                    Json.encodeToString(accTextNodes)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to serialize acc text nodes", e)
+                    null
+                }
+            } else null
+            Log.d(TAG, "Pre-captured ${accTextNodes.size} accessibility text nodes for editor")
+
             withContext(Dispatchers.Main) {
                 // Don't stopSelf — service stays alive for multi-snap
                 val intent = Intent(this@ScreenUnderstandingService, CaptureEditorActivity::class.java).apply {
@@ -413,11 +430,67 @@ class ScreenUnderstandingService : Service() {
                     putExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_NODE_ID, flowNodeId)
                     flowMlJson?.let { putExtra("EXTRA_FLOW_ML_JSON", it) }
                     if (clearOnStart) putExtra("EXTRA_CLEAR_ON_START", true)
+                    accTextJson?.let { putExtra("ACC_TEXT_DATA", it) }
                 }
                 startActivity(intent)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to save snapshot", e)
+        }
+    }
+
+    /**
+     * Capture all text nodes from the accessibility tree while the target app is in the foreground.
+     * This must be called BEFORE opening the CaptureEditorActivity.
+     */
+    private fun captureAccessibilityTextNodes(): List<CapturedTextNode> {
+        try {
+            val service = AccessibilityRouter.getService() ?: return emptyList()
+            val root = try { service.rootInActiveWindow } catch (_: Exception) { null } ?: return emptyList()
+            val nodes = mutableListOf<CapturedTextNode>()
+            try {
+                collectTextNodes(root, nodes, depth = 0)
+            } finally {
+                try { root.recycle() } catch (_: Exception) {}
+            }
+            Log.d(TAG, "Captured ${nodes.size} text nodes from accessibility tree")
+            return nodes
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to capture accessibility text: ${e.message}")
+            return emptyList()
+        }
+    }
+
+    /**
+     * Recursively collect all text/contentDescription nodes from the accessibility tree.
+     */
+    private fun collectTextNodes(
+        node: android.view.accessibility.AccessibilityNodeInfo,
+        result: MutableList<CapturedTextNode>,
+        depth: Int
+    ) {
+        if (depth > 15) return
+        val bounds = android.graphics.Rect()
+        node.getBoundsInScreen(bounds)
+
+        val text = node.text?.toString() ?: node.contentDescription?.toString()
+        if (!text.isNullOrBlank() && bounds.width() > 0 && bounds.height() > 0) {
+            result.add(CapturedTextNode(
+                text = text,
+                boundsLeft = bounds.left.toFloat(),
+                boundsTop = bounds.top.toFloat(),
+                boundsRight = bounds.right.toFloat(),
+                boundsBottom = bounds.bottom.toFloat()
+            ))
+        }
+
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            try {
+                collectTextNodes(child, result, depth + 1)
+            } finally {
+                try { child.recycle() } catch (_: Exception) {}
+            }
         }
     }
 
@@ -556,7 +629,10 @@ class ScreenUnderstandingService : Service() {
         val timeout = 5000L
         val startTime = System.currentTimeMillis()
         val anchorBounds = step.anchor.bounds
-        val anchorText = step.anchor.text  // OCR text from capture-time enrichment
+        val anchorText = step.anchor.text  // Text from capture-time enrichment (OCR or pre-captured accessibility)
+
+        Log.d(TAG, "waitForElement: step=${step.label}, anchorText=${anchorText ?: "NULL"}, " +
+                "bounds=$anchorBounds, captureSize=${step.captureScreenWidth}x${step.captureScreenHeight}")
 
         // Pre-compute normalized anchor bounds if capture dimensions are available
         val capW = step.captureScreenWidth
@@ -626,23 +702,32 @@ class ScreenUnderstandingService : Service() {
             if (isRotated) {
                 // After rotation, IoU is meaningless — match by text + label instead
                 if (!anchorText.isNullOrBlank()) {
+                    // Try YOLO text match first
                     val textMatch = sameLabel.firstOrNull { el ->
                         !el.text.isNullOrBlank() && el.text.contains(anchorText, ignoreCase = true)
                     }
                     if (textMatch != null) {
-                        Log.d(TAG, "waitForElement: Rotated text fallback: label=${textMatch.label}, text=${textMatch.text}")
-                        // YOLO bounds are in image space — but after rotation image≠screen.
-                        // Return as-is; ActionExecutor will click at these coords which may be image-space.
-                        // Ideally we'd convert, but accessibility match above should handle most cases.
+                        Log.d(TAG, "waitForElement: Rotated YOLO text fallback: label=${textMatch.label}, text=${textMatch.text}")
                         return textMatch
+                    }
+                    
+                    // Direct accessibility query — most reliable for rotated clicks
+                    // since accessibility bounds are always in current screen coordinates
+                    val accMatch = findAccessibilityElementByText(anchorText, step.anchor.label, screenW, screenH)
+                    if (accMatch != null) {
+                        Log.d(TAG, "waitForElement: Rotated acc text fallback: label=${accMatch.label}, text=${accMatch.text}, bounds=${accMatch.bounds}")
+                        return accMatch
                     }
                 }
                 // Last resort for rotation: highest-confidence YOLO of matching label
-                val bestYolo = sameLabel.maxByOrNull { it.confidence }
-                if (bestYolo != null && bestYolo.confidence > 0.5f) {
-                    Log.d(TAG, "waitForElement: Rotated confidence fallback: label=${bestYolo.label}, " +
-                            "conf=${bestYolo.confidence}, text=${bestYolo.text}")
-                    return bestYolo
+                // Only accept if we have NO text to match against (truly ambiguous)
+                if (anchorText.isNullOrBlank()) {
+                    val bestYolo = sameLabel.maxByOrNull { it.confidence }
+                    if (bestYolo != null && bestYolo.confidence > 0.5f) {
+                        Log.d(TAG, "waitForElement: Rotated confidence fallback (no text): label=${bestYolo.label}, " +
+                                "conf=${bestYolo.confidence}, text=${bestYolo.text}")
+                        return bestYolo
+                    }
                 }
             } else {
                 // Normal mode: IoU-based matching
@@ -680,6 +765,62 @@ class ScreenUnderstandingService : Service() {
             delay(200)
         }
         return null
+    }
+
+    /**
+     * Query the accessibility tree for an element with the given text and class label.
+     * Returns a UIElement with screen-coordinate bounds (correct for clicking after rotation).
+     */
+    private fun findAccessibilityElementByText(
+        text: String, label: String,
+        screenWidth: Float, screenHeight: Float
+    ): UIElement? {
+        try {
+            val service = AccessibilityRouter.getService() ?: return null
+            val root = try { service.rootInActiveWindow } catch (_: Exception) { null } ?: return null
+            try {
+                val nodes = root.findAccessibilityNodeInfosByText(text)
+                var bestMatch: UIElement? = null
+                var bestScore = 0f
+                for (node in nodes) {
+                    val bounds = android.graphics.Rect()
+                    node.getBoundsInScreen(bounds)
+                    val boundsF = RectF(bounds)
+                    // Validate bounds are on screen
+                    if (boundsF.right <= 0 || boundsF.bottom <= 0) { node.recycle(); continue }
+                    if (screenWidth > 0 && boundsF.left > screenWidth) { node.recycle(); continue }
+                    if (screenHeight > 0 && boundsF.top > screenHeight) { node.recycle(); continue }
+                    
+                    val nodeText = node.text?.toString() ?: node.contentDescription?.toString() ?: ""
+                    val textMatch = if (nodeText.contains(text, ignoreCase = true)) 1.0f else 0f
+                    val className = node.className?.toString()?.lowercase() ?: ""
+                    val classMatch = when (label.lowercase()) {
+                        "button" -> if (className.contains("button") || node.isClickable) 1.0f else 0f
+                        "input" -> if (className.contains("edittext") || node.isEditable) 1.0f else 0f
+                        "toggle" -> if (className.contains("switch") || className.contains("toggle")) 1.0f else 0f
+                        else -> 0.5f
+                    }
+                    val score = textMatch * 0.7f + classMatch * 0.3f
+                    if (score > bestScore && textMatch > 0f) {
+                        bestScore = score
+                        bestMatch = UIElement(
+                            id = java.util.UUID.randomUUID().toString(),
+                            label = label,
+                            confidence = score,
+                            bounds = boundsF,
+                            text = nodeText
+                        )
+                    }
+                    node.recycle()
+                }
+                return bestMatch
+            } finally {
+                try { root.recycle() } catch (_: Exception) {}
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "findAccessibilityElementByText failed: ${e.message}")
+            return null
+        }
     }
 
     /**
@@ -747,7 +888,22 @@ class ScreenUnderstandingService : Service() {
             return
         }
 
-        val steps = elementsData.mapIndexed { index, (element, isOptional) ->
+        // Enrich elements with accessibility text for robust rotation-aware matching
+        val enrichedData = elementsData.map { (element, isOptional) ->
+            if (!element.text.isNullOrBlank()) {
+                Pair(element, isOptional)
+            } else {
+                val accText = findAccessibilityTextForElement(element)
+                if (accText != null) {
+                    Log.d(TAG, "Enriched element '${element.label}' with acc text='$accText'")
+                    Pair(element.copy(text = accText), isOptional)
+                } else {
+                    Pair(element, isOptional)
+                }
+            }
+        }
+
+        val steps = enrichedData.mapIndexed { index, (element, isOptional) ->
             AutomationStep(
                 id = UUID.randomUUID().toString(),
                 orderIndex = index,
@@ -779,6 +935,49 @@ class ScreenUnderstandingService : Service() {
 
         presetRepository?.savePreset(preset)
         Toast.makeText(this, "Preset '$name' Saved with ${steps.size} steps!", Toast.LENGTH_LONG).show()
+    }
+
+    /**
+     * Query the accessibility tree to find text at the given element's screen bounds.
+     * Used at save time to enrich YOLO elements with textual identity for rotation-aware matching.
+     */
+    private fun findAccessibilityTextForElement(element: UIElement): String? {
+        try {
+            val service = AccessibilityRouter.getService() ?: return null
+            val root = try { service.rootInActiveWindow } catch (_: Exception) { null } ?: return null
+            try {
+                return findTextInAccessibilityNode(root, element.bounds)
+            } finally {
+                try { root.recycle() } catch (_: Exception) {}
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Accessibility text enrichment failed: ${e.message}")
+            return null
+        }
+    }
+
+    private fun findTextInAccessibilityNode(
+        node: android.view.accessibility.AccessibilityNodeInfo,
+        targetBounds: RectF,
+        depth: Int = 0
+    ): String? {
+        if (depth > 10) return null
+        val nodeBounds = android.graphics.Rect()
+        node.getBoundsInScreen(nodeBounds)
+        val nodeRect = RectF(nodeBounds)
+
+        if (RectF.intersects(nodeRect, targetBounds)) {
+            val text = node.text?.toString() ?: node.contentDescription?.toString()
+            if (!text.isNullOrBlank()) return text
+        }
+
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val result = findTextInAccessibilityNode(child, targetBounds, depth + 1)
+            child.recycle()
+            if (result != null) return result
+        }
+        return null
     }
 }
 
