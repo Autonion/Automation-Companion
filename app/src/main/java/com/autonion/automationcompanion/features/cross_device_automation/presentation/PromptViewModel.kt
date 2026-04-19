@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.autonion.automationcompanion.features.cross_device_automation.CrossDeviceAutomationManager
 import com.autonion.automationcompanion.features.cross_device_automation.domain.AutomationPrompt
+import com.autonion.automationcompanion.features.cross_device_automation.domain.ResponseStatus
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,6 +27,37 @@ class PromptViewModel(
 
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
+    
+    private val _isAutomationActive = MutableStateFlow(false)
+    val isAutomationActive: StateFlow<Boolean> = _isAutomationActive.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            try {
+                manager.networkingManager.responseFlow.collect { response ->
+                    val statusText = when (response.status) {
+                        ResponseStatus.STARTED -> "Started"
+                        ResponseStatus.IN_PROGRESS -> "In Progress"
+                        ResponseStatus.COMPLETED -> "Completed"
+                        ResponseStatus.FAILED -> "Failed"
+                        ResponseStatus.CANCELLED -> "Cancelled"
+                        else -> response.status.name.lowercase().replaceFirstChar { it.uppercase() }
+                    }
+                    
+                    if (response.status == ResponseStatus.COMPLETED || response.status == ResponseStatus.FAILED || response.status == ResponseStatus.CANCELLED) {
+                        _isAutomationActive.value = false
+                    }
+
+                    addMessage(ChatMessage(
+                        text = "[$statusText] ${response.message}",
+                        isUser = false
+                    ))
+                }
+            } catch (e: Exception) {
+                // Ignore or log
+            }
+        }
+    }
 
     fun onQueryChanged(newQuery: String) {
         _inputQuery.value = newQuery
@@ -48,12 +80,17 @@ class PromptViewModel(
             // Broadcast to all connected devices (Desktop Agent)
             manager.networkingManager.broadcast(prompt)
             
-            // Add system acknowledgment
-            addMessage(ChatMessage(text = "Sent to connected devices", isUser = false))
+            _isAutomationActive.value = true
 
             // Clear input
             _inputQuery.value = ""
         }
+    }
+    
+    fun stopAutomation() {
+        _isAutomationActive.value = false
+        addMessage(ChatMessage(text = "Stopping automation...", isUser = false))
+        manager.stopRemoteAutomation()
     }
     
     private fun addMessage(message: ChatMessage) {

@@ -233,6 +233,7 @@ fun PromptScreen() {
 
     val inputQuery by viewModel.inputQuery.collectAsState()
     val messages by viewModel.messages.collectAsState()
+    val isAutomationActive by viewModel.isAutomationActive.collectAsState()
     val listState = rememberLazyListState()
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -265,11 +266,23 @@ fun PromptScreen() {
         }
 
         // ─── Input Bar ──────────────────────
-        ChatInputBar(
-            value = inputQuery,
-            onValueChange = viewModel::onQueryChanged,
-            onSend = viewModel::sendPrompt
-        )
+        if (isAutomationActive) {
+            Button(
+                onClick = { viewModel.stopAutomation() },
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Text("Stop Automation", color = Color.White)
+            }
+        } else {
+            ChatInputBar(
+                value = inputQuery,
+                onValueChange = viewModel::onQueryChanged,
+                onSend = viewModel::sendPrompt
+            )
+        }
     }
 }
 

@@ -236,6 +236,12 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
         }
     }
 
+    fun stopRemoteAutomation() {
+        val command = mapOf("type" to "kill_switch")
+        networkingManager.broadcast(command)
+        Log.i(TAG, "Sent kill_switch to remote devices")
+    }
+
     // --- Networking Events ---
 
     override fun onDeviceConnected(device: com.autonion.automationcompanion.features.cross_device_automation.domain.Device) {
