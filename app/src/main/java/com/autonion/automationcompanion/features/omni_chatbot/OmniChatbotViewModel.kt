@@ -4,6 +4,9 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import android.view.KeyEvent
+import com.autonion.automationcompanion.features.omni_chatbot.companion.FeatureMatcher
+import com.autonion.automationcompanion.features.omni_chatbot.companion.WalkthroughRegistry
+import com.autonion.automationcompanion.features.omni_chatbot.companion.WalkthroughScript
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.autonion.automationcompanion.features.cross_device_automation.CrossDeviceAutomationManager
@@ -20,7 +23,9 @@ import com.autonion.automationcompanion.features.semantic_automation.ml.LocalSer
 import com.autonion.automationcompanion.features.semantic_automation.ml.ServerConnectionStatus
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
@@ -94,6 +99,16 @@ class OmniChatbotViewModel(
 
     private val _faqList = MutableStateFlow<List<FAQRepository.FAQ>>(emptyList())
     val faqList: StateFlow<List<FAQRepository.FAQ>> = _faqList.asStateFlow()
+
+    // ─── Companion Walkthrough State ──────────────────────────
+    private val _activeWalkthrough = MutableStateFlow<WalkthroughScript?>(null)
+    val activeWalkthrough: StateFlow<WalkthroughScript?> = _activeWalkthrough.asStateFlow()
+
+    private val _currentStepIndex = MutableStateFlow(0)
+    val currentStepIndex: StateFlow<Int> = _currentStepIndex.asStateFlow()
+
+    private val _navigationEvent = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val navigationEvent: SharedFlow<String> = _navigationEvent
 
     // ─── Init: Wire up Desktop response flow ────────────────
     init {
@@ -241,6 +256,13 @@ class OmniChatbotViewModel(
 
         // Add user message
         addMessage(OmniChatMessage(text = prompt, isUser = true))
+
+        // ── Check for walkthrough/companion request first ──
+        val walkthroughFeature = FeatureMatcher.matchFeature(prompt)
+        if (walkthroughFeature != null && FeatureMatcher.isWalkthroughQuery(prompt)) {
+            startWalkthrough(walkthroughFeature)
+            return
+        }
 
         viewModelScope.launch {
             try {
@@ -875,6 +897,91 @@ class OmniChatbotViewModel(
         ms < 60_000 -> "${ms / 1000}s"
         ms < 3_600_000 -> "${ms / 60_000}m"
         else -> "${ms / 3_600_000}h"
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  COMPANION WALKTHROUGH
+    // ═══════════════════════════════════════════════════════════
+
+    /**
+     * Start a guided walkthrough for the given feature.
+     * Collapses the chat sheet and navigates to the feature's first screen.
+     */
+    fun startWalkthrough(featureId: String) {
+        val script = WalkthroughRegistry.getScript(featureId)
+        if (script == null) {
+            addMessage(OmniChatMessage(
+                text = "Sorry, I don't have a guided walkthrough for that feature yet.",
+                isUser = false,
+                mode = ResponseMode.SYSTEM
+            ))
+            return
+        }
+
+        _activeWalkthrough.value = script
+        _currentStepIndex.value = 0
+        collapse() // Hide the chat sheet
+
+        // Add companion message to chat
+        addMessage(OmniChatMessage(
+            text = "\uD83E\uDDED Starting guided walkthrough: ${script.featureName}\n${script.description}",
+            isUser = false,
+            mode = ResponseMode.COMPANION
+        ))
+
+        // Navigate to the first step's route if any
+        val firstStep = script.steps.firstOrNull()
+        firstStep?.targetRoute?.let { route ->
+            _navigationEvent.tryEmit(route)
+        }
+
+        Log.d(TAG, "Walkthrough started: ${script.featureId} (${script.steps.size} steps)")
+    }
+
+    /** Advance to the next walkthrough step. */
+    fun nextWalkthroughStep() {
+        val script = _activeWalkthrough.value ?: return
+        val nextIndex = _currentStepIndex.value + 1
+        if (nextIndex >= script.steps.size) {
+            // Reached the end
+            dismissWalkthrough()
+            return
+        }
+        _currentStepIndex.value = nextIndex
+
+        // Navigate if the step has a target route
+        script.steps[nextIndex].targetRoute?.let { route ->
+            _navigationEvent.tryEmit(route)
+        }
+    }
+
+    /** Go back to the previous walkthrough step. */
+    fun previousWalkthroughStep() {
+        val currentIndex = _currentStepIndex.value
+        if (currentIndex > 0) {
+            _currentStepIndex.value = currentIndex - 1
+
+            val script = _activeWalkthrough.value ?: return
+            script.steps[currentIndex - 1].targetRoute?.let { route ->
+                _navigationEvent.tryEmit(route)
+            }
+        }
+    }
+
+    /** Dismiss the active walkthrough and return to normal mode. */
+    fun dismissWalkthrough() {
+        val wasActive = _activeWalkthrough.value != null
+        _activeWalkthrough.value = null
+        _currentStepIndex.value = 0
+
+        if (wasActive) {
+            addMessage(OmniChatMessage(
+                text = "Walkthrough complete! Feel free to ask me anything else. \uD83D\uDE0A",
+                isUser = false,
+                mode = ResponseMode.COMPANION
+            ))
+            Log.d(TAG, "Walkthrough dismissed")
+        }
     }
 
     override fun onCleared() {

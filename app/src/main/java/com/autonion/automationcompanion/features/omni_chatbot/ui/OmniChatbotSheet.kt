@@ -60,25 +60,41 @@ private val InputBarBg = Color(0xFF1A1D2E).copy(alpha = 0.85f)
 private val UserBubbleGrad = listOf(AccentPurple, AccentBlue)
 private val SystemBubbleBg = Color(0xFF1E2030)
 
-// ═══════════════════════════════════════════════════════════
-//  MAIN: FAB + BOTTOM SHEET
-// ═══════════════════════════════════════════════════════════
-
 /**
  * Global Omni-Chatbot overlay.
  * Place this in the app root so the FAB is visible on every screen.
  *
  * @param viewModel The shared OmniChatbotViewModel
  * @param currentRoute The current navigation route (for contextual FAQs)
+ * @param onNavigate Callback to trigger navigation (consumed from ViewModel events)
  * @param content The actual app content (NavHost)
  */
 @Composable
 fun OmniChatbotScaffold(
     viewModel: OmniChatbotViewModel,
     currentRoute: String?,
+    onNavigate: (String) -> Unit = {},
     content: @Composable () -> Unit
 ) {
     val isExpanded by viewModel.isExpanded.collectAsState()
+    val walkthrough by viewModel.activeWalkthrough.collectAsState()
+    val stepIndex by viewModel.currentStepIndex.collectAsState()
+    val isWalkthroughActive = walkthrough != null
+
+    // Routes where the FAB should be hidden (they have their own bottom input bars / FABs)
+    val hideFabRoutes = setOf(
+        "feature/semantic_automation",
+        "feature/cross_device_automation"
+    )
+    val shouldHideFab = hideFabRoutes.any { currentRoute?.contains(it) == true }
+    val shouldShowFab = !isExpanded && !isWalkthroughActive && !shouldHideFab
+
+    // Observe navigation events from ViewModel (for walkthrough navigation)
+    LaunchedEffect(Unit) {
+        viewModel.navigationEvent.collect { route ->
+            onNavigate(route)
+        }
+    }
 
     LaunchedEffect(currentRoute) {
         viewModel.updateRoute(currentRoute)
@@ -88,9 +104,9 @@ fun OmniChatbotScaffold(
         // ── App Content ──
         content()
 
-        // ── FAB (visible when chatbot is collapsed) ──
+        // ── FAB (visible when chatbot is collapsed and not on blocked routes) ──
         AnimatedVisibility(
-            visible = !isExpanded,
+            visible = shouldShowFab,
             enter = scaleIn(spring(dampingRatio = 0.5f)) + fadeIn(),
             exit = scaleOut() + fadeOut(),
             modifier = Modifier
@@ -108,6 +124,19 @@ fun OmniChatbotScaffold(
             modifier = Modifier.align(Alignment.BottomCenter)
         ) {
             OmniChatSheet(viewModel = viewModel)
+        }
+
+        // ── Companion Floating Widget (visible during walkthroughs) ──
+        if (isWalkthroughActive && !isExpanded) {
+            walkthrough?.let { script ->
+                CompanionFloatingBar(
+                    walkthrough = script,
+                    stepIndex = stepIndex,
+                    onPrevious = { viewModel.previousWalkthroughStep() },
+                    onNext = { viewModel.nextWalkthroughStep() },
+                    onDismiss = { viewModel.dismissWalkthrough() }
+                )
+            }
         }
     }
 }
@@ -1214,6 +1243,7 @@ private fun getModeColor(mode: ResponseMode): Color = when (mode) {
     ResponseMode.KNOWLEDGE -> AccentOrange
     ResponseMode.CHAT -> Color(0xFFAF7AC5)
     ResponseMode.SCHEDULED -> AccentOrange
+    ResponseMode.COMPANION -> Color(0xFF00BFA5)
     ResponseMode.SYSTEM -> Color.White
 }
 

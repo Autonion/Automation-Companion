@@ -44,6 +44,9 @@ enum class ResponseMode(val label: String, val emoji: String) {
     /** Timer/scheduled action running */
     SCHEDULED("Timer", "⏱️"),
 
+    /** Interactive guided walkthrough */
+    COMPANION("Companion", "🧭"),
+
     /** System/error message */
     SYSTEM("System", "⚙️")
 }
