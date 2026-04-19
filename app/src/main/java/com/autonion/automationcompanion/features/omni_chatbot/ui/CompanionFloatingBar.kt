@@ -290,14 +290,17 @@ private fun SpeechBubble(
                         .togetherWith(fadeOut(tween(120)) + slideOutHorizontally(tween(120)) { -it / 3 })
                 },
                 label = "instructionAnim"
-            ) { _ ->
-                Text(
-                    text = instruction,
-                    color = Color.White.copy(alpha = 0.85f),
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp,
-                    modifier = Modifier.fillMaxWidth()
-                )
+            ) { animatedStepIndex ->
+                // AnimatedContent needs us to use the target state for correct transitions
+                key(animatedStepIndex) {
+                    Text(
+                        text = instruction,
+                        color = Color.White.copy(alpha = 0.85f),
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
 
             // ── Highlight hint ──
