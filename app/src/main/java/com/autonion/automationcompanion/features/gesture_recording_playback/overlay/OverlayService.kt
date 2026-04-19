@@ -121,6 +121,12 @@ class OverlayService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        if (!android.provider.Settings.canDrawOverlays(this)) {
+            android.widget.Toast.makeText(this, "Missing 'Display over other apps' permission", android.widget.Toast.LENGTH_LONG).show()
+            stopSelf()
+            return
+        }
+        
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         createNotificationChannel()
         
