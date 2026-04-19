@@ -182,11 +182,9 @@ fun AppNavHost() {
         }
 
         composable(AutomationRoutes.SCREEN_UNDERSTAND) {
-            val context = androidx.compose.ui.platform.LocalContext.current
-            androidx.compose.runtime.LaunchedEffect(Unit) {
-               context.startActivity(android.content.Intent(context, com.autonion.automationcompanion.features.screen_understanding_ml.ui.PresetDashboardActivity::class.java))
-               navController.popBackStack()
-            }
+            com.autonion.automationcompanion.features.screen_understanding_ml.ui.ScreenMLRoute(
+                onBack = { navController.popBackStack() }
+            )
         }
 
         composable(AutomationRoutes.VISUAL_TRIGGER) {
