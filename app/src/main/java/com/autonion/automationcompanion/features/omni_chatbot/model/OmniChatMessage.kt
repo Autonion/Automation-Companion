@@ -15,7 +15,9 @@ data class OmniChatMessage(
     /** Optional widget to render in the message (e.g., Stop button for timers) */
     val actionWidget: ActionWidget? = null,
     /** Whether the message is still being updated (streaming-style) */
-    val isStreaming: Boolean = false
+    val isStreaming: Boolean = false,
+    /** Optional walkthrough ID to suggest below the message */
+    val suggestedWalkthroughId: String? = null
 )
 
 /**

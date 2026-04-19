@@ -190,11 +190,9 @@ fun AppNavHost() {
         }
 
         composable(AutomationRoutes.VISUAL_TRIGGER) {
-            val context = androidx.compose.ui.platform.LocalContext.current
-            androidx.compose.runtime.LaunchedEffect(Unit) {
-               context.startActivity(android.content.Intent(context, com.autonion.automationcompanion.features.visual_trigger.ui.VisionTriggerActivity::class.java))
-               navController.popBackStack()
-            }
+            com.autonion.automationcompanion.features.visual_trigger.ui.VisualTriggerRoute(
+                onBack = { navController.popBackStack() }
+            )
         }
 
         composable(AutomationRoutes.CONDITIONAL) {

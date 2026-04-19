@@ -260,11 +260,7 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
-        <!-- Vision Trigger Feature -->
-        <activity
-            android:name=".features.visual_trigger.ui.VisionTriggerActivity"
-            android:exported="true"
-            android:label="Vision Automation" />
+
 
         <activity
             android:name=".features.visual_trigger.ui.VisionEditorActivity"

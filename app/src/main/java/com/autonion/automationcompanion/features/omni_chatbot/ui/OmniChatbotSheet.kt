@@ -309,7 +309,8 @@ private fun OmniChatSheet(viewModel: OmniChatbotViewModel) {
                     items(messages, key = { it.id }) { message ->
                         ChatBubble(
                             message = message,
-                            onStopTask = { taskId -> viewModel.stopScheduledTask(taskId) }
+                            onStopTask = { taskId -> viewModel.stopScheduledTask(taskId) },
+                            onStartWalkthrough = { featureId -> viewModel.startWalkthrough(featureId) }
                         )
                     }
                 }
@@ -921,7 +922,8 @@ private fun EmptyChatState() {
 @Composable
 private fun ChatBubble(
     message: OmniChatMessage,
-    onStopTask: (String) -> Unit
+    onStopTask: (String) -> Unit,
+    onStartWalkthrough: (String) -> Unit
 ) {
     val isUser = message.isUser
     val uriHandler = LocalUriHandler.current
@@ -1117,6 +1119,29 @@ private fun ChatBubble(
                             }
                         }
                     }
+                }
+            }
+
+            // Suggested Walkthrough Button
+            message.suggestedWalkthroughId?.let { featureId ->
+                Spacer(Modifier.height(6.dp))
+                OutlinedButton(
+                    onClick = { onStartWalkthrough(featureId) },
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = AccentBlue
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, AccentBlue.copy(alpha = 0.5f)),
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                    modifier = Modifier.padding(start = 8.dp) // Align slightly with the bubble
+                ) {
+                    Icon(
+                        Icons.Default.PlayArrow,
+                        contentDescription = "Start Walkthrough",
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text("Take a Walkthrough", fontSize = 12.sp, fontWeight = FontWeight.Medium)
                 }
             }
 

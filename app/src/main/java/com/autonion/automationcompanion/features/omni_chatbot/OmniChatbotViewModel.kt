@@ -257,12 +257,7 @@ class OmniChatbotViewModel(
         // Add user message
         addMessage(OmniChatMessage(text = prompt, isUser = true))
 
-        // ── Check for walkthrough/companion request first ──
-        val walkthroughFeature = FeatureMatcher.matchFeature(prompt)
-        if (walkthroughFeature != null && FeatureMatcher.isWalkthroughQuery(prompt)) {
-            startWalkthrough(walkthroughFeature)
-            return
-        }
+        // Early walkthrough check removed - now handled via Q&A appending.
 
         viewModelScope.launch {
             try {
@@ -646,14 +641,17 @@ class OmniChatbotViewModel(
 
             val answer = llmEngine.chatForQA(systemPrompt, result.rawPrompt)
 
+            val walkthroughFeature = FeatureMatcher.matchFeature(result.rawPrompt)
+
             if (!answer.isNullOrBlank()) {
-                updateLastBotMessage(answer, ResponseMode.KNOWLEDGE)
+                updateLastBotMessage(answer, ResponseMode.KNOWLEDGE, suggestedWalkthroughId = walkthroughFeature)
             } else {
                 // LLM failed — show clean chunk fallback
                 val fallback = cleanKnowledgeChunk(chunks.first().text.take(1000), maxLength = 600)
                 updateLastBotMessage(
                     "$fallback\n\n💡 LLM didn't respond. Showing knowledge base excerpt.",
-                    ResponseMode.KNOWLEDGE
+                    ResponseMode.KNOWLEDGE,
+                    suggestedWalkthroughId = walkthroughFeature
                 )
             }
         }
@@ -848,7 +846,8 @@ class OmniChatbotViewModel(
         mode: ResponseMode, 
         streaming: Boolean = false,
         actionWidget: ActionWidget? = null,
-        clearWidget: Boolean = false
+        clearWidget: Boolean = false,
+        suggestedWalkthroughId: String? = null
     ) {
         val cleanedText = stripMarkdown(text)
         val current = _messages.value.toMutableList()
@@ -858,7 +857,8 @@ class OmniChatbotViewModel(
                 text = cleanedText,
                 mode = mode,
                 isStreaming = streaming,
-                actionWidget = if (clearWidget) null else actionWidget ?: current[lastBotIdx].actionWidget
+                actionWidget = if (clearWidget) null else actionWidget ?: current[lastBotIdx].actionWidget,
+                suggestedWalkthroughId = suggestedWalkthroughId ?: current[lastBotIdx].suggestedWalkthroughId
             )
             _messages.value = current
         } else {
@@ -867,7 +867,8 @@ class OmniChatbotViewModel(
                 isUser = false, 
                 mode = mode, 
                 isStreaming = streaming,
-                actionWidget = actionWidget
+                actionWidget = actionWidget,
+                suggestedWalkthroughId = suggestedWalkthroughId
             ))
         }
     }
