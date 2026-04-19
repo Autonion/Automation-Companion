@@ -123,22 +123,30 @@ object ActionManager {
 
         val label = if (type == ActionType.CLICK) "Click $nextId" else "$type Start"
 
-        val startMarker = createMarker(container, startPoint, label, onMove = { screenX, screenY ->
-            updatePendingActionPoint(0, screenX, screenY)
+        val startMarker = createMarker(container, startPoint, label, onMove = { localX, localY ->
+            // Convert local (parent-relative) coordinates to absolute screen coordinates.
+            // ActionMarker reports center position relative to its parent (container),
+            // but action points must be stored in screen-absolute space for dispatchGesture.
+            val loc = IntArray(2)
+            container.getLocationOnScreen(loc)
+            updatePendingActionPoint(0, localX + loc[0], localY + loc[1])
         })
         pendingMarkers.add(startMarker)
 
         // The initial 'startPoint' is a local coordinate. We must immediately convert and
         // update the pendingAction to use absolute screen coordinates. Otherwise, if the user
         // confirms without moving the marker, the local coordinate gets saved by mistake.
-        startMarker.post {
-            val markerLocation = IntArray(2)
-            startMarker.getLocationOnScreen(markerLocation)
-            val screenX = markerLocation[0] + startMarker.width / 2f
-            val screenY = markerLocation[1] + startMarker.height / 2f
-            updatePendingActionPoint(0, screenX, screenY)
-            Log.d("MARKER_DEBUG", "Initial marker created at screen coords: $screenX, $screenY")
-        }
+        startMarker.viewTreeObserver.addOnGlobalLayoutListener(object : ViewTreeObserver.OnGlobalLayoutListener {
+            override fun onGlobalLayout() {
+                startMarker.viewTreeObserver.removeOnGlobalLayoutListener(this)
+                val markerLocation = IntArray(2)
+                startMarker.getLocationOnScreen(markerLocation)
+                val screenX = markerLocation[0] + startMarker.width / 2f
+                val screenY = markerLocation[1] + startMarker.height / 2f
+                updatePendingActionPoint(0, screenX, screenY)
+                Log.d("MARKER_DEBUG", "Initial marker created at screen coords: $screenX, $screenY (size=${startMarker.width}x${startMarker.height})")
+            }
+        })
 
         if (type == ActionType.CLICK || type == ActionType.LONG_CLICK) {
             showConfirmation(container, pendingAction) {
@@ -177,17 +185,20 @@ object ActionManager {
 
         // Same as in startCreationStep, we must convert the second marker's initial local
         // position to absolute screen coordinates right away.
-        endMarker.post {
-            val markerLocation = IntArray(2)
-            endMarker.getLocationOnScreen(markerLocation)
-            val screenX = markerLocation[0] + endMarker.width / 2f
-            val screenY = markerLocation[1] + endMarker.height / 2f
-            updatePendingActionPoint(1, screenX, screenY)
-            Log.d("MARKER_DEBUG", "Second marker created at screen coords: $screenX, $screenY")
+        endMarker.viewTreeObserver.addOnGlobalLayoutListener(object : ViewTreeObserver.OnGlobalLayoutListener {
+            override fun onGlobalLayout() {
+                endMarker.viewTreeObserver.removeOnGlobalLayoutListener(this)
+                val markerLocation = IntArray(2)
+                endMarker.getLocationOnScreen(markerLocation)
+                val screenX = markerLocation[0] + endMarker.width / 2f
+                val screenY = markerLocation[1] + endMarker.height / 2f
+                updatePendingActionPoint(1, screenX, screenY)
+                Log.d("MARKER_DEBUG", "Second marker created at screen coords: $screenX, $screenY (size=${endMarker.width}x${endMarker.height})")
 
-            // Also refresh the line now that we have accurate screen points.
-            refreshLine()
-        }
+                // Also refresh the line now that we have accurate screen points.
+                refreshLine()
+            }
+        })
 
         startMarker.setOnPositionChanged { localX, localY ->
             // Convert local coordinates to screen coordinates
@@ -463,12 +474,36 @@ object ActionManager {
             isDraggable = true
             onMove?.let { setOnPositionChanged(it) }
         }
-        container.addView(marker)
-        marker.post {
-            marker.x = point.x - marker.width / 2f
-            marker.y = point.y - marker.height / 2f
-            Log.d("ACTION_MANAGER", "createMarker: Marker '$label' placed at final coords: (${marker.x}, ${marker.y})")
-        }
+        // FIX: Explicitly use WRAP_CONTENT to prevent FrameLayout's MATCH_PARENT default.
+        // Without this, marker.width = container.width (e.g. 1264), causing
+        // marker.x = point.x - 632 → marker flies off screen.
+        val lp = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT
+        )
+        container.addView(marker, lp)
+
+        // Use ViewTreeObserver to wait for actual measurement before centering.
+        // marker.post{} is unreliable — the view may not have been measured yet,
+        // or may still hold MATCH_PARENT dimensions from a stale layout pass.
+        marker.viewTreeObserver.addOnGlobalLayoutListener(object : ViewTreeObserver.OnGlobalLayoutListener {
+            override fun onGlobalLayout() {
+                marker.viewTreeObserver.removeOnGlobalLayoutListener(this)
+                val w = marker.width
+                val h = marker.height
+                if (w > 0 && h > 0) {
+                    marker.x = point.x - w / 2f
+                    marker.y = point.y - h / 2f
+                    Log.d("ACTION_MANAGER", "createMarker: Marker '$label' measured (${w}x${h}), placed at (${marker.x}, ${marker.y})")
+                } else {
+                    // Fallback: use known desired size (circleRadius*2 + 24 = 144)
+                    val fallbackSize = 144f
+                    marker.x = point.x - fallbackSize / 2f
+                    marker.y = point.y - fallbackSize / 2f
+                    Log.w("ACTION_MANAGER", "createMarker: Marker '$label' size=0, using fallback ${fallbackSize}px, placed at (${marker.x}, ${marker.y})")
+                }
+            }
+        })
         return marker
     }
 
@@ -584,7 +619,8 @@ object ActionManager {
                         }
                         container.addView(line, 0)
 
-                        line.post {
+                        // Wait for markers to complete their layout (they use OnGlobalLayoutListener internally)
+                        line.postDelayed({
                             actionVisuals.find { it.actionId == action.id }?.let { visual ->
                                 if (visual.line != null && visual.markers.size >= 2) {
                                     val sx = visual.markers[0].x + visual.markers[0].width / 2f
@@ -595,7 +631,7 @@ object ActionManager {
                                     Log.d("ACTION_MANAGER", "Action ID ${action.id}: Line drawn from ($sx, $sy) to ($ex, $ey)")
                                 }
                             }
-                        }
+                        }, 100)
                     }
                     actionVisuals.add(ActionVisuals(action.id, markers, line))
                 }
