@@ -30,12 +30,17 @@ object FeatureMatcher {
         "cross_device" to listOf(
             "cross device", "cross-device", "desktop agent", "desktop automation",
             "remote control", "control my desktop", "send to desktop",
-            "connect desktop", "autonion desktop"
+            "connect desktop", "autonion desktop", "cross device sync",
+            "cross device automation"
         ),
         "visual_trigger" to listOf(
             "visual trigger", "image trigger", "vision trigger",
             "image match", "template match", "visual automation",
-            "image-based trigger"
+            "image-based trigger", "image checker"
+        ),
+        "screen_ml" to listOf(
+            "screen ml", "screen context ai", "screen context",
+            "screen understanding", "screenml", "screen context al"
         ),
         "system_context" to listOf(
             "system context", "context automation", "battery automation",

@@ -12,11 +12,31 @@ import com.autonion.automationcompanion.ui.AutomationRoutes
 object WalkthroughRegistry {
 
     /**
-     * Retrieve a walkthrough script by its feature ID.
-     * Returns null if no script exists for the given ID.
+     * Aliases so LLM-generated IDs always resolve to the canonical key.
+     * E.g. the LLM might emit "screen_understanding" but our key is "screen_ml".
      */
-    fun getScript(featureId: String): WalkthroughScript? =
-        scripts[featureId]
+    private val aliases: Map<String, String> = mapOf(
+        "screen_understanding"  to "screen_ml",
+        "screen_context"        to "screen_ml",
+        "screen_context_ai"     to "screen_ml",
+        "image_checker"         to "visual_trigger",
+        "vision_trigger"        to "visual_trigger",
+        "cross_device_sync"     to "cross_device",
+        "cross_device_automation" to "cross_device",
+        "desktop_agent"         to "cross_device",
+        "ai_agent"              to "semantic_automation",
+        "gesture_playback"      to "gesture_recording",
+        "automation_debugger"   to "debugger"
+    )
+
+    /**
+     * Retrieve a walkthrough script by its feature ID.
+     * Normalises the ID via [aliases] first, so slight LLM variations still resolve.
+     */
+    fun getScript(featureId: String): WalkthroughScript? {
+        val canonicalId = aliases[featureId] ?: featureId
+        return scripts[canonicalId]
+    }
 
     /** All registered scripts, keyed by feature ID. */
     private val scripts: Map<String, WalkthroughScript> = mapOf(
@@ -79,6 +99,47 @@ object WalkthroughRegistry {
                 WalkthroughStep(
                     instruction = "That's the basics of Flow Builder! You can also import/export flows " +
                             "using the file icon in the top bar. Happy automating! 🎉",
+                    stepType = StepType.OBSERVE
+                )
+            )
+        ),
+
+        // ───────────────────────────────────────────────
+        //  Screen Context AI (Screen ML)
+        // ───────────────────────────────────────────────
+        "screen_ml" to WalkthroughScript(
+            featureId = "screen_ml",
+            featureName = "Screen Context AI",
+            description = "AI-powered screen understanding using YOLO object detection and OCR.",
+            steps = listOf(
+                WalkthroughStep(
+                    instruction = "Opening Screen Context AI for you…",
+                    targetRoute = AutomationRoutes.SCREEN_UNDERSTAND,
+                    stepType = StepType.NAVIGATE
+                ),
+                WalkthroughStep(
+                    instruction = "This is Screen Context AI — it uses YOLO object detection " +
+                            "and OCR to understand what's on your screen in real time. " +
+                            "It can identify buttons, text fields, icons, and read text from any app.",
+                    stepType = StepType.OBSERVE
+                ),
+                WalkthroughStep(
+                    instruction = "Tap \"Start Scan\" to capture your current screen. " +
+                            "The AI will analyze it and highlight all detected UI elements " +
+                            "with bounding boxes and labels.",
+                    stepType = StepType.ACTION,
+                    highlightHint = "Start Scan button"
+                ),
+                WalkthroughStep(
+                    instruction = "Each detected element shows its type (button, text, icon) and " +
+                            "any text content found via OCR. You can tap an element to see " +
+                            "its details and coordinates.",
+                    stepType = StepType.OBSERVE
+                ),
+                WalkthroughStep(
+                    instruction = "Screen Context AI works with any app — it doesn't rely on " +
+                            "the accessibility tree, so it's perfect for apps that block " +
+                            "standard automation. It's also available as a node in Flow Builder! 🧠",
                     stepType = StepType.OBSERVE
                 )
             )

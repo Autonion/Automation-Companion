@@ -634,14 +634,27 @@ class OmniChatbotViewModel(
                 append("2. If the knowledge below does NOT contain information to answer the question, say exactly: \"I don't have specific information about that in my knowledge base.\"\n")
                 append("3. Do NOT make up features, capabilities, or instructions that are not explicitly described in the knowledge.\n")
                 append("4. Be concise and direct. Use bullet points where appropriate.\n")
-                append("5. Do NOT use <think> tags or internal reasoning. Answer immediately.\n\n")
+                append("5. Do NOT use <think> tags or internal reasoning. Answer immediately.\n")
+                append("6. If your answer is primarily about one of these features, append the tag on a new line at the very end of your response: [WALKTHROUGH:feature_id]\n")
+                append("   Available features: flow_builder, gesture_recording, semantic_automation, cross_device, visual_trigger, screen_ml, system_context, debugger\n\n")
                 append("KNOWLEDGE:\n")
                 append(contextText)
             }
 
-            val answer = llmEngine.chatForQA(systemPrompt, result.rawPrompt)
+            val rawAnswer = llmEngine.chatForQA(systemPrompt, result.rawPrompt)
 
+            // Parse [WALKTHROUGH:feature_id] tag from the LLM response.
+            // The LLM appends this when the answer is clearly about a specific feature.
+            val walkthroughTagRegex = Regex("""\[WALKTHROUGH:(\w+)]""")
+            val tagMatch = rawAnswer?.let { walkthroughTagRegex.find(it) }
+            val llmSuggestedFeature = tagMatch?.groupValues?.get(1)
+
+            // Strip the tag from the displayed answer
+            val answer = rawAnswer?.let { walkthroughTagRegex.replace(it, "").trim() }
+
+            // Priority: prompt-based match → LLM tag → null
             val walkthroughFeature = FeatureMatcher.matchFeature(result.rawPrompt)
+                ?: llmSuggestedFeature
 
             if (!answer.isNullOrBlank()) {
                 updateLastBotMessage(answer, ResponseMode.KNOWLEDGE, suggestedWalkthroughId = walkthroughFeature)
