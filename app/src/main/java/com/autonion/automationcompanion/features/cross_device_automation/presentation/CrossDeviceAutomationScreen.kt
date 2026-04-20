@@ -17,6 +17,7 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.Rule
+import androidx.compose.material.icons.filled.SettingsRemote
 import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -37,6 +38,7 @@ import com.autonion.automationcompanion.features.cross_device_automation.CrossDe
 import com.autonion.automationcompanion.ui.components.AuroraBackground
 import androidx.compose.material.icons.outlined.Info
 import com.autonion.automationcompanion.features.omni_chatbot.ui.LocalStartWalkthrough
+import com.autonion.automationcompanion.features.cross_device_automation.engine.HardwareButtonMapper
 import kotlinx.coroutines.launch
 import java.util.Date
 
@@ -69,6 +71,8 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
 
     val scope = rememberCoroutineScope()
     val startWalkthrough = LocalStartWalkthrough.current
+    var showHardwareRemoteSheet by remember { mutableStateOf(false) }
+    val isHardwareRemoteActive by HardwareButtonMapper.isActive.collectAsState()
 
     // NOTE: Clipboard sync lifecycle observer has been moved to AppNavHost
     // so it runs globally across all screens, not just this one.
@@ -110,6 +114,9 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
                         }
                     },
                     actions = {
+                        IconButton(onClick = { showHardwareRemoteSheet = true }) {
+                            Icon(Icons.Default.SettingsRemote, contentDescription = "Hardware Remote", tint = if (isHardwareRemoteActive) AccentPurple else Color.White)
+                        }
                         IconButton(onClick = { startWalkthrough("cross_device") }) {
                             Icon(Icons.Outlined.Info, contentDescription = "Take a Walkthrough", tint = Color.White)
                         }
@@ -127,6 +134,32 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
                     .fillMaxSize()
                     .padding(innerPadding)
             ) {
+                // ─── Hardware Remote Active Banner ─────────────
+                AnimatedVisibility(visible = isHardwareRemoteActive) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .background(AccentPurple.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "Desktop Remote Active",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                        TextButton(
+                            onClick = { HardwareButtonMapper.deactivate() },
+                            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                        ) {
+                            Text("Stop")
+                        }
+                    }
+                }
+
                 // ─── Tab Row ────────────────────
                 StyledTabRow(
                     selectedTab = selectedTab,
@@ -151,6 +184,10 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
                     }
                 }
             }
+        }
+        
+        if (showHardwareRemoteSheet) {
+            HardwareRemoteSheet(onDismissRequest = { showHardwareRemoteSheet = false })
         }
     }
 }
@@ -230,7 +267,7 @@ private fun StyledTabRow(selectedTab: Int, onTabSelected: (Int) -> Unit) {
 fun PromptScreen() {
     val context = LocalContext.current
     val manager = CrossDeviceAutomationManager.getInstance(context)
-    val viewModel = androidx.lifecycle.viewmodel.compose.viewModel { PromptViewModel(manager) }
+    val viewModel = androidx.lifecycle.viewmodel.compose.viewModel { PromptViewModel(manager, context.applicationContext) }
 
     val inputQuery by viewModel.inputQuery.collectAsState()
     val messages by viewModel.messages.collectAsState()

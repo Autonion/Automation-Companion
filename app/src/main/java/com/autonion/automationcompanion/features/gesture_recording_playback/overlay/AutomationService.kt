@@ -13,6 +13,7 @@ import android.util.Log
 import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
 import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
 import android.view.accessibility.AccessibilityEvent
+import android.view.KeyEvent
 import androidx.annotation.RequiresApi
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.autonion.automationcompanion.AccessibilityRouter
@@ -80,6 +81,15 @@ class AutomationService : AccessibilityService() {
 
         // Start ExtensionBridgeServer (Semantic Automation) in the background so the browser extension can instantly connect anytime
         com.autonion.automationcompanion.features.semantic_automation.core.ExtensionBridgeServer.getInstance(this)
+    }
+
+    override fun onKeyEvent(event: KeyEvent): Boolean {
+        // Only intercept if we actually handle it to preserve normal volume behavior when inactive
+        Log.d("AutomationService", "onKeyEvent received: ${event.keyCode} action: ${event.action}")
+        if (com.autonion.automationcompanion.features.cross_device_automation.engine.HardwareButtonMapper.onKeyEvent(event)) {
+            return true
+        }
+        return super.onKeyEvent(event)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent) {
