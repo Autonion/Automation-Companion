@@ -447,8 +447,17 @@ class OmniChatbotViewModel(
 
     private fun handleDeviceAutomation(result: IntentResult) {
         if (llmEngine.connectionStatus.value != ServerConnectionStatus.CONNECTED) {
+            val setupMessage = buildString {
+                append("⚠️ It looks like Ollama isn't running.\n\n")
+                append("To use on-device AI automation, you need Ollama running on your desktop:\n\n")
+                append("1️⃣ Install Ollama from ollama.com (if not installed)\n")
+                append("2️⃣ Open a terminal and run: ollama serve\n")
+                append("3️⃣ Pull a model: ollama pull qwen3\n")
+                append("4️⃣ Tap ⚙️ above and enter your PC's IP address to connect\n\n")
+                append("💡 Make sure your phone and PC are on the same WiFi network.")
+            }
             addMessage(OmniChatMessage(
-                text = "⚠️ No LLM server connected. Tap ⚙️ above to connect to your Ollama server.",
+                text = setupMessage,
                 isUser = false,
                 mode = ResponseMode.SYSTEM
             ))
@@ -617,7 +626,9 @@ class OmniChatbotViewModel(
                 val cleanText = cleanKnowledgeChunk(chunks.first().text.take(1000), maxLength = 600)
                 val fallback = buildString {
                     append(cleanText)
-                    append("\n\n💡 Connect to an LLM server in ⚙️ settings for better answers.")
+                    append("\n\n💡 For smarter answers, connect to Ollama:\n")
+                    append("• Run \"ollama serve\" on your PC\n")
+                    append("• Tap ⚙️ above and enter your PC's IP address")
                 }
                 updateLastBotMessage(fallback, ResponseMode.KNOWLEDGE)
                 return@launch
@@ -734,7 +745,24 @@ class OmniChatbotViewModel(
             ResponseStatus.CANCELLED -> "⏹️"
         }
 
-        val text = "$emoji ${response.message}"
+        val text = when {
+            response.status == ResponseStatus.FAILED && response.message.contains("browser", ignoreCase = true) -> {
+                "❌ Browser automation failed.\n\n" +
+                "🔧 Troubleshooting:\n" +
+                "• Make sure the Autonion Extension is installed and enabled in your browser\n" +
+                "• Ensure the browser is open and running\n" +
+                "• Try refreshing the extension or restarting the browser"
+            }
+            response.status == ResponseStatus.FAILED && response.message.contains("extension", ignoreCase = true) -> {
+                "❌ Could not connect to the browser extension.\n\n" +
+                "🔧 Steps to fix:\n" +
+                "• Open Chrome/Edge and check that the Autonion Extension is enabled\n" +
+                "• Click the extension icon to verify it shows \"Connected\"\n" +
+                "• Restart the browser if the issue persists"
+            }
+            response.status == ResponseStatus.FAILED -> "$emoji ${response.message}"
+            else -> "$emoji ${response.message}"
+        }
 
         when (response.status) {
             ResponseStatus.IN_PROGRESS -> updateLastBotMessage(text, mode)
