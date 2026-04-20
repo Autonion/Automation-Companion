@@ -19,6 +19,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
@@ -480,6 +481,7 @@ private fun ChatInputBar(
     onSend: () -> Unit,
     isActive: Boolean
 ) {
+    val focusManager = LocalFocusManager.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -529,7 +531,10 @@ private fun ChatInputBar(
         )
 
         IconButton(
-            onClick = onSend,
+            onClick = {
+                focusManager.clearFocus()
+                onSend()
+            },
             enabled = hasText,
             modifier = Modifier
                 .scale(sendScale)

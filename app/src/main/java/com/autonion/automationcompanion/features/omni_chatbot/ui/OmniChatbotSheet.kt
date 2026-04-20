@@ -30,6 +30,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.ui.text.style.TextAlign
@@ -1174,6 +1175,7 @@ private fun ChatInputBar(
     onValueChange: (String) -> Unit,
     onSend: () -> Unit
 ) {
+    val focusManager = LocalFocusManager.current
     Column {
         androidx.compose.animation.AnimatedVisibility(
             visible = value.startsWith("/") && value.length < 8,
@@ -1244,7 +1246,10 @@ private fun ChatInputBar(
         )
 
         IconButton(
-            onClick = onSend,
+            onClick = {
+                focusManager.clearFocus()
+                onSend()
+            },
             enabled = hasText,
             modifier = Modifier
                 .scale(sendScale)
