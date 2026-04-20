@@ -122,6 +122,7 @@ fun OmniChatbotScaffold(
             exit = scaleOut() + fadeOut(),
             modifier = Modifier
                 .align(Alignment.BottomEnd)
+                .navigationBarsPadding()
                 .padding(16.dp)
         ) {
             OmniFAB(onClick = { viewModel.expand() })

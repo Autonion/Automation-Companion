@@ -33,7 +33,7 @@ fun HomeScreen(onOpen: (String) -> Unit) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
-            contentPadding = PaddingValues(bottom = 24.dp)
+            contentPadding = PaddingValues(bottom = 30.dp)
         ) {
             // Header
             item {
