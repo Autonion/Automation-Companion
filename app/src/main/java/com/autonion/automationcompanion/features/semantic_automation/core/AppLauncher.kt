@@ -43,6 +43,133 @@ object AppLauncher {
         "settings" to "com.android.settings"
     )
 
+    // ── App Category System ────────────────────────────────────
+
+    /**
+     * Categories of apps, used to show relevant suggestions when a user
+     * command is ambiguous (e.g. "play X" without specifying which app).
+     */
+    enum class AppCategory { MEDIA, SHOPPING, MESSAGING, MAPS, ALL }
+
+    /** Well-known packages per category. */
+    private val CATEGORY_PACKAGES = mapOf(
+        AppCategory.MEDIA to listOf(
+            "com.google.android.youtube",      // YouTube
+            "com.spotify.music",               // Spotify
+            "com.netflix.mediaclient",         // Netflix
+            "com.amazon.avod.thirdpartyclient",// Prime Video
+            "com.disney.disneyplus",           // Disney+
+            "com.apple.android.music",         // Apple Music
+            "com.gaana",                       // Gaana
+            "com.jio.media.jiobeats",          // JioSaavn
+            "com.bsbportal.music",             // Wynk Music
+            "com.hungama.myplay.activity",     // Hungama
+            "com.google.android.apps.youtube.music", // YouTube Music
+            "deezer.android.app",              // Deezer
+            "com.soundcloud.android",          // SoundCloud
+            "com.pandora.android",             // Pandora
+            "tv.twitch.android.app",           // Twitch
+            "com.mxtech.videoplayer.ad",       // MX Player
+            "org.videolan.vlc",                // VLC
+        ),
+        AppCategory.SHOPPING to listOf(
+            "com.amazon.mShop.android.shopping", // Amazon
+            "com.flipkart.android",              // Flipkart
+            "com.myntra.android",                // Myntra
+            "com.snapdeal.main",                 // Snapdeal
+            "in.amazon.mShop.android.shopping",  // Amazon India
+            "com.meesho.supply",                 // Meesho
+            "club.cred",                         // CRED
+            "com.shopsy.android",                // Shopsy
+        ),
+        AppCategory.MESSAGING to listOf(
+            "com.whatsapp",                      // WhatsApp
+            "org.telegram.messenger",            // Telegram
+            "com.google.android.apps.messaging", // Messages
+            "com.facebook.orca",                 // Messenger
+            "com.discord",                       // Discord
+            "com.Slack",                         // Slack
+            "com.skype.raider",                  // Skype
+            "com.instagram.android",             // Instagram DM
+        ),
+        AppCategory.MAPS to listOf(
+            "com.google.android.apps.maps",      // Google Maps
+            "com.waze",                          // Waze
+            "com.here.app.maps",                 // HERE Maps
+            "com.sygic.aura",                    // Sygic
+        ),
+    )
+
+    /**
+     * Maps a task type to the most relevant app category.
+     * Returns null for tasks that don't typically need app clarification.
+     */
+    fun taskToCategory(task: String): AppCategory? {
+        return when (task) {
+            "play"         -> AppCategory.MEDIA
+            "search"       -> AppCategory.SHOPPING
+            "send_message" -> AppCategory.MESSAGING
+            "navigate"     -> AppCategory.MAPS
+            "open", "login" -> AppCategory.ALL
+            else           -> null  // enable, disable, back, etc. don't need an app
+        }
+    }
+
+    /**
+     * Discovers installed apps matching a category.
+     * Returns human-readable app labels (e.g. "YouTube", "Spotify").
+     *
+     * For [AppCategory.ALL], returns all launcher-visible apps.
+     */
+    fun getInstalledAppsByCategory(context: Context, category: AppCategory): List<String> {
+        val pm = context.packageManager
+
+        if (category == AppCategory.ALL) {
+            // Return top launcher apps (limited to keep the list manageable)
+            return try {
+                val mainIntent = Intent(Intent.ACTION_MAIN, null).addCategory(Intent.CATEGORY_LAUNCHER)
+                val apps = pm.queryIntentActivities(mainIntent, 0)
+                apps.map { it.loadLabel(pm).toString() }
+                    .filter { it.isNotBlank() }
+                    .distinct()
+                    .sorted()
+                    .take(15) // Keep the choice list manageable
+            } catch (_: Exception) { emptyList() }
+        }
+
+        val packages = CATEGORY_PACKAGES[category] ?: return emptyList()
+        val found = mutableListOf<String>()
+
+        for (pkg in packages) {
+            try {
+                val appInfo = pm.getApplicationInfo(pkg, 0)
+                val label = pm.getApplicationLabel(appInfo).toString()
+                if (label.isNotBlank()) {
+                    found.add(label)
+                }
+            } catch (_: Exception) {
+                // Not installed
+            }
+        }
+
+        // Also check Android's category-based discovery for media apps
+        if (category == AppCategory.MEDIA) {
+            try {
+                val musicIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_MUSIC)
+                val musicApps = pm.queryIntentActivities(musicIntent, 0)
+                for (app in musicApps) {
+                    val label = app.loadLabel(pm).toString()
+                    if (label.isNotBlank() && label !in found) {
+                        found.add(label)
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        Log.d(TAG, "Discovered ${found.size} ${category.name} apps: $found")
+        return found
+    }
+
     /**
      * System-level intents for specific tasks.
      */
@@ -140,6 +267,45 @@ object AppLauncher {
         if (appAlias.contains(".")) return isPackageInstalled(context, appAlias) // Raw package
         // Search installed apps by label (covers apps not in PACKAGE_MAP like flipkart, zomato, etc.)
         return hasAppByLabel(context, appAlias)
+    }
+
+    /**
+     * Checks if the given app alias is recognizable as a real app, website, or service
+     * WITHOUT launching anything. This is the anti-hallucination gate — if we can't
+     * recognize the target at all, the command is likely gibberish.
+     *
+     * Returns true if:
+     *  - It's in our PACKAGE_MAP (well-known apps)
+     *  - It's installed on the device (by label or package name)
+     *  - It looks like a domain name (contains a dot)
+     *  - It matches a category package list (media, shopping, etc.)
+     */
+    fun isRecognizableTarget(context: Context, appAlias: String): Boolean {
+        val alias = appAlias.lowercase().trim()
+        if (alias.isBlank()) return false
+
+        // 1. Known in our hardcoded map
+        if (alias in PACKAGE_MAP) return true
+        if (alias == "settings" || alias == "browser") return true
+
+        // 2. Looks like a package name or domain (contains a dot)
+        if (alias.contains(".")) return true
+
+        // 3. Check all category packages for a label match
+        val allCategoryPackages = CATEGORY_PACKAGES.values.flatten().distinct()
+        val pm = context.packageManager
+        for (pkg in allCategoryPackages) {
+            try {
+                val appInfo = pm.getApplicationInfo(pkg, 0)
+                val label = pm.getApplicationLabel(appInfo).toString()
+                if (label.contains(alias, ignoreCase = true)) return true
+            } catch (_: Exception) {}
+        }
+
+        // 4. Search installed apps by label (fuzzy)
+        if (hasAppByLabel(context, alias)) return true
+
+        return false
     }
 
     /**

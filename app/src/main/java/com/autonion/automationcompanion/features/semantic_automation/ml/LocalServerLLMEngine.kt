@@ -383,6 +383,56 @@ class LocalServerLLMEngine private constructor(
     }
 
     /**
+     * Simple JSON chat that uses Ollama's basic `format: "json"` mode.
+     *
+     * Unlike [chatWithSchema] which enforces a strict JSON schema (and can cause
+     * Ollama's constrained decoding to loop infinitely on null values), this method
+     * lets the model output any valid JSON, relying on the system prompt to guide
+     * the structure. Ideal for goal parsing where the model may need to omit fields.
+     */
+    suspend fun chatSimpleJson(
+        systemPrompt: String,
+        userPrompt: String
+    ): String? = withContext(Dispatchers.IO) {
+        val currentApi = api
+        val model = selectedModel
+
+        if (currentApi == null || model.isNullOrBlank()) {
+            Log.w(TAG, "chatSimpleJson: Server not connected or no model selected")
+            return@withContext null
+        }
+
+        try {
+            val messages = mutableListOf<OllamaChatMessage>()
+            if (systemPrompt.isNotBlank()) {
+                messages.add(OllamaChatMessage(role = "system", content = systemPrompt))
+            }
+            messages.add(OllamaChatMessage(role = "user", content = userPrompt))
+
+            val response = currentApi.chat(
+                OllamaChatRequest(
+                    model = model,
+                    messages = messages,
+                    stream = false,
+                    format = "json",
+                    options = mapOf("temperature" to 0.1, "num_ctx" to 2048)
+                )
+            )
+
+            val content = response.message.content.trim()
+            Log.d(TAG, "chatSimpleJson response (${response.eval_count} tokens): $content")
+
+            if (content.isBlank()) null else content
+        } catch (e: Exception) {
+            Log.e(TAG, "chatSimpleJson failed: ${e.javaClass.simpleName}", e)
+            if (e is java.net.ConnectException || e is java.net.UnknownHostException) {
+                _connectionStatus.value = ServerConnectionStatus.DISCONNECTED
+            }
+            null
+        }
+    }
+
+    /**
      * Q&A-optimized chat: plain text answer, larger context window, no JSON schema.
      *
      * Unlike chatWithSchema (designed for action prediction with 2048 tokens),

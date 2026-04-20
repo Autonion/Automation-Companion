@@ -23,6 +23,7 @@ import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
 import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
 import com.autonion.automationcompanion.features.screen_understanding_ml.core.MediaProjectionCore
 import com.autonion.automationcompanion.features.semantic_automation.model.AutomationStatus
+import com.autonion.automationcompanion.features.semantic_automation.ui.FloatingStopOverlay
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -62,6 +63,7 @@ class SemanticAutomationService : Service() {
     private var engine: SemanticAutomationEngine? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var keepAwakeView: View? = null
+    private var floatingStopOverlay: FloatingStopOverlay? = null
 
     @Volatile
     private var latestBitmap: Bitmap? = null
@@ -83,6 +85,9 @@ class SemanticAutomationService : Service() {
         wakeLock?.let {
             if (it.isHeld) it.release()
         }
+        // Remove floating stop overlay
+        floatingStopOverlay?.hide()
+        floatingStopOverlay = null
         keepAwakeView?.let {
             try {
                 val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
@@ -163,6 +168,14 @@ class SemanticAutomationService : Service() {
             Log.e(TAG, "Failed to inject keepAwakeView overlay", e)
         }
 
+        // Show the floating stop button overlay (visible across all apps)
+        try {
+            floatingStopOverlay = FloatingStopOverlay(this)
+            floatingStopOverlay?.show()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to show floating stop overlay", e)
+        }
+
         val metrics = resources.displayMetrics
         mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         mediaProjectionCore = MediaProjectionCore(this, mediaProjectionManager!!)
@@ -189,6 +202,7 @@ class SemanticAutomationService : Service() {
             val finalStatus = engine?.status?.value
             if (finalStatus == AutomationStatus.COMPLETED || finalStatus == AutomationStatus.FAILED) {
                 Log.d(TAG, "Engine finished with status: $finalStatus")
+                floatingStopOverlay?.hide()
                 kotlinx.coroutines.delay(3000)
                 stopSelf()
             }

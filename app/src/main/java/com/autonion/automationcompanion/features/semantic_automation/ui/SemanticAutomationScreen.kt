@@ -342,7 +342,11 @@ fun SemanticAutomationScreen(
                                     isUser = true
                                 )
                             )
-                            onStart(command)
+                            if (status == AutomationStatus.AWAITING_USER_INPUT) {
+                                engine?.resumeWithUserChoice(command.trim())
+                            } else {
+                                onStart(command)
+                            }
                             command = ""
                         }
                     },

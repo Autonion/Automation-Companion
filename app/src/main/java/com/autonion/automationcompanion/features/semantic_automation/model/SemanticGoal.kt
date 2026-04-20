@@ -13,6 +13,7 @@ data class SemanticGoal(
     val targetApp: String? = null, // e.g. "amazon", "whatsapp", "settings"
     val domain: String? = null,    // e.g. "flipkart.com", "amazon.in" — resolved by LLM, no hardcoded TLD
     val rawCommand: String,        // Original user input
+    val confidence: Float = 1.0f,  // LLM self-rated confidence (0.0–1.0). Low = likely hallucination.
     val extras: Map<String, String> = emptyMap() // Additional key-value pairs
 )
 
