@@ -48,6 +48,7 @@ object HardwareButtonMapper {
         activeMappings.putAll(mappings)
         _isActive.value = true
         acquireWakeLock()
+        saveMappings(context, mappings)
         Log.d(TAG, "Activated with mappings: $mappings")
     }
 
@@ -57,6 +58,39 @@ object HardwareButtonMapper {
         releaseWakeLock()
         cancelAllJobs()
         Log.d(TAG, "Deactivated")
+    }
+
+    fun saveMappings(context: Context, mappings: Map<Pair<Int, GestureType>, DesktopAction>) {
+        val prefs = context.getSharedPreferences("HardwareRemotePrefs", Context.MODE_PRIVATE)
+        val editor = prefs.edit()
+        editor.clear()
+        for ((key, action) in mappings) {
+            val keyCode = key.first
+            val gesture = key.second.name
+            if (action is DesktopAction.SendKey) {
+                editor.putString("${keyCode}|${gesture}", action.keyName)
+            }
+        }
+        editor.apply()
+        Log.d(TAG, "Saved ${mappings.size} mappings to prefs")
+    }
+
+    fun loadMappings(context: Context): Map<Pair<Int, GestureType>, DesktopAction> {
+        val prefs = context.getSharedPreferences("HardwareRemotePrefs", Context.MODE_PRIVATE)
+        val loadedMappings = mutableMapOf<Pair<Int, GestureType>, DesktopAction>()
+        for (key in prefs.all.keys) {
+            val parts = key.split("|", limit = 2)
+            if (parts.size == 2) {
+                val keyCode = parts[0].toIntOrNull()
+                val gesture = try { GestureType.valueOf(parts[1]) } catch (e: Exception) { null }
+                val actionString = prefs.getString(key, null)
+                if (keyCode != null && gesture != null && actionString != null) {
+                    loadedMappings[Pair(keyCode, gesture)] = DesktopAction.SendKey(actionString)
+                }
+            }
+        }
+        Log.d(TAG, "Loaded ${loadedMappings.size} mappings from prefs")
+        return loadedMappings
     }
 
     private fun acquireWakeLock() {

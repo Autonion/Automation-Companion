@@ -37,6 +37,9 @@ fun HardwareRemoteSheet(
 
     LaunchedEffect(Unit) {
         mappings.putAll(HardwareButtonMapper.currentMappings)
+        if (mappings.isEmpty()) {
+            mappings.putAll(HardwareButtonMapper.loadMappings(context))
+        }
     }
 
     val availableKeys = listOf("Enter", "Space", "Up Arrow", "Down Arrow", "Left Arrow", "Right Arrow", "Escape", "Backspace")
