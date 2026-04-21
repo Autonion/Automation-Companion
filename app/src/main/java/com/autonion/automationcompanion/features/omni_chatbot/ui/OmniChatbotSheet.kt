@@ -1,6 +1,7 @@
 package com.autonion.automationcompanion.features.omni_chatbot.ui
 
 import android.text.format.DateFormat
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
@@ -109,6 +110,11 @@ fun OmniChatbotScaffold(
 
     LaunchedEffect(currentRoute) {
         viewModel.updateRoute(currentRoute)
+    }
+
+    // Handle back button when the sheet is expanded
+    BackHandler(enabled = isExpanded) {
+        viewModel.collapse()
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
