@@ -245,13 +245,13 @@ class AutomationService : AccessibilityService() {
             if (!isPlaying) break
             if (!action.isEnabled) continue
 
-            delay(action.delayBefore)
+            if (action.delayBefore > 0) delay(action.delayBefore)
             Log.d("AutomationService", "Executing action: ${action.type}")
             executeAction(action)
 
-            // Enforce minimum delay if not set (handles legacy actions)
-            val waitTime = if (action.delayAfter < 100) 500 else action.delayAfter
-            delay(waitTime)
+            // Respect user-configured delay; only add a minimal settling time if
+            // the user explicitly set 0ms to allow near-simultaneous dispatch.
+            if (action.delayAfter > 0) delay(action.delayAfter)
         }
     }
 
@@ -296,13 +296,32 @@ class AutomationService : AccessibilityService() {
 
     private suspend fun performSwipe(start: PointF, end: PointF, duration: Long) {
         Log.d("AutomationService", "Performing Swipe from ${start.x},${start.y} to ${end.x},${end.y} with duration $duration")
+
+        // Use a smooth cubic Bézier path instead of a hard lineTo.
+        // This produces more natural, human-like touch motion that the
+        // system gesture dispatcher renders as a fluid swipe.
+        val midX = (start.x + end.x) / 2f
+        val midY = (start.y + end.y) / 2f
+        // Slight perpendicular offset for natural arc
+        val dx = end.x - start.x
+        val dy = end.y - start.y
+        val perpX = -dy * 0.05f  // 5% arc offset
+        val perpY = dx * 0.05f
+
         val swipePath = Path().apply {
             moveTo(start.x, start.y)
-            lineTo(end.x, end.y)
+            cubicTo(
+                start.x + dx * 0.25f + perpX, start.y + dy * 0.25f + perpY,  // CP1
+                start.x + dx * 0.75f + perpX, start.y + dy * 0.75f + perpY,  // CP2
+                end.x, end.y                                                  // End
+            )
         }
 
+        // Enforce a minimum swipe duration for smooth rendering
+        val strokeDuration = if (duration < 300) 300 else duration
+
         val gestureBuilder = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(swipePath, 0, duration))
+            .addStroke(GestureDescription.StrokeDescription(swipePath, 0, strokeDuration))
 
         dispatchGestureSuspending(gestureBuilder.build())
     }
