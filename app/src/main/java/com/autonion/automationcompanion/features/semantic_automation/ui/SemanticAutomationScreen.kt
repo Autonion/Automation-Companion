@@ -189,6 +189,7 @@ fun SemanticAutomationScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
+                    .imePadding()
             ) {
                 // ─── Chat Messages ──────────────────────
                 if (messages.isEmpty()) {

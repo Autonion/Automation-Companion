@@ -133,6 +133,7 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
+                    .imePadding()
             ) {
                 // ─── Hardware Remote Active Banner ─────────────
                 AnimatedVisibility(visible = isHardwareRemoteActive) {

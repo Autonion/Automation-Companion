@@ -84,7 +84,7 @@ fun AppNavHost() {
     SideEffect {
         activity?.let { act ->
             val window = act.window
-            if (currentRoute == ROUTE_HOME) {
+            if (currentRoute == ROUTE_HOME || currentRoute == AutomationRoutes.SEMANTIC_AUTOMATION || currentRoute == AutomationRoutes.CROSS_DEVICE) {
                 WindowCompat.setDecorFitsSystemWindows(window, false)
                 window.statusBarColor = Color.Transparent.toArgb()
                 WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !isDark
