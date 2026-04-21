@@ -275,6 +275,12 @@ fun PromptScreen() {
     val isAutomationActive by viewModel.isAutomationActive.collectAsState()
     val listState = rememberLazyListState()
 
+    LaunchedEffect(messages.size, messages.firstOrNull()?.text?.length) {
+        if (messages.isNotEmpty()) {
+            listState.animateScrollToItem(0)
+        }
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         // ─── Messages ──────────────────────
         if (messages.isEmpty()) {

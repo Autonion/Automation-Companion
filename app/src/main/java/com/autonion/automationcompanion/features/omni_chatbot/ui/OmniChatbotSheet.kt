@@ -224,6 +224,13 @@ private fun OmniChatSheet(viewModel: OmniChatbotViewModel) {
     val showSettings by viewModel.showSettings.collectAsState()
     val listState = rememberLazyListState()
 
+    // Auto-scroll to the newest message when list grows or streaming text updates
+    LaunchedEffect(messages.size, messages.firstOrNull()?.text?.length) {
+        if (messages.isNotEmpty()) {
+            listState.animateScrollToItem(0)
+        }
+    }
+
     val showFAQBrowser by viewModel.showFAQBrowser.collectAsState()
     val faqList by viewModel.faqList.collectAsState()
 

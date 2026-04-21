@@ -70,6 +70,12 @@ fun SemanticAutomationScreen(
     val messages = remember { mutableStateListOf<SemanticMessage>() }
     val listState = rememberLazyListState()
 
+    LaunchedEffect(messages.size, messages.firstOrNull()?.text?.length) {
+        if (messages.isNotEmpty()) {
+            listState.animateScrollToItem(0)
+        }
+    }
+
     // Observe service state
     val engine by SemanticAutomationService.activeEngine.collectAsState()
 
