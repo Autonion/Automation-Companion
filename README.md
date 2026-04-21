@@ -19,7 +19,6 @@
     <img src="https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4?logo=jetpackcompose&logoColor=white" alt="Jetpack Compose" />
     <img src="https://img.shields.io/badge/License-PolyForm%20NC%201.0-orange" alt="License" />
   </p>
-</p>
 
 ---
 
@@ -37,6 +36,8 @@ Think of it as **Tasker meets IFTTT meets RPA** — built natively for modern An
 
 | Feature | Description |
 |---------|-------------|
+| **💬 Omni-Chatbot & AI Integration** | Natural language automation via local LLMs, Langchain chat memory, RAG knowledge store, and FAQ repository |
+| **🤖 Semantic Automation** | Agentic, natural-language → automation conversion with hardware remote capabilities to control desktop agents directly |
 | **🎮 Gesture Recording & Playback** | Record taps, swipes, long-presses, scrolls, and text inputs via AccessibilityService and replay them as macros |
 | **🔀 Flow Automation** | Visual node-based workflow editor with drag-to-connect edges, conditional branching, and multi-node execution |
 | **🧠 Screen Understanding (ML)** | On-device ML-powered screen analysis — OCR text detection, UI element recognition, and image template matching |
