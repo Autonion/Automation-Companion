@@ -98,10 +98,40 @@ class FlowRepository(private val context: Context) {
             val text = context.contentResolver.openInputStream(uri)?.use { it.bufferedReader().readText() }
                 ?: return null
             val imported = json.decodeFromString<FlowGraph>(text)
-            // Assign a new ID and mark as updated
+
+            // Bug #6 fix: Regenerate ALL IDs (graph, nodes, edges) to prevent
+            // collision when the same flow is imported twice.
+            val nodeIdMap = mutableMapOf<String, String>() // old ID → new ID
+            imported.nodes.forEach { node ->
+                nodeIdMap[node.id] = java.util.UUID.randomUUID().toString()
+            }
+
+            val edgeIdMap = mutableMapOf<String, String>() // old edge ID → new edge ID
+            imported.edges.forEach { edge ->
+                edgeIdMap[edge.id] = java.util.UUID.randomUUID().toString()
+            }
+
+            // Remap nodes with new IDs and updated onFailureEdgeId references
+            val remappedNodes = imported.nodes.map { node ->
+                val newId = nodeIdMap[node.id]!!
+                val newFailureEdgeId = node.onFailureEdgeId?.let { edgeIdMap[it] }
+                remapNode(node, newId, newFailureEdgeId)
+            }
+
+            // Remap edges with new IDs and updated from/to node references
+            val remappedEdges = imported.edges.map { edge ->
+                edge.copy(
+                    id = edgeIdMap[edge.id]!!,
+                    fromNodeId = nodeIdMap[edge.fromNodeId] ?: edge.fromNodeId,
+                    toNodeId = nodeIdMap[edge.toNodeId] ?: edge.toNodeId
+                )
+            }
+
             val newGraph = imported.copy(
                 id = java.util.UUID.randomUUID().toString(),
                 name = "${imported.name} (imported)",
+                nodes = remappedNodes,
+                edges = remappedEdges,
                 updatedAt = System.currentTimeMillis()
             )
             save(newGraph)
@@ -110,6 +140,18 @@ class FlowRepository(private val context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "Import failed", e)
             null
+        }
+    }
+
+    /** Create a copy of a node with a new ID and optionally updated onFailureEdgeId. */
+    private fun remapNode(node: com.autonion.automationcompanion.features.flow_automation.model.FlowNode, newId: String, newFailureEdgeId: String?): com.autonion.automationcompanion.features.flow_automation.model.FlowNode {
+        return when (node) {
+            is com.autonion.automationcompanion.features.flow_automation.model.StartNode -> node.copy(id = newId, onFailureEdgeId = newFailureEdgeId)
+            is com.autonion.automationcompanion.features.flow_automation.model.GestureNode -> node.copy(id = newId, onFailureEdgeId = newFailureEdgeId)
+            is com.autonion.automationcompanion.features.flow_automation.model.VisualTriggerNode -> node.copy(id = newId, onFailureEdgeId = newFailureEdgeId)
+            is com.autonion.automationcompanion.features.flow_automation.model.ScreenMLNode -> node.copy(id = newId, onFailureEdgeId = newFailureEdgeId)
+            is com.autonion.automationcompanion.features.flow_automation.model.DelayNode -> node.copy(id = newId, onFailureEdgeId = newFailureEdgeId)
+            is com.autonion.automationcompanion.features.flow_automation.model.LaunchAppNode -> node.copy(id = newId, onFailureEdgeId = newFailureEdgeId)
         }
     }
 }

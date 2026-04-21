@@ -151,20 +151,30 @@ class FlowExecutionService : Service() {
                     is FlowExecutionState.Running -> {
                         updateNotification("Running: ${state.currentNodeLabel}")
                         updateOverlayStatus(state.currentNodeLabel)
+                        // Bug #15 fix: Broadcast state to ViewModel
+                        broadcastState("com.autonion.automationcompanion.flow.STATE_RUNNING") {
+                            putExtra("node_id", state.currentNodeId)
+                            putExtra("node_label", state.currentNodeLabel)
+                        }
                     }
                     is FlowExecutionState.Completed -> {
                         Log.d(TAG, "Flow completed")
                         DebugLogger.success(applicationContext, DBG_CATEGORY, "Flow Complete", "Flow finished — stopping service", TAG)
                         updateNotification("Flow completed")
+                        broadcastState("com.autonion.automationcompanion.flow.STATE_COMPLETED")
                         stopExecution()
                     }
                     is FlowExecutionState.Error -> {
                         Log.e(TAG, "Flow error: ${state.message}")
                         DebugLogger.error(applicationContext, DBG_CATEGORY, "Flow Error", "Error: ${state.message}", TAG)
                         updateNotification("Error: ${state.message}")
+                        broadcastState("com.autonion.automationcompanion.flow.STATE_ERROR") {
+                            putExtra("message", state.message)
+                        }
                         stopExecution()
                     }
                     is FlowExecutionState.Stopped -> {
+                        broadcastState("com.autonion.automationcompanion.flow.STATE_STOPPED")
                         stopExecution()
                     }
                     else -> { /* Idle, NodeCompleted — no action needed */ }
@@ -218,6 +228,11 @@ class FlowExecutionService : Service() {
 
     @SuppressLint("ClickableViewAccessibility")
     private fun showOverlay() {
+        // Guard: overlay permission required
+        if (!android.provider.Settings.canDrawOverlays(this)) {
+            Log.w(TAG, "Overlay permission not granted — skipping floating overlay")
+            return
+        }
         try {
             windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
 
@@ -272,7 +287,7 @@ class FlowExecutionService : Service() {
     }
 
     private fun updateOverlayStatus(nodeLabel: String) {
-        overlayView?.findViewWithTag<TextView>(android.R.id.text1)
+        overlayView?.findViewById<TextView>(android.R.id.text1)
             ?.let { it.text = "▶ $nodeLabel" }
     }
 
@@ -285,9 +300,25 @@ class FlowExecutionService : Service() {
         }
     }
 
+    // ─── State Broadcasting ──────────────────────────────────────────────
+
+    /**
+     * Bug #15 fix: Broadcast execution state to the ViewModel via LocalBroadcastManager.
+     */
+    private fun broadcastState(action: String, extras: (android.content.Intent.() -> Unit)? = null) {
+        val intent = android.content.Intent(action)
+        extras?.invoke(intent)
+        androidx.localbroadcastmanager.content.LocalBroadcastManager.getInstance(applicationContext)
+            .sendBroadcast(intent)
+    }
+
     // ─── Lifecycle ───────────────────────────────────────────────────────
 
+    private var isStopping = false
+
     private fun stopExecution() {
+        if (isStopping) return  // Prevent re-entrant calls
+        isStopping = true
         executionEngine.stop()
         screenCaptureProvider?.stop()
         screenCaptureProvider = null

@@ -62,6 +62,12 @@ sealed class FlowNode {
     abstract val nodeType: FlowNodeType
     abstract val position: NodePosition
     abstract val label: String
+    /**
+     * Bug #4: This field is never maintained — edges are resolved via
+     * [FlowGraph.outgoingEdges] which filters by [FlowEdge.fromNodeId].
+     * Kept for serialization backward compatibility with saved flows.
+     */
+    @Deprecated("Unused — edge lookup uses FlowGraph.outgoingEdges(nodeId) instead")
     abstract val outputEdgeIds: List<String>
     abstract val onFailureEdgeId: String?
     abstract val timeoutMs: Long

@@ -42,6 +42,7 @@ class FlowExecutionEngine(
 
     private val flowContext = FlowContext()
     private var executionJob: Job? = null
+    @Volatile
     private var isPaused = false
 
     // Executor registry — wire real implementations when ScreenCaptureProvider is available
@@ -141,11 +142,13 @@ class FlowExecutionEngine(
                         if (nextEdge?.condition is EdgeCondition.StopExecution) {
                             Log.d(TAG, "StopExecution condition encountered — halting flow")
                             currentNode = null
+                        } else if (nextEdge != null) {
+                            // Bug #3 fix: Apply WaitSeconds delay AFTER edge selection
+                            EdgeConditionEvaluator.applyEdgeDelay(nextEdge)
+                            currentNode = graph.nodeById(nextEdge.toNodeId)
                         } else {
-                            currentNode = nextEdge?.let { graph.nodeById(it.toNodeId) }
-                            if (currentNode == null && nextEdge == null) {
-                                Log.d(TAG, "No matching edge condition — flow complete")
-                            }
+                            Log.d(TAG, "No matching edge condition — flow complete")
+                            currentNode = null
                         }
                     }
                 }

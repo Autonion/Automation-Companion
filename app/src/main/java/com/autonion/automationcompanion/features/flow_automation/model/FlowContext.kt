@@ -1,14 +1,19 @@
 package com.autonion.automationcompanion.features.flow_automation.model
 
+import java.util.concurrent.ConcurrentHashMap
+
 /**
  * Blackboard-pattern key-value store for runtime data passing between nodes.
  *
  * Nodes write results here (e.g., detected coordinates, OCR text) and downstream
  * nodes read from it to parameterize their behavior.
+ *
+ * Bug #13 fix: Backed by ConcurrentHashMap for thread safety, since the engine
+ * runs on Dispatchers.Default and executors may access context concurrently.
  */
 class FlowContext {
 
-    private val store = mutableMapOf<String, Any>()
+    private val store = ConcurrentHashMap<String, Any>()
 
     /** Put a value into the context under the given key. */
     fun put(key: String, value: Any) {

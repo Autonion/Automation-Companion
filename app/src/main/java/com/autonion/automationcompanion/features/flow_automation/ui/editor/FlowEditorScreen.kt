@@ -136,6 +136,7 @@ fun FlowEditorScreen(
                 lastInteractionTime = System.currentTimeMillis()
             },
             onNodeTap = { viewModel.selectNode(it) },
+            onNodeDragStart = { viewModel.onDragStart(it) },
             onNodeDrag = { id, pos -> viewModel.updateNodePosition(id, pos) },
             onEdgeTap = { viewModel.selectEdge(it) },
             onCanvasTap = {

@@ -50,6 +50,7 @@ fun FlowCanvas(
     editorColors: FlowEditorColors = FlowEditorColors.Dark,
     onCanvasTransform: (Offset, Float) -> Unit,
     onNodeTap: (String) -> Unit,
+    onNodeDragStart: (String) -> Unit = {},
     onNodeDrag: (String, NodePosition) -> Unit,
     onEdgeTap: (String) -> Unit,
     onCanvasTap: () -> Unit,
@@ -168,6 +169,10 @@ fun FlowCanvas(
                                     c.consume()
                                 } else if (initPos != null && hitNodeId != null) {
                                     // ── Node drag ──
+                                    if (!isDrag) {
+                                        // Bug #9 fix: push undo once at drag start
+                                        onNodeDragStart(hitNodeId)
+                                    }
                                     canvasAccum += delta / zoom
                                     onNodeDrag(
                                         hitNodeId,
@@ -643,12 +648,38 @@ private fun findEdgeAt(graph: FlowGraph, pos: Offset): String? {
             end = Offset(t.position.x, t.position.y + h / 2f)
         }
 
-        // Sample along the edge for hit testing
-        (0..7).any { i ->
-            val t0 = i.toFloat() / 7
-            (pos - Offset(lerp(start.x, end.x, t0), lerp(start.y, end.y, t0))).getDistance() < hitRadius
+        // Bug #11 fix: Sample along the cubic Bézier curve (matching actual drawn path)
+        // instead of linear interpolation
+        val dx = end.x - start.x
+        if (e.isFailurePath) {
+            val dy = end.y - start.y
+            val cpOff = -60f
+            val cp1x = start.x + cpOff; val cp1y = start.y + dy * 0.4f
+            val cp2x = end.x + cpOff; val cp2y = end.y - dy * 0.4f
+            (0..10).any { i ->
+                val t0 = i.toFloat() / 10
+                val bx = cubicBezier(start.x, cp1x, cp2x, end.x, t0)
+                val by = cubicBezier(start.y, cp1y, cp2y, end.y, t0)
+                (pos - Offset(bx, by)).getDistance() < hitRadius
+            }
+        } else {
+            val cpX = maxOf(80f, dx * 0.5f)
+            val cp1x = start.x + cpX; val cp1y = start.y
+            val cp2x = end.x - cpX; val cp2y = end.y
+            (0..10).any { i ->
+                val t0 = i.toFloat() / 10
+                val bx = cubicBezier(start.x, cp1x, cp2x, end.x, t0)
+                val by = cubicBezier(start.y, cp1y, cp2y, end.y, t0)
+                (pos - Offset(bx, by)).getDistance() < hitRadius
+            }
         }
     }?.id
+}
+
+/** Evaluate a cubic Bézier curve at parameter t ∈ [0,1]. */
+private fun cubicBezier(p0: Float, p1: Float, p2: Float, p3: Float, t: Float): Float {
+    val u = 1f - t
+    return u * u * u * p0 + 3f * u * u * t * p1 + 3f * u * t * t * p2 + t * t * t * p3
 }
 
 /** Hit-test the left-center input port of a node (where edges connect TO). */

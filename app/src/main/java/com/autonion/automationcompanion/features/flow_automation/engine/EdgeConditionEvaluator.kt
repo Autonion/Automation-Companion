@@ -16,7 +16,10 @@ object EdgeConditionEvaluator {
     /**
      * Evaluate a single edge condition against the current FlowContext.
      * Returns true if the edge should be followed, false to skip.
-     * If the condition involves a delay, this function suspends for that duration.
+     *
+     * Note: WaitSeconds conditions return true immediately — the actual delay
+     * is applied by [applyEdgeDelay] after edge selection to avoid blocking
+     * evaluation of other edges.
      */
     suspend fun evaluate(edge: FlowEdge, context: FlowContext): Boolean {
         val condition = edge.condition ?: return true // No condition = always follow
@@ -25,8 +28,9 @@ object EdgeConditionEvaluator {
             is EdgeCondition.Always -> true
 
             is EdgeCondition.WaitSeconds -> {
-                Log.d(TAG, "Edge ${edge.id}: waiting ${condition.seconds}s")
-                delay((condition.seconds * 1000).toLong())
+                // Bug #3 fix: Don't delay during evaluation — just mark as eligible.
+                // The actual delay is applied after edge selection via applyEdgeDelay().
+                Log.d(TAG, "Edge ${edge.id}: WaitSeconds(${condition.seconds}s) — eligible")
                 true
             }
 
@@ -76,14 +80,16 @@ object EdgeConditionEvaluator {
             }
 
             is EdgeCondition.StopExecution -> {
-                // Treated as a valid path to follow, engine halts when encountered
+                // Bug #5 fix: StopExecution is handled separately in resolveNextEdge
+                // to prevent it from preempting conditional edges.
                 true
             }
 
             is EdgeCondition.Retry -> {
-                // Retry edges are handled by the execution engine, not here.
-                // The evaluator gives them a pass; the engine handles retry logic.
-                true
+                // Bug #2 fix: Retry edges are excluded from resolveNextEdge entirely.
+                // They are only consumed by the engine on failure.
+                // Returning false here as a safety measure.
+                false
             }
         }
     }
@@ -91,16 +97,26 @@ object EdgeConditionEvaluator {
     /**
      * From a list of outgoing edges, pick the first one whose condition evaluates to true.
      * Non-failure edges are evaluated first; failure edges are separate.
-     * 'Else' edges are evaluated last.
+     * Retry edges are excluded (handled by the engine on failure).
+     * StopExecution edges are evaluated after normal + else edges to prevent preemption.
+     * 'Else' edges are evaluated after normal edges.
      */
     suspend fun resolveNextEdge(
         edges: List<FlowEdge>,
         context: FlowContext
     ): FlowEdge? {
-        val normalEdges = edges.filter { !it.isFailurePath && it.condition !is EdgeCondition.Else }
+        // Bug #2 fix: Filter out Retry edges — they're only handled by the engine on failure
+        // Bug #5 fix: Filter out StopExecution edges — evaluate them last to prevent preemption
+        val normalEdges = edges.filter {
+            !it.isFailurePath &&
+            it.condition !is EdgeCondition.Else &&
+            it.condition !is EdgeCondition.Retry &&
+            it.condition !is EdgeCondition.StopExecution
+        }
         val elseEdges = edges.filter { !it.isFailurePath && it.condition is EdgeCondition.Else }
+        val stopEdges = edges.filter { !it.isFailurePath && it.condition is EdgeCondition.StopExecution }
 
-        // Evaluate all normal positive/negative conditions
+        // Evaluate all normal positive/negative conditions first
         for (edge in normalEdges) {
             if (evaluate(edge, context)) return edge
         }
@@ -110,6 +126,23 @@ object EdgeConditionEvaluator {
             if (evaluate(edge, context)) return edge
         }
 
+        // StopExecution only triggers if no other edge matched
+        for (edge in stopEdges) {
+            if (evaluate(edge, context)) return edge
+        }
+
         return null
+    }
+
+    /**
+     * Apply the delay for a WaitSeconds edge after it has been selected.
+     * Call this after [resolveNextEdge] returns the chosen edge.
+     */
+    suspend fun applyEdgeDelay(edge: FlowEdge) {
+        val condition = edge.condition
+        if (condition is EdgeCondition.WaitSeconds) {
+            Log.d(TAG, "Applying WaitSeconds delay: ${condition.seconds}s")
+            delay((condition.seconds * 1000).toLong())
+        }
     }
 }
