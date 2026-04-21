@@ -88,6 +88,7 @@ fun NodeConfigPanel(
                 is ScreenMLNode -> ScreenMLNodeConfig(node, onUpdateNode, onLaunchOverlay)
                 is DelayNode -> DelayNodeConfig(node, onUpdateNode)
                 is LaunchAppNode -> LaunchAppNodeConfig(node, onUpdateNode)
+                is RepeatNode -> RepeatNodeConfig(node, onUpdateNode)
             }
 
             Spacer(Modifier.height(20.dp))
@@ -635,6 +636,95 @@ private fun DelayNodeConfig(node: DelayNode, onUpdate: (FlowNode) -> Unit) {
     )
 }
 
+@Composable
+private fun RepeatNodeConfig(node: RepeatNode, onUpdate: (FlowNode) -> Unit) {
+    var isInfinite by remember(node.id) { mutableStateOf(node.repeatCount == 0) }
+    var countText by remember(node.id) { mutableStateOf(if (node.repeatCount == 0) "" else node.repeatCount.toString()) }
+    var delayText by remember(node.id) { mutableStateOf(node.delayBetweenMs.toString()) }
+
+    // Infinite toggle
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+    ) {
+        Text("Repeat Forever", color = Color.White, fontSize = 14.sp)
+        Switch(
+            checked = isInfinite,
+            onCheckedChange = { checked ->
+                isInfinite = checked
+                if (checked) {
+                    countText = ""
+                    onUpdate(node.copy(repeatCount = 0))
+                } else {
+                    countText = "1"
+                    onUpdate(node.copy(repeatCount = 1))
+                }
+            },
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = NodeColors.RepeatOrange,
+                checkedTrackColor = NodeColors.RepeatOrange.copy(alpha = 0.3f)
+            )
+        )
+    }
+
+    Spacer(Modifier.height(4.dp))
+    Text(
+        if (isInfinite) "Will run until manually stopped"
+        else "Will run the downstream nodes this many times",
+        color = Color.White.copy(alpha = 0.4f),
+        fontSize = 11.sp
+    )
+
+    // Count field (disabled when infinite)
+    AnimatedVisibility(
+        visible = !isInfinite,
+        enter = expandVertically(),
+        exit = shrinkVertically()
+    ) {
+        Column {
+            Spacer(Modifier.height(12.dp))
+            OutlinedTextField(
+                value = countText,
+                onValueChange = {
+                    countText = it
+                    val count = it.toIntOrNull() ?: return@OutlinedTextField
+                    if (count > 0) onUpdate(node.copy(repeatCount = count))
+                },
+                label = { Text("Repeat Count") },
+                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                colors = flowTextFieldColors()
+            )
+        }
+    }
+
+    Spacer(Modifier.height(12.dp))
+
+    // Delay between iterations
+    OutlinedTextField(
+        value = delayText,
+        onValueChange = {
+            delayText = it
+            val ms = it.toLongOrNull() ?: return@OutlinedTextField
+            onUpdate(node.copy(delayBetweenMs = ms))
+        },
+        label = { Text("Delay Between Iterations (ms)") },
+        modifier = Modifier.fillMaxWidth(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        colors = flowTextFieldColors()
+    )
+
+    if (node.delayBetweenMs > 0) {
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "≈ ${(node.delayBetweenMs / 1000f)}s between each iteration",
+            color = Color.White.copy(alpha = 0.5f),
+            fontSize = 12.sp
+        )
+    }
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 @Composable
@@ -656,6 +746,7 @@ private fun nodeColors(node: FlowNode): Pair<Color, Color> {
         is ScreenMLNode -> NodeColors.ScreenMLAmberBg to NodeColors.ScreenMLAmber
         is DelayNode -> NodeColors.DelayGreyBg to NodeColors.DelayGrey
         is LaunchAppNode -> NodeColors.LaunchAppTealBg to NodeColors.LaunchAppTeal
+        is RepeatNode -> NodeColors.RepeatOrangeBg to NodeColors.RepeatOrange
     }
 }
 
@@ -666,6 +757,7 @@ private fun nodeTypeEmoji(node: FlowNode): String = when (node) {
     is ScreenMLNode -> "🧠"
     is DelayNode -> "⏱"
     is LaunchAppNode -> "🚀"
+    is RepeatNode -> "🔄"
 }
 
 private fun updateNodeLabel(node: FlowNode, label: String): FlowNode = when (node) {
@@ -675,4 +767,5 @@ private fun updateNodeLabel(node: FlowNode, label: String): FlowNode = when (nod
     is ScreenMLNode -> node.copy(label = label)
     is DelayNode -> node.copy(label = label)
     is LaunchAppNode -> node.copy(label = label)
+    is RepeatNode -> node.copy(label = label)
 }

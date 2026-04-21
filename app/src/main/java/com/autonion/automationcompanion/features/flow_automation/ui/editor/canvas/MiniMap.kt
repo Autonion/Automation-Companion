@@ -100,6 +100,7 @@ fun MiniMap(
                     is ScreenMLNode -> NodeColors.ScreenMLAmber
                     is DelayNode -> NodeColors.DelayGrey
                     is LaunchAppNode -> NodeColors.LaunchAppTeal
+                    is RepeatNode -> NodeColors.RepeatOrange
                 }
 
                 val dotSize = Size(

@@ -152,6 +152,7 @@ class FlowRepository(private val context: Context) {
             is com.autonion.automationcompanion.features.flow_automation.model.ScreenMLNode -> node.copy(id = newId, onFailureEdgeId = newFailureEdgeId)
             is com.autonion.automationcompanion.features.flow_automation.model.DelayNode -> node.copy(id = newId, onFailureEdgeId = newFailureEdgeId)
             is com.autonion.automationcompanion.features.flow_automation.model.LaunchAppNode -> node.copy(id = newId, onFailureEdgeId = newFailureEdgeId)
+            is com.autonion.automationcompanion.features.flow_automation.model.RepeatNode -> node.copy(id = newId, onFailureEdgeId = newFailureEdgeId)
         }
     }
 }

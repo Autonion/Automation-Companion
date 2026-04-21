@@ -14,7 +14,8 @@ enum class FlowNodeType {
     @SerialName("visual_trigger") VISUAL_TRIGGER,
     @SerialName("screen_ml") SCREEN_ML,
     @SerialName("delay") DELAY,
-    @SerialName("launch_app") LAUNCH_APP
+    @SerialName("launch_app") LAUNCH_APP,
+    @SerialName("repeat") REPEAT
 }
 
 /**
@@ -223,4 +224,26 @@ data class LaunchAppNode(
     val launchDelayMs: Long = 1500L
 ) : FlowNode() {
     override val nodeType: FlowNodeType = FlowNodeType.LAUNCH_APP
+}
+
+/**
+ * Repeat/loop node — re-executes its downstream sub-graph a fixed
+ * number of times, or infinitely until the flow is stopped.
+ *
+ * [repeatCount] = 0 means infinite (run until manually stopped).
+ * Any positive value is the exact number of iterations.
+ */
+@Serializable
+@SerialName("repeat")
+data class RepeatNode(
+    override val id: String = UUID.randomUUID().toString(),
+    override val position: NodePosition = NodePosition(),
+    override val label: String = "Repeat",
+    override val outputEdgeIds: List<String> = emptyList(),
+    override val onFailureEdgeId: String? = null,
+    override val timeoutMs: Long = 600_000L,  // 10 min default for loops
+    val repeatCount: Int = 1,
+    val delayBetweenMs: Long = 0L
+) : FlowNode() {
+    override val nodeType: FlowNodeType = FlowNodeType.REPEAT
 }

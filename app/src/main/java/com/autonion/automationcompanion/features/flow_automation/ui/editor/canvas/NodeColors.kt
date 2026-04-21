@@ -112,6 +112,8 @@ object NodeColors {
     val DelayGreyBg     = Color(0xFF141517)
     val LaunchAppTeal   = Color(0xFF2DD4BF)
     val LaunchAppTealBg = Color(0xFF0B1F1C)
+    val RepeatOrange    = Color(0xFFFF8A65)
+    val RepeatOrangeBg  = Color(0xFF1F150E)
 
     // ── Edge & port colors ──
     val EdgeDefault     = Color(0xFF94A3B8)

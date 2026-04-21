@@ -403,6 +403,7 @@ private fun DrawScope.drawNode(
         is LaunchAppNode -> if (node.appPackageName.isNotBlank())
             node.appPackageName.substringAfterLast('.').uppercase()
         else "SELECT APP"
+        is RepeatNode -> if (node.repeatCount == 0) "∞ INFINITE" else "×${node.repeatCount}"
     }
     val subText = textMeasurer.measure(
         AnnotatedString(subtitle),
@@ -432,7 +433,7 @@ private fun DrawScope.drawNode(
     drawCircle(NodeColors.PortOutput, NodeDimensions.PORT_RADIUS - 2f, op)
 
     // ── Failure port (bottom-center) ──
-    if (node !is DelayNode && node !is LaunchAppNode) {
+    if (node !is DelayNode && node !is LaunchAppNode && node !is RepeatNode) {
         val fp = Offset(x + w / 2f, y + h)
         drawCircle(colors.portBg, NodeDimensions.PORT_RADIUS + 5f, fp)
         drawCircle(NodeColors.PortFailure.copy(alpha = 0.3f), NodeDimensions.PORT_RADIUS + 2f, fp)
@@ -626,6 +627,7 @@ private fun findNodeFailurePort(nodes: List<FlowNode>, pos: Offset): String? {
     return nodes.lastOrNull { 
         it !is DelayNode &&
         it !is LaunchAppNode &&
+        it !is RepeatNode &&
         (pos - Offset(it.position.x + NodeDimensions.WIDTH / 2f, it.position.y + NodeDimensions.HEIGHT)).getDistance() < r 
     }?.id
 }
@@ -753,6 +755,7 @@ private fun nodeColors(node: FlowNode) = when (node) {
     is ScreenMLNode -> NodeColors.ScreenMLAmberBg to NodeColors.ScreenMLAmber
     is DelayNode -> NodeColors.DelayGreyBg to NodeColors.DelayGrey
     is LaunchAppNode -> NodeColors.LaunchAppTealBg to NodeColors.LaunchAppTeal
+    is RepeatNode -> NodeColors.RepeatOrangeBg to NodeColors.RepeatOrange
 }
 
 private fun edgeConditionLabel(edge: FlowEdge): String? {
@@ -938,6 +941,29 @@ internal fun DrawScope.drawNodeIcon(
                     }
                     drawPath(flame, iconColor, style = Stroke(2f, join = StrokeJoin.Round))
                 }
+            }
+            FlowNodeType.REPEAT -> {
+                // Circular arrow (loop) icon
+                val cx = iconCenterX
+                val cy = iconCenterY
+                val r = 11f
+                // Draw a 270° arc
+                drawArc(
+                    color = iconColor,
+                    startAngle = -90f,
+                    sweepAngle = 270f,
+                    useCenter = false,
+                    topLeft = Offset(cx - r, cy - r),
+                    size = Size(r * 2, r * 2),
+                    style = Stroke(3f, cap = StrokeCap.Round)
+                )
+                // Arrowhead at the end of the arc (top-center)
+                val arrowPath = Path().apply {
+                    moveTo(cx - 5f, cy - r - 4f)
+                    lineTo(cx, cy - r + 1f)
+                    lineTo(cx + 5f, cy - r - 4f)
+                }
+                drawPath(arrowPath, iconColor, style = Stroke(3f, join = StrokeJoin.Round, cap = StrokeCap.Round))
             }
         }
     }

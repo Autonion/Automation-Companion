@@ -95,5 +95,6 @@ data class FlowGraph(
         is ScreenMLNode -> node.copy(onFailureEdgeId = null)
         is DelayNode -> node.copy(onFailureEdgeId = null)
         is LaunchAppNode -> node.copy(onFailureEdgeId = null)
+        is RepeatNode -> node.copy(onFailureEdgeId = null)
     }
 }
