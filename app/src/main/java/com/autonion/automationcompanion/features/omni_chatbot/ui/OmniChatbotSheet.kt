@@ -92,7 +92,10 @@ fun OmniChatbotScaffold(
     val hideFabRoutes = setOf(
         "feature/semantic_automation",
         "feature/cross_device_automation",
-        "feature/flow_builder"
+        "feature/flow_builder",
+        "feature/gesture_recording_playback",
+        "feature/screen_understanding_using_on_device_ml",
+        "feature/visual_trigger"
     )
     val shouldHideFab = hideFabRoutes.any { currentRoute?.contains(it) == true }
     val shouldShowFab = !isExpanded && !isWalkthroughActive && !shouldHideFab
