@@ -138,4 +138,8 @@ dependencies {
     // Retrofit (for Local Server LLM integration later)
     implementation(libs.retrofit)
     implementation(libs.retrofit.converter.gson)
+    
+    // Langchain4j (for chat memory and Ollama integration)
+    implementation("dev.langchain4j:langchain4j:0.33.0")
+    implementation("dev.langchain4j:langchain4j-ollama:0.33.0")
 }

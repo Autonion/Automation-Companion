@@ -32,7 +32,16 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.transformWhile
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import java.util.UUID
+import dev.langchain4j.memory.ChatMemory
+import dev.langchain4j.memory.chat.MessageWindowChatMemory
+import dev.langchain4j.model.ollama.OllamaChatModel
+import dev.langchain4j.data.message.SystemMessage
+import dev.langchain4j.data.message.UserMessage
+import dev.langchain4j.data.message.AiMessage
+import dev.langchain4j.model.chat.ChatLanguageModel
 
 /**
  * ViewModel for the Omni-Chatbot.
@@ -92,6 +101,22 @@ class OmniChatbotViewModel(
     private val knowledgeStore = KnowledgeStore(intentClassifier.embedder)
 
     private val ragPromptBuilder = RAGPromptBuilder()
+
+    // ─── Langchain4j Chat Memory ────────────────────────────
+    private val chatMemory: ChatMemory = MessageWindowChatMemory.withMaxMessages(20)
+
+    private fun getLangchainModel(): ChatLanguageModel? {
+        val url = llmEngine.serverUrl.value
+        val modelName = llmEngine.selectedModelName.value
+        if (url.isBlank() || modelName.isBlank()) return null
+        
+        val baseUrl = if (url.endsWith("/")) url else "$url/"
+        return OllamaChatModel.builder()
+            .baseUrl(baseUrl)
+            .modelName(modelName)
+            .temperature(0.3)
+            .build()
+    }
 
     // ─── FAQ Browser State ──────────────────────────────────
     private val _showFAQBrowser = MutableStateFlow(false)
@@ -634,9 +659,6 @@ class OmniChatbotViewModel(
                 return@launch
             }
 
-            // Case C: Full RAG + LLM synthesis (plain text, no JSON schema)
-            // /no_think disables Qwen3's internal reasoning mode, which otherwise
-            // consumes all output tokens on <think> tags and produces no answer.
             val systemPrompt = buildString {
                 append("/no_think\n")
                 append("You are Autonion, an AI assistant built into an Android automation app.\n\n")
@@ -654,7 +676,37 @@ class OmniChatbotViewModel(
                 append(contextText)
             }
 
-            val rawAnswer = llmEngine.chatForQA(systemPrompt, result.rawPrompt)
+            var rawAnswer: String? = null
+            try {
+                withContext(Dispatchers.IO) {
+                    val model = getLangchainModel()
+                    if (model != null) {
+                        val userMsg = UserMessage(result.rawPrompt)
+                        
+                        val allMessages = mutableListOf<dev.langchain4j.data.message.ChatMessage>()
+                        allMessages.add(SystemMessage(systemPrompt))
+                        allMessages.addAll(chatMemory.messages())
+                        allMessages.add(userMsg)
+                        
+                        val response = model.generate(allMessages)
+                        var content = response.content().text().trim()
+                        
+                        if (content.contains("</think>")) {
+                            content = content.substringAfter("</think>").trim()
+                        } else if (content.startsWith("<think>")) {
+                            content = ""
+                        }
+                        
+                        if (content.isNotBlank()) {
+                            rawAnswer = content
+                            chatMemory.add(userMsg)
+                            chatMemory.add(AiMessage(rawAnswer))
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Langchain Q&A generation failed", e)
+            }
 
             // Parse [WALKTHROUGH:feature_id] tag from the LLM response.
             // The LLM appends this when the answer is clearly about a specific feature.
