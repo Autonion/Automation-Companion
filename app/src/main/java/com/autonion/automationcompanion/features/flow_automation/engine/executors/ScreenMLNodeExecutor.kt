@@ -51,6 +51,8 @@ class ScreenMLNodeExecutor(
     private suspend fun executeOCR(node: ScreenMLNode, context: FlowContext): NodeResult {
         val provider = screenCaptureProvider
             ?: return NodeResult.Failure("Screen capture not available — MediaProjection not started")
+        val ctx = appContext
+            ?: return NodeResult.Failure("App context not available for OCR")
 
         // 1. Capture the screen
         val bitmap = provider.captureFrame()
@@ -61,7 +63,7 @@ class ScreenMLNodeExecutor(
         try {
             val result = ocrEngine.recognizeText(bitmap)
             Log.d(TAG, "OCR: recognized ${result.blocks.size} blocks, ${result.fullText.length} chars")
-            DebugLogger.info(appContext!!, LogCategory.FLOW_BUILDER, "OCR Complete", "Recognized ${result.blocks.size} blocks, ${result.fullText.length} chars", TAG)
+            DebugLogger.info(ctx, LogCategory.FLOW_BUILDER, "OCR Complete", "Recognized ${result.blocks.size} blocks, ${result.fullText.length} chars", TAG)
 
             // 3. Write results to FlowContext
             context.put(node.outputContextKey, result.fullText)
@@ -96,10 +98,10 @@ class ScreenMLNodeExecutor(
                         context.put("${node.outputContextKey}_target_y", cy)
                     }
                     Log.d(TAG, "  ✓ Target text '${node.targetLabel}' found")
-                    DebugLogger.success(appContext!!, LogCategory.FLOW_BUILDER, "OCR Target Found", "Text '${node.targetLabel}' found on screen", TAG)
+                    DebugLogger.success(ctx, LogCategory.FLOW_BUILDER, "OCR Target Found", "Text '${node.targetLabel}' found on screen", TAG)
                 } else {
                     Log.d(TAG, "  ✗ Target text '${node.targetLabel}' not found")
-                    DebugLogger.warning(appContext!!, LogCategory.FLOW_BUILDER, "OCR Target Missing", "Text '${node.targetLabel}' not found on screen", TAG)
+                    DebugLogger.warning(ctx, LogCategory.FLOW_BUILDER, "OCR Target Missing", "Text '${node.targetLabel}' not found on screen", TAG)
                     return NodeResult.Failure("Target text '${node.targetLabel}' not found on screen")
                 }
             }
@@ -107,7 +109,7 @@ class ScreenMLNodeExecutor(
             return NodeResult.Success
         } catch (e: Exception) {
             Log.e(TAG, "OCR recognition failed", e)
-            DebugLogger.error(appContext!!, LogCategory.FLOW_BUILDER, "OCR Failed", "OCR error: ${e.message}", TAG)
+            DebugLogger.error(ctx, LogCategory.FLOW_BUILDER, "OCR Failed", "OCR error: ${e.message}", TAG)
             context.put("${node.outputContextKey}_success", false)
             return NodeResult.Failure("OCR error: ${e.message}")
         } finally {
@@ -196,7 +198,8 @@ class ScreenMLNodeExecutor(
                         if (step.isOptional) continue else return NodeResult.Failure("Failed to capture screen for step ${step.label}")
                     }
                     
-                    val detections = perceptionLayer.detect(bitmap)
+                    val frame: android.graphics.Bitmap = bitmap
+                    val detections = perceptionLayer.detect(frame)
                     val matches = detections.filter { it.label.equals(step.anchor.label, ignoreCase = true) }
                     
                     val originalCx = (step.anchor.bounds.left + step.anchor.bounds.right) / 2f

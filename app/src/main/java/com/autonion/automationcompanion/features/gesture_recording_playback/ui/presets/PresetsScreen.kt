@@ -55,6 +55,8 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.material.icons.outlined.Info
+import com.autonion.automationcompanion.features.omni_chatbot.ui.LocalStartWalkthrough
 import com.autonion.automationcompanion.ui.components.AuroraBackground
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -71,6 +73,7 @@ fun PresetsScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val fabScale = remember { Animatable(0f) }
+    val startWalkthrough = LocalStartWalkthrough.current
 
     LaunchedEffect(Unit) {
         fabScale.animateTo(1f, tween(300, easing = FastOutSlowInEasing))
@@ -84,6 +87,11 @@ fun PresetsScreen(
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = { startWalkthrough("gesture_recording") }) {
+                            Icon(Icons.Outlined.Info, contentDescription = "Take a Walkthrough", tint = MaterialTheme.colorScheme.onSurface)
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(

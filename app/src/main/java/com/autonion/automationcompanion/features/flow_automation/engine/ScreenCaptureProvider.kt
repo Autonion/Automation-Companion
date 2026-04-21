@@ -20,8 +20,6 @@ private const val TAG = "ScreenCaptureProvider"
 class ScreenCaptureProvider(private val context: Context) {
 
     private var projection: VisionMediaProjection? = null
-    @Volatile
-    private var latestBitmap: Bitmap? = null
     private var isStarted = false
 
     /**
@@ -73,8 +71,6 @@ class ScreenCaptureProvider(private val context: Context) {
     fun stop() {
         projection?.stopProjection()
         projection = null
-        latestBitmap?.recycle()
-        latestBitmap = null
         isStarted = false
         Log.d(TAG, "Screen capture stopped")
     }

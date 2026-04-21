@@ -4,6 +4,9 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import android.view.KeyEvent
+import com.autonion.automationcompanion.features.omni_chatbot.companion.FeatureMatcher
+import com.autonion.automationcompanion.features.omni_chatbot.companion.WalkthroughRegistry
+import com.autonion.automationcompanion.features.omni_chatbot.companion.WalkthroughScript
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.autonion.automationcompanion.features.cross_device_automation.CrossDeviceAutomationManager
@@ -20,13 +23,25 @@ import com.autonion.automationcompanion.features.semantic_automation.ml.LocalSer
 import com.autonion.automationcompanion.features.semantic_automation.ml.ServerConnectionStatus
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.transformWhile
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import java.util.UUID
+import dev.langchain4j.memory.ChatMemory
+import dev.langchain4j.memory.chat.MessageWindowChatMemory
+import dev.langchain4j.model.ollama.OllamaChatModel
+import dev.langchain4j.data.message.SystemMessage
+import dev.langchain4j.data.message.UserMessage
+import dev.langchain4j.data.message.AiMessage
+import dev.langchain4j.model.chat.ChatLanguageModel
 
 /**
  * ViewModel for the Omni-Chatbot.
@@ -87,12 +102,38 @@ class OmniChatbotViewModel(
 
     private val ragPromptBuilder = RAGPromptBuilder()
 
+    // ─── Langchain4j Chat Memory ────────────────────────────
+    private val chatMemory: ChatMemory = MessageWindowChatMemory.withMaxMessages(20)
+
+    private fun getLangchainModel(): ChatLanguageModel? {
+        val url = llmEngine.serverUrl.value
+        val modelName = llmEngine.selectedModelName.value
+        if (url.isBlank() || modelName.isBlank()) return null
+        
+        val baseUrl = if (url.endsWith("/")) url else "$url/"
+        return OllamaChatModel.builder()
+            .baseUrl(baseUrl)
+            .modelName(modelName)
+            .temperature(0.3)
+            .build()
+    }
+
     // ─── FAQ Browser State ──────────────────────────────────
     private val _showFAQBrowser = MutableStateFlow(false)
     val showFAQBrowser: StateFlow<Boolean> = _showFAQBrowser.asStateFlow()
 
     private val _faqList = MutableStateFlow<List<FAQRepository.FAQ>>(emptyList())
     val faqList: StateFlow<List<FAQRepository.FAQ>> = _faqList.asStateFlow()
+
+    // ─── Companion Walkthrough State ──────────────────────────
+    private val _activeWalkthrough = MutableStateFlow<WalkthroughScript?>(null)
+    val activeWalkthrough: StateFlow<WalkthroughScript?> = _activeWalkthrough.asStateFlow()
+
+    private val _currentStepIndex = MutableStateFlow(0)
+    val currentStepIndex: StateFlow<Int> = _currentStepIndex.asStateFlow()
+
+    private val _navigationEvent = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val navigationEvent: SharedFlow<String> = _navigationEvent
 
     // ─── Init: Wire up Desktop response flow ────────────────
     init {
@@ -133,7 +174,7 @@ class OmniChatbotViewModel(
 
     fun expand() {
         _isExpanded.value = true
-        autoConnectIfNeeded()
+        llmEngine.autoConnectIfNeeded()
     }
 
     fun updateRoute(route: String?) {
@@ -196,21 +237,6 @@ class OmniChatbotViewModel(
         _inferenceMode.value = mode
     }
 
-    /**
-     * Auto-reconnect using saved URL when chat is opened.
-     * Only triggers if there's a saved URL but the engine is disconnected.
-     */
-    private fun autoConnectIfNeeded() {
-        if (llmEngine.connectionStatus.value == ServerConnectionStatus.DISCONNECTED
-            && llmEngine.serverUrl.value.isNotBlank()
-        ) {
-            Log.d(TAG, "Auto-reconnecting to saved LLM server: ${llmEngine.serverUrl.value}")
-            viewModelScope.launch {
-                llmEngine.initialize()
-            }
-        }
-    }
-
     // ─── Main Entry Point ───────────────────────────────────
 
     fun processPrompt(text: String? = null) {
@@ -221,6 +247,8 @@ class OmniChatbotViewModel(
 
         // Add user message
         addMessage(OmniChatMessage(text = prompt, isUser = true))
+
+        // Early walkthrough check removed - now handled via Q&A appending.
 
         viewModelScope.launch {
             try {
@@ -410,8 +438,17 @@ class OmniChatbotViewModel(
 
     private fun handleDeviceAutomation(result: IntentResult) {
         if (llmEngine.connectionStatus.value != ServerConnectionStatus.CONNECTED) {
+            val setupMessage = buildString {
+                append("⚠️ It looks like Ollama isn't running.\n\n")
+                append("To use on-device AI automation, you need Ollama running on your desktop:\n\n")
+                append("1️⃣ Install Ollama from ollama.com (if not installed)\n")
+                append("2️⃣ Open a terminal and run: ollama serve\n")
+                append("3️⃣ Pull a model: ollama pull qwen3\n")
+                append("4️⃣ Tap ⚙️ above and enter your PC's IP address to connect\n\n")
+                append("💡 Make sure your phone and PC are on the same WiFi network.")
+            }
             addMessage(OmniChatMessage(
-                text = "⚠️ No LLM server connected. Tap ⚙️ above to connect to your Ollama server.",
+                text = setupMessage,
                 isUser = false,
                 mode = ResponseMode.SYSTEM
             ))
@@ -533,6 +570,26 @@ class OmniChatbotViewModel(
         ))
 
         viewModelScope.launch {
+            // Wait for the knowledge store to finish loading (handles the race
+            // condition where the user sends a question before background init
+            // completes — previously this returned "I don't have information").
+            if (!knowledgeStore.isLoaded) {
+                Log.d(TAG, "Q&A: Knowledge store still loading, waiting...")
+                val waitStart = System.currentTimeMillis()
+                while (!knowledgeStore.isLoaded && System.currentTimeMillis() - waitStart < 10_000) {
+                    delay(200)
+                }
+                if (!knowledgeStore.isLoaded) {
+                    Log.w(TAG, "Q&A: Knowledge store didn't load within 10s")
+                    updateLastBotMessage(
+                        "⏳ Knowledge base is still loading. Please try again in a moment.",
+                        ResponseMode.KNOWLEDGE
+                    )
+                    return@launch
+                }
+                Log.d(TAG, "Q&A: Knowledge store ready after ${System.currentTimeMillis() - waitStart}ms")
+            }
+
             // Retrieve top 3 relevant chunks (filtered by min similarity 0.35)
             val chunks = knowledgeStore.search(result.rawPrompt, topK = 3)
 
@@ -560,15 +617,14 @@ class OmniChatbotViewModel(
                 val cleanText = cleanKnowledgeChunk(chunks.first().text.take(1000), maxLength = 600)
                 val fallback = buildString {
                     append(cleanText)
-                    append("\n\n💡 Connect to an LLM server in ⚙️ settings for better answers.")
+                    append("\n\n💡 For smarter answers, connect to Ollama:\n")
+                    append("• Run \"ollama serve\" on your PC\n")
+                    append("• Tap ⚙️ above and enter your PC's IP address")
                 }
                 updateLastBotMessage(fallback, ResponseMode.KNOWLEDGE)
                 return@launch
             }
 
-            // Case C: Full RAG + LLM synthesis (plain text, no JSON schema)
-            // /no_think disables Qwen3's internal reasoning mode, which otherwise
-            // consumes all output tokens on <think> tags and produces no answer.
             val systemPrompt = buildString {
                 append("/no_think\n")
                 append("You are Autonion, an AI assistant built into an Android automation app.\n\n")
@@ -577,21 +633,81 @@ class OmniChatbotViewModel(
                 append("2. If the knowledge below does NOT contain information to answer the question, say exactly: \"I don't have specific information about that in my knowledge base.\"\n")
                 append("3. Do NOT make up features, capabilities, or instructions that are not explicitly described in the knowledge.\n")
                 append("4. Be concise and direct. Use bullet points where appropriate.\n")
-                append("5. Do NOT use <think> tags or internal reasoning. Answer immediately.\n\n")
+                append("5. Do NOT use <think> tags or internal reasoning. Answer immediately.\n")
+                append("6. If your answer is primarily about one of these features, append the tag on a new line at the very end of your response: [WALKTHROUGH:feature_id]\n")
+                append("   Available features: flow_builder, gesture_recording, semantic_automation, cross_device, visual_trigger, screen_ml, system_context, debugger\n")
+                append("   IMPORTANT: Do NOT append a WALKTHROUGH tag for browser extension, extension installation, or extension setup topics. Those have no walkthrough.\n")
+                append("7. IMPORTANT: There are TWO different extensions. The 'Autonion Extension' is for Desktop PC browsers. The 'Autonion Android Extension' is for Mobile phone browsers. If the user asks about an 'extension' without specifying PC or Mobile, explicitly mention both, explain the difference, and you MUST provide the exact github.com download URLs for BOTH extensions exactly as they appear in the knowledge below.\n\n")
                 append("KNOWLEDGE:\n")
                 append(contextText)
             }
 
-            val answer = llmEngine.chatForQA(systemPrompt, result.rawPrompt)
+            var rawAnswer: String? = null
+            try {
+                withContext(Dispatchers.IO) {
+                    val model = getLangchainModel()
+                    if (model != null) {
+                        val userMsg = UserMessage(result.rawPrompt)
+                        
+                        val allMessages = mutableListOf<dev.langchain4j.data.message.ChatMessage>()
+                        allMessages.add(SystemMessage(systemPrompt))
+                        allMessages.addAll(chatMemory.messages())
+                        allMessages.add(userMsg)
+                        
+                        val response = model.generate(allMessages)
+                        var content = response.content().text().trim()
+                        
+                        if (content.contains("</think>")) {
+                            content = content.substringAfter("</think>").trim()
+                        } else if (content.startsWith("<think>")) {
+                            content = ""
+                        }
+                        
+                        if (content.isNotBlank()) {
+                            rawAnswer = content
+                            chatMemory.add(userMsg)
+                            chatMemory.add(AiMessage(rawAnswer))
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Langchain Q&A generation failed", e)
+            }
+
+            // Parse [WALKTHROUGH:feature_id] tag from the LLM response.
+            // The LLM appends this when the answer is clearly about a specific feature.
+            // Also catch bare [feature_id] tags that the LLM sometimes produces.
+            val walkthroughTagRegex = Regex("""\[WALKTHROUGH:(\w+)]""")
+            val bareTagRegex = Regex("""\[(flow_builder|gesture_recording|semantic_automation|cross_device|visual_trigger|screen_ml|system_context|debugger)]""")
+            val tagMatch = rawAnswer?.let { walkthroughTagRegex.find(it) }
+            val bareTagMatch = rawAnswer?.let { bareTagRegex.find(it) }
+            val llmSuggestedFeature = tagMatch?.groupValues?.get(1)
+                ?: bareTagMatch?.groupValues?.get(1)
+
+            // Strip both tag formats from the displayed answer
+            val answer = rawAnswer
+                ?.let { walkthroughTagRegex.replace(it, "") }
+                ?.let { bareTagRegex.replace(it, "") }
+                ?.trim()
+
+            // Priority: prompt-based match → LLM tag → null
+            // If the query is about an excluded topic (e.g. extensions), suppress ALL
+            // walkthrough suggestions — even hallucinated LLM tags.
+            val walkthroughFeature = if (FeatureMatcher.isExcludedFromWalkthrough(result.rawPrompt)) {
+                null
+            } else {
+                FeatureMatcher.matchFeature(result.rawPrompt) ?: llmSuggestedFeature
+            }
 
             if (!answer.isNullOrBlank()) {
-                updateLastBotMessage(answer, ResponseMode.KNOWLEDGE)
+                updateLastBotMessage(answer, ResponseMode.KNOWLEDGE, suggestedWalkthroughId = walkthroughFeature)
             } else {
                 // LLM failed — show clean chunk fallback
                 val fallback = cleanKnowledgeChunk(chunks.first().text.take(1000), maxLength = 600)
                 updateLastBotMessage(
                     "$fallback\n\n💡 LLM didn't respond. Showing knowledge base excerpt.",
-                    ResponseMode.KNOWLEDGE
+                    ResponseMode.KNOWLEDGE,
+                    suggestedWalkthroughId = walkthroughFeature
                 )
             }
         }
@@ -661,7 +777,24 @@ class OmniChatbotViewModel(
             ResponseStatus.CANCELLED -> "⏹️"
         }
 
-        val text = "$emoji ${response.message}"
+        val text = when {
+            response.status == ResponseStatus.FAILED && response.message.contains("browser", ignoreCase = true) -> {
+                "❌ Browser automation failed.\n\n" +
+                "🔧 Troubleshooting:\n" +
+                "• Make sure the Autonion Extension is installed and enabled in your browser\n" +
+                "• Ensure the browser is open and running\n" +
+                "• Try refreshing the extension or restarting the browser"
+            }
+            response.status == ResponseStatus.FAILED && response.message.contains("extension", ignoreCase = true) -> {
+                "❌ Could not connect to the browser extension.\n\n" +
+                "🔧 Steps to fix:\n" +
+                "• Open Chrome/Edge and check that the Autonion Extension is enabled\n" +
+                "• Click the extension icon to verify it shows \"Connected\"\n" +
+                "• Restart the browser if the issue persists"
+            }
+            response.status == ResponseStatus.FAILED -> "$emoji ${response.message}"
+            else -> "$emoji ${response.message}"
+        }
 
         when (response.status) {
             ResponseStatus.IN_PROGRESS -> updateLastBotMessage(text, mode)
@@ -775,8 +908,9 @@ class OmniChatbotViewModel(
     // ═══════════════════════════════════════════════════════════
 
     private fun addMessage(message: OmniChatMessage) {
+        val cleaned = if (!message.isUser) message.copy(text = stripMarkdown(message.text)) else message
         val current = _messages.value.toMutableList()
-        current.add(0, message) // Newest first (for reverseLayout)
+        current.add(0, cleaned) // Newest first (for reverseLayout)
         _messages.value = current
     }
 
@@ -785,27 +919,43 @@ class OmniChatbotViewModel(
         mode: ResponseMode, 
         streaming: Boolean = false,
         actionWidget: ActionWidget? = null,
-        clearWidget: Boolean = false
+        clearWidget: Boolean = false,
+        suggestedWalkthroughId: String? = null
     ) {
+        val cleanedText = stripMarkdown(text)
         val current = _messages.value.toMutableList()
         val lastBotIdx = current.indexOfFirst { !it.isUser }
         if (lastBotIdx >= 0) {
             current[lastBotIdx] = current[lastBotIdx].copy(
-                text = text,
+                text = cleanedText,
                 mode = mode,
                 isStreaming = streaming,
-                actionWidget = if (clearWidget) null else actionWidget ?: current[lastBotIdx].actionWidget
+                actionWidget = if (clearWidget) null else actionWidget ?: current[lastBotIdx].actionWidget,
+                suggestedWalkthroughId = suggestedWalkthroughId ?: current[lastBotIdx].suggestedWalkthroughId
             )
             _messages.value = current
         } else {
             addMessage(OmniChatMessage(
-                text = text, 
+                text = cleanedText, 
                 isUser = false, 
                 mode = mode, 
                 isStreaming = streaming,
-                actionWidget = actionWidget
+                actionWidget = actionWidget,
+                suggestedWalkthroughId = suggestedWalkthroughId
             ))
         }
+    }
+
+    /** Strip common markdown formatting so chat bubbles show clean plaintext. */
+    private fun stripMarkdown(text: String): String {
+        return text
+            .replace(Regex("\\*\\*(.+?)\\*\\*"), "$1")   // **bold**
+            .replace(Regex("__(.+?)__"), "$1")             // __bold__
+            .replace(Regex("\\*(.+?)\\*"), "$1")           // *italic*
+            .replace(Regex("_(.+?)_"), "$1")               // _italic_
+            .replace(Regex("~~(.+?)~~"), "$1")             // ~~strikethrough~~
+            .replace(Regex("^#{1,6}\\s+", RegexOption.MULTILINE), "") // # headings
+            .replace(Regex("`(.+?)`"), "$1")               // `inline code`
     }
 
     private fun removeActionWidget(taskId: String) {
@@ -821,6 +971,102 @@ class OmniChatbotViewModel(
         ms < 60_000 -> "${ms / 1000}s"
         ms < 3_600_000 -> "${ms / 60_000}m"
         else -> "${ms / 3_600_000}h"
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  COMPANION WALKTHROUGH
+    // ═══════════════════════════════════════════════════════════
+
+    /**
+     * Start a guided walkthrough for the given feature.
+     * Collapses the chat sheet and navigates to the feature's first screen.
+     */
+    fun startWalkthrough(featureId: String) {
+        val script = WalkthroughRegistry.getScript(featureId)
+        if (script == null) {
+            addMessage(OmniChatMessage(
+                text = "Sorry, I don't have a guided walkthrough for that feature yet.",
+                isUser = false,
+                mode = ResponseMode.SYSTEM
+            ))
+            return
+        }
+
+        _activeWalkthrough.value = script
+        _currentStepIndex.value = 0
+        collapse() // Hide the chat sheet
+
+        // Add companion message to chat
+        addMessage(OmniChatMessage(
+            text = "\uD83E\uDDED Starting guided walkthrough: ${script.featureName}\n${script.description}",
+            isUser = false,
+            mode = ResponseMode.COMPANION
+        ))
+
+        // Navigate to the first step's route — but only if we're not already there.
+        // Without this check, pressing the walkthrough icon from inside the feature
+        // re-pushes the same route, causing an abrupt slide-in animation.
+        val firstStep = script.steps.firstOrNull()
+        firstStep?.targetRoute?.let { route ->
+            val current = _currentRoute.value
+            if (current == null || !current.contains(route.substringAfterLast("/"))) {
+                _navigationEvent.tryEmit(route)
+            }
+        }
+
+        Log.d(TAG, "Walkthrough started: ${script.featureId} (${script.steps.size} steps)")
+    }
+
+    /** Advance to the next walkthrough step. */
+    fun nextWalkthroughStep() {
+        val script = _activeWalkthrough.value ?: return
+        val nextIndex = _currentStepIndex.value + 1
+        if (nextIndex >= script.steps.size) {
+            // Reached the end
+            dismissWalkthrough()
+            return
+        }
+        _currentStepIndex.value = nextIndex
+
+        // Navigate if the step has a target route and we're not already there
+        script.steps[nextIndex].targetRoute?.let { route ->
+            val current = _currentRoute.value
+            if (current == null || !current.contains(route.substringAfterLast("/"))) {
+                _navigationEvent.tryEmit(route)
+            }
+        }
+    }
+
+    /** Go back to the previous walkthrough step. */
+    fun previousWalkthroughStep() {
+        val currentIndex = _currentStepIndex.value
+        if (currentIndex > 0) {
+            _currentStepIndex.value = currentIndex - 1
+
+            val script = _activeWalkthrough.value ?: return
+            script.steps[currentIndex - 1].targetRoute?.let { route ->
+                val current = _currentRoute.value
+                if (current == null || !current.contains(route.substringAfterLast("/"))) {
+                    _navigationEvent.tryEmit(route)
+                }
+            }
+        }
+    }
+
+    /** Dismiss the active walkthrough and return to normal mode. */
+    fun dismissWalkthrough() {
+        val wasActive = _activeWalkthrough.value != null
+        _activeWalkthrough.value = null
+        _currentStepIndex.value = 0
+
+        if (wasActive) {
+            addMessage(OmniChatMessage(
+                text = "Walkthrough complete! Feel free to ask me anything else. \uD83D\uDE0A",
+                isUser = false,
+                mode = ResponseMode.COMPANION
+            ))
+            Log.d(TAG, "Walkthrough dismissed")
+        }
     }
 
     override fun onCleared() {

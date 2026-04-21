@@ -50,6 +50,7 @@ fun FlowCanvas(
     editorColors: FlowEditorColors = FlowEditorColors.Dark,
     onCanvasTransform: (Offset, Float) -> Unit,
     onNodeTap: (String) -> Unit,
+    onNodeDragStart: (String) -> Unit = {},
     onNodeDrag: (String, NodePosition) -> Unit,
     onEdgeTap: (String) -> Unit,
     onCanvasTap: () -> Unit,
@@ -168,6 +169,10 @@ fun FlowCanvas(
                                     c.consume()
                                 } else if (initPos != null && hitNodeId != null) {
                                     // ── Node drag ──
+                                    if (!isDrag) {
+                                        // Bug #9 fix: push undo once at drag start
+                                        onNodeDragStart(hitNodeId)
+                                    }
                                     canvasAccum += delta / zoom
                                     onNodeDrag(
                                         hitNodeId,
@@ -398,6 +403,7 @@ private fun DrawScope.drawNode(
         is LaunchAppNode -> if (node.appPackageName.isNotBlank())
             node.appPackageName.substringAfterLast('.').uppercase()
         else "SELECT APP"
+        is RepeatNode -> if (node.repeatCount == 0) "∞ INFINITE" else "×${node.repeatCount}"
     }
     val subText = textMeasurer.measure(
         AnnotatedString(subtitle),
@@ -427,7 +433,7 @@ private fun DrawScope.drawNode(
     drawCircle(NodeColors.PortOutput, NodeDimensions.PORT_RADIUS - 2f, op)
 
     // ── Failure port (bottom-center) ──
-    if (node !is DelayNode && node !is LaunchAppNode) {
+    if (node !is DelayNode && node !is LaunchAppNode && node !is RepeatNode) {
         val fp = Offset(x + w / 2f, y + h)
         drawCircle(colors.portBg, NodeDimensions.PORT_RADIUS + 5f, fp)
         drawCircle(NodeColors.PortFailure.copy(alpha = 0.3f), NodeDimensions.PORT_RADIUS + 2f, fp)
@@ -621,6 +627,7 @@ private fun findNodeFailurePort(nodes: List<FlowNode>, pos: Offset): String? {
     return nodes.lastOrNull { 
         it !is DelayNode &&
         it !is LaunchAppNode &&
+        it !is RepeatNode &&
         (pos - Offset(it.position.x + NodeDimensions.WIDTH / 2f, it.position.y + NodeDimensions.HEIGHT)).getDistance() < r 
     }?.id
 }
@@ -643,12 +650,38 @@ private fun findEdgeAt(graph: FlowGraph, pos: Offset): String? {
             end = Offset(t.position.x, t.position.y + h / 2f)
         }
 
-        // Sample along the edge for hit testing
-        (0..7).any { i ->
-            val t0 = i.toFloat() / 7
-            (pos - Offset(lerp(start.x, end.x, t0), lerp(start.y, end.y, t0))).getDistance() < hitRadius
+        // Bug #11 fix: Sample along the cubic Bézier curve (matching actual drawn path)
+        // instead of linear interpolation
+        val dx = end.x - start.x
+        if (e.isFailurePath) {
+            val dy = end.y - start.y
+            val cpOff = -60f
+            val cp1x = start.x + cpOff; val cp1y = start.y + dy * 0.4f
+            val cp2x = end.x + cpOff; val cp2y = end.y - dy * 0.4f
+            (0..10).any { i ->
+                val t0 = i.toFloat() / 10
+                val bx = cubicBezier(start.x, cp1x, cp2x, end.x, t0)
+                val by = cubicBezier(start.y, cp1y, cp2y, end.y, t0)
+                (pos - Offset(bx, by)).getDistance() < hitRadius
+            }
+        } else {
+            val cpX = maxOf(80f, dx * 0.5f)
+            val cp1x = start.x + cpX; val cp1y = start.y
+            val cp2x = end.x - cpX; val cp2y = end.y
+            (0..10).any { i ->
+                val t0 = i.toFloat() / 10
+                val bx = cubicBezier(start.x, cp1x, cp2x, end.x, t0)
+                val by = cubicBezier(start.y, cp1y, cp2y, end.y, t0)
+                (pos - Offset(bx, by)).getDistance() < hitRadius
+            }
         }
     }?.id
+}
+
+/** Evaluate a cubic Bézier curve at parameter t ∈ [0,1]. */
+private fun cubicBezier(p0: Float, p1: Float, p2: Float, p3: Float, t: Float): Float {
+    val u = 1f - t
+    return u * u * u * p0 + 3f * u * u * t * p1 + 3f * u * t * t * p2 + t * t * t * p3
 }
 
 /** Hit-test the left-center input port of a node (where edges connect TO). */
@@ -722,6 +755,7 @@ private fun nodeColors(node: FlowNode) = when (node) {
     is ScreenMLNode -> NodeColors.ScreenMLAmberBg to NodeColors.ScreenMLAmber
     is DelayNode -> NodeColors.DelayGreyBg to NodeColors.DelayGrey
     is LaunchAppNode -> NodeColors.LaunchAppTealBg to NodeColors.LaunchAppTeal
+    is RepeatNode -> NodeColors.RepeatOrangeBg to NodeColors.RepeatOrange
 }
 
 private fun edgeConditionLabel(edge: FlowEdge): String? {
@@ -907,6 +941,29 @@ internal fun DrawScope.drawNodeIcon(
                     }
                     drawPath(flame, iconColor, style = Stroke(2f, join = StrokeJoin.Round))
                 }
+            }
+            FlowNodeType.REPEAT -> {
+                // Circular arrow (loop) icon
+                val cx = iconCenterX
+                val cy = iconCenterY
+                val r = 11f
+                // Draw a 270° arc
+                drawArc(
+                    color = iconColor,
+                    startAngle = -90f,
+                    sweepAngle = 270f,
+                    useCenter = false,
+                    topLeft = Offset(cx - r, cy - r),
+                    size = Size(r * 2, r * 2),
+                    style = Stroke(3f, cap = StrokeCap.Round)
+                )
+                // Arrowhead at the end of the arc (top-center)
+                val arrowPath = Path().apply {
+                    moveTo(cx - 5f, cy - r - 4f)
+                    lineTo(cx, cy - r + 1f)
+                    lineTo(cx + 5f, cy - r - 4f)
+                }
+                drawPath(arrowPath, iconColor, style = Stroke(3f, join = StrokeJoin.Round, cap = StrokeCap.Round))
             }
         }
     }

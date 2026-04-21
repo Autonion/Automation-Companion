@@ -130,7 +130,9 @@ Intent types:
 - Q_AND_A: General knowledge question answered via RAG or LLM. Examples: "what features does this app have?", "how to set up Ollama?"
 
 ### Cross-Device Automation
-Send commands from your Android device to your desktop computer and receive real-time responses. Cross-device automation requires a separate companion app called the Autonion Desktop Agent (also known as Autonion-Agent) to be installed and running on the target computer. You must download and install the Autonion Desktop Agent from github.com/Autonion/Autonion-Agent. Without the Desktop Agent running on the target computer, cross-device automation will not work.
+Send commands from your Android device to your desktop computer and receive real-time responses. Cross-device automation requires a separate companion app called the Autonion Desktop Agent (also known as Autonion-Agent) to be installed and running on the target computer. You must download and install the Autonion Desktop Agent from github.com/Autonion/Autonion-Agent/releases. Without the Desktop Agent running on the target computer, cross-device automation will not work.
+
+Important: For browser-based cross-device tasks (such as web searches, opening websites, or interacting with web pages), the Autonion Extension is also essential. The Desktop Agent alone handles system-level actions (key presses, app launching, file operations), but web page DOM interaction requires the Autonion Extension installed in Chrome or Edge on the desktop. Without it, the system can only use the less-reliable Windows accessibility tree for web content. See the "Browser Automation" section below for installation steps.
 
 How cross-device communication works:
 1. Discovery: The Desktop Agent broadcasts its presence on the local network using mDNS (Bonjour service type: _autonion._tcp). The Android app scans for this service automatically.
@@ -147,12 +149,13 @@ Cross-device features:
 - Structured commands. For simple key presses, the command is sent with structured data (key name, key code) so the Desktop can execute it directly without LLM involvement. This is faster and more reliable.
 
 Setup steps:
-1. Download and install the Autonion Desktop Agent from github.com/Autonion/Autonion-Agent on your Windows PC (Flutter-based app, also called Autonion-Agent).
-2. Run the Desktop Agent on your PC. Make sure both your Android device and PC are on the same WiFi network.
-3. Open Cross-Device Automation in the Android app.
-4. The desktop should appear automatically via mDNS discovery within a few seconds.
-5. Tap the device name to connect. You will see a "Connected" status.
-6. If auto-discovery fails, tap manual entry and type the IP address and port shown in the Desktop Agent window.
+1. Download and install the Autonion Desktop Agent from github.com/Autonion/Autonion-Agent/releases on your Windows PC (Flutter-based app, also called Autonion-Agent).
+2. For browser tasks on the desktop: also install the Autonion Extension from github.com/Autonion/Autonion-Extension/releases. Download the ZIP, extract it, open Chrome, go to chrome://extensions, enable Developer mode, and click "Load unpacked" to load the extracted folder. Without the Autonion Extension, web automation on the desktop falls back to the less-reliable Windows accessibility tree.
+3. Run the Desktop Agent on your PC. Make sure both your Android device and PC are on the same WiFi network.
+4. Open Cross-Device Automation in the Android app.
+5. The desktop should appear automatically via mDNS discovery within a few seconds.
+6. Tap the device name to connect. You will see a "Connected" status.
+7. If auto-discovery fails, tap manual entry and type the IP address and port shown in the Desktop Agent window.
 
 ### Gesture Recording and Playback
 Record touch interactions on your screen and replay them automatically.
@@ -247,20 +250,71 @@ Use cases:
 - Supplementing the Semantic Automation engine with visual element detection
 
 ### Browser Automation (Extension Bridge)
-For web browsing tasks, Autonion supports an extension-based approach:
+For web browsing tasks, Autonion supports an extension-based approach that provides direct access to web page content through the browser DOM. This is the primary method for browser-based automation and produces significantly better results than the accessibility tree fallback.
 
 How it works on Android:
 1. A WebSocket server runs inside the Android app (ExtensionBridgeServer on port 54321).
-2. A compatible browser with the Autonion extension connects to this server.
+2. A compatible browser with the Autonion Android Extension connects to this server.
 3. When the Semantic Engine detects a browser task, it launches the browser with the target URL.
 4. The extension captures the webpage DOM (interactive elements, text, links, buttons).
 5. The DOM elements are sent back to the Android app and presented to the LLM as numbered elements.
 6. The LLM predicts actions (click element, type text, scroll) using element IDs from the DOM snapshot.
 7. The action commands are sent back to the extension which executes them in the webpage.
+8. After each action, the extension automatically captures a fresh DOM snapshot, enabling the agentic loop: DOM Snapshot → LLM Decision → Action Command → DOM Snapshot → repeat.
 
-Supported browsers with extensions: Kiwi Browser (recommended), Lemur Browser, Firefox Nightly.
+Supported browsers with extensions on Android: Kiwi Browser (recommended), Lemur Browser, Firefox Nightly.
 
-If no supported browser is installed, the engine will prompt you to install one and offer options.
+If no supported browser is installed, the engine will prompt you to install one and offer options. If a browser is installed but the extension is not connected, the engine will detect this and prompt you to download the extension.
+
+#### Installing the Autonion Extension (Desktop Chrome/Edge)
+The Autonion Extension is a Chrome extension for desktop browsers that enables cross-device browser automation. When installed on your desktop Chrome or Edge browser, it allows the Autonion Desktop Agent to interact with web page content directly through the DOM instead of using the less-reliable Windows accessibility tree.
+
+Step-by-step installation:
+1. Go to github.com/Autonion/Autonion-Extension/releases and download the latest ZIP file.
+2. Extract the downloaded ZIP file to a folder on your computer (e.g., Desktop or Documents).
+3. Open Google Chrome (or Microsoft Edge).
+4. Navigate to chrome://extensions in the address bar (or edge://extensions for Edge).
+5. Enable "Developer mode" by toggling the switch in the top-right corner of the extensions page.
+6. Click the "Load unpacked" button that appears after enabling Developer mode.
+7. In the file dialog, navigate to and select the extracted folder (the one containing manifest.json).
+8. The Autonion extension icon will appear in your browser toolbar. Click it to see connection status.
+9. The extension automatically connects to the Autonion Desktop Agent when both are running.
+
+Source code: github.com/Autonion/Autonion-Extension
+
+#### Installing the Autonion Android Extension (Mobile Browsers)
+The Autonion Android Extension (also called Autonion Semantic Bridge) is the mobile counterpart that runs inside Android browsers supporting extensions. It captures webpage DOM snapshots and relays them to the Autonion Android app via a local WebSocket connection on port 54321. This is essential for web automation tasks on your phone.
+
+Step-by-step installation using Lemur Browser (example):
+1. Go to github.com/Autonion/Autonion-Android-Extension/releases and download the latest ZIP file to your phone.
+2. Extract the ZIP file using a file manager app (e.g., Files by Google, ZArchiver, or any file manager with ZIP support).
+3. Open Lemur Browser on your phone.
+4. Tap the three-dot menu (⋮) in the top-right corner.
+5. Go to "Extensions" from the menu.
+6. Enable "Developer mode" if prompted.
+7. Tap "Load unpacked" or "Load from folder".
+8. Navigate to the extracted folder and select it.
+9. The Autonion Semantic Bridge extension will load and automatically connect to the Android app.
+
+Step-by-step installation using Kiwi Browser:
+1. Download the ZIP from github.com/Autonion/Autonion-Android-Extension/releases.
+2. Extract the ZIP file on your phone.
+3. Open Kiwi Browser.
+4. Navigate to chrome://extensions in the address bar.
+5. Enable "Developer mode" toggle.
+6. Tap "Load unpacked" (or "+(from .zip/.crx/.user.js)").
+7. Select the extracted extension folder.
+8. The extension loads and connects to the Android app automatically.
+
+How to verify the extension is connected:
+- In the Autonion Android app, go to Automation Debugger > Semantic Actions. You should see a "Browser Extension Connected" log entry.
+- The extension popup (tap the extension icon in the browser) shows the connection status to the local WebSocket server.
+
+Source code: github.com/Autonion/Autonion-Android-Extension
+
+#### Difference between the two extensions
+- Autonion Extension (Desktop): Runs in Chrome/Edge on your PC. Connects to the Autonion Desktop Agent. Used for cross-device browser automation where you control the desktop browser from your phone.
+- Autonion Android Extension (Mobile): Runs in Kiwi/Lemur/Firefox Nightly on your phone. Connects directly to the Autonion Android app. Used for on-device browser automation where the AI agent controls the mobile browser.
 
 ### Automation Debugger
 View detailed, categorized logs of all automation activities.
@@ -354,13 +408,14 @@ Important notes about on-device SLM:
 - For faster and more accurate AI, use Server LLM mode with Ollama on your PC instead.
 
 ### Connecting to Desktop Agent
-To use cross-device automation, you must install the Autonion Desktop Agent app on your computer. Download it from github.com/Autonion/Autonion-Agent.
+To use cross-device automation, you must install the Autonion Desktop Agent app on your computer. Download it from github.com/Autonion/Autonion-Agent/releases.
 
-1. Install the Autonion Desktop Agent on your Windows PC (download from github.com/Autonion/Autonion-Agent or build from Flutter source).
+1. Install the Autonion Desktop Agent on your Windows PC (download the installer from github.com/Autonion/Autonion-Agent/releases).
 2. Run the Desktop Agent. It will show its WebSocket server port and local IP addresses.
 3. Make sure both devices are on the same WiFi network.
 4. In the Android app, go to Cross-Device Automation. The desktop should appear automatically.
 5. If it does not appear, use manual IP entry with the address shown in the Desktop Agent window.
+6. For browser-based tasks on the desktop, also install the Autonion Extension in Chrome (see the Browser Automation section above).
 
 ## Troubleshooting
 
@@ -373,7 +428,7 @@ This is usually caused by the LLM making poor predictions:
 - Use Omni-Chat for simple commands (like "press next" or "turn off wifi") which bypass the AI agent entirely and execute instantly.
 
 ### Cannot connect to desktop
-- Make sure the Autonion Desktop Agent (from github.com/Autonion/Autonion-Agent) is installed and running on your PC.
+- Make sure the Autonion Desktop Agent (from github.com/Autonion/Autonion-Agent/releases) is installed and running on your PC.
 - Ensure both devices are on the same WiFi network. Mobile data or different networks will not work.
 - Check if the Desktop Agent is running and shows a port number and IP address in its window.
 - Try manual IP entry if mDNS auto-discovery does not find the desktop.
@@ -396,10 +451,14 @@ Android aggressively kills background services to save battery. To prevent this:
 - On MIUI (Xiaomi): Also go to Settings > Additional Settings > Developer Options > MIUI Optimization and turn it off.
 
 ### Web automation does not work
-- You need a compatible browser with the Autonion extension installed: Kiwi Browser (recommended), Lemur Browser, or Firefox Nightly.
+- You need a compatible browser with the Autonion Android Extension installed. Supported browsers: Kiwi Browser (recommended), Lemur Browser, or Firefox Nightly.
+- Download the extension from github.com/Autonion/Autonion-Android-Extension/releases, extract the ZIP, and load it as an unpacked extension in your browser's extension settings.
 - Make sure the extension is enabled in the browser's extension settings.
 - If the extension cannot connect, check that the ExtensionBridgeServer port (54321) is not being used by another app.
+- Verify the extension is connected by checking Automation Debugger > Semantic Actions for a "Browser Extension Connected" log entry.
+- If the engine says "Browser extension not detected", the extension may not be installed or may have lost its connection. Try reopening the browser or reloading the extension.
 - Try restarting the browser and reopening the page.
+- For desktop browser automation, install the Autonion Extension (desktop version) from github.com/Autonion/Autonion-Extension/releases in Chrome or Edge.
 
 ### Omni-Chat answers are not helpful
 - Make sure your Ollama server is connected. Without an LLM, answers come from raw knowledge chunks which may not be as clear.

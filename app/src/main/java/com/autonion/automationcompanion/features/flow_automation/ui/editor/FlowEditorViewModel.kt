@@ -43,19 +43,52 @@ data class FlowEditorState(
 class FlowEditorViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository = FlowRepository(application)
-    private var executionEngine = FlowExecutionEngine(application)
     private var screenCaptureProvider: ScreenCaptureProvider? = null
+
+    // Bug #15 fix: Track execution state from FlowExecutionService
+    // via broadcast receiver instead of orphaned local engine
 
     private val _state = MutableStateFlow(FlowEditorState())
     val state: StateFlow<FlowEditorState> = _state.asStateFlow()
 
     private val _executionState = MutableStateFlow<FlowExecutionState>(FlowExecutionState.Idle)
     val executionState: StateFlow<FlowExecutionState> = _executionState.asStateFlow()
-    
-    private var engineStateJob: kotlinx.coroutines.Job? = null
+
+    // Bug #15 fix: Broadcast receiver for execution state updates from FlowExecutionService.
+    // MUST be declared before init{} to avoid null during registration (Kotlin init order).
+    private val serviceStateReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
+            intent ?: return
+            when (intent.action) {
+                "com.autonion.automationcompanion.flow.STATE_RUNNING" -> {
+                    val nodeId = intent.getStringExtra("node_id") ?: ""
+                    val nodeLabel = intent.getStringExtra("node_label") ?: ""
+                    _executionState.value = FlowExecutionState.Running(nodeId, nodeLabel)
+                }
+                "com.autonion.automationcompanion.flow.STATE_COMPLETED" -> {
+                    _executionState.value = FlowExecutionState.Completed
+                }
+                "com.autonion.automationcompanion.flow.STATE_ERROR" -> {
+                    val msg = intent.getStringExtra("message") ?: "Unknown error"
+                    _executionState.value = FlowExecutionState.Error(null, msg)
+                }
+                "com.autonion.automationcompanion.flow.STATE_STOPPED" -> {
+                    _executionState.value = FlowExecutionState.Stopped
+                }
+            }
+        }
+    }
 
     init {
-        observeEngine()
+        // Register service state receiver
+        val stateFilter = android.content.IntentFilter().apply {
+            addAction("com.autonion.automationcompanion.flow.STATE_RUNNING")
+            addAction("com.autonion.automationcompanion.flow.STATE_COMPLETED")
+            addAction("com.autonion.automationcompanion.flow.STATE_ERROR")
+            addAction("com.autonion.automationcompanion.flow.STATE_STOPPED")
+        }
+        androidx.localbroadcastmanager.content.LocalBroadcastManager.getInstance(getApplication<Application>())
+            .registerReceiver(serviceStateReceiver, stateFilter)
     }
 
     private val overlayReceiver = object : android.content.BroadcastReceiver() {
@@ -96,16 +129,12 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
 
     override fun onCleared() {
         androidx.localbroadcastmanager.content.LocalBroadcastManager.getInstance(getApplication<Application>()).unregisterReceiver(overlayReceiver)
+        androidx.localbroadcastmanager.content.LocalBroadcastManager.getInstance(getApplication<Application>()).unregisterReceiver(serviceStateReceiver)
         screenCaptureProvider?.stop()
         super.onCleared()
     }
     
-    private fun observeEngine() {
-        engineStateJob?.cancel()
-        engineStateJob = viewModelScope.launch {
-            executionEngine.state.collect { _executionState.value = it }
-        }
-    }
+
 
     // ─── Undo/Redo ────────────────────────────────────────────────────────
 
@@ -182,6 +211,19 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
     // ─── Node Operations ─────────────────────────────────────────────────
 
     fun addNode(type: FlowNodeType, position: NodePosition = NodePosition(400f, 400f)) {
+        // Bug #14 fix: Prevent adding multiple Start nodes
+        if (type == FlowNodeType.START) {
+            val existingStart = _state.value.graph.findStartNode()
+            if (existingStart != null) {
+                Log.w(TAG, "Graph already has a Start node — cannot add another")
+                android.widget.Toast.makeText(
+                    getApplication<android.app.Application>(),
+                    "Flow already has a Start node",
+                    android.widget.Toast.LENGTH_SHORT
+                ).show()
+                return
+            }
+        }
         pushUndo()
         val node: FlowNode = when (type) {
             FlowNodeType.START -> StartNode(position = position)
@@ -190,6 +232,7 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
             FlowNodeType.SCREEN_ML -> ScreenMLNode(position = position)
             FlowNodeType.DELAY -> DelayNode(position = position)
             FlowNodeType.LAUNCH_APP -> LaunchAppNode(position = position)
+            FlowNodeType.REPEAT -> RepeatNode(position = position)
         }
         _state.update { state ->
             state.copy(
@@ -224,6 +267,13 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
                 isDirty = true
             )
         }
+    }
+
+    /**
+     * Bug #9 fix: Call this at drag START (not on every move) to push undo once.
+     */
+    fun onDragStart(nodeId: String) {
+        pushUndo()
     }
 
     fun updateNodePosition(nodeId: String, newPosition: NodePosition) {
@@ -270,6 +320,13 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
         val currentState = _state.value
         val fromId = currentState.connectFromNodeId ?: return
         val isFailure = currentState.connectFromFailurePort
+
+        // Bug #8 fix: Prevent self-connections (infinite execution loop)
+        if (fromId == toNodeId) {
+            Log.w(TAG, "Self-connection not allowed — would cause infinite loop")
+            cancelConnection()
+            return
+        }
 
         // Prevent duplicate edges
         val existingEdge = currentState.graph.edges.find {
@@ -545,6 +602,7 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
             is ScreenMLNode -> node.copy(position = pos)
             is DelayNode -> node.copy(position = pos)
             is LaunchAppNode -> node.copy(position = pos)
+            is RepeatNode -> node.copy(position = pos)
         }
     }
 }

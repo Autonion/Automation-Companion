@@ -29,6 +29,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.autonion.automationcompanion.features.PlaceholderScreen
@@ -72,7 +73,8 @@ object AutomationRoutes {
 @Composable
 fun AppNavHost() {
     val navController = rememberNavController()
-    val currentRoute = navController.currentBackStackEntry?.destination?.route
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route
     val view = LocalView.current
     val activity = view.context as? Activity
     val colorScheme = MaterialTheme.colorScheme
@@ -82,7 +84,7 @@ fun AppNavHost() {
     SideEffect {
         activity?.let { act ->
             val window = act.window
-            if (currentRoute == ROUTE_HOME) {
+            if (currentRoute == ROUTE_HOME || currentRoute == AutomationRoutes.SEMANTIC_AUTOMATION || currentRoute == AutomationRoutes.CROSS_DEVICE) {
                 WindowCompat.setDecorFitsSystemWindows(window, false)
                 window.statusBarColor = Color.Transparent.toArgb()
                 WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !isDark
@@ -135,7 +137,13 @@ fun AppNavHost() {
     // ── Wrap everything in OmniChatbot scaffold ──
     OmniChatbotScaffold(
         viewModel = omniViewModel,
-        currentRoute = currentRoute
+        currentRoute = currentRoute,
+        onNavigate = { route ->
+            navController.navigate(route) {
+                // Avoid duplicating the same destination
+                launchSingleTop = true
+            }
+        }
     ) {
         NavHost(
             navController = navController,
@@ -174,19 +182,15 @@ fun AppNavHost() {
         }
 
         composable(AutomationRoutes.SCREEN_UNDERSTAND) {
-            val context = androidx.compose.ui.platform.LocalContext.current
-            androidx.compose.runtime.LaunchedEffect(Unit) {
-               context.startActivity(android.content.Intent(context, com.autonion.automationcompanion.features.screen_understanding_ml.ui.PresetDashboardActivity::class.java))
-               navController.popBackStack()
-            }
+            com.autonion.automationcompanion.features.screen_understanding_ml.ui.ScreenMLRoute(
+                onBack = { navController.popBackStack() }
+            )
         }
 
         composable(AutomationRoutes.VISUAL_TRIGGER) {
-            val context = androidx.compose.ui.platform.LocalContext.current
-            androidx.compose.runtime.LaunchedEffect(Unit) {
-               context.startActivity(android.content.Intent(context, com.autonion.automationcompanion.features.visual_trigger.ui.VisionTriggerActivity::class.java))
-               navController.popBackStack()
-            }
+            com.autonion.automationcompanion.features.visual_trigger.ui.VisualTriggerRoute(
+                onBack = { navController.popBackStack() }
+            )
         }
 
         composable(AutomationRoutes.CONDITIONAL) {

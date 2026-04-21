@@ -4,10 +4,14 @@ import android.content.Context
 import android.util.Log
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.ActionIntent
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.ActionType
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import retrofit2.Retrofit
@@ -138,6 +142,41 @@ class LocalServerLLMEngine private constructor(
         _selectedModelName.value = modelName
         prefs.edit().putString(PREF_SELECTED_MODEL, modelName).apply()
         Log.d(TAG, "Selected model: $modelName")
+    }
+
+    /**
+     * Auto-reconnect using saved URL.
+     * If no URL is saved, attempts auto-discovery from cross-device connected devices.
+     */
+    fun autoConnectIfNeeded() {
+        if (_connectionStatus.value != ServerConnectionStatus.DISCONNECTED) return
+
+        if (_serverUrl.value.isNotBlank()) {
+            // Case 1: Saved URL exists — just reconnect
+            Log.d(TAG, "Auto-reconnecting to saved LLM server: ${_serverUrl.value}")
+            CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
+                initialize()
+            }
+        } else {
+            // Case 2: No saved URL — try auto-discovery from cross-device connected devices
+            CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
+                try {
+                    val crossDeviceManager = com.autonion.automationcompanion.features.cross_device_automation.CrossDeviceAutomationManager.getInstance(context)
+                    val devices = crossDeviceManager.deviceRepository.getAllDevices().first()
+                    val onlineDevice = devices.firstOrNull {
+                        it.status == com.autonion.automationcompanion.features.cross_device_automation.domain.DeviceStatus.ONLINE
+                    }
+                    onlineDevice?.let { device ->
+                        val url = "http://${device.ipAddress}:11434"
+                        Log.d(TAG, "Auto-discovered desktop LLM server from cross-device: $url")
+                        setServerUrl(url)
+                        initialize()
+                    }
+                } catch (e: Exception) {
+                    Log.d(TAG, "Cross-device auto-discovery skipped: ${e.message}")
+                }
+            }
+        }
     }
 
     /**
@@ -375,6 +414,56 @@ class LocalServerLLMEngine private constructor(
             if (content.isBlank()) null else content
         } catch (e: Exception) {
             Log.e(TAG, "chatWithSchema failed: ${e.javaClass.simpleName}", e)
+            if (e is java.net.ConnectException || e is java.net.UnknownHostException) {
+                _connectionStatus.value = ServerConnectionStatus.DISCONNECTED
+            }
+            null
+        }
+    }
+
+    /**
+     * Simple JSON chat that uses Ollama's basic `format: "json"` mode.
+     *
+     * Unlike [chatWithSchema] which enforces a strict JSON schema (and can cause
+     * Ollama's constrained decoding to loop infinitely on null values), this method
+     * lets the model output any valid JSON, relying on the system prompt to guide
+     * the structure. Ideal for goal parsing where the model may need to omit fields.
+     */
+    suspend fun chatSimpleJson(
+        systemPrompt: String,
+        userPrompt: String
+    ): String? = withContext(Dispatchers.IO) {
+        val currentApi = api
+        val model = selectedModel
+
+        if (currentApi == null || model.isNullOrBlank()) {
+            Log.w(TAG, "chatSimpleJson: Server not connected or no model selected")
+            return@withContext null
+        }
+
+        try {
+            val messages = mutableListOf<OllamaChatMessage>()
+            if (systemPrompt.isNotBlank()) {
+                messages.add(OllamaChatMessage(role = "system", content = systemPrompt))
+            }
+            messages.add(OllamaChatMessage(role = "user", content = userPrompt))
+
+            val response = currentApi.chat(
+                OllamaChatRequest(
+                    model = model,
+                    messages = messages,
+                    stream = false,
+                    format = "json",
+                    options = mapOf("temperature" to 0.1, "num_ctx" to 2048)
+                )
+            )
+
+            val content = response.message.content.trim()
+            Log.d(TAG, "chatSimpleJson response (${response.eval_count} tokens): $content")
+
+            if (content.isBlank()) null else content
+        } catch (e: Exception) {
+            Log.e(TAG, "chatSimpleJson failed: ${e.javaClass.simpleName}", e)
             if (e is java.net.ConnectException || e is java.net.UnknownHostException) {
                 _connectionStatus.value = ServerConnectionStatus.DISCONNECTED
             }

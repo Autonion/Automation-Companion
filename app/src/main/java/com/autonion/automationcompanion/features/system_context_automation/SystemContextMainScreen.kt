@@ -52,12 +52,15 @@ import com.autonion.automationcompanion.features.system_context_automation.timeo
 import com.autonion.automationcompanion.features.system_context_automation.wifi.ui.WiFiActivity
 import com.autonion.automationcompanion.ui.components.AuroraBackground
 import com.autonion.automationcompanion.ui.components.FeatureCard
+import androidx.compose.material.icons.outlined.Info
+import com.autonion.automationcompanion.features.omni_chatbot.ui.LocalStartWalkthrough
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SystemContextMainScreen(onBack: () -> Unit) {
     val context = LocalContext.current
+    val startWalkthrough = LocalStartWalkthrough.current
 
     AuroraBackground {
         Scaffold(
@@ -70,6 +73,11 @@ fun SystemContextMainScreen(onBack: () -> Unit) {
                                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = "Back"
                             )
+                        }
+                    },
+                    actions = {
+                        IconButton(onClick = { startWalkthrough("system_context") }) {
+                            Icon(Icons.Outlined.Info, contentDescription = "Take a Walkthrough")
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(

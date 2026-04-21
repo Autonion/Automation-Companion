@@ -30,6 +30,8 @@ import androidx.compose.ui.unit.sp
 import com.autonion.automationcompanion.features.flow_automation.model.FlowGraph
 import com.autonion.automationcompanion.features.flow_automation.ui.editor.canvas.NodeColors
 import com.autonion.automationcompanion.ui.components.AuroraBackground
+import androidx.compose.material.icons.outlined.Info
+import com.autonion.automationcompanion.features.omni_chatbot.ui.LocalStartWalkthrough
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -51,6 +53,7 @@ fun FlowListScreen(
     val flows by viewModel.flows.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
     val isDark = isSystemInDarkTheme()
+    val startWalkthrough = LocalStartWalkthrough.current
 
     // Import picker
     val importLauncher = rememberLauncherForActivityResult(
@@ -96,6 +99,10 @@ fun FlowListScreen(
                         }
                     },
                     actions = {
+                        // Walkthrough button
+                        IconButton(onClick = { startWalkthrough("flow_builder") }) {
+                            Icon(Icons.Outlined.Info, contentDescription = "Take a Walkthrough", tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                        }
                         // Import button
                         IconButton(onClick = {
                             importLauncher.launch(arrayOf("application/json"))

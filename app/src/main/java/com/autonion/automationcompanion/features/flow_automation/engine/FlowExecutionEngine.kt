@@ -42,6 +42,7 @@ class FlowExecutionEngine(
 
     private val flowContext = FlowContext()
     private var executionJob: Job? = null
+    @Volatile
     private var isPaused = false
 
     // Executor registry — wire real implementations when ScreenCaptureProvider is available
@@ -51,7 +52,8 @@ class FlowExecutionEngine(
         FlowNodeType.VISUAL_TRIGGER to VisualTriggerNodeExecutor(screenCaptureProvider),
         FlowNodeType.SCREEN_ML to ScreenMLNodeExecutor(appContext, screenCaptureProvider),
         FlowNodeType.DELAY to DelayNodeExecutor(),
-        FlowNodeType.LAUNCH_APP to LaunchAppNodeExecutor(appContext)
+        FlowNodeType.LAUNCH_APP to LaunchAppNodeExecutor(appContext),
+        FlowNodeType.REPEAT to RepeatNodeExecutor()
     )
 
     /**
@@ -136,16 +138,98 @@ class FlowExecutionEngine(
                     if (outgoingEdges.isEmpty()) {
                         Log.d(TAG, "No outgoing edges — flow complete")
                         currentNode = null
+                    } else if (node is RepeatNode) {
+                        // ── Repeat/loop handling ──
+                        val repeatCount = node.repeatCount
+                        val isInfinite = repeatCount == 0
+                        val nextEdge = EdgeConditionEvaluator.resolveNextEdge(outgoingEdges, flowContext)
+
+                        if (nextEdge != null) {
+                            var iteration = 0
+                            while (isInfinite || iteration < repeatCount) {
+                                currentCoroutineContext().ensureActive()
+                                while (isPaused) { delay(200) }
+
+                                iteration++
+                                Log.d(TAG, "Repeat '${node.label}' iteration $iteration" +
+                                        if (!isInfinite) "/$repeatCount" else " (∞)")
+                                DebugLogger.info(appContext, DBG_CATEGORY, "Repeat Iteration",
+                                    "'${node.label}' iteration $iteration" +
+                                            if (!isInfinite) "/$repeatCount" else " (infinite)", TAG)
+
+                                // Execute the sub-graph starting from the repeat's first child
+                                var subNode: FlowNode? = graph.nodeById(nextEdge.toNodeId)
+                                while (subNode != null) {
+                                    currentCoroutineContext().ensureActive()
+                                    while (isPaused) { delay(200) }
+
+                                    // Don't re-enter another RepeatNode's loop from inside
+                                    _state.value = FlowExecutionState.Running(subNode.id, subNode.label)
+                                    val subExecutor = executors[subNode.nodeType]
+                                    if (subExecutor == null) {
+                                        _state.value = FlowExecutionState.Error(subNode.id, "No executor for ${subNode.nodeType}")
+                                        return
+                                    }
+
+                                    val subResult = try {
+                                        withTimeout(subNode.timeoutMs) {
+                                            subExecutor.execute(subNode, flowContext)
+                                        }
+                                    } catch (e: TimeoutCancellationException) {
+                                        NodeResult.Failure("Timed out after ${subNode.timeoutMs}ms")
+                                    }
+
+                                    when (subResult) {
+                                        is NodeResult.Success -> {
+                                            _state.value = FlowExecutionState.NodeCompleted(subNode.id)
+                                            val subEdges = graph.outgoingEdges(subNode.id)
+                                            if (subEdges.isEmpty()) {
+                                                subNode = null // end of sub-chain
+                                            } else {
+                                                val subNext = EdgeConditionEvaluator.resolveNextEdge(subEdges, flowContext)
+                                                if (subNext != null) {
+                                                    EdgeConditionEvaluator.applyEdgeDelay(subNext)
+                                                    subNode = graph.nodeById(subNext.toNodeId)
+                                                } else {
+                                                    subNode = null
+                                                }
+                                            }
+                                        }
+                                        is NodeResult.Failure -> {
+                                            Log.e(TAG, "Sub-node ${subNode.label} failed in repeat: ${subResult.reason}")
+                                            DebugLogger.error(appContext, DBG_CATEGORY, "Repeat Sub-Node Failed",
+                                                "'${subNode.label}' failed during repeat: ${subResult.reason}", TAG)
+                                            _state.value = FlowExecutionState.Error(subNode.id, subResult.reason)
+                                            return
+                                        }
+                                    }
+                                }
+
+                                // Delay between iterations
+                                if (node.delayBetweenMs > 0 && (isInfinite || iteration < repeatCount)) {
+                                    delay(node.delayBetweenMs)
+                                }
+                            }
+
+                            Log.d(TAG, "Repeat '${node.label}' completed all iterations")
+                            DebugLogger.success(appContext, DBG_CATEGORY, "Repeat Completed",
+                                "'${node.label}' completed $repeatCount iterations", TAG)
+                        }
+                        // After repeat finishes, flow continues to whatever is AFTER the last sub-node
+                        // (or ends if there are no more nodes)
+                        currentNode = null
                     } else {
                         val nextEdge = EdgeConditionEvaluator.resolveNextEdge(outgoingEdges, flowContext)
                         if (nextEdge?.condition is EdgeCondition.StopExecution) {
                             Log.d(TAG, "StopExecution condition encountered — halting flow")
                             currentNode = null
+                        } else if (nextEdge != null) {
+                            // Bug #3 fix: Apply WaitSeconds delay AFTER edge selection
+                            EdgeConditionEvaluator.applyEdgeDelay(nextEdge)
+                            currentNode = graph.nodeById(nextEdge.toNodeId)
                         } else {
-                            currentNode = nextEdge?.let { graph.nodeById(it.toNodeId) }
-                            if (currentNode == null && nextEdge == null) {
-                                Log.d(TAG, "No matching edge condition — flow complete")
-                            }
+                            Log.d(TAG, "No matching edge condition — flow complete")
+                            currentNode = null
                         }
                     }
                 }

@@ -22,9 +22,6 @@ import org.json.JSONObject
  * Requires the Ollama server to be connected. If not connected, returns null
  * to signal the caller to show a "connect to server" message.
  */
-import com.autonion.automationcompanion.features.nlu.IntentClassifier
-import com.autonion.automationcompanion.features.nlu.IntentType
-
 class GoalParser(private val context: Context) {
 
     companion object {
@@ -32,19 +29,32 @@ class GoalParser(private val context: Context) {
 
         /**
          * System prompt that instructs the LLM on how to parse user commands.
+         * Includes confidence self-rating to detect hallucinated/gibberish inputs.
          */
         private val SYSTEM_PROMPT = """
             You are a command parser for an Android automation assistant.
-            Extract the user's intent into structured JSON.
+            Extract the user's intent into a JSON object with these fields:
 
             RULES:
-            - "task" must be one of: search, open, login, send_message, play, navigate, call, create, enable, disable, scroll, tap, type, back, unknown
-            - "app_name" is the app the user wants to interact with (e.g. "flipkart", "youtube", "whatsapp", "settings"). Use lowercase. null if not mentioned.
-            - "domain" is the website domain with correct TLD if the task involves a website (e.g. "flipkart.com", "amazon.in", "youtube.com", "chat.openai.com"). null for native-only apps like settings, calculator, whatsapp, phone dialer, etc.
-            - "search_query" is what the user wants to search/find/play. null if not applicable.
+            - "task" (required): one of: search, open, login, send_message, play, navigate, call, create, enable, disable, scroll, tap, type, back, unknown
+            - "app_name": the app in lowercase (e.g. "flipkart", "youtube", "whatsapp", "settings"). Use null if not mentioned.
+            - "domain": the website domain with correct TLD (e.g. "flipkart.com", "amazon.in", "youtube.com"). Use null for native-only apps or if not applicable.
+            - "search_query": what the user wants to search/find/play. Use null if not applicable.
+            - "confidence": a number from 0.0 to 1.0 indicating how confident you are in this parsing.
             - For compound commands like "open flipkart and search for headphones", extract the final intent: task=search, app=flipkart, query=headphones.
-            - For system commands like "turn on wifi", use task=enable, app_name=null, domain=null, search_query="wifi".
+            - For system commands like "turn on wifi", use task=enable, search_query="wifi".
             - For "open <app>" commands with no search, use task=open, search_query=null.
+
+            CONFIDENCE RULES:
+            - Set confidence=1.0 when the command clearly mentions a well-known app or service and a clear action.
+            - Set confidence=0.7-0.9 when the command is valid but somewhat ambiguous (e.g. missing app name).
+            - Set confidence=0.3-0.6 when you are guessing the app name or task because the input is unclear.
+            - Set confidence=0.0-0.2 when the command is gibberish, references apps/services you've never heard of, or makes no coherent sense.
+            - If the app name in the command does NOT correspond to any real, well-known application or website, set confidence below 0.3 and task="unknown".
+            - Do NOT invent or guess app names. If you don't recognize an app, set app_name=null and confidence low.
+
+            RESPOND WITH ONLY A JSON OBJECT. Example:
+            {"task":"play","app_name":null,"domain":null,"search_query":"one piece intro","confidence":0.8}
         """.trimIndent()
 
         /**
@@ -60,18 +70,22 @@ class GoalParser(private val context: Context) {
                 ),
                 "app_name" to mapOf(
                     "type" to "string",
-                    "description" to "The target app name in lowercase (e.g. flipkart, youtube, settings), or empty string if not applicable"
+                    "description" to "The target app name in lowercase (e.g. flipkart, youtube, settings). Omit this field if no app is mentioned."
                 ),
                 "domain" to mapOf(
                     "type" to "string",
-                    "description" to "The website domain with correct TLD (e.g. flipkart.com, amazon.in, youtube.com), or empty string for native-only apps"
+                    "description" to "The website domain with correct TLD (e.g. flipkart.com, amazon.in, youtube.com). Omit this field for native-only apps or when not applicable."
                 ),
                 "search_query" to mapOf(
                     "type" to "string",
-                    "description" to "The search query or content to find, or empty string if not applicable"
+                    "description" to "The search query or content to find. Omit this field if not applicable."
+                ),
+                "confidence" to mapOf(
+                    "type" to "number",
+                    "description" to "Confidence score 0.0-1.0 for how certain you are about this parsing. Low for gibberish or unrecognized apps."
                 )
             ),
-            "required" to listOf("task", "app_name", "domain", "search_query")
+            "required" to listOf("task", "confidence")
         )
     }
 
@@ -86,39 +100,19 @@ class GoalParser(private val context: Context) {
         val command = rawCommand.trim()
         Log.d(TAG, "Parsing with semantic engine: \"$command\"")
 
-        // ── Phase 1: Local NLU via IntentClassifier ──
-        try {
-            val classifier = IntentClassifier.getInstance(context)
-            val localResult = classifier.classify(command)
+        // All intent parsing is handled by the LLM. If the parsed goal is
+        // missing info (e.g. which app), the engine's generic clarification
+        // system will ask the user interactively.
 
-            if (localResult.intent == IntentType.DIRECT_TOGGLE) {
-                val task = if (localResult.entities.toggleDesiredState == false) "disable" else "enable"
-                val target = localResult.entities.toggleTarget
-                Log.d(TAG, "Local parsed → task=$task, query=$target (DIRECT_TOGGLE)")
-                return SemanticGoal(task = task, query = target, targetApp = null, domain = null, rawCommand = command)
-            } else if (localResult.intent == IntentType.DEVICE_AUTOMATION && localResult.confidence >= 0.85f) {
-                val app = localResult.entities.appName
-                val query = localResult.entities.searchQuery
-                if (app != null) {
-                    val task = if (!query.isNullOrBlank()) "search" else "open"
-                    Log.d(TAG, "Local parsed → task=$task, app=$app, query=$query (DEVICE_AUTOMATION)")
-                    return SemanticGoal(task = task, query = query, targetApp = app, domain = null, rawCommand = command)
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Local intent classification failed, falling back to LLM", e)
-        }
-
-        // ── Phase 2: LLM Fallback for complex prompts ──
+        // ── Fallback: LLM-based parsing for complex/ambiguous commands ──
         if (llmEngine.connectionStatus.value != ServerConnectionStatus.CONNECTED) {
             Log.w(TAG, "LLM server not connected — cannot parse goal")
             return null
         }
 
-        val responseJson = llmEngine.chatWithSchema(
+        val responseJson = llmEngine.chatSimpleJson(
             systemPrompt = SYSTEM_PROMPT,
-            userPrompt = command,
-            jsonSchema = GOAL_PARSE_SCHEMA
+            userPrompt = command
         )
 
         if (responseJson == null) {
@@ -135,19 +129,25 @@ class GoalParser(private val context: Context) {
             })
 
             val task = json.optString("task", "unknown").lowercase().trim()
-            val appName = json.optString("app_name", "").trim().lowercase().ifBlank { null }
-            val domain = json.optString("domain", "").trim().lowercase().ifBlank { null }
-            val searchQuery = json.optString("search_query", "").trim().ifBlank { null }
+            val appName = json.optString("app_name", "").trim().lowercase()
+                .let { if (it.isBlank() || it == "null") null else it }
+            val domain = json.optString("domain", "").trim().lowercase()
+                .let { if (it.isBlank() || it == "null") null else it }
+            val searchQuery = json.optString("search_query", "").trim()
+                .let { if (it.isBlank() || it == "null") null else it }
+
+            val confidence = json.optDouble("confidence", 0.5).toFloat().coerceIn(0f, 1f)
 
             val goal = SemanticGoal(
                 task = task,
                 query = searchQuery,
                 targetApp = appName,
                 domain = domain,
-                rawCommand = command
+                rawCommand = command,
+                confidence = confidence
             )
 
-            Log.d(TAG, "LLM parsed → task=${goal.task}, app=${goal.targetApp}, domain=${goal.domain}, query=${goal.query}")
+            Log.d(TAG, "LLM parsed → task=${goal.task}, app=${goal.targetApp}, domain=${goal.domain}, query=${goal.query}, confidence=${goal.confidence}")
             goal
         } catch (e: Exception) {
             Log.e(TAG, "Failed to parse LLM response: $responseJson", e)

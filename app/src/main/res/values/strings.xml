@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">Automation Companion</string>
+    <string name="app_name">Autonion</string>
     <string name="accessibility_desc">Accessibility Service for Automation Companion.</string>
     <string name="accessibility_description_gesture">Required for touch automation</string>
     <string name="overlay_permission">Overlay permission is required to show controls</string>

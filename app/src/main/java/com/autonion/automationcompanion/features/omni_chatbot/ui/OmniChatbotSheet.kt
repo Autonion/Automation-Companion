@@ -1,6 +1,7 @@
 package com.autonion.automationcompanion.features.omni_chatbot.ui
 
 import android.text.format.DateFormat
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
@@ -30,12 +31,20 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.text.ClickableText
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.platform.LocalUriHandler
+import android.util.Patterns
 import com.autonion.automationcompanion.features.omni_chatbot.OmniChatbotViewModel
 import com.autonion.automationcompanion.features.omni_chatbot.model.*
 import com.autonion.automationcompanion.features.semantic_automation.ml.ServerConnectionStatus
@@ -53,9 +62,11 @@ private val InputBarBg = Color(0xFF1A1D2E).copy(alpha = 0.85f)
 private val UserBubbleGrad = listOf(AccentPurple, AccentBlue)
 private val SystemBubbleBg = Color(0xFF1E2030)
 
-// ═══════════════════════════════════════════════════════════
-//  MAIN: FAB + BOTTOM SHEET
-// ═══════════════════════════════════════════════════════════
+/**
+ * CompositionLocal that provides the walkthrough trigger to any feature screen.
+ * Consume it with: val startWalkthrough = LocalStartWalkthrough.current
+ */
+val LocalStartWalkthrough = compositionLocalOf<(String) -> Unit> { {} }
 
 /**
  * Global Omni-Chatbot overlay.
@@ -63,31 +74,65 @@ private val SystemBubbleBg = Color(0xFF1E2030)
  *
  * @param viewModel The shared OmniChatbotViewModel
  * @param currentRoute The current navigation route (for contextual FAQs)
+ * @param onNavigate Callback to trigger navigation (consumed from ViewModel events)
  * @param content The actual app content (NavHost)
  */
 @Composable
 fun OmniChatbotScaffold(
     viewModel: OmniChatbotViewModel,
     currentRoute: String?,
+    onNavigate: (String) -> Unit = {},
     content: @Composable () -> Unit
 ) {
     val isExpanded by viewModel.isExpanded.collectAsState()
+    val walkthrough by viewModel.activeWalkthrough.collectAsState()
+    val stepIndex by viewModel.currentStepIndex.collectAsState()
+    val isWalkthroughActive = walkthrough != null
+
+    // Routes where the FAB should be hidden (they have their own bottom input bars / FABs)
+    val hideFabRoutes = setOf(
+        "feature/semantic_automation",
+        "feature/cross_device_automation",
+        "feature/flow_builder",
+        "feature/gesture_recording_playback",
+        "feature/screen_understanding_using_on_device_ml",
+        "feature/visual_trigger"
+    )
+    val shouldHideFab = hideFabRoutes.any { currentRoute?.contains(it) == true }
+    val shouldShowFab = !isExpanded && !isWalkthroughActive && !shouldHideFab
+
+    // Observe navigation events from ViewModel (for walkthrough navigation)
+    LaunchedEffect(Unit) {
+        viewModel.navigationEvent.collect { route ->
+            onNavigate(route)
+        }
+    }
 
     LaunchedEffect(currentRoute) {
         viewModel.updateRoute(currentRoute)
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
-        // ── App Content ──
-        content()
+    // Handle back button when the sheet is expanded
+    BackHandler(enabled = isExpanded) {
+        viewModel.collapse()
+    }
 
-        // ── FAB (visible when chatbot is collapsed) ──
+    Box(modifier = Modifier.fillMaxSize()) {
+        // ── App Content (with walkthrough trigger available to all screens) ──
+        CompositionLocalProvider(
+            LocalStartWalkthrough provides { featureId -> viewModel.startWalkthrough(featureId) }
+        ) {
+            content()
+        }
+
+        // ── FAB (visible when chatbot is collapsed and not on blocked routes) ──
         AnimatedVisibility(
-            visible = !isExpanded,
+            visible = shouldShowFab,
             enter = scaleIn(spring(dampingRatio = 0.5f)) + fadeIn(),
             exit = scaleOut() + fadeOut(),
             modifier = Modifier
                 .align(Alignment.BottomEnd)
+                .navigationBarsPadding()
                 .padding(16.dp)
         ) {
             OmniFAB(onClick = { viewModel.expand() })
@@ -101,6 +146,19 @@ fun OmniChatbotScaffold(
             modifier = Modifier.align(Alignment.BottomCenter)
         ) {
             OmniChatSheet(viewModel = viewModel)
+        }
+
+        // ── Companion Floating Widget (visible during walkthroughs) ──
+        if (isWalkthroughActive && !isExpanded) {
+            walkthrough?.let { script ->
+                CompanionFloatingBar(
+                    walkthrough = script,
+                    stepIndex = stepIndex,
+                    onPrevious = { viewModel.previousWalkthroughStep() },
+                    onNext = { viewModel.nextWalkthroughStep() },
+                    onDismiss = { viewModel.dismissWalkthrough() }
+                )
+            }
         }
     }
 }
@@ -165,6 +223,13 @@ private fun OmniChatSheet(viewModel: OmniChatbotViewModel) {
     val currentRoute by viewModel.currentRoute.collectAsState()
     val showSettings by viewModel.showSettings.collectAsState()
     val listState = rememberLazyListState()
+
+    // Auto-scroll to the newest message when list grows or streaming text updates
+    LaunchedEffect(messages.size, messages.firstOrNull()?.text?.length) {
+        if (messages.isNotEmpty()) {
+            listState.animateScrollToItem(0)
+        }
+    }
 
     val showFAQBrowser by viewModel.showFAQBrowser.collectAsState()
     val faqList by viewModel.faqList.collectAsState()
@@ -273,7 +338,8 @@ private fun OmniChatSheet(viewModel: OmniChatbotViewModel) {
                     items(messages, key = { it.id }) { message ->
                         ChatBubble(
                             message = message,
-                            onStopTask = { taskId -> viewModel.stopScheduledTask(taskId) }
+                            onStopTask = { taskId -> viewModel.stopScheduledTask(taskId) },
+                            onStartWalkthrough = { featureId -> viewModel.startWalkthrough(featureId) }
                         )
                     }
                 }
@@ -885,9 +951,11 @@ private fun EmptyChatState() {
 @Composable
 private fun ChatBubble(
     message: OmniChatMessage,
-    onStopTask: (String) -> Unit
+    onStopTask: (String) -> Unit,
+    onStartWalkthrough: (String) -> Unit
 ) {
     val isUser = message.isUser
+    val uriHandler = LocalUriHandler.current
 
     // Entrance animation
     var visible by remember { mutableStateOf(false) }
@@ -973,11 +1041,49 @@ private fun ChatBubble(
                     .padding(horizontal = 14.dp, vertical = 10.dp)
             ) {
                 Column {
-                    Text(
-                        text = message.text,
-                        color = Color.White,
-                        fontSize = 14.sp,
-                        lineHeight = 20.sp
+                    val annotatedText = buildAnnotatedString {
+                        val matcher = Patterns.WEB_URL.matcher(message.text)
+                        var lastIndex = 0
+                        while (matcher.find()) {
+                            val start = matcher.start()
+                            val end = matcher.end()
+                            val url = matcher.group()
+                            append(message.text.substring(lastIndex, start))
+                            pushStringAnnotation(tag = "URL", annotation = url)
+                            withStyle(style = SpanStyle(
+                                color = AccentBlue, 
+                                textDecoration = TextDecoration.Underline,
+                                fontWeight = FontWeight.Bold
+                            )) {
+                                append(url)
+                            }
+                            pop()
+                            lastIndex = end
+                        }
+                        append(message.text.substring(lastIndex))
+                    }
+
+                    ClickableText(
+                        text = annotatedText,
+                        style = androidx.compose.ui.text.TextStyle(
+                            color = Color.White,
+                            fontSize = 14.sp,
+                            lineHeight = 20.sp
+                        ),
+                        onClick = { offset ->
+                            annotatedText.getStringAnnotations("URL", offset, offset)
+                                .firstOrNull()?.let { annotation ->
+                                    var uri = annotation.item
+                                    if (!uri.startsWith("http://") && !uri.startsWith("https://")) {
+                                        uri = "https://$uri"
+                                    }
+                                    try {
+                                        uriHandler.openUri(uri)
+                                    } catch (e: Exception) {
+                                        // Ignore exception if URL is invalid
+                                    }
+                                }
+                        }
                     )
 
                     // Action widget
@@ -1045,6 +1151,29 @@ private fun ChatBubble(
                 }
             }
 
+            // Suggested Walkthrough Button
+            message.suggestedWalkthroughId?.let { featureId ->
+                Spacer(Modifier.height(6.dp))
+                OutlinedButton(
+                    onClick = { onStartWalkthrough(featureId) },
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = AccentBlue
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, AccentBlue.copy(alpha = 0.5f)),
+                    shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                    modifier = Modifier.padding(start = 8.dp) // Align slightly with the bubble
+                ) {
+                    Icon(
+                        Icons.Default.PlayArrow,
+                        contentDescription = "Start Walkthrough",
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text("Take a Walkthrough", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                }
+            }
+
             // Timestamp
             Text(
                 text = formatTime(message.timestamp),
@@ -1064,7 +1193,12 @@ private fun ChatInputBar(
     onValueChange: (String) -> Unit,
     onSend: () -> Unit
 ) {
-    Column {
+    val focusManager = LocalFocusManager.current
+    Column(
+        modifier = Modifier
+            .navigationBarsPadding()
+            .imePadding()
+    ) {
         androidx.compose.animation.AnimatedVisibility(
             visible = value.startsWith("/") && value.length < 8,
             enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandVertically(),
@@ -1134,7 +1268,10 @@ private fun ChatInputBar(
         )
 
         IconButton(
-            onClick = onSend,
+            onClick = {
+                focusManager.clearFocus()
+                onSend()
+            },
             enabled = hasText,
             modifier = Modifier
                 .scale(sendScale)
@@ -1168,6 +1305,7 @@ private fun getModeColor(mode: ResponseMode): Color = when (mode) {
     ResponseMode.KNOWLEDGE -> AccentOrange
     ResponseMode.CHAT -> Color(0xFFAF7AC5)
     ResponseMode.SCHEDULED -> AccentOrange
+    ResponseMode.COMPANION -> Color(0xFF00BFA5)
     ResponseMode.SYSTEM -> Color.White
 }
 

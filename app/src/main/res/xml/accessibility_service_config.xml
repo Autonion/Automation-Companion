@@ -10,6 +10,7 @@
 
     android:canPerformGestures="true"
     android:canRetrieveWindowContent="true"
+    android:canRequestFilterKeyEvents="true"
 
     android:notificationTimeout="100"
 

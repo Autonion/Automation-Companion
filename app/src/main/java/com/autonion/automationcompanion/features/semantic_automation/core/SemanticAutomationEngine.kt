@@ -101,6 +101,10 @@ class SemanticAutomationEngine(private val context: Context) {
     // ── Step History (v2) ─────────────────────────────────────
     private val stepHistory = mutableListOf<StepRecord>()
 
+    init {
+        localServerEngine.autoConnectIfNeeded()
+    }
+
     /**
      * Parse a raw user command and kick off the screen loop.
      */
@@ -109,15 +113,22 @@ class SemanticAutomationEngine(private val context: Context) {
         _status.value = AutomationStatus.PARSING_GOAL
         stepHistory.clear()
 
-        val parsedGoal = goalParser.parse(rawCommand, localServerEngine)
+        val parsedGoal = try {
+            kotlinx.coroutines.withTimeoutOrNull(30_000L) {
+                goalParser.parse(rawCommand, localServerEngine)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Goal parsing exception: ${e.message}", e)
+            null
+        }
         if (parsedGoal == null) {
-            // LLM server not connected — cannot parse any prompt
+            // LLM server not connected or timed out — cannot parse any prompt
             _status.value = AutomationStatus.FAILED
-            _lastActionDescription.value = "Connect to Ollama server to use automation"
+            _lastActionDescription.value = "Could not reach Ollama — check server connection"
             DebugLogger.error(
                 context, LogCategory.SCREEN_CONTEXT_AI,
                 "Goal parsing failed",
-                "Ollama server not connected. Please configure the server in Settings.",
+                "Ollama server not connected or timed out. Please configure the server in Settings.",
                 TAG
             )
             return
@@ -129,9 +140,25 @@ class SemanticAutomationEngine(private val context: Context) {
         DebugLogger.info(
             context, LogCategory.SCREEN_CONTEXT_AI,
             "Semantic goal parsed",
-            "task=${goal.task}, query=${goal.query}, app=${goal.targetApp}, domain=${goal.domain}",
+            "task=${goal.task}, query=${goal.query}, app=${goal.targetApp}, domain=${goal.domain}, confidence=${goal.confidence}",
             TAG
         )
+
+        // ── Validation gate: reject hallucinated / gibberish goals ──
+        val validationError = validateGoal(goal)
+        if (validationError != null) {
+            Log.w(TAG, "Goal validation failed: $validationError")
+            _status.value = AutomationStatus.FAILED
+            _lastActionDescription.value = validationError
+            DebugLogger.error(
+                context, LogCategory.SCREEN_CONTEXT_AI,
+                "Goal rejected by validation gate",
+                validationError,
+                TAG
+            )
+            isRunning = false
+            return
+        }
 
         isRunning = true
 
@@ -557,6 +584,56 @@ class SemanticAutomationEngine(private val context: Context) {
                 if (launched) {
                     Log.d(TAG, "Launched browser with URL: $urlToLaunch and command: $extensionCommand")
                     delay(APP_LAUNCH_DELAY_MS)
+
+                    // ── EXTENSION CONNECTION CHECK ──
+                    // After the browser launches, give the extension a moment to connect,
+                    // then check if the bridge has an active WebSocket connection.
+                    if (!extensionBridge.isConnected()) {
+                        // Wait a bit longer — the extension may still be loading the page
+                        delay(3000L)
+                    }
+
+                    if (!extensionBridge.isConnected()) {
+                        Log.w(TAG, "Browser launched but extension not connected. Prompting user.")
+                        DebugLogger.warning(
+                            context, LogCategory.SCREEN_CONTEXT_AI,
+                            "Browser extension not detected",
+                            "Browser is open but the Autonion Android Extension is not connected. " +
+                            "Web automation will fall back to the accessibility tree, which cannot interact with page content.",
+                            TAG
+                        )
+
+                        val extChoice = waitForUserChoice(
+                            prompt = "⚠️ Browser extension not detected. For better web automation, install the Autonion Android Extension from the releases page.",
+                            options = listOf("Continue without extension", "Download Extension", "Cancel")
+                        )
+
+                        when (extChoice) {
+                            "Download Extension" -> {
+                                _lastActionDescription.value = "Opening extension download page…"
+                                val downloadUrl = "https://github.com/Autonion/Autonion-Android-Extension/releases"
+                                AppLauncher.launchBrowserUrl(context, downloadUrl)
+                                stop()
+                                return false
+                            }
+                            "Cancel" -> {
+                                stop()
+                                return false
+                            }
+                            else -> {
+                                // "Continue without extension" — proceed with accessibility tree fallback
+                                Log.d(TAG, "User chose to continue without extension")
+                                _lastActionDescription.value = "Continuing without extension (limited web interaction)…"
+                                DebugLogger.info(
+                                    context, LogCategory.SCREEN_CONTEXT_AI,
+                                    "Continuing without extension",
+                                    "User chose to proceed with accessibility tree fallback for web automation.",
+                                    TAG
+                                )
+                            }
+                        }
+                    }
+
                     return true
                 }
             } else {
@@ -568,6 +645,76 @@ class SemanticAutomationEngine(private val context: Context) {
                 } else {
                     Log.w(TAG, "Failed to launch app: $targetApp")
                     _lastActionDescription.value = "Could not find app: $targetApp"
+                }
+            }
+        }
+
+        // ── Generic Clarification: Task needs an app but none was specified ──
+        // Works for ANY task type (play, search, send_message, navigate, etc.)
+        if (targetApp == null && !goal.query.isNullOrBlank()) {
+            val category = AppLauncher.taskToCategory(goal.task)
+            if (category != null) {
+                Log.d(TAG, "Task '${goal.task}' needs an app but none specified — discovering ${category.name} apps")
+                val relevantApps = AppLauncher.getInstalledAppsByCategory(context, category)
+                val options = relevantApps + listOf("Browser", "Cancel")
+
+                // Build a natural-sounding prompt based on task type
+                val verb = when (goal.task) {
+                    "play"         -> "play"
+                    "search"       -> "search for"
+                    "send_message" -> "send"
+                    "navigate"     -> "navigate to"
+                    "open"         -> "open"
+                    "login"        -> "log into"
+                    else           -> goal.task
+                }
+
+                val choice = waitForUserChoice(
+                    prompt = "In which app should I $verb \"${goal.query}\"?",
+                    options = emptyList() // Render no chips; wait for user to type their answer naturally
+                )
+
+                when (choice.lowercase()) {
+                    "cancel" -> {
+                        stop()
+                        return false
+                    }
+                    "browser", "web" -> {
+                        _currentGoal.value = _currentGoal.value?.copy(
+                            targetApp = "browser",
+                            domain = "youtube.com", // This will be dynamic based on further LLM updates if needed
+                            task = "search"
+                        )
+                        _lastActionDescription.value = "Opening in Browser…"
+                    }
+                    else -> {
+                        // User typed an app name (e.g., "in youtube", "open spotify")
+                        var cleanedChoice = choice.trim().lowercase()
+                        val prefixes = listOf("in ", "on ", "using ", "open ", "start ", "play on ", "search on ")
+                        for (prefix in prefixes) {
+                            if (cleanedChoice.startsWith(prefix)) {
+                                cleanedChoice = cleanedChoice.removePrefix(prefix).trim()
+                                break
+                            }
+                        }
+
+                        val appAlias = cleanedChoice
+                        _currentGoal.value = _currentGoal.value?.copy(
+                            targetApp = appAlias,
+                            task = goal.task // Preserve original task instead of hardcoding "search"
+                        )
+                        val launched = AppLauncher.launchApp(context, appAlias)
+                        if (launched) {
+                            _lastActionDescription.value = "Opening $cleanedChoice…"
+                            delay(APP_LAUNCH_DELAY_MS)
+                            return true
+                        } else {
+                            Log.w(TAG, "Failed to launch app after clarification: $appAlias")
+                            _lastActionDescription.value = "Could not find app: $cleanedChoice"
+                            stop()
+                            return false
+                        }
+                    }
                 }
             }
         }
@@ -879,4 +1026,47 @@ class SemanticAutomationEngine(private val context: Context) {
     // The LLM-based GoalParser now provides the correct domain (via goal.domain)
     // and when the extension is not connected, we use a simple Google search
     // with the user's query + app name. No hardcoded URL patterns needed.
+
+    // ── Anti-hallucination validation gate ──────────────────────
+
+    /**
+     * Validates a parsed goal BEFORE executing any pre-actions.
+     * Returns null if the goal is valid, or a human-readable error message if it should be rejected.
+     *
+     * Three checks:
+     * 1. Confidence threshold — LLM self-rated confidence must be >= 0.4
+     * 2. Unknown task — if the LLM explicitly said "unknown", reject
+     * 3. Target app existence — if an app was specified, it must be recognizable
+     */
+    private fun validateGoal(goal: SemanticGoal): String? {
+        // Check 1: Low confidence = likely hallucination
+        if (goal.confidence < 0.4f) {
+            Log.w(TAG, "Goal confidence too low: ${goal.confidence}")
+            return "I couldn't understand that command. Could you rephrase it? (confidence: ${(goal.confidence * 100).toInt()}%)"
+        }
+
+        // Check 2: LLM explicitly classified as unknown
+        if (goal.task == "unknown") {
+            Log.w(TAG, "Goal task is 'unknown'")
+            return "I didn't understand what you want me to do. Try something like \"play music on youtube\" or \"search shoes on amazon\"."
+        }
+
+        // Check 3: If a target app is specified, verify it's recognizable
+        // Skip this check for system tasks (enable/disable) and tasks without an app target
+        val targetApp = goal.targetApp
+        if (targetApp != null && goal.task !in listOf("enable", "disable", "back", "scroll")) {
+            val isRecognizable = AppLauncher.isRecognizableTarget(context, targetApp)
+            if (!isRecognizable) {
+                // Also check domain — maybe the app isn't installed but the domain is valid
+                val hasDomain = goal.domain != null && goal.domain.contains(".")
+                if (!hasDomain) {
+                    Log.w(TAG, "Unrecognizable target app: '$targetApp'")
+                    return "I don't recognize \"$targetApp\" as an app or website. Did you mean something else?"
+                }
+            }
+        }
+
+        Log.d(TAG, "Goal validation passed ✓ (confidence=${goal.confidence})")
+        return null
+    }
 }

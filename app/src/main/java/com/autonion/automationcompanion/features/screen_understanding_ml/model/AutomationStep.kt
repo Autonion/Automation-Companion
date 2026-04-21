@@ -13,5 +13,7 @@ data class AutomationStep(
     val actionType: ActionType = ActionType.CLICK,
     val anchor: UIElement, // The visual anchor for this step
     val inputText: String? = null,
-    val isOptional: Boolean = false
+    val isOptional: Boolean = false,
+    val captureScreenWidth: Float = 0f,  // Screen width (px) at capture time; 0 = legacy preset
+    val captureScreenHeight: Float = 0f  // Screen height (px) at capture time; 0 = legacy preset
 )

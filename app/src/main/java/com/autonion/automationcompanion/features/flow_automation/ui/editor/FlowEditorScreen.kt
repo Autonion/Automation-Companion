@@ -136,6 +136,7 @@ fun FlowEditorScreen(
                 lastInteractionTime = System.currentTimeMillis()
             },
             onNodeTap = { viewModel.selectNode(it) },
+            onNodeDragStart = { viewModel.onDragStart(it) },
             onNodeDrag = { id, pos -> viewModel.updateNodePosition(id, pos) },
             onEdgeTap = { viewModel.selectEdge(it) },
             onCanvasTap = {
@@ -357,7 +358,18 @@ fun FlowEditorScreen(
                             viewModel.deleteNode(selectedNode.id)
                         },
                         onLaunchOverlay = { node ->
-                            viewModel.launchOverlayForNode(node)
+                            if (!android.provider.Settings.canDrawOverlays(context)) {
+                                val intent = android.content.Intent(
+                                    android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                    android.net.Uri.parse("package:${context.packageName}")
+                                ).apply {
+                                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(intent)
+                                android.widget.Toast.makeText(context, "Please grant 'Display over other apps' permission and try again.", android.widget.Toast.LENGTH_LONG).show()
+                            } else {
+                                viewModel.launchOverlayForNode(node)
+                            }
                         },
                         onDismiss = { viewModel.dismissNodeConfig() }
                     )

@@ -53,10 +53,27 @@ data class FlowGraph(
         return copy(edges = updated, updatedAt = System.currentTimeMillis())
     }
 
-    /** Remove a node and all its connected edges. */
+    /** Remove a node and all its connected edges. Clean up dangling references. */
     fun withoutNode(nodeId: String): FlowGraph {
+        // Collect IDs of edges that touch the deleted node
+        val deletedEdgeIds = edges
+            .filter { it.fromNodeId == nodeId || it.toNodeId == nodeId }
+            .map { it.id }
+            .toSet()
+
+        // Bug #12 fix: Clear onFailureEdgeId on remaining nodes if it points to a deleted edge
+        val cleanedNodes = nodes
+            .filter { it.id != nodeId }
+            .map { node ->
+                if (node.onFailureEdgeId != null && node.onFailureEdgeId in deletedEdgeIds) {
+                    clearOnFailureEdgeId(node)
+                } else {
+                    node
+                }
+            }
+
         return copy(
-            nodes = nodes.filter { it.id != nodeId },
+            nodes = cleanedNodes,
             edges = edges.filter { it.fromNodeId != nodeId && it.toNodeId != nodeId },
             updatedAt = System.currentTimeMillis()
         )
@@ -68,5 +85,16 @@ data class FlowGraph(
             edges = edges.filter { it.id != edgeId },
             updatedAt = System.currentTimeMillis()
         )
+    }
+
+    /** Create a copy of a node with onFailureEdgeId cleared. */
+    private fun clearOnFailureEdgeId(node: FlowNode): FlowNode = when (node) {
+        is StartNode -> node.copy(onFailureEdgeId = null)
+        is GestureNode -> node.copy(onFailureEdgeId = null)
+        is VisualTriggerNode -> node.copy(onFailureEdgeId = null)
+        is ScreenMLNode -> node.copy(onFailureEdgeId = null)
+        is DelayNode -> node.copy(onFailureEdgeId = null)
+        is LaunchAppNode -> node.copy(onFailureEdgeId = null)
+        is RepeatNode -> node.copy(onFailureEdgeId = null)
     }
 }

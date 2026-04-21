@@ -48,6 +48,7 @@ class NetworkingManager(
         .build()
 
     private val activeConnections = ConcurrentHashMap<String, WebSocket>()
+    private val connectedEndpoints = ConcurrentHashMap.newKeySet<String>() // Tracks IP:port to prevent duplicate connections
     private val gson = Gson()
     private val scope = CoroutineScope(Dispatchers.IO)
 
@@ -66,7 +67,8 @@ class NetworkingManager(
         collectionJob = scope.launch {
             deviceRepository.getAllDevices().collectLatest { devices ->
                 devices.forEach { device ->
-                    if (!activeConnections.containsKey(device.id)) {
+                    val endpoint = "${device.ipAddress}:${device.port}"
+                    if (!activeConnections.containsKey(device.id) && !connectedEndpoints.contains(endpoint)) {
                         connectToDevice(device)
                     }
                 }
@@ -99,6 +101,7 @@ class NetworkingManager(
                     TAG
                 )
                 activeConnections[device.id] = webSocket
+                connectedEndpoints.add("${device.ipAddress}:${device.port}")
                 this@NetworkingManager.listener?.onDeviceConnected(device)
             }
 
@@ -202,6 +205,7 @@ class NetworkingManager(
                 )
                 webSocket.close(1000, null)
                 activeConnections.remove(device.id)
+                connectedEndpoints.remove("${device.ipAddress}:${device.port}")
                 this@NetworkingManager.listener?.onDeviceDisconnected(device.id)
             }
 
@@ -214,6 +218,7 @@ class NetworkingManager(
                     TAG
                 )
                 activeConnections.remove(device.id)
+                connectedEndpoints.remove("${device.ipAddress}:${device.port}")
                 this@NetworkingManager.listener?.onDeviceDisconnected(device.id)
             }
         }
@@ -251,6 +256,7 @@ class NetworkingManager(
 
         activeConnections.values.forEach { it.close(1000, "Shutting down") }
         activeConnections.clear()
+        connectedEndpoints.clear()
 
         // Do NOT shutdown executor as client is reused.
         client.dispatcher.cancelAll()

@@ -79,18 +79,21 @@ object VisionActionExecutor : AccessibilityFeature {
 
         // "Scroll Down" means reveal bottom -> Swipe UP
         // "Scroll Up" means reveal top -> Swipe DOWN
-        // Assuming ScrollDirection enum matches this
         
         when (direction) {
             com.autonion.automationcompanion.features.visual_trigger.models.ScrollDirection.UP -> {
                  // Scroll Up -> Content moves down -> Swipe Down
-                 path.moveTo(startX, startY - distance/2)
-                 path.lineTo(startX, startY + distance/2)
+                 val sy = startY - distance / 2
+                 val ey = startY + distance / 2
+                 path.moveTo(startX, sy)
+                 path.cubicTo(startX, sy + (ey - sy) * 0.33f, startX, sy + (ey - sy) * 0.66f, startX, ey)
             }
             com.autonion.automationcompanion.features.visual_trigger.models.ScrollDirection.DOWN -> {
                  // Scroll Down -> Content moves up -> Swipe Up
-                 path.moveTo(startX, startY + distance/2)
-                 path.lineTo(startX, startY - distance/2)
+                 val sy = startY + distance / 2
+                 val ey = startY - distance / 2
+                 path.moveTo(startX, sy)
+                 path.cubicTo(startX, sy + (ey - sy) * 0.33f, startX, sy + (ey - sy) * 0.66f, startX, ey)
             }
             // Left/Right omitted for brevity but similar logic
             else -> return false

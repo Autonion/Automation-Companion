@@ -1504,5 +1504,97 @@
       "localization",
       "support"
     ]
+  },
+  {
+    "question": "How do I install the Autonion Extension for Chrome?",
+    "answer": "To install the Autonion Extension on desktop Chrome or Edge:\n1. Go to github.com/Autonion/Autonion-Extension/releases and download the latest ZIP.\n2. Extract the ZIP to a folder on your computer.\n3. Open Chrome and navigate to chrome://extensions (or edge://extensions for Edge).\n4. Enable 'Developer mode' using the toggle in the top-right corner.\n5. Click 'Load unpacked' and select the extracted folder.\n6. The Autonion icon appears in your toolbar. It connects automatically to the Desktop Agent.",
+    "tags": [
+      "extension",
+      "chrome",
+      "install",
+      "desktop",
+      "browser"
+    ]
+  },
+  {
+    "question": "How do I install the Autonion Android Extension?",
+    "answer": "To install the Autonion Android Extension on your mobile browser:\n1. Download the ZIP from github.com/Autonion/Autonion-Android-Extension/releases.\n2. Extract the ZIP using a file manager app.\n3. Open a supported browser (Kiwi Browser recommended, or Lemur Browser).\n4. Go to the browser's Extensions page (chrome://extensions in Kiwi, or Menu > Extensions in Lemur).\n5. Enable 'Developer mode' if needed.\n6. Tap 'Load unpacked' or 'Load from folder' and select the extracted folder.\n7. The extension connects automatically to the Autonion app via WebSocket on port 54321.",
+    "tags": [
+      "extension",
+      "android",
+      "install",
+      "mobile",
+      "browser",
+      "kiwi",
+      "lemur"
+    ]
+  },
+  {
+    "question": "What browsers support the Autonion Extension on Android?",
+    "answer": "On Android, the Autonion Android Extension is supported by browsers that allow loading unpacked extensions:\n- Kiwi Browser (recommended — best extension support)\n- Lemur Browser\n- Firefox Nightly (via Add-on sideloading)\n\nStandard Chrome for Android does NOT support extensions. You need one of the above browsers for web automation.",
+    "tags": [
+      "extension",
+      "browser",
+      "android",
+      "supported",
+      "kiwi",
+      "lemur",
+      "firefox"
+    ]
+  },
+  {
+    "question": "How does the browser extension connect to the app?",
+    "answer": "The Autonion Android Extension connects via WebSocket:\n1. The Autonion app runs a WebSocket server on port 54321 (ExtensionBridgeServer).\n2. When you open a supported browser with the extension installed, it automatically connects to ws://localhost:54321.\n3. The extension captures the webpage DOM and sends it to the app.\n4. The AI agent reads the DOM elements and sends action commands back through the extension.\n\nThis all happens locally on your device — no internet required.",
+    "tags": [
+      "extension",
+      "websocket",
+      "connection",
+      "bridge",
+      "port"
+    ]
+  },
+  {
+    "question": "Why is my browser extension not connecting?",
+    "answer": "If the extension isn't connecting, try these steps:\n1. Make sure you're using a supported browser (Kiwi, Lemur, or Firefox Nightly).\n2. Verify the extension is loaded and enabled in the browser's extension settings.\n3. Check that port 54321 is not being used by another app.\n4. Restart the browser and reopen the page.\n5. Check the Automation Debugger > Semantic Actions for connection logs.\n6. If the app says 'Browser extension not detected', the extension may need to be reloaded — go to the browser's extensions page and tap the reload button on the Autonion extension.",
+    "tags": [
+      "extension",
+      "connection",
+      "troubleshooting",
+      "not connecting",
+      "port"
+    ]
+  },
+  {
+    "question": "What is the difference between Autonion Extension and Autonion Android Extension?",
+    "answer": "They are two separate extensions for different platforms:\n\n- Autonion Extension (Desktop): Runs in Chrome/Edge on your PC. Connects to the Autonion Desktop Agent. Used for cross-device browser automation — controlling the desktop browser from your phone.\n\n- Autonion Android Extension: Runs in Kiwi/Lemur/Firefox Nightly on your phone. Connects directly to the Autonion Android app. Used for on-device browser automation — the AI agent controls the mobile browser.\n\nBoth provide DOM access for web page interaction, but they connect to different apps.",
+    "tags": [
+      "extension",
+      "difference",
+      "desktop",
+      "android",
+      "comparison"
+    ]
+  },
+  {
+    "question": "Do I need the extension for web automation?",
+    "answer": "Yes, the browser extension is essential for effective web automation. Without it, the AI agent can only use the Android Accessibility Service, which sees browser UI elements (address bar, tabs) but cannot read or interact with actual web page content like links, buttons, and text fields inside the page. The extension captures the full DOM (Document Object Model) of the webpage, giving the agent precise control over page elements.",
+    "tags": [
+      "extension",
+      "web automation",
+      "required",
+      "dom",
+      "accessibility"
+    ]
+  },
+  {
+    "question": "Where can I download the Autonion Extension?",
+    "answer": "Download locations:\n- Desktop Chrome/Edge extension: github.com/Autonion/Autonion-Extension/releases\n- Android mobile extension: github.com/Autonion/Autonion-Android-Extension/releases\n- Desktop Agent app: github.com/Autonion/Autonion-Agent/releases\n\nAll downloads are free and open-source. Download the latest ZIP from the releases page and follow the installation steps in the app's FAQ or knowledge base.",
+    "tags": [
+      "extension",
+      "download",
+      "github",
+      "releases",
+      "link"
+    ]
   }
 ]
