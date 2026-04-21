@@ -971,10 +971,15 @@ class OmniChatbotViewModel(
             mode = ResponseMode.COMPANION
         ))
 
-        // Navigate to the first step's route if any
+        // Navigate to the first step's route — but only if we're not already there.
+        // Without this check, pressing the walkthrough icon from inside the feature
+        // re-pushes the same route, causing an abrupt slide-in animation.
         val firstStep = script.steps.firstOrNull()
         firstStep?.targetRoute?.let { route ->
-            _navigationEvent.tryEmit(route)
+            val current = _currentRoute.value
+            if (current == null || !current.contains(route.substringAfterLast("/"))) {
+                _navigationEvent.tryEmit(route)
+            }
         }
 
         Log.d(TAG, "Walkthrough started: ${script.featureId} (${script.steps.size} steps)")
@@ -991,9 +996,12 @@ class OmniChatbotViewModel(
         }
         _currentStepIndex.value = nextIndex
 
-        // Navigate if the step has a target route
+        // Navigate if the step has a target route and we're not already there
         script.steps[nextIndex].targetRoute?.let { route ->
-            _navigationEvent.tryEmit(route)
+            val current = _currentRoute.value
+            if (current == null || !current.contains(route.substringAfterLast("/"))) {
+                _navigationEvent.tryEmit(route)
+            }
         }
     }
 
@@ -1005,7 +1013,10 @@ class OmniChatbotViewModel(
 
             val script = _activeWalkthrough.value ?: return
             script.steps[currentIndex - 1].targetRoute?.let { route ->
-                _navigationEvent.tryEmit(route)
+                val current = _currentRoute.value
+                if (current == null || !current.contains(route.substringAfterLast("/"))) {
+                    _navigationEvent.tryEmit(route)
+                }
             }
         }
     }
