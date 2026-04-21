@@ -648,7 +648,8 @@ class OmniChatbotViewModel(
                 append("5. Do NOT use <think> tags or internal reasoning. Answer immediately.\n")
                 append("6. If your answer is primarily about one of these features, append the tag on a new line at the very end of your response: [WALKTHROUGH:feature_id]\n")
                 append("   Available features: flow_builder, gesture_recording, semantic_automation, cross_device, visual_trigger, screen_ml, system_context, debugger\n")
-                append("   IMPORTANT: Do NOT append a WALKTHROUGH tag for browser extension, extension installation, or extension setup topics. Those have no walkthrough.\n\n")
+                append("   IMPORTANT: Do NOT append a WALKTHROUGH tag for browser extension, extension installation, or extension setup topics. Those have no walkthrough.\n")
+                append("7. IMPORTANT: There are TWO different extensions. The 'Autonion Extension' is for Desktop PC browsers. The 'Autonion Android Extension' is for Mobile phone browsers. If the user asks about an 'extension' without specifying PC or Mobile, explicitly mention both and explain the difference.\n\n")
                 append("KNOWLEDGE:\n")
                 append(contextText)
             }
