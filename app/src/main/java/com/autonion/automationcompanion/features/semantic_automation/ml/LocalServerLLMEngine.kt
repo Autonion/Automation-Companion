@@ -4,10 +4,14 @@ import android.content.Context
 import android.util.Log
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.ActionIntent
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.ActionType
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import retrofit2.Retrofit
@@ -138,6 +142,41 @@ class LocalServerLLMEngine private constructor(
         _selectedModelName.value = modelName
         prefs.edit().putString(PREF_SELECTED_MODEL, modelName).apply()
         Log.d(TAG, "Selected model: $modelName")
+    }
+
+    /**
+     * Auto-reconnect using saved URL.
+     * If no URL is saved, attempts auto-discovery from cross-device connected devices.
+     */
+    fun autoConnectIfNeeded() {
+        if (_connectionStatus.value != ServerConnectionStatus.DISCONNECTED) return
+
+        if (_serverUrl.value.isNotBlank()) {
+            // Case 1: Saved URL exists — just reconnect
+            Log.d(TAG, "Auto-reconnecting to saved LLM server: ${_serverUrl.value}")
+            CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
+                initialize()
+            }
+        } else {
+            // Case 2: No saved URL — try auto-discovery from cross-device connected devices
+            CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
+                try {
+                    val crossDeviceManager = com.autonion.automationcompanion.features.cross_device_automation.CrossDeviceAutomationManager.getInstance(context)
+                    val devices = crossDeviceManager.deviceRepository.getAllDevices().first()
+                    val onlineDevice = devices.firstOrNull {
+                        it.status == com.autonion.automationcompanion.features.cross_device_automation.domain.DeviceStatus.ONLINE
+                    }
+                    onlineDevice?.let { device ->
+                        val url = "http://${device.ipAddress}:11434"
+                        Log.d(TAG, "Auto-discovered desktop LLM server from cross-device: $url")
+                        setServerUrl(url)
+                        initialize()
+                    }
+                } catch (e: Exception) {
+                    Log.d(TAG, "Cross-device auto-discovery skipped: ${e.message}")
+                }
+            }
+        }
     }
 
     /**

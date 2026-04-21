@@ -101,6 +101,10 @@ class SemanticAutomationEngine(private val context: Context) {
     // ── Step History (v2) ─────────────────────────────────────
     private val stepHistory = mutableListOf<StepRecord>()
 
+    init {
+        localServerEngine.autoConnectIfNeeded()
+    }
+
     /**
      * Parse a raw user command and kick off the screen loop.
      */

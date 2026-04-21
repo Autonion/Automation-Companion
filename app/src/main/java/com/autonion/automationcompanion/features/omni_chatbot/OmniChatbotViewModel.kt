@@ -174,7 +174,7 @@ class OmniChatbotViewModel(
 
     fun expand() {
         _isExpanded.value = true
-        autoConnectIfNeeded()
+        llmEngine.autoConnectIfNeeded()
     }
 
     fun updateRoute(route: String?) {
@@ -235,40 +235,6 @@ class OmniChatbotViewModel(
     fun setInferenceMode(mode: com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode) {
         inferencePrefsEngine.inferenceMode = mode
         _inferenceMode.value = mode
-    }
-
-    /**
-     * Auto-reconnect using saved URL when chat is opened.
-     * If no URL is saved, attempts auto-discovery from cross-device connected devices.
-     */
-    private fun autoConnectIfNeeded() {
-        if (llmEngine.connectionStatus.value != ServerConnectionStatus.DISCONNECTED) return
-
-        if (llmEngine.serverUrl.value.isNotBlank()) {
-            // Case 1: Saved URL exists — just reconnect
-            Log.d(TAG, "Auto-reconnecting to saved LLM server: ${llmEngine.serverUrl.value}")
-            viewModelScope.launch {
-                llmEngine.initialize()
-            }
-        } else {
-            // Case 2: No saved URL — try auto-discovery from cross-device connected devices
-            viewModelScope.launch {
-                try {
-                    val devices = crossDeviceManager.deviceRepository.getAllDevices().first()
-                    val onlineDevice = devices.firstOrNull {
-                        it.status == com.autonion.automationcompanion.features.cross_device_automation.domain.DeviceStatus.ONLINE
-                    }
-                    onlineDevice?.let { device ->
-                        val url = "http://${device.ipAddress}:11434"
-                        Log.d(TAG, "Auto-discovered desktop LLM server from cross-device: $url")
-                        llmEngine.setServerUrl(url)
-                        llmEngine.initialize()
-                    }
-                } catch (e: Exception) {
-                    Log.d(TAG, "Cross-device auto-discovery skipped: ${e.message}")
-                }
-            }
-        }
     }
 
     // ─── Main Entry Point ───────────────────────────────────
