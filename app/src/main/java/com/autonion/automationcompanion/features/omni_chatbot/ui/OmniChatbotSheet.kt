@@ -1181,7 +1181,11 @@ private fun ChatInputBar(
     onSend: () -> Unit
 ) {
     val focusManager = LocalFocusManager.current
-    Column {
+    Column(
+        modifier = Modifier
+            .navigationBarsPadding()
+            .imePadding()
+    ) {
         androidx.compose.animation.AnimatedVisibility(
             visible = value.startsWith("/") && value.length < 8,
             enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandVertically(),
