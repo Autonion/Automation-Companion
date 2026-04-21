@@ -1,8 +1,11 @@
 package com.autonion.automationcompanion.features.cross_device_automation.presentation
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -259,6 +262,10 @@ fun DeviceManagementScreen() {
             item {
                 ScanningState()
             }
+            // ── Setup Guide (LLM-independent) ──
+            item {
+                SetupGuideCard()
+            }
         }
 
         // ─── Device Cards ───────────────────────────
@@ -356,6 +363,144 @@ private fun ScanningState() {
                 textAlign = TextAlign.Center
             )
         }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SETUP GUIDE (LLM-independent help for new users)
+// ═══════════════════════════════════════════════════════════════
+
+@Composable
+private fun SetupGuideCard() {
+    val context = LocalContext.current
+    val agentUrl = "https://github.com/Autonion/Autonion-Agent/releases"
+    val extensionUrl = "https://github.com/Autonion/Autonion-Extension/releases"
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(
+                Brush.verticalGradient(
+                    listOf(
+                        AccentPurple.copy(alpha = 0.10f),
+                        AccentBlue.copy(alpha = 0.08f)
+                    )
+                )
+            )
+            .background(CardBorder, RoundedCornerShape(16.dp))
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            // Title
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.Settings,
+                    contentDescription = null,
+                    tint = AccentPurple,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "Getting Started",
+                    color = Color.White,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp
+                )
+            }
+
+            // Steps
+            SetupStep("1", "Download & install the Autonion Desktop Agent on your PC")
+            SetupStep("2", "Run the Desktop Agent and ensure both devices are on the same WiFi")
+            SetupStep("3", "Your desktop will appear above automatically via mDNS discovery")
+            SetupStep("4", "For browser tasks, also install the Autonion Extension in Chrome")
+
+            Spacer(Modifier.height(4.dp))
+
+            // Download buttons
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(agentUrl)))
+                    },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = AccentPurple
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp, AccentPurple.copy(alpha = 0.4f)
+                    ),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Computer,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text("Desktop Agent", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                }
+
+                OutlinedButton(
+                    onClick = {
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(extensionUrl)))
+                    },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = AccentBlue
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp, AccentBlue.copy(alpha = 0.4f)
+                    ),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Settings,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text("Browser Extension", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SetupStep(number: String, text: String) {
+    Row(
+        verticalAlignment = Alignment.Top,
+        modifier = Modifier.padding(start = 4.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(20.dp)
+                .clip(CircleShape)
+                .background(AccentPurple.copy(alpha = 0.2f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                number,
+                color = AccentPurple,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+        Spacer(Modifier.width(10.dp))
+        Text(
+            text,
+            color = Color.White.copy(alpha = 0.6f),
+            fontSize = 13.sp,
+            lineHeight = 18.sp
+        )
     }
 }
 

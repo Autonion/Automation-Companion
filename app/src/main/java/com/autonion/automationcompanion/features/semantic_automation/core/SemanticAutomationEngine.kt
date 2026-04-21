@@ -580,6 +580,56 @@ class SemanticAutomationEngine(private val context: Context) {
                 if (launched) {
                     Log.d(TAG, "Launched browser with URL: $urlToLaunch and command: $extensionCommand")
                     delay(APP_LAUNCH_DELAY_MS)
+
+                    // ── EXTENSION CONNECTION CHECK ──
+                    // After the browser launches, give the extension a moment to connect,
+                    // then check if the bridge has an active WebSocket connection.
+                    if (!extensionBridge.isConnected()) {
+                        // Wait a bit longer — the extension may still be loading the page
+                        delay(3000L)
+                    }
+
+                    if (!extensionBridge.isConnected()) {
+                        Log.w(TAG, "Browser launched but extension not connected. Prompting user.")
+                        DebugLogger.warning(
+                            context, LogCategory.SCREEN_CONTEXT_AI,
+                            "Browser extension not detected",
+                            "Browser is open but the Autonion Android Extension is not connected. " +
+                            "Web automation will fall back to the accessibility tree, which cannot interact with page content.",
+                            TAG
+                        )
+
+                        val extChoice = waitForUserChoice(
+                            prompt = "⚠️ Browser extension not detected. For better web automation, install the Autonion Android Extension from the releases page.",
+                            options = listOf("Continue without extension", "Download Extension", "Cancel")
+                        )
+
+                        when (extChoice) {
+                            "Download Extension" -> {
+                                _lastActionDescription.value = "Opening extension download page…"
+                                val downloadUrl = "https://github.com/Autonion/Autonion-Android-Extension/releases"
+                                AppLauncher.launchBrowserUrl(context, downloadUrl)
+                                stop()
+                                return false
+                            }
+                            "Cancel" -> {
+                                stop()
+                                return false
+                            }
+                            else -> {
+                                // "Continue without extension" — proceed with accessibility tree fallback
+                                Log.d(TAG, "User chose to continue without extension")
+                                _lastActionDescription.value = "Continuing without extension (limited web interaction)…"
+                                DebugLogger.info(
+                                    context, LogCategory.SCREEN_CONTEXT_AI,
+                                    "Continuing without extension",
+                                    "User chose to proceed with accessibility tree fallback for web automation.",
+                                    TAG
+                                )
+                            }
+                        }
+                    }
+
                     return true
                 }
             } else {

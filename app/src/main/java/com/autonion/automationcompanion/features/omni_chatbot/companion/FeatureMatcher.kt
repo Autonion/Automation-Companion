@@ -54,6 +54,18 @@ object FeatureMatcher {
     )
 
     /**
+     * Queries containing these keywords should NEVER trigger a walkthrough,
+     * because no walkthrough exists for these topics. This prevents the LLM
+     * from hallucinating an unrelated walkthrough tag (e.g. flow_builder)
+     * when the user asks about browser extensions or installation.
+     */
+    private val excludedKeywords = listOf(
+        "extension", "browser extension", "autonion extension",
+        "install extension", "download extension", "android extension",
+        "chrome extension", "kiwi", "lemur"
+    )
+
+    /**
      * Phrases that signal a "how-to" / walkthrough intent.
      * If the query contains one of these AND matches a feature, we trigger
      * a walkthrough instead of a plain text answer.
@@ -74,6 +86,13 @@ object FeatureMatcher {
      */
     fun matchFeature(query: String): String? {
         val lower = query.lowercase().trim()
+
+        // Exclude topics that have no walkthrough — prevents LLM fallback from
+        // hallucinating an unrelated walkthrough tag for these subjects.
+        if (excludedKeywords.any { lower.contains(it) }) {
+            return null
+        }
+
         for ((featureId, keywords) in featureKeywords) {
             if (keywords.any { lower.contains(it) }) {
                 return featureId
@@ -89,5 +108,14 @@ object FeatureMatcher {
     fun isWalkthroughQuery(query: String): Boolean {
         val lower = query.lowercase().trim()
         return walkthroughTriggers.any { lower.contains(it) }
+    }
+
+    /**
+     * Returns true if the query is about a topic that should NEVER show a
+     * walkthrough button (e.g. browser extensions, installation guides).
+     */
+    fun isExcludedFromWalkthrough(query: String): Boolean {
+        val lower = query.lowercase().trim()
+        return excludedKeywords.any { lower.contains(it) }
     }
 }

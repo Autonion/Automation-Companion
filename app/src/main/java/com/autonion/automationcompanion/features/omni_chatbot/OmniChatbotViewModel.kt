@@ -647,7 +647,8 @@ class OmniChatbotViewModel(
                 append("4. Be concise and direct. Use bullet points where appropriate.\n")
                 append("5. Do NOT use <think> tags or internal reasoning. Answer immediately.\n")
                 append("6. If your answer is primarily about one of these features, append the tag on a new line at the very end of your response: [WALKTHROUGH:feature_id]\n")
-                append("   Available features: flow_builder, gesture_recording, semantic_automation, cross_device, visual_trigger, screen_ml, system_context, debugger\n\n")
+                append("   Available features: flow_builder, gesture_recording, semantic_automation, cross_device, visual_trigger, screen_ml, system_context, debugger\n")
+                append("   IMPORTANT: Do NOT append a WALKTHROUGH tag for browser extension, extension installation, or extension setup topics. Those have no walkthrough.\n\n")
                 append("KNOWLEDGE:\n")
                 append(contextText)
             }
@@ -656,16 +657,28 @@ class OmniChatbotViewModel(
 
             // Parse [WALKTHROUGH:feature_id] tag from the LLM response.
             // The LLM appends this when the answer is clearly about a specific feature.
+            // Also catch bare [feature_id] tags that the LLM sometimes produces.
             val walkthroughTagRegex = Regex("""\[WALKTHROUGH:(\w+)]""")
+            val bareTagRegex = Regex("""\[(flow_builder|gesture_recording|semantic_automation|cross_device|visual_trigger|screen_ml|system_context|debugger)]""")
             val tagMatch = rawAnswer?.let { walkthroughTagRegex.find(it) }
+            val bareTagMatch = rawAnswer?.let { bareTagRegex.find(it) }
             val llmSuggestedFeature = tagMatch?.groupValues?.get(1)
+                ?: bareTagMatch?.groupValues?.get(1)
 
-            // Strip the tag from the displayed answer
-            val answer = rawAnswer?.let { walkthroughTagRegex.replace(it, "").trim() }
+            // Strip both tag formats from the displayed answer
+            val answer = rawAnswer
+                ?.let { walkthroughTagRegex.replace(it, "") }
+                ?.let { bareTagRegex.replace(it, "") }
+                ?.trim()
 
             // Priority: prompt-based match → LLM tag → null
-            val walkthroughFeature = FeatureMatcher.matchFeature(result.rawPrompt)
-                ?: llmSuggestedFeature
+            // If the query is about an excluded topic (e.g. extensions), suppress ALL
+            // walkthrough suggestions — even hallucinated LLM tags.
+            val walkthroughFeature = if (FeatureMatcher.isExcludedFromWalkthrough(result.rawPrompt)) {
+                null
+            } else {
+                FeatureMatcher.matchFeature(result.rawPrompt) ?: llmSuggestedFeature
+            }
 
             if (!answer.isNullOrBlank()) {
                 updateLastBotMessage(answer, ResponseMode.KNOWLEDGE, suggestedWalkthroughId = walkthroughFeature)

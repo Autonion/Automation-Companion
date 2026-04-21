@@ -255,12 +255,25 @@ object WalkthroughRegistry {
                     stepType = StepType.NAVIGATE
                 ),
                 WalkthroughStep(
+                    instruction = "First, make sure you have the Autonion Desktop Agent installed on your PC. " +
+                            "Download it from: github.com/Autonion/Autonion-Agent/releases — " +
+                            "extract and run the installer.",
+                    stepType = StepType.OBSERVE
+                ),
+                WalkthroughStep(
+                    instruction = "For browser automation on desktop, also install the Autonion Extension " +
+                            "from: github.com/Autonion/Autonion-Extension/releases — " +
+                            "download the ZIP, extract it, open Chrome → chrome://extensions → " +
+                            "enable Developer mode → Load unpacked.",
+                    stepType = StepType.OBSERVE
+                ),
+                WalkthroughStep(
                     instruction = "This screen has multiple tabs. The \"Chat\" tab lets you send direct commands " +
                             "to your desktop. The \"Desktop\" tab lets you create URL-based automation rules.",
                     stepType = StepType.OBSERVE
                 ),
                 WalkthroughStep(
-                    instruction = "First, go to the \"Devices\" tab and make sure your desktop is connected. " +
+                    instruction = "Go to the \"Devices\" tab and make sure your desktop is connected. " +
                             "Your desktop needs to be running the Autonion Desktop Agent and connected to the same network.",
                     stepType = StepType.ACTION,
                     highlightHint = "Devices tab"
