@@ -345,7 +345,8 @@ private fun StaggeredEntry(index: Int, content: @Composable () -> Unit) {
     }
 }
 
-// ── Glassmorphic Slot Card ──
+// ── Added Glassmorphic Slot Card ──
+// ── Made it dynamic ──
 
 @Composable
 private fun AppSpecificSlotCard(
