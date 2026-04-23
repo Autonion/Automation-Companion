@@ -249,6 +249,15 @@
             <property android:name="android.app.property.FOREGROUND_SERVICE_TYPE" android:value="specialUse" />
         </service>
 
+        <!-- Hardware Remote Foreground Service (keeps WiFi alive during screen-off) -->
+        <service
+            android:name=".features.cross_device_automation.engine.HardwareRemoteForegroundService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property android:name="android.app.property.FOREGROUND_SERVICE_TYPE" android:value="specialUse" />
+        </service>
+
         <service
             android:name=".features.gesture_recording_playback.overlay.AutomationService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"

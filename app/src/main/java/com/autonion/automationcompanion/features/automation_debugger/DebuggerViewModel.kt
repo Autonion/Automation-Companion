@@ -66,11 +66,11 @@ val ALL_CATEGORIES = listOf(
         accentColor = AccentBlue
     ),
     CategorySummary(
-        category = LogCategory.EMERGENCY_TRIGGER,
-        displayName = "Emergency Trigger",
-        description = "Panic gestures & alerts",
-        icon = Icons.Default.Warning,
-        accentColor = AccentRed
+        category = LogCategory.SEMANTIC_AUTOMATION,
+        displayName = "Semantic Automation",
+        description = "Context-aware AI automation",
+        icon = Icons.Default.AutoAwesome,
+        accentColor = AccentPurple
     ),
     CategorySummary(
         category = LogCategory.CROSS_DEVICE_SYNC,

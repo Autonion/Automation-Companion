@@ -23,5 +23,6 @@ data class Device(
     val port: Int,
     val status: DeviceStatus = DeviceStatus.UNKNOWN,
     val lastSeen: Long = System.currentTimeMillis(),
-    val capabilities: List<String> = emptyList()
+    val capabilities: List<String> = emptyList(),
+    val isSelected: Boolean = false
 )

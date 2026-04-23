@@ -14,10 +14,12 @@ import com.autonion.automationcompanion.features.cross_device_automation.event_p
 import com.google.gson.Gson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -44,11 +46,12 @@ class NetworkingManager(
 
     private val client = OkHttpClient.Builder()
         .readTimeout(0, TimeUnit.MILLISECONDS)
-        .pingInterval(30, TimeUnit.SECONDS) // Keep-alive for background stability
+        .pingInterval(15, TimeUnit.SECONDS) // Aggressive keep-alive to survive Doze
         .build()
 
     private val activeConnections = ConcurrentHashMap<String, WebSocket>()
     private val connectedEndpoints = ConcurrentHashMap.newKeySet<String>() // Tracks IP:port to prevent duplicate connections
+    private val reconnectingDevices = ConcurrentHashMap.newKeySet<String>() // Prevents duplicate reconnect coroutines
     private val gson = Gson()
     private val scope = CoroutineScope(Dispatchers.IO)
 
@@ -65,12 +68,27 @@ class NetworkingManager(
         if (collectionJob?.isActive == true) return
 
         collectionJob = scope.launch {
-            deviceRepository.getAllDevices().collectLatest { devices ->
-                devices.forEach { device ->
-                    val endpoint = "${device.ipAddress}:${device.port}"
-                    if (!activeConnections.containsKey(device.id) && !connectedEndpoints.contains(endpoint)) {
-                        connectToDevice(device)
+            deviceRepository.getSelectedDevices().collectLatest { selectedDevices ->
+                // Disconnect from devices that are no longer selected
+                val selectedIds = selectedDevices.map { it.id }.toSet()
+                val toDisconnect = activeConnections.keys.filter { it !in selectedIds }
+                for (deviceId in toDisconnect) {
+                    val ws = activeConnections.remove(deviceId)
+                    ws?.close(1000, "Device deselected")
+                    // Clean up the endpoint tracking
+                    scope.launch {
+                        val device = deviceRepository.getDeviceById(deviceId)
+                        if (device != null) {
+                            connectedEndpoints.remove("${device.ipAddress}:${device.port}")
+                        }
                     }
+                    listener?.onDeviceDisconnected(deviceId)
+                    Log.d(TAG, "Disconnected deselected device: $deviceId")
+                }
+
+                // Connect to newly selected devices
+                selectedDevices.forEach { device ->
+                    connectToDevice(device)
                 }
             }
         }
@@ -78,9 +96,20 @@ class NetworkingManager(
 
 
 
-    private fun connectToDevice(device: Device) {
+    private fun connectToDevice(device: Device): Boolean {
+        val endpoint = "${device.ipAddress}:${device.port}"
+        // Synchronized check to prevent duplicate WebSocket creation
+        synchronized(this) {
+            if (activeConnections.containsKey(device.id) || connectedEndpoints.contains(endpoint)) {
+                Log.d(TAG, "Skipping duplicate connection to ${device.name} ($endpoint)")
+                return false
+            }
+            // Mark endpoint as connecting to block other attempts
+            connectedEndpoints.add(endpoint)
+        }
+
         val request = Request.Builder()
-            .url("ws://${device.ipAddress}:${device.port}/automation") // Assuming path
+            .url("ws://${endpoint}/automation")
             .build()
 
         Log.d(TAG, "Connecting to ${device.name} at ${device.ipAddress}")
@@ -100,8 +129,14 @@ class NetworkingManager(
                     "Connected to ${device.name} at ws://${device.ipAddress}:${device.port}",
                     TAG
                 )
-                activeConnections[device.id] = webSocket
-                connectedEndpoints.add("${device.ipAddress}:${device.port}")
+                // Close any stale duplicate if one snuck through
+                val oldWs = activeConnections.put(device.id, webSocket)
+                if (oldWs != null && oldWs !== webSocket) {
+                    Log.d(TAG, "Closing stale duplicate connection for ${device.name}")
+                    oldWs.close(1000, "Replaced by new connection")
+                }
+                connectedEndpoints.add(endpoint)
+                reconnectingDevices.remove(device.id)
                 this@NetworkingManager.listener?.onDeviceConnected(device)
             }
 
@@ -207,6 +242,7 @@ class NetworkingManager(
                 activeConnections.remove(device.id)
                 connectedEndpoints.remove("${device.ipAddress}:${device.port}")
                 this@NetworkingManager.listener?.onDeviceDisconnected(device.id)
+                // Don't reconnect on graceful close (user-initiated or deselect)
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
@@ -220,10 +256,13 @@ class NetworkingManager(
                 activeConnections.remove(device.id)
                 connectedEndpoints.remove("${device.ipAddress}:${device.port}")
                 this@NetworkingManager.listener?.onDeviceDisconnected(device.id)
+                // Auto-reconnect if this device is still selected
+                scheduleReconnect(device)
             }
         }
 
         client.newWebSocket(request, listener)
+        return true
     }
 
     fun sendCommand(deviceId: String, command: Any) {
@@ -260,6 +299,65 @@ class NetworkingManager(
 
         // Do NOT shutdown executor as client is reused.
         client.dispatcher.cancelAll()
+    }
+
+    private fun scheduleReconnect(device: Device) {
+        // Prevent multiple concurrent reconnect loops for the same device
+        if (!reconnectingDevices.add(device.id)) {
+            Log.d(TAG, "Reconnect already in progress for ${device.name}, skipping")
+            return
+        }
+
+        scope.launch {
+            var attempt = 0
+            val maxDelay = 30_000L // 30 seconds max
+            try {
+                while (collectionJob?.isActive == true) {
+                    // Check if device is still selected before reconnecting
+                    val selectedDevices = deviceRepository.getSelectedDevices().first()
+                    val stillSelected = selectedDevices.any { it.id == device.id }
+                    if (!stillSelected) {
+                        Log.d(TAG, "Device ${device.name} no longer selected, stopping reconnect")
+                        return@launch
+                    }
+                    // Already reconnected by another path
+                    if (activeConnections.containsKey(device.id)) {
+                        Log.d(TAG, "Device ${device.name} already reconnected")
+                        return@launch
+                    }
+
+                    val delayMs = minOf((2000L * (1 shl attempt)), maxDelay)
+                    Log.d(TAG, "Reconnecting to ${device.name} in ${delayMs}ms (attempt ${attempt + 1})")
+                    delay(delayMs)
+
+                    // Re-check after delay
+                    val stillSelectedAfterDelay = deviceRepository.getSelectedDevices().first().any { it.id == device.id }
+                    if (!stillSelectedAfterDelay || activeConnections.containsKey(device.id)) {
+                        return@launch
+                    }
+
+                    // Fetch latest device info (IP may have changed)
+                    val latestDevice = deviceRepository.getDeviceById(device.id) ?: return@launch
+                    Log.d(TAG, "Attempting reconnect to ${latestDevice.name} at ${latestDevice.ipAddress}:${latestDevice.port}")
+                    val connected = connectToDevice(latestDevice)
+
+                    if (!connected) {
+                        // connectToDevice was blocked (already connecting), just wait
+                        delay(3000)
+                    } else {
+                        // Wait a bit to see if connection succeeds
+                        delay(3000)
+                    }
+                    if (activeConnections.containsKey(device.id)) {
+                        Log.d(TAG, "Reconnect to ${device.name} succeeded")
+                        return@launch
+                    }
+                    attempt++
+                }
+            } finally {
+                reconnectingDevices.remove(device.id)
+            }
+        }
     }
 
 }

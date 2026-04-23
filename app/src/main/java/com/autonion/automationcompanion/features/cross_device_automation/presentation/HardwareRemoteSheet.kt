@@ -15,6 +15,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -43,6 +45,7 @@ fun HardwareRemoteSheet(
     }
 
     val availableKeys = listOf("Enter", "Space", "Up Arrow", "Down Arrow", "Left Arrow", "Right Arrow", "Escape", "Backspace")
+    val scrollState = rememberScrollState()
 
     ModalBottomSheet(
         onDismissRequest = onDismissRequest,
@@ -53,7 +56,8 @@ fun HardwareRemoteSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp)
-                .padding(bottom = 32.dp),
+                .padding(bottom = 32.dp)
+                .verticalScroll(scrollState),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Row(

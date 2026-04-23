@@ -49,4 +49,10 @@ class DeviceManagementViewModel(
              }
         }
     }
+
+    fun toggleDeviceSelection(deviceId: String) {
+        viewModelScope.launch {
+            manager.deviceRepository.toggleDeviceSelection(deviceId)
+        }
+    }
 }

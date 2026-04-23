@@ -12,9 +12,11 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.PhoneAndroid
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.Tv
@@ -270,7 +272,7 @@ fun DeviceManagementScreen() {
 
         // ─── Device Cards ───────────────────────────
         itemsIndexed(devices) { index, device ->
-            StaggeredDeviceItem(device = device, index = index)
+            StaggeredDeviceItem(device = device, index = index, onToggleSelection = { viewModel.toggleDeviceSelection(device.id) })
         }
     }
 }
@@ -509,7 +511,7 @@ private fun SetupStep(number: String, text: String) {
 // ═══════════════════════════════════════════════════════════════
 
 @Composable
-private fun StaggeredDeviceItem(device: Device, index: Int) {
+private fun StaggeredDeviceItem(device: Device, index: Int, onToggleSelection: () -> Unit) {
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         kotlinx.coroutines.delay(index * 100L)
@@ -520,21 +522,23 @@ private fun StaggeredDeviceItem(device: Device, index: Int) {
         visible = visible,
         enter = fadeIn(tween(300)) + slideInVertically(tween(300)) { it / 2 }
     ) {
-        DeviceGlassCard(device)
+        DeviceGlassCard(device, onToggleSelection = onToggleSelection)
     }
 }
 
 @Composable
-private fun DeviceGlassCard(device: Device) {
+private fun DeviceGlassCard(device: Device, onToggleSelection: () -> Unit) {
     val statusColor = when (device.status) {
         DeviceStatus.ONLINE -> OnlineGreen
         DeviceStatus.OFFLINE -> OfflineRed
         DeviceStatus.UNKNOWN -> UnknownGray
     }
-    val statusLabel = when (device.status) {
-        DeviceStatus.ONLINE -> "Online"
-        DeviceStatus.OFFLINE -> "Offline"
-        DeviceStatus.UNKNOWN -> "Unknown"
+    val statusLabel = when {
+        device.isSelected && device.status == DeviceStatus.ONLINE -> "Connected"
+        device.isSelected -> "Selected"
+        device.status == DeviceStatus.ONLINE -> "Available"
+        device.status == DeviceStatus.OFFLINE -> "Offline"
+        else -> "Unknown"
     }
 
     val iconBgColor = when (device.role) {
@@ -553,7 +557,11 @@ private fun DeviceGlassCard(device: Device) {
                     listOf(CardGlass, CardGlass.copy(alpha = 0.35f))
                 )
             )
-            .background(CardBorder, RoundedCornerShape(16.dp))
+            .background(
+                if (device.isSelected) AccentPurple.copy(alpha = 0.08f) else CardBorder,
+                RoundedCornerShape(16.dp)
+            )
+            .clickable { onToggleSelection() }
     ) {
         Row(
             modifier = Modifier
@@ -625,11 +633,21 @@ private fun DeviceGlassCard(device: Device) {
                 Spacer(Modifier.width(6.dp))
                 Text(
                     statusLabel,
-                    color = statusColor.copy(alpha = 0.8f),
+                    color = (if (device.isSelected) AccentPurple else statusColor).copy(alpha = 0.8f),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium
                 )
             }
+
+            Spacer(Modifier.width(8.dp))
+
+            // Selection toggle icon
+            Icon(
+                imageVector = if (device.isSelected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                contentDescription = if (device.isSelected) "Connected" else "Tap to connect",
+                tint = if (device.isSelected) AccentPurple else Color.White.copy(alpha = 0.3f),
+                modifier = Modifier.size(24.dp)
+            )
         }
     }
 }
