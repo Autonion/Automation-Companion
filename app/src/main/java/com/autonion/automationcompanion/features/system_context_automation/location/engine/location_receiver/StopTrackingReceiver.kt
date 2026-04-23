@@ -17,6 +17,7 @@ class StopTrackingReceiver : BroadcastReceiver() {
         private const val TAG = "StopTrackingReceiver"
         const val ACTION_STOP_TRACKING = "com.autonion.automationcompanion.ACTION_STOP_TRACKING"
         const val TRACKING_NOTIFICATION_ID = 1
+        const val BATTERY_NOTIFICATION_ID = 1001
 
         /**
          * Helper to create the PendingIntent used in the notification action.
@@ -36,13 +37,8 @@ class StopTrackingReceiver : BroadcastReceiver() {
     }
 
     override fun onReceive(context: Context, intent: Intent?) {
-        val action = intent?.action
-        if (action != ACTION_STOP_TRACKING) {
-            Log.w(TAG, "Received unknown action: $action")
-            return
-        }
+        Log.i(TAG, "Stop action received — stopping tracking (action=${intent?.action})")
 
-        Log.i(TAG, "Stop action received — stopping tracking")
         // Stop the foreground tracking service (stops location updates / geofences)
         try {
             TrackingForegroundService.stop(context)
@@ -50,27 +46,35 @@ class StopTrackingReceiver : BroadcastReceiver() {
             Log.e(TAG, "Error stopping TrackingForegroundService", e)
         }
 
-        // Cancel the persistent notification (in case service was killed or notification persists)
+        // Cancel all known persistent notifications (tracking + battery)
         try {
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            nm.cancel(TRACKING_NOTIFICATION_ID)
+            nm.cancel(TRACKING_NOTIFICATION_ID)       // Location tracking notification (ID = 1)
+            nm.cancel(BATTERY_NOTIFICATION_ID)         // Battery monitoring notification (ID = 1001)
         } catch (e: Exception) {
             Log.w(TAG, "Failed to cancel notification: ${e.message}")
         }
 
-        // Unregister any geofences / listeners asynchronously (implement your own logic)
+        // Also stop BatteryMonitoringService if running
+        try {
+            val batteryIntent = Intent(context,
+                com.autonion.automationcompanion.features.system_context_automation.battery.engine.BatteryMonitoringService::class.java)
+            context.stopService(batteryIntent)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to stop BatteryMonitoringService: ${e.message}")
+        }
+
+        // Unregister any geofences / listeners asynchronously
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                LocationHelper.unregisterAllGeofences(context) // <-- implement this helper
+                LocationHelper.unregisterAllGeofences(context)
                 Log.i(TAG, "Geofences unregistered")
             } catch (e: Exception) {
                 Log.w(TAG, "Failed to unregister geofences: ${e.message}")
             }
         }
 
-        // Optional: give an immediate UX cue
+        // Give an immediate UX cue
         Toast.makeText(context, "Tracking stopped", Toast.LENGTH_SHORT).show()
-
-        // Optional: add audit/log entry in your local DB here
     }
 }

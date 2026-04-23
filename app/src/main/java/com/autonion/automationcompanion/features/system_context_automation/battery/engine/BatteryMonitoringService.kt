@@ -48,11 +48,21 @@ class BatteryMonitoringService : Service() {
     }
 
     private fun startForegroundService() {
+        val stopIntent = Intent(this, BatteryMonitoringService::class.java).apply {
+            action = ACTION_STOP
+        }
+        val stopPendingIntent = PendingIntent.getService(
+            this, 0, stopIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Battery Automation")
             .setContentText("Monitoring battery level")
             .setSmallIcon(R.drawable.ic_notification) // Use your own icon
             .setPriority(NotificationCompat.PRIORITY_LOW)
+            .addAction(R.drawable.ic_stop, "Stop", stopPendingIntent)
+            .setOngoing(true)
             .build()
 
         startForeground(NOTIFICATION_ID, notification)
@@ -71,6 +81,14 @@ class BatteryMonitoringService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            ACTION_STOP -> {
+                Log.i(TAG, "Stop action received — stopping battery monitoring")
+                stopForeground(true)
+                stopSelf()
+                return START_NOT_STICKY
+            }
+        }
         return START_STICKY // Service will restart if killed
     }
 
@@ -92,6 +110,8 @@ class BatteryMonitoringService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     companion object {
+        private const val ACTION_STOP = "com.autonion.automationcompanion.ACTION_STOP_BATTERY_MONITORING"
+
         fun startService(context: Context) {
             val intent = Intent(context, BatteryMonitoringService::class.java)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

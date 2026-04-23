@@ -182,7 +182,20 @@ class TrackingForegroundService : Service() {
         // TODO: start FusedLocationProvider or Geofence registration here
     }
 
+    // Track whether this service is being intentionally stopped to prevent
+    // START_STICKY from restarting and re-creating the notification.
+    private var isStopping = false
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+
+        // If the system restarted us (null intent) after we intentionally stopped,
+        // or if there's simply no action, just die quietly.
+        if (intent == null || intent.action == null) {
+            Log.i("TrackingService", "Null intent/action — stopping orphan restart")
+            stopForeground(true)
+            stopSelf()
+            return START_NOT_STICKY
+        }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val hasFine = ContextCompat.checkSelfPermission(
@@ -221,9 +234,9 @@ class TrackingForegroundService : Service() {
             return START_NOT_STICKY
         }
 
-        val action = intent?.action
-        val slotId = intent?.getLongExtra("slotId", -1L) ?: -1L
-        Log.i("TrackingService", "onStartCommand action=${intent?.action} slotId=$slotId")
+        val action = intent.action
+        val slotId = intent.getLongExtra("slotId", -1L)
+        Log.i("TrackingService", "onStartCommand action=$action slotId=$slotId")
 
         when (action) {
 
@@ -238,12 +251,11 @@ class TrackingForegroundService : Service() {
             }
 
             ACTION_PERFORM_VOLUME -> {
-                val ring = intent?.getIntExtra("ring", -1) ?: -1
-                val media = intent?.getIntExtra("media", -1) ?: -1
-                val alarm = intent?.getIntExtra("alarm", 8) ?: 8
+                val ring = intent.getIntExtra("ring", -1)
+                val media = intent.getIntExtra("media", -1)
+                val alarm = intent.getIntExtra("alarm", 8)
                 val ringerModeOrdinal =
-                    intent?.getIntExtra("ringerMode", RingerMode.NORMAL.ordinal)
-                        ?: RingerMode.NORMAL.ordinal
+                    intent.getIntExtra("ringerMode", RingerMode.NORMAL.ordinal)
                 val ringerMode =
                     RingerMode.values().getOrElse(ringerModeOrdinal) { RingerMode.NORMAL }
                 if (ring != -1 && media != -1) {
@@ -265,8 +277,10 @@ class TrackingForegroundService : Service() {
                 if (slotId != -1L) {
                     unregisterGeofenceForSlot(slotId)
                 }
+                isStopping = true
                 stopForeground(true)
                 stopSelf()
+                return START_NOT_STICKY
             }
         }
 
@@ -504,8 +518,13 @@ class TrackingForegroundService : Service() {
 
 
     private fun buildNotification(): Notification {
-        val stopIntent = Intent(this, StopTrackingReceiver::class.java)
-        val pi = PendingIntent.getBroadcast(this, 0, stopIntent, PendingIntent.FLAG_MUTABLE)
+        val stopIntent = Intent(this, StopTrackingReceiver::class.java).apply {
+            action = StopTrackingReceiver.ACTION_STOP_TRACKING
+        }
+        val pi = PendingIntent.getBroadcast(
+            this, 0, stopIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Tracking active")
             .setContentText("Monitoring location for your slot")
