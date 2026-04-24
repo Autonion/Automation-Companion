@@ -298,7 +298,8 @@ class LocalServerLLMEngine private constructor(
                     messages = messages,
                     stream = false,
                     format = UIPromptFormatter.getOutputJsonSchema(),
-                    options = inferenceOptions
+                    options = inferenceOptions,
+                    think = false
                 )
             )
 
@@ -316,7 +317,8 @@ class LocalServerLLMEngine private constructor(
                         messages = messages,
                         stream = false,
                         format = "json", // Basic JSON output mode
-                        options = inferenceOptions
+                        options = inferenceOptions,
+                        think = false
                     )
                 )
                 elapsed = System.currentTimeMillis() - retryStart
@@ -385,7 +387,8 @@ class LocalServerLLMEngine private constructor(
                     messages = messages,
                     stream = false,
                     format = jsonSchema,
-                    options = mapOf("temperature" to 0.1, "num_ctx" to 2048)
+                    options = mapOf("temperature" to 0.1, "num_ctx" to 2048),
+                    think = false
                 )
             )
 
@@ -404,7 +407,8 @@ class LocalServerLLMEngine private constructor(
                         messages = fallbackMessages,
                         stream = false,
                         format = "json",
-                        options = mapOf("temperature" to 0.1, "num_ctx" to 2048)
+                        options = mapOf("temperature" to 0.1, "num_ctx" to 2048),
+                        think = false
                     )
                 )
                 content = response.message.content.trim()
@@ -454,11 +458,16 @@ class LocalServerLLMEngine private constructor(
                     messages = messages,
                     stream = false,
                     format = "json",
-                    options = mapOf("temperature" to 0.1, "num_ctx" to 2048)
+                    options = mapOf("temperature" to 0.1, "num_ctx" to 2048),
+                    think = false
                 )
             )
 
-            val content = response.message.content.trim()
+            var content = response.message.content.trim()
+            // Strip <think> tags from thinking-enabled models (Qwen3, etc.)
+            if (content.contains("</think>")) {
+                content = content.substringAfter("</think>").trim()
+            }
             Log.d(TAG, "chatSimpleJson response (${response.eval_count} tokens): $content")
 
             if (content.isBlank()) null else content
@@ -554,7 +563,13 @@ class LocalServerLLMEngine private constructor(
      */
     private fun parseStructuredResponse(raw: String): ActionIntent? {
         return try {
-            val jsonString = raw.trim()
+            var jsonString = raw.trim()
+            
+            // Strip <think> tags from thinking-enabled models (Qwen3, etc.)
+            // Must happen BEFORE JSON extraction since think blocks often contain {braces}
+            if (jsonString.contains("</think>")) {
+                jsonString = jsonString.substringAfter("</think>").trim()
+            }
             
             // With structured output, the response should already be pure JSON.
             // But as a safety net, try to extract JSON object if there's extra text.
