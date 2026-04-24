@@ -141,7 +141,7 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
         try {
             val powerManager = context.getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
             wakeLock = powerManager.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "AutomationCompanion::CrossDeviceWakeLock")
-            wakeLock?.acquire(10 * 60 * 1000L /*10 minutes timeout just in case*/)
+            wakeLock?.acquire() // No timeout — released explicitly in releaseLocks()/stop()
 
             val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager
             wifiLock = wifiManager.createWifiLock(android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF, "AutomationCompanion::CrossDeviceWifiLock")
