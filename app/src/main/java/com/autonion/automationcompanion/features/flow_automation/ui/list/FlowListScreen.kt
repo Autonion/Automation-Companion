@@ -1,6 +1,8 @@
 package com.autonion.automationcompanion.features.flow_automation.ui.list
 
+import android.content.Intent
 import android.net.Uri
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
@@ -29,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.autonion.automationcompanion.features.flow_automation.model.FlowGraph
 import com.autonion.automationcompanion.features.flow_automation.ui.editor.canvas.NodeColors
+import com.autonion.automationcompanion.features.system_context_automation.shared.ui.PermissionDisclosureDialog
 import com.autonion.automationcompanion.ui.components.AuroraBackground
 import androidx.compose.material.icons.outlined.Info
 import com.autonion.automationcompanion.features.omni_chatbot.ui.LocalStartWalkthrough
@@ -55,6 +58,10 @@ fun FlowListScreen(
     val isDark = isSystemInDarkTheme()
     val startWalkthrough = LocalStartWalkthrough.current
 
+    // Disclosure dialog state
+    var showAccessibilityDisclosure by remember { mutableStateOf(false) }
+    var pendingAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+
     // Import picker
     val importLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -68,7 +75,7 @@ fun FlowListScreen(
     var exportingFlowId by remember { mutableStateOf<String?>(null) }
     var exportingFlowName by remember { mutableStateOf("flow") }
     val exportLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("application/json")
+        contract = ActivityResultContracts.CreateDocument("application/zip")
     ) { uri: Uri? ->
         val flowId = exportingFlowId
         if (uri != null && flowId != null) {
@@ -105,7 +112,7 @@ fun FlowListScreen(
                         }
                         // Import button
                         IconButton(onClick = {
-                            importLauncher.launch(arrayOf("application/json"))
+                            importLauncher.launch(arrayOf("application/json", "application/zip"))
                         }) {
                             Icon(
                                 Icons.Default.FileOpen,
@@ -126,8 +133,8 @@ fun FlowListScreen(
                     FloatingActionButton(
                         onClick = {
                             if (!com.autonion.automationcompanion.AccessibilityRouter.isServiceConnected()) {
-                                android.widget.Toast.makeText(context, "Please enable Accessibility Service to create flows", android.widget.Toast.LENGTH_SHORT).show()
-                                context.startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                                pendingAction = null
+                                showAccessibilityDisclosure = true
                             } else {
                                 onCreateNew()
                             }
@@ -147,13 +154,13 @@ fun FlowListScreen(
                         isDark = isDark,
                         onCreateNew = {
                             if (!com.autonion.automationcompanion.AccessibilityRouter.isServiceConnected()) {
-                                android.widget.Toast.makeText(context, "Please enable Accessibility Service to create flows", android.widget.Toast.LENGTH_SHORT).show()
-                                context.startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                                pendingAction = null
+                                showAccessibilityDisclosure = true
                             } else {
                                 onCreateNew()
                             }
                         },
-                        onImport = { importLauncher.launch(arrayOf("application/json")) }
+                        onImport = { importLauncher.launch(arrayOf("application/json", "application/zip")) }
                     )
                 } else {
                     LazyColumn(
@@ -166,11 +173,17 @@ fun FlowListScreen(
                                 flow = flow,
                                 isDark = isDark,
                                 onEdit = { onEditFlow(flow.id) },
-                                onRun = { onRunFlow(flow.id) },
+                                onRun = {
+                                    if (!com.autonion.automationcompanion.AccessibilityRouter.isServiceConnected()) {
+                                        showAccessibilityDisclosure = true
+                                    } else {
+                                        onRunFlow(flow.id)
+                                    }
+                                },
                                 onExport = {
                                     exportingFlowId = flow.id
                                     exportingFlowName = flow.name
-                                    exportLauncher.launch("${flow.name}.json")
+                                    exportLauncher.launch("${flow.name}.zip")
                                 },
                                 onDelete = { viewModel.deleteFlow(flow.id) }
                             )
@@ -179,6 +192,18 @@ fun FlowListScreen(
                 }
             }
         }
+
+        PermissionDisclosureDialog(
+            showDialog = showAccessibilityDisclosure,
+            title = "Accessibility Service Required",
+            description = "Autonion needs Accessibility Service to execute automation flows. It uses this permission to simulate taps, swipes, and other gestures on your behalf. Please enable it in the next screen.",
+            icon = Icons.Default.Accessibility,
+            onDismiss = { showAccessibilityDisclosure = false },
+            onContinue = {
+                showAccessibilityDisclosure = false
+                context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            }
+        )
     }
 }
 
@@ -371,14 +396,7 @@ private fun FlowCard(
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     // Run button
                     IconButton(
-                        onClick = {
-                            if (!com.autonion.automationcompanion.AccessibilityRouter.isServiceConnected()) {
-                                android.widget.Toast.makeText(context, "Please enable Accessibility Service to run flows", android.widget.Toast.LENGTH_SHORT).show()
-                                context.startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                            } else {
-                                onRun()
-                            }
-                        },
+                        onClick = onRun,
                         modifier = Modifier.size(36.dp)
                     ) {
                         Icon(

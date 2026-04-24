@@ -121,11 +121,12 @@ fun SemanticAutomationScreen(
                 )
             }
             AutomationStatus.FAILED -> {
+                val reason = if (!lastAction.isNullOrBlank()) "\n$lastAction" else ""
                 messages.add(
                     0,
                     SemanticMessage(
                         id = UUID.randomUUID().toString(),
-                        text = "Task failed to complete.",
+                        text = "Task failed to complete.$reason",
                         isUser = false
                     )
                 )

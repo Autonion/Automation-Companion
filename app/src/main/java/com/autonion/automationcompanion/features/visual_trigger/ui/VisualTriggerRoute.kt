@@ -17,6 +17,11 @@ import com.autonion.automationcompanion.AccessibilityRouter
 import com.autonion.automationcompanion.features.gesture_recording_playback.overlay.AutomationService
 import com.autonion.automationcompanion.features.visual_trigger.service.CaptureOverlayService
 import com.autonion.automationcompanion.features.visual_trigger.service.VisionExecutionService
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Accessibility
+import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.Screenshot
+import com.autonion.automationcompanion.features.system_context_automation.shared.ui.PermissionDisclosureDialog
 
 @Composable
 fun VisualTriggerRoute(
@@ -29,6 +34,10 @@ fun VisualTriggerRoute(
 
     var pendingRunPresetId by remember { mutableStateOf<String?>(null) }
     var pendingPresetName by remember { mutableStateOf("New Automation") }
+
+    var showAccessibilityDisclosure by remember { mutableStateOf(false) }
+    var showOverlayDisclosure by remember { mutableStateOf(false) }
+    var showMediaProjectionDisclosure by remember { mutableStateOf(false) }
 
     fun isAccessibilityEnabled(): Boolean {
         if (AccessibilityRouter.isServiceConnected()) return true
@@ -90,7 +99,7 @@ fun VisualTriggerRoute(
                 Toast.makeText(context, "Please enable Display Over Other Apps", Toast.LENGTH_LONG).show()
                 context.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION))
             } else {
-                mediaProjectionLauncher.launch(mediaProjectionManager.createScreenCaptureIntent())
+                showMediaProjectionDisclosure = true
             }
         } else {
             Toast.makeText(context, "Accessibility is required", Toast.LENGTH_SHORT).show()
@@ -99,17 +108,51 @@ fun VisualTriggerRoute(
 
     fun checkAllPermissions() {
         if (!isAccessibilityEnabled()) {
-            Toast.makeText(context, "Please enable Accessibility Service", Toast.LENGTH_LONG).show()
-            accessibilityLauncher.launch(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            showAccessibilityDisclosure = true
             return
         }
         if (!Settings.canDrawOverlays(context)) {
-            Toast.makeText(context, "Please enable Display Over Other Apps", Toast.LENGTH_LONG).show()
-            context.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION))
+            showOverlayDisclosure = true
             return
         }
-        mediaProjectionLauncher.launch(mediaProjectionManager.createScreenCaptureIntent())
+        showMediaProjectionDisclosure = true
     }
+
+    PermissionDisclosureDialog(
+        showDialog = showAccessibilityDisclosure,
+        title = "Accessibility Service Required",
+        description = "Autonion needs Accessibility Service to automate screen interactions and taps for Visual Triggers. Please enable it in the next screen.",
+        icon = Icons.Default.Accessibility,
+        onDismiss = { showAccessibilityDisclosure = false },
+        onContinue = {
+            showAccessibilityDisclosure = false
+            accessibilityLauncher.launch(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        }
+    )
+
+    PermissionDisclosureDialog(
+        showDialog = showOverlayDisclosure,
+        title = "Display Over Other Apps Required",
+        description = "Autonion needs to display over other apps to capture the screen and show the Visual Trigger UI.",
+        icon = Icons.Default.Layers,
+        onDismiss = { showOverlayDisclosure = false },
+        onContinue = {
+            showOverlayDisclosure = false
+            context.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION))
+        }
+    )
+
+    PermissionDisclosureDialog(
+        showDialog = showMediaProjectionDisclosure,
+        title = "Screen Capture Required",
+        description = "Autonion needs to capture your screen to detect visual elements and triggers. The screen content is processed locally on your device and captured images may be stored on-device for editing. They are not shared.",
+        icon = Icons.Default.Screenshot,
+        onDismiss = { showMediaProjectionDisclosure = false },
+        onContinue = {
+            showMediaProjectionDisclosure = false
+            mediaProjectionLauncher.launch(mediaProjectionManager.createScreenCaptureIntent())
+        }
+    )
 
     VisionTriggerScreen(
         onAddClicked = { name ->

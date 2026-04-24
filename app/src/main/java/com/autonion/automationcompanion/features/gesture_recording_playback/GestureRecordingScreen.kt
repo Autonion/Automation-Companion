@@ -17,6 +17,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AccessibilityNew
+import androidx.compose.material.icons.rounded.Layers
 import android.content.Intent as AndroidIntent
 
 @Composable
@@ -30,17 +33,25 @@ fun GestureRecordingScreen(onBack: () -> Unit = {}) {
 
     var showNewDialog by rememberSaveable { mutableStateOf(false) }
     var confirmDeleteFor by remember { mutableStateOf<String?>(null) }
+    
+    var showOverlayDisclosure by remember { mutableStateOf(false) }
+    var showAccessibilityDisclosure by remember { mutableStateOf(false) }
+    var pendingPresetName by remember { mutableStateOf<String?>(null) }
 
     // Broadcast receiver for preset saved events
     val lbm = LocalBroadcastManager.getInstance(context)
 
     fun startOverlayIfAllowed(presetName: String) {
         when {
-            !permissionHelper.hasOverlayPermission() ->
-                permissionHelper.requestOverlayPermission()
+            !permissionHelper.hasOverlayPermission() -> {
+                pendingPresetName = presetName
+                showOverlayDisclosure = true
+            }
 
-            !permissionHelper.isAccessibilityServiceEnabled() ->
-                permissionHelper.requestAccessibilityPermission()
+            !permissionHelper.isAccessibilityServiceEnabled() -> {
+                pendingPresetName = presetName
+                showAccessibilityDisclosure = true
+            }
 
             !permissionHelper.hasNotificationPermission() ->
                 permissionHelper.requestNotificationPermission()
@@ -107,6 +118,40 @@ fun GestureRecordingScreen(onBack: () -> Unit = {}) {
                 confirmDeleteFor = null
             },
             onCancel = { confirmDeleteFor = null }
+        )
+    }
+
+    if (showOverlayDisclosure) {
+        com.autonion.automationcompanion.features.system_context_automation.shared.ui.PermissionDisclosureDialog(
+            showDialog = showOverlayDisclosure,
+            onDismiss = { 
+                showOverlayDisclosure = false
+                pendingPresetName = null
+            },
+            onContinue = {
+                showOverlayDisclosure = false
+                permissionHelper.requestOverlayPermission()
+            },
+            title = "Display Over Other Apps Required",
+            description = "Autonion requires the 'Display over other apps' permission to show the gesture recording controls on top of other applications. This allows you to record and playback gestures anywhere on your screen.",
+            icon = Icons.Rounded.Layers
+        )
+    }
+
+    if (showAccessibilityDisclosure) {
+        com.autonion.automationcompanion.features.system_context_automation.shared.ui.PermissionDisclosureDialog(
+            showDialog = showAccessibilityDisclosure,
+            onDismiss = { 
+                showAccessibilityDisclosure = false 
+                pendingPresetName = null
+            },
+            onContinue = {
+                showAccessibilityDisclosure = false
+                permissionHelper.requestAccessibilityPermission()
+            },
+            title = "Accessibility Service Required",
+            description = "Autonion uses the Accessibility Service to simulate touch gestures and clicks during playback, and to record your inputs. We do not use this to collect personal data or observe your typing.",
+            icon = Icons.Rounded.AccessibilityNew
         )
     }
 }

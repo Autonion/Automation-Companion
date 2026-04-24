@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.rounded.EditLocationAlt
 import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.NearMe
+import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -71,6 +72,7 @@ fun LocationSlotsScreen(
 
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     var isLocationPermissionGranted by remember { mutableStateOf(true) }
+    var showLocationDisclosure by remember { mutableStateOf(false) }
 
     val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
@@ -162,7 +164,7 @@ fun LocationSlotsScreen(
                             description = "Location automation requires location access to trigger actions.",
                             buttonText = "Allow",
                             onClick = {
-                                permissionLauncher.launch(android.Manifest.permission.ACCESS_FINE_LOCATION)
+                                showLocationDisclosure = true
                             }
                         )
                     }
@@ -207,7 +209,7 @@ fun LocationSlotsScreen(
                                                         "Location permission required to enable automation",
                                                         android.widget.Toast.LENGTH_LONG
                                                     ).show()
-                                                    permissionLauncher.launch(android.Manifest.permission.ACCESS_FINE_LOCATION)
+                                                    showLocationDisclosure = true
                                                 } else {
                                                     scope.launch {
                                                         dao.setEnabled(slot.id, enabled)
@@ -256,6 +258,18 @@ fun LocationSlotsScreen(
                 }
             }
         }
+        
+        com.autonion.automationcompanion.features.system_context_automation.shared.ui.PermissionDisclosureDialog(
+            showDialog = showLocationDisclosure,
+            onDismiss = { showLocationDisclosure = false },
+            onContinue = {
+                showLocationDisclosure = false
+                permissionLauncher.launch(android.Manifest.permission.ACCESS_FINE_LOCATION)
+            },
+            title = "Location Permission Required",
+            description = "Autonion collects location data to enable geofence triggers even when the app is closed or not in use. We do not share your location data.",
+            icon = Icons.Rounded.LocationOn
+        )
     }
 }
 

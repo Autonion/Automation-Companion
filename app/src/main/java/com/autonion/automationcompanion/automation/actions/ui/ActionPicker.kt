@@ -52,60 +52,51 @@ fun ActionPicker(
 
     // --- Permission Rationale Dialogs ---
     if (showWriteSettingsRationale) {
-        AlertDialog(
-            onDismissRequest = { showWriteSettingsRationale = false },
-            title = { Text("Permission Required") },
-            text = { Text("To control brightness, auto-rotate, or screen timeout, this app needs permission to Modify System Settings.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    showWriteSettingsRationale = false
-                    PermissionUtils.requestWriteSettingsPermission(context)
-                }) { Text("Open Settings") }
+        com.autonion.automationcompanion.features.system_context_automation.shared.ui.PermissionDisclosureDialog(
+            showDialog = showWriteSettingsRationale,
+            onDismiss = { showWriteSettingsRationale = false },
+            onContinue = {
+                showWriteSettingsRationale = false
+                PermissionUtils.requestWriteSettingsPermission(context)
             },
-            dismissButton = {
-                TextButton(onClick = { showWriteSettingsRationale = false }) { Text("Cancel") }
-            }
+            title = "Modify System Settings Required",
+            description = "To control brightness, auto-rotate, or screen timeout, Autonion needs permission to modify system settings.",
+            icon = Icons.Rounded.Settings
         )
     }
 
     if (showDndRationale) {
-        AlertDialog(
-            onDismissRequest = { showDndRationale = false },
-            title = { Text("Permission Required") },
-            text = { Text("To control Do Not Disturb and Volume, this app needs 'Do Not Disturb Access'.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    showDndRationale = false
-                    val intent = Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
-                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    context.startActivity(intent)
-                }) { Text("Open Settings") }
+        com.autonion.automationcompanion.features.system_context_automation.shared.ui.PermissionDisclosureDialog(
+            showDialog = showDndRationale,
+            onDismiss = { showDndRationale = false },
+            onContinue = {
+                showDndRationale = false
+                val intent = Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(intent)
             },
-            dismissButton = {
-                TextButton(onClick = { showDndRationale = false }) { Text("Cancel") }
-            }
+            title = "Do Not Disturb Access Required",
+            description = "To control Do Not Disturb and Volume levels, Autonion needs 'Do Not Disturb Access' permission.",
+            icon = Icons.Rounded.DoNotDisturb
         )
     }
 
     if (showSmsRationale) {
-        AlertDialog(
-            onDismissRequest = { showSmsRationale = false },
-            title = { Text("Permission Required") },
-            text = { Text("To send messages, this app needs SMS and Contacts permissions.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    showSmsRationale = false
-                    smsPermissionLauncher.launch(
-                        arrayOf(
-                            Manifest.permission.SEND_SMS,
-                            Manifest.permission.READ_CONTACTS
-                        )
+        com.autonion.automationcompanion.features.system_context_automation.shared.ui.PermissionDisclosureDialog(
+            showDialog = showSmsRationale,
+            onDismiss = { showSmsRationale = false },
+            onContinue = {
+                showSmsRationale = false
+                smsPermissionLauncher.launch(
+                    arrayOf(
+                        Manifest.permission.SEND_SMS,
+                        Manifest.permission.READ_CONTACTS
                     )
-                }) { Text("Grant") }
+                )
             },
-            dismissButton = {
-                TextButton(onClick = { showSmsRationale = false }) { Text("Cancel") }
-            }
+            title = "SMS & Contacts Permissions Required",
+            description = "To send automated messages, Autonion needs SMS and Contacts permissions.",
+            icon = Icons.AutoMirrored.Rounded.Message
         )
     }
 

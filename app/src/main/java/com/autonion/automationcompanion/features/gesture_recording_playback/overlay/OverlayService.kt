@@ -186,7 +186,7 @@ class OverlayService : Service() {
 
     private fun startForegroundServiceWithNotification() {
         val notification = NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-            .setContentTitle("Automation Companion")
+            .setContentTitle("Autonion")
             .setContentText("Overlay is running")
             .setSmallIcon(R.drawable.ic_notification)
             .setPriority(NotificationCompat.PRIORITY_LOW)

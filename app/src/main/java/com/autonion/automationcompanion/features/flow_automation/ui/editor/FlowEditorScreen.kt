@@ -29,6 +29,9 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.filled.Accessibility
+import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.Screenshot
 import androidx.activity.compose.BackHandler
 import com.autonion.automationcompanion.features.flow_automation.engine.FlowExecutionState
 import com.autonion.automationcompanion.features.flow_automation.model.LaunchAppNode
@@ -40,6 +43,7 @@ import com.autonion.automationcompanion.features.flow_automation.ui.editor.canva
 import com.autonion.automationcompanion.features.flow_automation.ui.editor.panels.EdgeConditionOverlay
 import com.autonion.automationcompanion.features.flow_automation.ui.editor.panels.NodeConfigPanel
 import com.autonion.automationcompanion.features.flow_automation.ui.editor.panels.NodePalette
+import com.autonion.automationcompanion.features.system_context_automation.shared.ui.PermissionDisclosureDialog
 import kotlinx.coroutines.delay
 
 /**
@@ -77,6 +81,11 @@ fun FlowEditorScreen(
     // ── MediaProjection blocking dialog ──
     var showFullScreenDialog by remember { mutableStateOf(false) }
     var pendingExecute by remember { mutableStateOf(false) }
+
+    // ── Disclosure dialog states ──
+    var showAccessibilityDisclosure by remember { mutableStateOf(false) }
+    var showOverlayDisclosure by remember { mutableStateOf(false) }
+    var showMediaProjectionDisclosure by remember { mutableStateOf(false) }
 
     // Detect if flow has LaunchApp + visual/ML nodes (needs full-screen capture)
     val hasLaunchAppNode = remember(state.graph.nodes) {
@@ -359,14 +368,7 @@ fun FlowEditorScreen(
                         },
                         onLaunchOverlay = { node ->
                             if (!android.provider.Settings.canDrawOverlays(context)) {
-                                val intent = android.content.Intent(
-                                    android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                    android.net.Uri.parse("package:${context.packageName}")
-                                ).apply {
-                                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                                }
-                                context.startActivity(intent)
-                                android.widget.Toast.makeText(context, "Please grant 'Display over other apps' permission and try again.", android.widget.Toast.LENGTH_LONG).show()
+                                showOverlayDisclosure = true
                             } else {
                                 viewModel.launchOverlayForNode(node)
                             }
@@ -417,8 +419,7 @@ fun FlowEditorScreen(
                             viewModel.stopExecution()
                         } else {
                             if (!com.autonion.automationcompanion.AccessibilityRouter.isServiceConnected()) {
-                                android.widget.Toast.makeText(context, "Please enable Accessibility Service to run flows", android.widget.Toast.LENGTH_SHORT).show()
-                                context.startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                                showAccessibilityDisclosure = true
                             } else if (!hasVisualNodes) {
                                 // No visual/ML nodes → execute directly without MediaProjection
                                 viewModel.executeFlow()
@@ -426,9 +427,8 @@ fun FlowEditorScreen(
                                 // Has LaunchApp + visual nodes → show blocking dialog first
                                 showFullScreenDialog = true
                             } else {
-                                // Has visual nodes but no LaunchApp → request MP permission normally
-                                val mpManager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as android.media.projection.MediaProjectionManager
-                                projectionLauncher.launch(mpManager.createScreenCaptureIntent())
+                                // Has visual nodes but no LaunchApp → show disclosure then request MP
+                                showMediaProjectionDisclosure = true
                             }
                         }
                     },
@@ -446,8 +446,7 @@ fun FlowEditorScreen(
                 FloatingActionButton(
                     onClick = { 
                         if (!com.autonion.automationcompanion.AccessibilityRouter.isServiceConnected()) {
-                            android.widget.Toast.makeText(context, "Please enable Accessibility Service to add nodes", android.widget.Toast.LENGTH_SHORT).show()
-                            context.startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                            showAccessibilityDisclosure = true
                         } else {
                             viewModel.toggleNodePalette() 
                         }
@@ -513,4 +512,48 @@ fun FlowEditorScreen(
             }
         )
     }
+
+    // ── Disclosure dialogs ──
+    PermissionDisclosureDialog(
+        showDialog = showAccessibilityDisclosure,
+        title = "Accessibility Service Required",
+        description = "Autonion needs Accessibility Service to execute automation flows. It uses this permission to simulate taps, swipes, and other gestures on your behalf. Please enable it in the next screen.",
+        icon = Icons.Default.Accessibility,
+        onDismiss = { showAccessibilityDisclosure = false },
+        onContinue = {
+            showAccessibilityDisclosure = false
+            context.startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        }
+    )
+
+    PermissionDisclosureDialog(
+        showDialog = showOverlayDisclosure,
+        title = "Display Over Other Apps Required",
+        description = "Autonion needs to display over other apps to show the gesture recording overlay for configuring flow nodes.",
+        icon = Icons.Default.Layers,
+        onDismiss = { showOverlayDisclosure = false },
+        onContinue = {
+            showOverlayDisclosure = false
+            val intent = android.content.Intent(
+                android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                android.net.Uri.parse("package:${context.packageName}")
+            ).apply {
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        }
+    )
+
+    PermissionDisclosureDialog(
+        showDialog = showMediaProjectionDisclosure,
+        title = "Screen Capture Required",
+        description = "Autonion needs to capture your screen to detect visual elements during flow execution. The screen content is processed locally on your device and is not stored or shared.",
+        icon = Icons.Default.Screenshot,
+        onDismiss = { showMediaProjectionDisclosure = false },
+        onContinue = {
+            showMediaProjectionDisclosure = false
+            val mpManager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as android.media.projection.MediaProjectionManager
+            projectionLauncher.launch(mpManager.createScreenCaptureIntent())
+        }
+    )
 }

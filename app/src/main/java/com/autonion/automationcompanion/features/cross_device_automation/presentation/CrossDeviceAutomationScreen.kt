@@ -35,8 +35,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.autonion.automationcompanion.features.cross_device_automation.CrossDeviceAutomationManager
+import com.autonion.automationcompanion.features.system_context_automation.shared.ui.PermissionDisclosureDialog
 import com.autonion.automationcompanion.ui.components.AuroraBackground
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.filled.Accessibility
 import com.autonion.automationcompanion.features.omni_chatbot.ui.LocalStartWalkthrough
 import com.autonion.automationcompanion.features.cross_device_automation.engine.HardwareButtonMapper
 import kotlinx.coroutines.launch
@@ -78,20 +80,17 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
     // so it runs globally across all screens, not just this one.
 
     if (showPermissionDialog) {
-        AlertDialog(
-            onDismissRequest = { showPermissionDialog = false },
-            title = { Text("Permission Required") },
-            text = { Text("This feature requires the Automation Companion Accessibility Service to function (for Clipboard Sync). Please enable it in Settings.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    showPermissionDialog = false
-                    val intent = android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                    intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                    context.startActivity(intent)
-                }) { Text("Open Settings") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showPermissionDialog = false }) { Text("Cancel") }
+        PermissionDisclosureDialog(
+            showDialog = showPermissionDialog,
+            title = "Accessibility Service Required",
+            description = "Autonion uses the Accessibility Service for clipboard sync and executing automation actions across connected devices. Please enable it in the next screen.",
+            icon = Icons.Default.Accessibility,
+            onDismiss = { showPermissionDialog = false },
+            onContinue = {
+                showPermissionDialog = false
+                val intent = android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(intent)
             }
         )
     }

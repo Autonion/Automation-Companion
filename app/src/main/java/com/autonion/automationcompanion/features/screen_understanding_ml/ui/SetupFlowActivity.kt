@@ -8,6 +8,15 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Accessibility
+import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.Screenshot
+import com.autonion.automationcompanion.features.system_context_automation.shared.ui.PermissionDisclosureDialog
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -44,10 +53,13 @@ class SetupFlowActivity : ComponentActivity() {
     private val OVERLAY_PERMISSION_REQUEST_CODE = 101
     private val ACCESSIBILITY_PERMISSION_REQUEST_CODE = 102
 
+    private var showAccessibilityDisclosure by mutableStateOf(false)
+    private var showOverlayDisclosure by mutableStateOf(false)
+    private var showMediaProjectionDisclosure by mutableStateOf(false)
+
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        checkPermissionsAndStart()
 
         setContent {
             AppTheme {
@@ -111,6 +123,60 @@ class SetupFlowActivity : ComponentActivity() {
                 )
             }
         }
+
+        LaunchedEffect(Unit) {
+            checkPermissionsAndStart()
+        }
+
+        PermissionDisclosureDialog(
+            showDialog = showAccessibilityDisclosure,
+            title = "Accessibility Service Required",
+            description = "Autonion needs Accessibility Service to automate screen interactions and taps for Screen Context AI. Please enable it in the next screen.",
+            icon = Icons.Default.Accessibility,
+            onDismiss = {
+                showAccessibilityDisclosure = false
+                finish()
+            },
+            onContinue = {
+                showAccessibilityDisclosure = false
+                val intent = Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                startActivityForResult(intent, ACCESSIBILITY_PERMISSION_REQUEST_CODE)
+            }
+        )
+
+        PermissionDisclosureDialog(
+            showDialog = showOverlayDisclosure,
+            title = "Display Over Other Apps Required",
+            description = "Autonion needs to display over other apps to capture the screen and show the Screen Context AI UI elements.",
+            icon = Icons.Default.Layers,
+            onDismiss = {
+                showOverlayDisclosure = false
+                finish()
+            },
+            onContinue = {
+                showOverlayDisclosure = false
+                val intent = Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:$packageName")
+                )
+                startActivityForResult(intent, OVERLAY_PERMISSION_REQUEST_CODE)
+            }
+        )
+
+        PermissionDisclosureDialog(
+            showDialog = showMediaProjectionDisclosure,
+            title = "Screen Capture Required",
+            description = "Autonion needs to capture your screen to analyze UI elements for Screen Context AI. The screen content is processed locally on your device and is not stored or shared.",
+            icon = Icons.Default.Screenshot,
+            onDismiss = {
+                showMediaProjectionDisclosure = false
+                finish()
+            },
+            onContinue = {
+                showMediaProjectionDisclosure = false
+                startMediaProjection()
+            }
+        )
     }
 
     private fun isAccessibilityServiceEnabled(): Boolean {
@@ -126,23 +192,16 @@ class SetupFlowActivity : ComponentActivity() {
     private fun checkPermissionsAndStart() {
         // Step 1: Accessibility Service
         if (!isAccessibilityServiceEnabled()) {
-            Toast.makeText(this, "Please enable the Automation Companion accessibility service", Toast.LENGTH_LONG).show()
-            val intent = Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
-            startActivityForResult(intent, ACCESSIBILITY_PERMISSION_REQUEST_CODE)
+            showAccessibilityDisclosure = true
             return
         }
         // Step 2: Overlay permission
         if (!Settings.canDrawOverlays(this)) {
-            Toast.makeText(this, "Please allow 'Display over other apps' permission", Toast.LENGTH_LONG).show()
-            val intent = Intent(
-                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                Uri.parse("package:$packageName")
-            )
-            startActivityForResult(intent, OVERLAY_PERMISSION_REQUEST_CODE)
+            showOverlayDisclosure = true
             return
         }
         // Step 3: Media Projection
-        startMediaProjection()
+        showMediaProjectionDisclosure = true
     }
 
     private fun startMediaProjection() {
