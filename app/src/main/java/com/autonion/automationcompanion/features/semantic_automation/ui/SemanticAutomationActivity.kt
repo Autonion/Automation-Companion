@@ -7,7 +7,18 @@ import android.os.Bundle
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Accessibility
+import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.Screenshot
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationService
+import com.autonion.automationcompanion.features.system_context_automation.shared.ui.PermissionDisclosureDialog
+import com.autonion.automationcompanion.ui.theme.AppTheme
 
 /**
  * Transparent permission-flow Activity.
@@ -27,6 +38,10 @@ class SemanticAutomationActivity : ComponentActivity() {
 
     private var pendingCommand: String = ""
 
+    private var showAccessibilityDisclosure by mutableStateOf(false)
+    private var showOverlayDisclosure by mutableStateOf(false)
+    private var showMediaProjectionDisclosure by mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         pendingCommand = intent.getStringExtra("command") ?: ""
@@ -35,6 +50,61 @@ class SemanticAutomationActivity : ComponentActivity() {
             finish()
             return
         }
+
+        setContent {
+            AppTheme {
+                PermissionDisclosureDialog(
+                    showDialog = showAccessibilityDisclosure,
+                    title = "Accessibility Service Required",
+                    description = "Autonion needs Accessibility Service to execute semantic automation commands and interact with on-screen elements. Please enable it in the next screen.",
+                    icon = Icons.Default.Accessibility,
+                    onDismiss = {
+                        showAccessibilityDisclosure = false
+                        finish()
+                    },
+                    onContinue = {
+                        showAccessibilityDisclosure = false
+                        @Suppress("DEPRECATION")
+                        startActivityForResult(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS), ACCESSIBILITY_PERMISSION_REQUEST)
+                    }
+                )
+
+                PermissionDisclosureDialog(
+                    showDialog = showOverlayDisclosure,
+                    title = "Display Over Other Apps Required",
+                    description = "Autonion needs to display over other apps to show the semantic automation overlay UI.",
+                    icon = Icons.Default.Layers,
+                    onDismiss = {
+                        showOverlayDisclosure = false
+                        finish()
+                    },
+                    onContinue = {
+                        showOverlayDisclosure = false
+                        @Suppress("DEPRECATION")
+                        startActivityForResult(
+                            Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")),
+                            OVERLAY_PERMISSION_REQUEST
+                        )
+                    }
+                )
+
+                PermissionDisclosureDialog(
+                    showDialog = showMediaProjectionDisclosure,
+                    title = "Screen Capture Required",
+                    description = "Autonion needs to capture your screen to understand the current UI and execute semantic automation commands. The screen content may be sent to your connected LLM for analysis and is not stored or shared externally.",
+                    icon = Icons.Default.Screenshot,
+                    onDismiss = {
+                        showMediaProjectionDisclosure = false
+                        finish()
+                    },
+                    onContinue = {
+                        showMediaProjectionDisclosure = false
+                        requestMediaProjection()
+                    }
+                )
+            }
+        }
+
         checkPermissionsAndStart()
     }
 
@@ -52,21 +122,14 @@ class SemanticAutomationActivity : ComponentActivity() {
 
     private fun checkPermissionsAndStart() {
         if (!isAccessibilityServiceEnabled()) {
-            Toast.makeText(this, "Please enable the Automation Companion accessibility service", Toast.LENGTH_LONG).show()
-            @Suppress("DEPRECATION")
-            startActivityForResult(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS), ACCESSIBILITY_PERMISSION_REQUEST)
+            showAccessibilityDisclosure = true
             return
         }
         if (!Settings.canDrawOverlays(this)) {
-            Toast.makeText(this, "Please allow 'Display over other apps' permission", Toast.LENGTH_LONG).show()
-            @Suppress("DEPRECATION")
-            startActivityForResult(
-                Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")),
-                OVERLAY_PERMISSION_REQUEST
-            )
+            showOverlayDisclosure = true
             return
         }
-        requestMediaProjection()
+        showMediaProjectionDisclosure = true
     }
 
     private fun requestMediaProjection() {

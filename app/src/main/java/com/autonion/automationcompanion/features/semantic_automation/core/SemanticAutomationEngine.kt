@@ -114,7 +114,7 @@ class SemanticAutomationEngine(private val context: Context) {
         stepHistory.clear()
 
         val parsedGoal = try {
-            kotlinx.coroutines.withTimeoutOrNull(30_000L) {
+            kotlinx.coroutines.withTimeoutOrNull(60_000L) {
                 goalParser.parse(rawCommand, localServerEngine)
             }
         } catch (e: Exception) {
