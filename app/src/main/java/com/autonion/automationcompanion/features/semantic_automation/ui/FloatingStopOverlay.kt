@@ -15,6 +15,7 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.graphics.PixelFormat
 import com.autonion.automationcompanion.R
+import com.autonion.automationcompanion.core.ui.OverlayStyles
 import com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationService
 
 /**
@@ -50,6 +51,10 @@ class FloatingStopOverlay(private val context: Context) {
     @SuppressLint("ClickableViewAccessibility")
     fun show() {
         if (isShowing) return
+        if (!OverlayStyles.canDrawOverlays(context)) {
+            Log.e(TAG, "Overlay permission not granted")
+            return
+        }
 
         try {
             windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
@@ -61,13 +66,13 @@ class FloatingStopOverlay(private val context: Context) {
 
             // ── Build the stop button view ──
             val container = FrameLayout(context).apply {
-                // Red circle background
+                // Red circle background with dark border
                 background = GradientDrawable().apply {
                     shape = GradientDrawable.OVAL
-                    setColor(Color.parseColor("#E53935")) // Material Red 600
-                    setStroke((2 * density).toInt(), Color.parseColor("#C62828")) // darker border
+                    setColor(OverlayStyles.ACCENT_RED)
+                    setStroke((OverlayStyles.PANEL_STROKE_WIDTH_DP * density).toInt(), OverlayStyles.PANEL_STROKE_COLOR)
                 }
-                elevation = 8 * density
+                elevation = OverlayStyles.PANEL_ELEVATION_DP * density
                 alpha = IDLE_ALPHA
             }
 

@@ -14,6 +14,7 @@ import android.view.MotionEvent
 import android.widget.Toast
 import android.app.AlertDialog
 import android.widget.EditText
+import com.autonion.automationcompanion.core.ui.OverlayStyles
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.UIElement
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.ActionType
 
@@ -52,6 +53,13 @@ class ScreenAgentOverlay(
         android.util.Log.d("ScreenAgentOverlay", "Preset name updated to: $name")
     }
     fun getCurrentName() = currentName
+
+    /** Make the save button visible — called after the first successful capture */
+    fun showSaveButton() {
+        runOnMainThread {
+            btnSaveRef?.visibility = View.VISIBLE
+        }
+    }
     
     // Control Window
     private var controlsView: android.view.ViewGroup? = null
@@ -60,6 +68,7 @@ class ScreenAgentOverlay(
     private var isInspectionMode = false
     private var isPlaybackActive = false
     private var btnPlay: android.widget.ImageButton? = null
+    private var btnSaveRef: android.widget.ImageButton? = null
 
     private fun updatePlayButtonState() {
         android.util.Log.d("ScreenAgentOverlay", "updatePlayButtonState: isPlaybackActive=$isPlaybackActive, btnPlay=$btnPlay")
@@ -108,6 +117,10 @@ class ScreenAgentOverlay(
 
     private fun showOverlay(mode: String) {
         if (overlayView != null) return
+        if (!OverlayStyles.canDrawOverlays(context)) {
+            android.util.Log.e("ScreenAgentOverlay", "Overlay permission not granted")
+            return
+        }
 
         // 1. Drawing Window (Fullscreen)
         overlayView = OverlayView(context)
@@ -144,24 +157,30 @@ class ScreenAgentOverlay(
         
 
 
-        // Icon-based Compact Control Bar
-        // Icon-based Compact Control Bar
+        // Icon-based Compact Control Bar — unified dark pill style
+        val dp = context.resources.displayMetrics.density
         val panel = android.widget.LinearLayout(context).apply {
             orientation = android.widget.LinearLayout.HORIZONTAL
-            setBackgroundResource(com.autonion.automationcompanion.R.drawable.rounded_panel_dark)
-            setPadding(0, 0, 0, 0)
+            background = OverlayStyles.createPanelBackground(dp)
+            setPadding(
+                (OverlayStyles.PANEL_PADDING_H_DP * dp).toInt(),
+                (OverlayStyles.PANEL_PADDING_V_DP * dp).toInt(),
+                (OverlayStyles.PANEL_PADDING_H_DP * dp).toInt(),
+                (OverlayStyles.PANEL_PADDING_V_DP * dp).toInt()
+            )
+            elevation = OverlayStyles.PANEL_ELEVATION_DP * dp
         }
         
         fun createIconButton(iconRes: Int, desc: String, onClick: () -> Unit): android.widget.ImageButton {
-            val sizePx = (48 * context.resources.displayMetrics.density).toInt()
-            val paddingPx = (12 * context.resources.displayMetrics.density).toInt()
-            val marginPx = (8 * context.resources.displayMetrics.density).toInt()
+            val sizePx = (OverlayStyles.CLOSE_BUTTON_SIZE_DP * dp).toInt()
+            val paddingPx = (OverlayStyles.BUTTON_PADDING_DP * dp).toInt()
+            val marginPx = (6 * dp).toInt()
             
             return android.widget.ImageButton(context).apply {
                 setImageResource(iconRes)
                 contentDescription = desc
-                setBackgroundResource(com.autonion.automationcompanion.R.drawable.ripple_transparent)
-                setColorFilter(android.graphics.Color.WHITE)
+                background = OverlayStyles.createCircleBackground(OverlayStyles.BUTTON_PRESSED_COLOR)
+                setColorFilter(OverlayStyles.ICON_TINT_NORMAL)
                 scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
                 setPadding(paddingPx, paddingPx, paddingPx, paddingPx)
                 layoutParams = android.widget.LinearLayout.LayoutParams(sizePx, sizePx).apply {
@@ -201,10 +220,9 @@ class ScreenAgentOverlay(
         }
 
         // 4. Save
-        var btnSaveRef: android.widget.ImageButton? = null
         val btnSave = createIconButton(com.autonion.automationcompanion.R.drawable.ic_save, "Save") {
              // Animate to confirmation state
-             val btn = btnSaveRef
+             val btn = this@ScreenAgentOverlay.btnSaveRef
              if (btn != null) {
                  btn.setImageResource(com.autonion.automationcompanion.R.drawable.ic_check)
                  btn.setColorFilter(android.graphics.Color.GREEN)
@@ -251,6 +269,7 @@ class ScreenAgentOverlay(
                     onCapture()
                 }
                 panel.addView(btnSnap)
+                btnSave.visibility = View.GONE  // Hidden until first capture completes
                 panel.addView(btnSave)
                 panel.addView(btnStop)
             }
@@ -325,24 +344,24 @@ class ScreenAgentOverlay(
     private fun showSaveDialog() {
         if (saveDialogView != null) return
 
+        val dialogDp = context.resources.displayMetrics.density
         val dialogView = android.widget.LinearLayout(context).apply {
             orientation = android.widget.LinearLayout.VERTICAL
-            setBackgroundColor(Color.WHITE)
+            background = OverlayStyles.createPanelBackground(dialogDp)
             setPadding(32, 32, 32, 32)
-            // Add rounded corners if possible, or validation
         }
 
         val title = android.widget.TextView(context).apply {
             text = "Save Preset"
             textSize = 18f
-            setTextColor(Color.BLACK)
+            setTextColor(Color.WHITE)
             setPadding(0, 0, 0, 16)
         }
 
         val input = android.widget.EditText(context).apply {
             hint = "Enter preset name"
-            setTextColor(Color.BLACK)
-            setHintTextColor(Color.GRAY)
+            setTextColor(Color.WHITE)
+            setHintTextColor(Color.parseColor("#99FFFFFF"))
             textSize = 16f
         }
 
@@ -352,13 +371,18 @@ class ScreenAgentOverlay(
             setPadding(0, 16, 0, 0)
         }
 
+        val dialogBtnDp = context.resources.displayMetrics.density
         val btnCancel = android.widget.Button(context).apply {
             text = "Cancel"
+            setTextColor(Color.WHITE)
+            background = OverlayStyles.createButtonBackground(dialogBtnDp, OverlayStyles.BUTTON_PRESSED_COLOR)
             setOnClickListener { dismissSaveDialog() }
         }
 
         val btnConfirm = android.widget.Button(context).apply {
             text = "Save"
+            setTextColor(Color.WHITE)
+            background = OverlayStyles.createButtonBackground(dialogBtnDp, OverlayStyles.ACCENT_GREEN)
             setOnClickListener {
                 val name = input.text.toString()
                 if (name.isNotBlank()) {
