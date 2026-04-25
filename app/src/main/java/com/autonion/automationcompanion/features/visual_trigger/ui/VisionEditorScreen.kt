@@ -1,6 +1,9 @@
 package com.autonion.automationcompanion.features.visual_trigger.ui
 
 import android.graphics.Rect
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -28,11 +31,23 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.foundation.gestures.calculateCentroidSize
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.positionChanged
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.autonion.automationcompanion.features.visual_trigger.models.VisionAction
 import com.autonion.automationcompanion.features.visual_trigger.models.ScrollDirection
+import kotlinx.coroutines.delay
 import kotlin.math.abs
 
 private enum class DragMode { NONE, DRAW, MOVE, RESIZE_TL, RESIZE_TR, RESIZE_BL, RESIZE_BR }
@@ -83,7 +98,23 @@ fun VisionEditorScreen(
 
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
 
-    val handleRadius = 14f // pixels in canvas coords
+    // Auto-dismiss instruction hint after 3 seconds
+    var showInstructionHint by remember { mutableStateOf(true) }
+    LaunchedEffect(Unit) {
+        delay(3000L)
+        showInstructionHint = false
+    }
+    // Also hide when first region is drawn
+    LaunchedEffect(regions.size) {
+        if (regions.isNotEmpty()) showInstructionHint = false
+    }
+
+    val handleRadius = 18f  // Larger handles for easier grab
+    val handleHitRadius = handleRadius * 3.5f  // Even larger hit area for finger touch
+
+    var userScale by remember { mutableFloatStateOf(1f) }
+    var userOffset by remember { mutableStateOf(Offset.Zero) }
+    val viewConfiguration = LocalViewConfiguration.current
 
     Box(
         modifier = Modifier
@@ -98,6 +129,67 @@ fun VisionEditorScreen(
             Canvas(
                 modifier = Modifier
                     .fillMaxSize()
+                    .pointerInput(Unit) {
+                        awaitEachGesture {
+                            awaitFirstDown(pass = PointerEventPass.Initial)
+                            var pastTouchSlop = false
+                            val touchSlop = viewConfiguration.touchSlop
+                            var zoomAccumulator = 1f
+                            var panAccumulator = Offset.Zero
+
+                            do {
+                                val event = awaitPointerEvent(PointerEventPass.Initial)
+                                val canceled = event.changes.any { it.isConsumed }
+                                if (!canceled && event.changes.size > 1) {
+                                    val zoomChange = event.calculateZoom()
+                                    val panChange = event.calculatePan()
+                                    val centroid = event.calculateCentroid(useCurrent = false)
+
+                                    if (!pastTouchSlop) {
+                                        zoomAccumulator *= zoomChange
+                                        panAccumulator += panChange
+                                        val centroidSize = event.calculateCentroidSize(useCurrent = false)
+                                        val zoomMotion = abs(1 - zoomAccumulator) * centroidSize
+                                        val panMotion = panAccumulator.getDistance()
+                                        if (zoomMotion > touchSlop || panMotion > touchSlop) {
+                                            pastTouchSlop = true
+                                        }
+                                    }
+
+                                    if (pastTouchSlop) {
+                                        val oldScale = userScale
+                                        userScale = (userScale * zoomChange).coerceIn(1f, 10f)
+
+                                        val newOffsetX = userOffset.x + panChange.x + centroid.x * (oldScale - userScale)
+                                        val newOffsetY = userOffset.y + panChange.y + centroid.y * (oldScale - userScale)
+
+                                        val maxX = 0f
+                                        val minX = (size.width * (1 - userScale))
+                                        val maxY = 0f
+                                        val minY = (size.height * (1 - userScale))
+
+                                        userOffset = Offset(
+                                            x = newOffsetX.coerceIn(minX, maxX),
+                                            y = newOffsetY.coerceIn(minY, maxY)
+                                        )
+
+                                        event.changes.forEach { if (it.positionChanged()) it.consume() }
+                                    }
+                                } else if (event.changes.size <= 1) {
+                                    pastTouchSlop = false
+                                    zoomAccumulator = 1f
+                                    panAccumulator = Offset.Zero
+                                }
+                            } while (event.changes.any { it.pressed })
+                        }
+                    }
+                    .graphicsLayer(
+                        scaleX = userScale,
+                        scaleY = userScale,
+                        translationX = userOffset.x,
+                        translationY = userOffset.y,
+                        transformOrigin = TransformOrigin(0f, 0f)
+                    )
                     .onGloballyPositioned { canvasSize = it.size }
                     .pointerInput(canvasSize, regions) {
                         if (canvasSize == IntSize.Zero) return@pointerInput
@@ -123,7 +215,7 @@ fun VisionEditorScreen(
                                     val hitCorner = corners.find {
                                         val dx = pos.x - it.second.x
                                         val dy = pos.y - it.second.y
-                                        dx * dx + dy * dy < (handleRadius * 3) * (handleRadius * 3)
+                                        dx * dx + dy * dy < handleHitRadius * handleHitRadius
                                     }
                                     if (hitCorner != null) {
                                         dragMode = hitCorner.first
@@ -180,8 +272,8 @@ fun VisionEditorScreen(
                                         DragMode.RESIZE_BR -> { newRect.right = origRect.right + dx; newRect.bottom = origRect.bottom + dy }
                                         else -> {}
                                     }
-                                    // Ensure min size
-                                    if (newRect.width() > 10 && newRect.height() > 10) {
+                                    // Ensure min size (reduced threshold for small elements)
+                                    if (newRect.width() > 5 && newRect.height() > 5) {
                                         editingRect = newRect
                                     }
                                 }
@@ -199,13 +291,14 @@ fun VisionEditorScreen(
                                             val right = maxOf(start.x, end.x).toInt()
                                             val bottom = maxOf(start.y, end.y).toInt()
 
-                                            if (right - left > 10 && bottom - top > 10) {
+                                            // Lower threshold — easier to draw small boxes
+                                            if (right - left > 5 && bottom - top > 5) {
                                                 val scaledRect = Rect(
                                                     (left / s).toInt(), (top / s).toInt(),
                                                     (right / s).toInt(), (bottom / s).toInt()
                                                 )
                                                 scaledRect.intersect(0, 0, imageWidth, imageHeight)
-                                                if (scaledRect.width() > 5 && scaledRect.height() > 5) {
+                                                if (scaledRect.width() > 3 && scaledRect.height() > 3) {
                                                     viewModel.addRegion(scaledRect)
                                                 }
                                             }
@@ -215,13 +308,19 @@ fun VisionEditorScreen(
                                         if (selectedRegionId != null && editingRect != null) {
                                             val clamped = Rect(editingRect!!)
                                             clamped.intersect(0, 0, imageWidth, imageHeight)
-                                            if (clamped.width() > 5 && clamped.height() > 5) {
+                                            if (clamped.width() > 3 && clamped.height() > 3) {
                                                 viewModel.updateRegionRect(selectedRegionId!!, clamped)
                                             }
                                         }
                                     }
                                     DragMode.NONE -> {}
                                 }
+                                dragStart = null
+                                dragCurrent = null
+                                editingRect = null
+                                dragMode = DragMode.NONE
+                            },
+                            onDragCancel = {
                                 dragStart = null
                                 dragCurrent = null
                                 editingRect = null
@@ -320,7 +419,7 @@ fun VisionEditorScreen(
                         drawContext.canvas.nativeCanvas.drawText(actionText, aBadgeLeft + 6f, topLeft.y - 6f, actionPaint)
                     }
 
-                    // Corner handles when selected
+                    // Corner handles when selected — larger and more visible
                     if (isSelected) {
                         val corners = listOf(
                             Offset(topLeft.x, topLeft.y),
@@ -329,8 +428,9 @@ fun VisionEditorScreen(
                             Offset(topLeft.x + rectSize.width, topLeft.y + rectSize.height),
                         )
                         corners.forEach { corner ->
+                            // Outer ring for better visibility
                             drawCircle(color = Color.White, radius = handleRadius, center = corner)
-                            drawCircle(color = Color(region.color), radius = handleRadius - 3f, center = corner)
+                            drawCircle(color = Color(region.color), radius = handleRadius - 4f, center = corner)
                         }
                     }
                 }
@@ -346,41 +446,46 @@ fun VisionEditorScreen(
                 }
             }
 
-            // Instruction overlay when no regions
-            if (regions.isEmpty()) {
-                Box(
-                    modifier = Modifier.fillMaxSize().padding(bottom = 80.dp),
-                    contentAlignment = Alignment.BottomCenter
+            // Instruction hint — auto-dismisses after 3s, doesn't block touches
+            AnimatedVisibility(
+                visible = showInstructionHint && regions.isEmpty(),
+                enter = fadeIn(),
+                exit = fadeOut(),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 24.dp)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(24.dp),
+                    color = Color.Black.copy(alpha = 0.7f),
+                    modifier = Modifier.padding(horizontal = 32.dp)
                 ) {
-                    Surface(
-                        shape = RoundedCornerShape(24.dp),
-                        color = Color.Black.copy(alpha = 0.7f),
-                        modifier = Modifier.padding(horizontal = 32.dp)
-                    ) {
-                        Text(
-                            text = "Draw rectangles around UI elements to track",
-                            color = Color.White, fontSize = 14.sp,
-                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
-                        )
-                    }
+                    Text(
+                        text = "Draw rectangles around UI elements to track",
+                        color = Color.White, fontSize = 14.sp,
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
+                    )
                 }
             }
 
-            // Selected region hint
+            // Selected region hint — compact, positioned at top under buttons
             if (selectedRegionId != null && regions.any { it.id == selectedRegionId }) {
                 Box(
-                    modifier = Modifier.fillMaxSize().padding(bottom = 80.dp),
-                    contentAlignment = Alignment.BottomCenter
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(top = 56.dp),
+                    contentAlignment = Alignment.TopCenter
                 ) {
                     Surface(
-                        shape = RoundedCornerShape(24.dp),
-                        color = Color.Black.copy(alpha = 0.7f),
-                        modifier = Modifier.padding(horizontal = 32.dp)
+                        shape = RoundedCornerShape(16.dp),
+                        color = Color.Black.copy(alpha = 0.6f),
+                        modifier = Modifier.padding(horizontal = 48.dp)
                     ) {
                         Text(
-                            text = "Drag corners to resize • Drag center to move • Tap outside to deselect",
-                            color = Color.White.copy(alpha = 0.8f), fontSize = 12.sp,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp)
+                            text = "Drag corners to resize • Drag center to move",
+                            color = Color.White.copy(alpha = 0.8f), fontSize = 11.sp,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                         )
                     }
                 }
@@ -396,7 +501,7 @@ fun VisionEditorScreen(
             }
         }
 
-        // --- Floating action buttons at top ---
+        // --- Floating toolbar at top — contains ALL action buttons ---
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -405,6 +510,7 @@ fun VisionEditorScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Left: Cancel
             SmallFloatingActionButton(
                 onClick = onCancel,
                 containerColor = Color(0xAA000000),
@@ -414,6 +520,7 @@ fun VisionEditorScreen(
                 Icon(Icons.Default.Close, contentDescription = "Cancel", modifier = Modifier.size(20.dp))
             }
 
+            // Right: Recapture, Undo, Save — all grouped together
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 SmallFloatingActionButton(
                     onClick = onRecapture,
@@ -433,29 +540,22 @@ fun VisionEditorScreen(
                     ) {
                         Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = "Undo", modifier = Modifier.size(20.dp))
                     }
-                }
-            }
-        }
 
-        // --- Save FAB ---
-        if (regions.isNotEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxSize().padding(24.dp),
-                contentAlignment = Alignment.BottomEnd
-            ) {
-                FloatingActionButton(
-                    onClick = { 
-                        if (isFlowMode && flowNodeId != null) {
-                            viewModel.saveForFlowMode(flowNodeId) { filePath -> onSaved(filePath) }
-                        } else {
-                            viewModel.savePreset(presetName) { onSaved(null) } 
-                        }
-                    },
-                    containerColor = Color(0xFF00C853),
-                    contentColor = Color.White,
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Icon(Icons.Default.Check, "Save")
+                    // Save button — moved here from bottom-right to avoid obscuring drawn regions
+                    SmallFloatingActionButton(
+                        onClick = {
+                            if (isFlowMode && flowNodeId != null) {
+                                viewModel.saveForFlowMode(flowNodeId) { filePath -> onSaved(filePath) }
+                            } else {
+                                viewModel.savePreset(presetName) { onSaved(null) }
+                            }
+                        },
+                        containerColor = Color(0xFF00C853),
+                        contentColor = Color.White,
+                        shape = CircleShape
+                    ) {
+                        Icon(Icons.Default.Check, "Save", modifier = Modifier.size(20.dp))
+                    }
                 }
             }
         }
