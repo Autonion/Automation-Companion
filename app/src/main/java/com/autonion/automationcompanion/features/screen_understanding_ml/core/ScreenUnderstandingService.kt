@@ -164,6 +164,8 @@ class ScreenUnderstandingService : Service() {
         }
         Log.d(TAG, "Steps added. New total: ${accumulatedSteps.size}")
         Toast.makeText(this, "Added ${steps.size} elements (Total: ${accumulatedSteps.size})", Toast.LENGTH_SHORT).show()
+        // Reveal save button now that we have captured content
+        overlay?.showSaveButton()
     }
 
     /** Save all accumulated steps as a preset */
