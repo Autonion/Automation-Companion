@@ -15,6 +15,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
@@ -23,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -56,6 +59,7 @@ private enum class DragMode { NONE, DRAW, MOVE, RESIZE_TL, RESIZE_TR, RESIZE_BL,
 fun VisionEditorScreen(
     imagePath: String,
     presetId: String? = null,
+    appendPresetId: String? = null,
     presetName: String = "New Automation",
     isFlowMode: Boolean = false,
     flowNodeId: String? = null,
@@ -76,6 +80,9 @@ fun VisionEditorScreen(
                 if (!success) viewModel.loadImage(imagePath)
             }
         } else {
+            if (appendPresetId != null) {
+                viewModel.prepareForAppend(appendPresetId)
+            }
             viewModel.loadImage(imagePath)
         }
         initialized.value = true
@@ -83,6 +90,9 @@ fun VisionEditorScreen(
 
     val bitmap by viewModel.imageBitmap.collectAsState()
     val regions by viewModel.regions.collectAsState()
+    val capturePages by viewModel.capturePages.collectAsState()
+    val currentPageIndex by viewModel.currentPageIndex.collectAsState()
+    val isMultiPage = capturePages.size > 1
 
     // Drawing / editing state
     var dragStart by remember { mutableStateOf<Offset?>(null) }
@@ -453,7 +463,7 @@ fun VisionEditorScreen(
                 exit = fadeOut(),
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 24.dp)
+                    .padding(bottom = if (isMultiPage) 72.dp else 24.dp)
             ) {
                 Surface(
                     shape = RoundedCornerShape(24.dp),
@@ -465,6 +475,78 @@ fun VisionEditorScreen(
                         color = Color.White, fontSize = 14.sp,
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
                     )
+                }
+            }
+
+            // ─── Multi-Page Navigator Bar ─────────────────────────
+            if (isMultiPage) {
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 16.dp),
+                    shape = RoundedCornerShape(24.dp),
+                    color = Color(0xE61A1A2E),
+                    shadowElevation = 8.dp
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        // Previous page
+                        SmallFloatingActionButton(
+                            onClick = {
+                                if (currentPageIndex > 0) {
+                                    viewModel.navigateToPage(currentPageIndex - 1)
+                                    selectedRegionId = null
+                                }
+                            },
+                            containerColor = if (currentPageIndex > 0) Color(0xFF00C853) else Color.White.copy(alpha = 0.1f),
+                            contentColor = Color.White,
+                            shape = CircleShape,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(Icons.Default.ChevronLeft, contentDescription = "Previous page", modifier = Modifier.size(20.dp))
+                        }
+
+                        // Page dots
+                        capturePages.forEachIndexed { index, _ ->
+                            Box(
+                                modifier = Modifier
+                                    .size(if (index == currentPageIndex) 10.dp else 7.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (index == currentPageIndex) Color(0xFF00C853)
+                                        else Color.White.copy(alpha = 0.3f)
+                                    )
+                            )
+                        }
+
+                        // Page label
+                        Text(
+                            text = "${currentPageIndex + 1}/${capturePages.size}",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 8.dp)
+                        )
+
+                        // Next page
+                        SmallFloatingActionButton(
+                            onClick = {
+                                if (currentPageIndex < capturePages.size - 1) {
+                                    viewModel.navigateToPage(currentPageIndex + 1)
+                                    selectedRegionId = null
+                                }
+                            },
+                            containerColor = if (currentPageIndex < capturePages.size - 1) Color(0xFF00C853) else Color.White.copy(alpha = 0.1f),
+                            contentColor = Color.White,
+                            shape = CircleShape,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(Icons.Default.ChevronRight, contentDescription = "Next page", modifier = Modifier.size(20.dp))
+                        }
+                    }
                 }
             }
 
@@ -513,7 +595,7 @@ fun VisionEditorScreen(
             // Left: Cancel
             SmallFloatingActionButton(
                 onClick = onCancel,
-                containerColor = Color(0xAA000000),
+                containerColor = Color(0xE61A1A2E),
                 contentColor = Color.White,
                 shape = CircleShape
             ) {
@@ -524,7 +606,7 @@ fun VisionEditorScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 SmallFloatingActionButton(
                     onClick = onRecapture,
-                    containerColor = Color(0xAA000000),
+                    containerColor = Color(0xE61A1A2E),
                     contentColor = Color.White,
                     shape = CircleShape
                 ) {
@@ -534,7 +616,7 @@ fun VisionEditorScreen(
                 if (regions.isNotEmpty()) {
                     SmallFloatingActionButton(
                         onClick = { viewModel.undoLastRegion() },
-                        containerColor = Color(0xAA000000),
+                        containerColor = Color(0xE61A1A2E),
                         contentColor = Color.White,
                         shape = CircleShape
                     ) {
@@ -547,7 +629,7 @@ fun VisionEditorScreen(
                             if (isFlowMode && flowNodeId != null) {
                                 viewModel.saveForFlowMode(flowNodeId) { filePath -> onSaved(filePath) }
                             } else {
-                                viewModel.savePreset(presetName) { onSaved(null) }
+                                viewModel.savePreset(presetName) { savedPresetId -> onSaved(savedPresetId) }
                             }
                         },
                         containerColor = Color(0xFF00C853),
