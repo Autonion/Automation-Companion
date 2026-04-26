@@ -74,6 +74,8 @@ class ScreenUnderstandingService : Service() {
 
     // Accumulated steps from multiple snaps
     private val accumulatedSteps: MutableList<AutomationStep> = mutableListOf()
+    // Tracks the preset ID across saves so subsequent saves update the same preset
+    private var savedPresetId: String? = null
 
     @Volatile
     private var latestElements: List<UIElement> = emptyList()
@@ -175,8 +177,13 @@ class ScreenUnderstandingService : Service() {
             Toast.makeText(this, "No elements to save (Count: 0) — snap and select first", Toast.LENGTH_SHORT).show()
             return
         }
+        // Reuse the same preset ID within a session so repeated saves update
+        // the same file instead of creating duplicates
+        val presetId = savedPresetId ?: UUID.randomUUID().toString()
+        savedPresetId = presetId
+
         val preset = AutomationPreset(
-            id = UUID.randomUUID().toString(),
+            id = presetId,
             name = name,
             scope = ScopeType.GLOBAL,
             executionMode = ExecutionMode.STRICT,
@@ -184,7 +191,6 @@ class ScreenUnderstandingService : Service() {
         )
         presetRepository?.savePreset(preset)
         Toast.makeText(this, "Preset '$name' saved with ${accumulatedSteps.size} steps!", Toast.LENGTH_LONG).show()
-        accumulatedSteps.clear()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -282,6 +288,7 @@ class ScreenUnderstandingService : Service() {
 
         // Clear accumulated steps for new capture session
         accumulatedSteps.clear()
+        savedPresetId = null
 
         overlay = ScreenAgentOverlay(
             context = this,
