@@ -15,7 +15,9 @@ import android.graphics.PointF
 import android.graphics.RectF
 import android.media.projection.MediaProjectionManager
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.Log
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
@@ -277,7 +279,20 @@ class ScreenUnderstandingService : Service() {
         val metrics = resources.displayMetrics
 
         mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        mediaProjectionCore = MediaProjectionCore(this, mediaProjectionManager!!)
+        mediaProjectionCore = MediaProjectionCore(this, mediaProjectionManager!!) {
+            // MediaProjection was revoked by the OS (screen off, app closed, etc.)
+            Log.w(TAG, "MediaProjection lost — stopping service")
+            DebugLogger.warning(
+                this@ScreenUnderstandingService, LogCategory.SCREEN_CONTEXT_AI,
+                "Screen capture lost",
+                "MediaProjection revoked by the system — restart required",
+                TAG
+            )
+            Handler(Looper.getMainLooper()).post {
+                Toast.makeText(this@ScreenUnderstandingService, "Screen capture lost — please restart", Toast.LENGTH_LONG).show()
+            }
+            stopSelf()
+        }
         perceptionLayer = PerceptionLayer(this, modelFile)
         temporalTracker = TemporalTracker()
 

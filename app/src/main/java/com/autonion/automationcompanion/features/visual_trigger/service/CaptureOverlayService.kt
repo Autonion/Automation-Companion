@@ -61,6 +61,10 @@ class CaptureOverlayService : Service() {
     private var doneBtn: View? = null
     private var doneSpacer: View? = null
 
+    /** True when the service is being stopped intentionally, to avoid the "projection lost" toast. */
+    @Volatile
+    private var stoppedByUser = false
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -274,6 +278,18 @@ class CaptureOverlayService : Service() {
                     override fun onStop() {
                         Log.d(TAG, "MediaProjection onStop callback")
                         cleanupProjection()
+                        // Only notify user if projection was revoked externally
+                        if (!stoppedByUser) {
+                            Log.w(TAG, "MediaProjection lost externally — stopping service")
+                            DebugLogger.warning(applicationContext, LogCategory.VISUAL_TRIGGER,
+                                "Screen capture lost",
+                                "MediaProjection revoked by the system — restart required", TAG)
+                            Handler(Looper.getMainLooper()).post {
+                                android.widget.Toast.makeText(this@CaptureOverlayService,
+                                    "Screen capture lost — please restart", android.widget.Toast.LENGTH_LONG).show()
+                            }
+                            stopSelf()
+                        }
                     }
                 }, Handler(Looper.getMainLooper()))
 
@@ -407,6 +423,7 @@ class CaptureOverlayService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        stoppedByUser = true
         if (overlayView != null) {
             try { windowManager?.removeView(overlayView) } catch (_: Exception) {}
             overlayView = null

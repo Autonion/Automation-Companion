@@ -17,24 +17,34 @@ import kotlinx.coroutines.flow.asSharedFlow
 
 class MediaProjectionCore(
     private val context: Context,
-    private val projectionManager: MediaProjectionManager
+    private val projectionManager: MediaProjectionManager,
+    private val onProjectionLost: (() -> Unit)? = null
 ) {
 
     private var mediaProjection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
+
+    /** True when [stopProjection] is called by the consumer, to avoid firing [onProjectionLost]. */
+    @Volatile
+    private var stoppedByUser = false
     
     // Emissions of screen bitmaps
     private val _screenCaptureFlow = MutableSharedFlow<Bitmap>(replay = 1)
     val screenCaptureFlow: SharedFlow<Bitmap> = _screenCaptureFlow.asSharedFlow()
 
     fun startProjection(resultCode: Int, data: Intent, width: Int, height: Int, density: Int) {
+        stoppedByUser = false
         mediaProjection = projectionManager.getMediaProjection(resultCode, data)
         
-        // Callback to handle stop
+        // Callback to handle stop — fires when OS revokes projection (screen off, etc.)
         mediaProjection?.registerCallback(object : MediaProjection.Callback() {
             override fun onStop() {
-                stopProjection()
+                releaseResources()
+                if (!stoppedByUser) {
+                    android.util.Log.w("MediaProjectionCore", "Projection lost externally")
+                    onProjectionLost?.invoke()
+                }
             }
         }, Handler(Looper.getMainLooper()))
 
@@ -95,12 +105,18 @@ class MediaProjectionCore(
         }, Handler(Looper.getMainLooper()))
     }
 
-    fun stopProjection() {
-        mediaProjection?.stop()
+    /** Release internal resources without calling [MediaProjection.stop]. */
+    private fun releaseResources() {
         virtualDisplay?.release()
         imageReader?.close()
-        mediaProjection = null
         virtualDisplay = null
         imageReader = null
+    }
+
+    fun stopProjection() {
+        stoppedByUser = true
+        mediaProjection?.stop()
+        releaseResources()
+        mediaProjection = null
     }
 }

@@ -22,6 +22,9 @@ class ScreenCaptureProvider(private val context: Context) {
     private var projection: VisionMediaProjection? = null
     private var isStarted = false
 
+    /** Optional callback invoked when the OS revokes the MediaProjection externally. */
+    var onProjectionLost: (() -> Unit)? = null
+
     /**
      * Initialize and start the MediaProjection screen capture.
      * Must be called from a foreground service context.
@@ -36,7 +39,13 @@ class ScreenCaptureProvider(private val context: Context) {
             as MediaProjectionManager
         val metrics = context.resources.displayMetrics
 
-        projection = VisionMediaProjection(context, mpManager).also { vmp ->
+        projection = VisionMediaProjection(context, mpManager) {
+            // Projection revoked by the OS — mark as stopped and notify consumer
+            Log.w(TAG, "MediaProjection lost externally")
+            isStarted = false
+            projection = null
+            onProjectionLost?.invoke()
+        }.also { vmp ->
             vmp.startProjection(
                 resultCode, resultData,
                 metrics.widthPixels, metrics.heightPixels, metrics.densityDpi

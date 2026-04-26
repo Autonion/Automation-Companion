@@ -266,7 +266,18 @@ class VisionExecutionService : Service() {
             Log.d(TAG, "Screen: ${metrics.widthPixels}x${metrics.heightPixels}")
 
             val mpManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-            visionProjection = VisionMediaProjection(this@VisionExecutionService, mpManager)
+            visionProjection = VisionMediaProjection(this@VisionExecutionService, mpManager) {
+                // MediaProjection was revoked by the OS
+                Log.w(TAG, "MediaProjection lost — stopping execution")
+                DebugLogger.warning(applicationContext, LogCategory.VISUAL_TRIGGER,
+                    "Screen capture lost",
+                    "MediaProjection revoked by the system — restart required", TAG)
+                Handler(Looper.getMainLooper()).post {
+                    android.widget.Toast.makeText(this@VisionExecutionService,
+                        "Screen capture lost — please restart", android.widget.Toast.LENGTH_LONG).show()
+                }
+                stopSelf()
+            }
             visionProjection?.startProjection(resultCode, resultData, metrics.widthPixels, metrics.heightPixels, metrics.densityDpi)
 
             Log.d(TAG, "Projection started, collecting frames...")

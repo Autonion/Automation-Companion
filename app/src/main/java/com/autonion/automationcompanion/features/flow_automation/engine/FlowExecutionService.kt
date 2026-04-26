@@ -116,6 +116,17 @@ class FlowExecutionService : Service() {
             Log.d(TAG, "MediaProjection consent available — initializing ScreenCaptureProvider")
             DebugLogger.info(applicationContext, DBG_CATEGORY, "MediaProjection Ready", "Screen capture initialized for visual nodes", TAG)
             screenCaptureProvider = ScreenCaptureProvider(this).also {
+                it.onProjectionLost = {
+                    Log.w(TAG, "MediaProjection lost — stopping flow execution")
+                    DebugLogger.warning(applicationContext, DBG_CATEGORY,
+                        "Screen capture lost",
+                        "MediaProjection revoked by the system — flow stopped", TAG)
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        android.widget.Toast.makeText(this@FlowExecutionService,
+                            "Screen capture lost — flow stopped", android.widget.Toast.LENGTH_LONG).show()
+                    }
+                    stopExecution()
+                }
                 it.start(resultCode, resultData)
             }
         } else {
