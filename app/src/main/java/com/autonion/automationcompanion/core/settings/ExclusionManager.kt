@@ -88,6 +88,63 @@ object ExclusionManager {
         return _excludedPackages.value.contains(packageName)
     }
 
+    // ─── Backup / Restore ───────────────────────────────────────────────
+
+    /**
+     * Serializes the current exclusion list and settings to a JSON string
+     * for inclusion in a backup archive.
+     */
+    fun exportToJson(): String {
+        val data = mapOf(
+            "excluded_packages" to _excludedPackages.value.toList(),
+            "strict_mode" to _isStrictMode.value.toString()
+        )
+        // Simple JSON serialization without extra dependencies
+        val sb = StringBuilder()
+        sb.append("{\n")
+        sb.append("  \"excluded_packages\": [")
+        sb.append(data["excluded_packages"].toString()
+            .removeSurrounding("[", "]")
+            .split(", ")
+            .filter { it.isNotBlank() }
+            .joinToString(", ") { "\"$it\"" })
+        sb.append("],\n")
+        sb.append("  \"strict_mode\": ${_isStrictMode.value}\n")
+        sb.append("}")
+        return sb.toString()
+    }
+
+    /**
+     * Restores the exclusion list and settings from a JSON string
+     * previously created by [exportToJson].
+     */
+    fun importFromJson(context: Context, jsonString: String) {
+        try {
+            // Minimal JSON parsing — avoids adding Gson/kotlinx dependency to this object
+            val packagesRegex = "\"excluded_packages\"\\s*:\\s*\\[([^]]*)]".toRegex()
+            val strictRegex = "\"strict_mode\"\\s*:\\s*(true|false)".toRegex()
+
+            val packagesMatch = packagesRegex.find(jsonString)
+            val packages = packagesMatch?.groupValues?.get(1)
+                ?.split(",")
+                ?.map { it.trim().removeSurrounding("\"") }
+                ?.filter { it.isNotBlank() }
+                ?.toSet()
+                ?: emptySet()
+
+            val strictMatch = strictRegex.find(jsonString)
+            val strictMode = strictMatch?.groupValues?.get(1)?.toBooleanStrictOrNull() ?: false
+
+            _excludedPackages.value = packages
+            save(context, packages)
+
+            _isStrictMode.value = strictMode
+            sharedPreferences?.edit()?.putBoolean(KEY_STRICT_MODE, strictMode)?.apply()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
     private fun save(context: Context, packages: Set<String>) {
         sharedPreferences?.edit()?.putStringSet(KEY_EXCLUDED_PACKAGES, packages)?.apply()
     }

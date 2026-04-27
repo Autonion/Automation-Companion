@@ -46,7 +46,8 @@ fun HomeScreen(onOpen: (String) -> Unit) {
                         title = "Autonion", 
                         subtitle = null,
                         onNotificationClick = null,
-                        onExclusionClick = { onOpen("settings/exclusion") }
+                        onExclusionClick = { onOpen("settings/exclusion") },
+                        onBackupClick = { onOpen("settings/backup_restore") }
                     )
                 }
             }
