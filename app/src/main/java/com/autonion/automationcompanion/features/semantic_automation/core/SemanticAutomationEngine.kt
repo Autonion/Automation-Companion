@@ -1,5 +1,7 @@
 package com.autonion.automationcompanion.features.semantic_automation.core
 
+import com.autonion.automationcompanion.features.semantic_automation.memory.AutomationChatMemory
+
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.PointF
@@ -56,6 +58,8 @@ class SemanticAutomationEngine(private val context: Context) {
     private val uiStateBuilder = UIStateBuilder(context)
     private val fallbackPredictor = ActionPredictor()
     private val taskPlanner = TaskPlanner()
+    private val taskDecomposer = TaskDecomposer()
+    private val chatMemory = AutomationChatMemory.getInstance(context)
 
     // Phase 2/3: Lazy-loaded from global cache to avoid loading times between sessions
     private val mlPredictor: MLActionPredictor?
@@ -106,23 +110,140 @@ class SemanticAutomationEngine(private val context: Context) {
     }
 
     /**
-     * Parse a raw user command and kick off the screen loop.
+     * Parse a raw user command, decompose if complex, and execute sub-goals sequentially.
+     *
+     * This is the main entry point for semantic automation. It:
+     *   1. Decomposes the command via TaskDecomposer (Regex → NLP → LLM fallback)
+     *   2. For simple commands (1 sub-goal): delegates to [runSingleGoal] (unchanged behavior)
+     *   3. For complex commands (N sub-goals): parses the FULL command once via GoalParser,
+     *      then runs the screen loop for each sub-goal with inherited app context.
      */
     suspend fun runLoop(rawCommand: String, screenshotProvider: suspend () -> Bitmap?) {
+        // ── Step 0: Decompose command ──
+        val subGoals = taskDecomposer.decompose(
+            rawCommand,
+            llmEngine = localServerEngine,
+            conversationContext = chatMemory.buildContextSummary()
+        )
+
+        if (subGoals.size <= 1) {
+            // Simple command — use existing full flow (backward compatible)
+            chatMemory.recordGoalStart(rawCommand)
+            runSingleGoal(rawCommand, screenshotProvider)
+            val success = _status.value == AutomationStatus.COMPLETED
+            chatMemory.recordGoalOutcome(
+                rawCommand,
+                if (success) "completed" else "failed",
+                success,
+                appUsed = _currentGoal.value?.targetApp
+            )
+            return
+        }
+
+        // ── Multi-step: parse ONCE, execute sub-goals sequentially ──
+        Log.d(TAG, "Multi-step command: ${subGoals.size} sub-goals decomposed")
+        chatMemory.recordGoalStart(rawCommand)
+        _status.value = AutomationStatus.PARSING_GOAL
+        stepHistory.clear()
+
+        // Parse the FULL original command → get app/domain context (1 LLM call)
+        val masterGoal = try {
+            kotlinx.coroutines.withTimeoutOrNull(60_000L) {
+                goalParser.parse(rawCommand, localServerEngine, chatMemory.buildContextSummary())
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Goal parsing exception: ${e.message}", e)
+            null
+        }
+
+        if (masterGoal == null) {
+            _status.value = AutomationStatus.FAILED
+            _lastActionDescription.value = "Could not reach Ollama — check server connection"
+            chatMemory.recordGoalOutcome(rawCommand, "failed: could not parse", false)
+            return
+        }
+
+        _currentGoal.value = masterGoal
+
+        val validationError = validateGoal(masterGoal)
+        if (validationError != null) {
+            _status.value = AutomationStatus.FAILED
+            _lastActionDescription.value = validationError
+            chatMemory.recordGoalOutcome(rawCommand, "failed: $validationError", false)
+            isRunning = false
+            return
+        }
+
+        isRunning = true
+
+        // Pre-actions (launch app) using the master goal
+        _lastActionDescription.value = "Preparing…"
+        val preActionDone = executePreActions(masterGoal)
+        val activeGoal = _currentGoal.value ?: masterGoal
+
+        // Execute each sub-goal sequentially
+        for ((index, subGoal) in subGoals.withIndex()) {
+            if (!isRunning) break
+
+            _lastActionDescription.value = "Step ${subGoal.stepNumber}/${subGoals.size}: ${subGoal.description}"
+            Log.d(TAG, "── Sub-goal ${subGoal.stepNumber}/${subGoals.size}: ${subGoal.description} ──")
+
+            // Skip first sub-goal if it was just "open app" and pre-action handled it
+            if (index == 0 && preActionDone && activeGoal.task == "open" && activeGoal.targetApp != "browser") {
+                Log.d(TAG, "Sub-goal 1 (open app) already handled by pre-action, skipping")
+                chatMemory.recordAgentTurn(subGoal.description, "completed (pre-action)")
+                _status.value = AutomationStatus.COMPLETED
+                continue
+            }
+
+            // Create a derived goal: same app/domain context, sub-goal's description
+            val derivedGoal = activeGoal.copy(
+                rawCommand = subGoal.description,
+                query = subGoal.description,
+                task = inferTaskFromDescription(subGoal.description) ?: activeGoal.task
+            )
+
+            // Run screen loop for this sub-goal (NO additional GoalParser call)
+            stepHistory.clear()
+            _currentGoal.value = derivedGoal
+            runScreenLoop(derivedGoal, screenshotProvider)
+
+            // Loose verification: if completed, move to next
+            if (_status.value != AutomationStatus.COMPLETED) {
+                _lastActionDescription.value = "Failed at step ${subGoal.stepNumber}: ${subGoal.description}"
+                chatMemory.recordGoalOutcome(rawCommand, "failed at step ${subGoal.stepNumber}", false, activeGoal.targetApp)
+                isRunning = false
+                return
+            }
+
+            chatMemory.recordAgentTurn(subGoal.description, "completed")
+            delay(POST_ACTION_DELAY_MS) // Let screen settle between sub-goals
+        }
+
+        _status.value = AutomationStatus.COMPLETED
+        _lastActionDescription.value = "All ${subGoals.size} steps completed"
+        chatMemory.recordGoalOutcome(rawCommand, "completed all steps", true, activeGoal.targetApp)
+        isRunning = false
+    }
+
+    /**
+     * Full single-goal flow: parse → validate → pre-actions → screen loop.
+     * This is the original [runLoop] body, used for simple (1-step) commands.
+     */
+    private suspend fun runSingleGoal(rawCommand: String, screenshotProvider: suspend () -> Bitmap?) {
         // ── Step 0: Parse goal via LLM ──
         _status.value = AutomationStatus.PARSING_GOAL
         stepHistory.clear()
 
         val parsedGoal = try {
             kotlinx.coroutines.withTimeoutOrNull(60_000L) {
-                goalParser.parse(rawCommand, localServerEngine)
+                goalParser.parse(rawCommand, localServerEngine, chatMemory.buildContextSummary())
             }
         } catch (e: Exception) {
             Log.e(TAG, "Goal parsing exception: ${e.message}", e)
             null
         }
         if (parsedGoal == null) {
-            // LLM server not connected or timed out — cannot parse any prompt
             _status.value = AutomationStatus.FAILED
             _lastActionDescription.value = "Could not reach Ollama — check server connection"
             DebugLogger.error(
@@ -170,8 +291,6 @@ class SemanticAutomationEngine(private val context: Context) {
         goal = _currentGoal.value ?: goal
 
         if (preActionDone && goal.task == "open" && goal.targetApp != "browser") {
-            // "open settings" / "open youtube" → native app launched, we're done.
-            // Browser targets skip this — they need the agentic loop to interact with the page.
             _lastActionDescription.value = "App launched"
             _status.value = AutomationStatus.COMPLETED
             DebugLogger.success(
@@ -185,15 +304,23 @@ class SemanticAutomationEngine(private val context: Context) {
         }
 
         if (preActionDone && (goal.task == "enable" || goal.task == "disable")) {
-            // Opened settings page — now enter loop to tap the toggle
             _lastActionDescription.value = "Opened settings, looking for toggle…"
         }
 
-        // NOTE: Browser targets now go through the full agentic loop.
-        // The extension bridge provides DOM snapshots and the Android app drives
-        // browser actions via ExtensionBridgeServer.executeAction().
-        // The old URL-hash shortcut has been removed.
+        // Run the screen loop
+        runScreenLoop(goal, screenshotProvider)
 
+        isRunning = false
+    }
+
+    /**
+     * The core screen interaction loop. Takes a pre-parsed [SemanticGoal] and runs:
+     *   capture → build UI → predict → execute → verify → repeat
+     *
+     * Used by both [runSingleGoal] (single commands) and [runLoop] (multi-step sub-goals).
+     * Does NOT set [isRunning] = false — the caller manages that.
+     */
+    private suspend fun runScreenLoop(goal: SemanticGoal, screenshotProvider: suspend () -> Bitmap?) {
         var lastInputText: String? = null
         var previousUiState: ScreenUIState? = null
         var consecutiveFailures = 0
@@ -426,8 +553,6 @@ class SemanticAutomationEngine(private val context: Context) {
                 TAG
             )
         }
-
-        isRunning = false
     }
 
     /**
@@ -879,7 +1004,7 @@ class SemanticAutomationEngine(private val context: Context) {
                 if (localServerEngine.connectionStatus.value == ServerConnectionStatus.CONNECTED) {
                     try {
                         val systemPrompt = UIPromptFormatter.buildSystemPrompt()
-                        val userPrompt = UIPromptFormatter.buildUserPrompt(goal, uiState, stepHistory)
+                        val userPrompt = UIPromptFormatter.buildUserPrompt(goal, uiState, stepHistory, chatMemory.buildContextSummary())
                         
                         Log.d(TAG, "Server LLM prompt: ${userPrompt.take(500)}")
                         
@@ -1068,5 +1193,31 @@ class SemanticAutomationEngine(private val context: Context) {
 
         Log.d(TAG, "Goal validation passed ✓ (confidence=${goal.confidence})")
         return null
+    }
+
+    // ── Sub-goal task inference (deterministic) ──────────────────
+
+    /**
+     * Infers the task type from a sub-goal description string without an LLM call.
+     * Returns null if no clear task type can be determined (caller keeps the master task).
+     */
+    private fun inferTaskFromDescription(description: String): String? {
+        val lower = description.lowercase().trim()
+        return when {
+            lower.startsWith("open ") || lower.startsWith("launch ") -> "open"
+            lower.startsWith("search ") || lower.startsWith("find ") -> "search"
+            lower.startsWith("go to ") || lower.startsWith("navigate ") -> "navigate"
+            lower.startsWith("click ") || lower.startsWith("tap ") || lower.startsWith("press ") || lower.startsWith("select ") -> "tap"
+            lower.startsWith("type ") || lower.startsWith("enter ") || lower.startsWith("write ") -> "type"
+            lower.startsWith("delete ") || lower.startsWith("remove ") -> "navigate" // delete = navigate to item then interact
+            lower.startsWith("play ") -> "play"
+            lower.startsWith("scroll ") || lower.startsWith("swipe ") -> "scroll"
+            lower.startsWith("enable ") || lower.startsWith("turn on ") -> "enable"
+            lower.startsWith("disable ") || lower.startsWith("turn off ") -> "disable"
+            lower.startsWith("send ") -> "send_message"
+            lower.startsWith("close ") || lower.startsWith("exit ") -> "back"
+            lower.startsWith("save ") || lower.startsWith("download ") -> "navigate"
+            else -> null
+        }
     }
 }

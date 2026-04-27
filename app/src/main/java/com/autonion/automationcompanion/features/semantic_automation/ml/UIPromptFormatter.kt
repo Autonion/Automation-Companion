@@ -71,8 +71,14 @@ object UIPromptFormatter {
     fun buildUserPrompt(
         goal: SemanticGoal,
         uiState: ScreenUIState,
-        stepHistory: List<StepRecord>
+        stepHistory: List<StepRecord>,
+        conversationContext: String? = null
     ): String = buildString {
+        // Conversation context (from previous goals)
+        if (!conversationContext.isNullOrBlank()) {
+            append("=== PREVIOUS CONTEXT ===\n")
+            append("$conversationContext\n\n")
+        }
         // Goal
         append("=== GOAL ===\n")
         append("${goal.rawCommand}\n\n")

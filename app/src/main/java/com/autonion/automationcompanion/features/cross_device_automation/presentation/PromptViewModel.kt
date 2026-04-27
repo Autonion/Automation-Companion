@@ -14,6 +14,7 @@ import android.content.Context
 import com.autonion.automationcompanion.features.cross_device_automation.engine.DesktopAction
 import com.autonion.automationcompanion.features.cross_device_automation.engine.GestureType
 import com.autonion.automationcompanion.features.cross_device_automation.engine.HardwareButtonMapper
+import com.autonion.automationcompanion.features.semantic_automation.memory.AutomationChatMemory
 import android.view.KeyEvent
 
 data class ChatMessage(
@@ -36,6 +37,8 @@ class PromptViewModel(
     
     private val _isAutomationActive = MutableStateFlow(false)
     val isAutomationActive: StateFlow<Boolean> = _isAutomationActive.asStateFlow()
+
+    private val chatMemory = AutomationChatMemory.getInstance(context)
 
     init {
         viewModelScope.launch {
@@ -77,7 +80,8 @@ class PromptViewModel(
             val prompt = AutomationPrompt(
                 transactionId = UUID.randomUUID().toString(),
                 prompt = promptText,
-                timestamp = System.currentTimeMillis()
+                timestamp = System.currentTimeMillis(),
+                context = chatMemory.buildContextSummary()
             )
 
             // Add user message

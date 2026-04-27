@@ -94,9 +94,10 @@ class GoalParser(private val context: Context) {
      *
      * @param rawCommand The user's natural language command
      * @param llmEngine The connected Ollama engine (must be connected)
+     * @param conversationContext Optional context from previous goals for better parsing
      * @return Parsed [SemanticGoal], or null if LLM is not connected or parsing failed
      */
-    suspend fun parse(rawCommand: String, llmEngine: LocalServerLLMEngine): SemanticGoal? {
+    suspend fun parse(rawCommand: String, llmEngine: LocalServerLLMEngine, conversationContext: String? = null): SemanticGoal? {
         val command = rawCommand.trim()
         Log.d(TAG, "Parsing with semantic engine: \"$command\"")
 
@@ -110,9 +111,16 @@ class GoalParser(private val context: Context) {
             return null
         }
 
+        val userPrompt = buildString {
+            if (!conversationContext.isNullOrBlank()) {
+                append("CONTEXT: $conversationContext\n\n")
+            }
+            append(command)
+        }
+
         val responseJson = llmEngine.chatSimpleJson(
             systemPrompt = SYSTEM_PROMPT,
-            userPrompt = command
+            userPrompt = userPrompt
         )
 
         if (responseJson == null) {
