@@ -894,23 +894,20 @@ class OmniChatbotViewModel(
             else -> "$emoji ${response.message}"
         }
 
-        // Only persist desktop responses that were initiated by Omni-Chat.
-        // Cross-device responses are persisted by the PromptViewModel instead.
+        // Only handle desktop responses that were initiated by Omni-Chat.
+        // Cross-device responses are handled by the PromptViewModel — ignore here.
         val isOmniInitiated = sentTransactionIds.contains(response.transactionId)
+        if (!isOmniInitiated) {
+            return  // Not our transaction — don't show or persist
+        }
 
         when (response.status) {
-            ResponseStatus.IN_PROGRESS -> {
-                if (isOmniInitiated) updateLastBotMessage(text, mode)
-                else updateLastBotMessageUI(text, mode)
-            }
-            else -> {
-                if (isOmniInitiated) addMessage(OmniChatMessage(text = text, isUser = false, mode = mode))
-                else addMessageToUI(OmniChatMessage(text = text, isUser = false, mode = mode))
-            }
+            ResponseStatus.IN_PROGRESS -> updateLastBotMessage(text, mode)
+            else -> addMessage(OmniChatMessage(text = text, isUser = false, mode = mode))
         }
 
         // Clean up finished transactions
-        if (isOmniInitiated && (response.status == ResponseStatus.COMPLETED || response.status == ResponseStatus.FAILED || response.status == ResponseStatus.CANCELLED)) {
+        if (response.status == ResponseStatus.COMPLETED || response.status == ResponseStatus.FAILED || response.status == ResponseStatus.CANCELLED) {
             sentTransactionIds.remove(response.transactionId)
         }
     }
@@ -1036,7 +1033,7 @@ class OmniChatbotViewModel(
                 timestamp = System.currentTimeMillis(),
                 previewText = message.text.take(50)
             )
-            omniChatDao.insertSession(sessionEntity)
+            omniChatDao.upsertSession(sessionEntity)
             
             val messageEntity = OmniChatMessageEntity(
                 messageId = message.id,
@@ -1060,26 +1057,6 @@ class OmniChatbotViewModel(
         persistSessionAndMessage(cleaned)
     }
 
-    /** Add message to in-memory UI list only (no DB persistence). */
-    private fun addMessageToUI(message: OmniChatMessage) {
-        val cleaned = if (!message.isUser) message.copy(text = stripMarkdown(message.text)) else message
-        val current = _messages.value.toMutableList()
-        current.add(0, cleaned)
-        _messages.value = current
-    }
-
-    /** Update last bot message in UI only (no DB persistence). */
-    private fun updateLastBotMessageUI(text: String, mode: ResponseMode) {
-        val cleanedText = stripMarkdown(text)
-        val current = _messages.value.toMutableList()
-        val lastBotIdx = current.indexOfFirst { !it.isUser }
-        if (lastBotIdx >= 0) {
-            current[lastBotIdx] = current[lastBotIdx].copy(text = cleanedText, mode = mode)
-            _messages.value = current
-        } else {
-            addMessageToUI(OmniChatMessage(text = cleanedText, isUser = false, mode = mode))
-        }
-    }
 
     private fun updateLastBotMessage(
         text: String, 

@@ -312,7 +312,7 @@ class PromptViewModel(
                 previewText = message.text.take(50),
                 module = "cross_device"
             )
-            chatDao.insertSession(sessionEntity)
+            chatDao.upsertSession(sessionEntity)
             
             val messageEntity = OmniChatMessageEntity(
                 messageId = message.id,

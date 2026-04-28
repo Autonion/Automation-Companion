@@ -10,8 +10,37 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface OmniChatDao {
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertSession(session: OmniChatSessionEntity)
+    // Insert a session only if it doesn't already exist.
+    // DO NOT use REPLACE here — the ForeignKey CASCADE on messages
+    // would delete ALL messages for that session on every "replace".
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertSessionIfNew(session: OmniChatSessionEntity)
+
+    // Update the session's metadata (title, preview, timestamp) without
+    // triggering a delete+reinsert, which would cascade-delete messages.
+    @Query("""
+        UPDATE omni_chat_sessions 
+        SET title = :title, previewText = :previewText, timestamp = :timestamp 
+        WHERE sessionId = :sessionId
+    """)
+    suspend fun updateSessionMetadata(
+        sessionId: String,
+        title: String,
+        previewText: String,
+        timestamp: Long
+    )
+
+    // Upsert a session: insert if new, then update metadata.
+    @Transaction
+    suspend fun upsertSession(session: OmniChatSessionEntity) {
+        insertSessionIfNew(session)
+        updateSessionMetadata(
+            sessionId = session.sessionId,
+            title = session.title,
+            previewText = session.previewText,
+            timestamp = session.timestamp
+        )
+    }
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMessage(message: OmniChatMessageEntity)

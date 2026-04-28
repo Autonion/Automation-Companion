@@ -95,7 +95,7 @@ fun SemanticAutomationScreen(
                 previewText = msg.text.take(50),
                 module = "semantic"
             )
-            chatDao.insertSession(sessionEntity)
+            chatDao.upsertSession(sessionEntity)
 
             val messageEntity = OmniChatMessageEntity(
                 messageId = msg.id,
