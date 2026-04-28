@@ -15,7 +15,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Rule
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Devices
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Rule
 import androidx.compose.material.icons.filled.SettingsRemote
 import androidx.compose.material.icons.filled.SmartToy
@@ -42,6 +44,7 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.filled.Accessibility
 import com.autonion.automationcompanion.features.omni_chatbot.ui.LocalStartWalkthrough
 import com.autonion.automationcompanion.features.cross_device_automation.engine.HardwareButtonMapper
+import com.autonion.automationcompanion.ui.components.ChatHistoryPanel
 import kotlinx.coroutines.launch
 import java.util.Date
 
@@ -318,6 +321,8 @@ fun PromptScreen() {
     val inputQuery by viewModel.inputQuery.collectAsState()
     val messages by viewModel.messages.collectAsState()
     val isAutomationActive by viewModel.isAutomationActive.collectAsState()
+    val showHistory by viewModel.showHistory.collectAsState()
+    val chatHistorySessions by viewModel.chatHistorySessions.collectAsState()
     val listState = rememberLazyListState()
 
     LaunchedEffect(messages.size, messages.firstOrNull()?.text?.length) {
@@ -326,51 +331,100 @@ fun PromptScreen() {
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        // ─── Messages ──────────────────────
-        if (messages.isEmpty()) {
-            // Empty State
-            Box(
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            // ─── Chat Header (New Chat + History) ────────────
+            Row(
                 modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                contentAlignment = Alignment.Center
-            ) {
-                EmptyChatState()
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .weight(1f)
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp),
-                state = listState,
-                reverseLayout = true,
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-                contentPadding = PaddingValues(vertical = 12.dp)
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                items(messages, key = { it.id }) { message ->
-                    ChatBubble(message)
+                TextButton(onClick = { viewModel.clearChat() }) {
+                    Icon(
+                        Icons.Default.Add,
+                        contentDescription = "New Chat",
+                        tint = Color.White.copy(alpha = 0.6f),
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text("New Chat", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
                 }
+                Spacer(Modifier.width(8.dp))
+                TextButton(onClick = { viewModel.toggleHistory() }) {
+                    Icon(
+                        Icons.Default.History,
+                        contentDescription = "History",
+                        tint = Color.White.copy(alpha = 0.6f),
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text("History", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
+                }
+            }
+
+            // ─── Messages ──────────────────────
+            if (messages.isEmpty()) {
+                // Empty State
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    EmptyChatState()
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp),
+                    state = listState,
+                    reverseLayout = true,
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    contentPadding = PaddingValues(vertical = 12.dp)
+                ) {
+                    items(messages, key = { it.id }) { message ->
+                        ChatBubble(message)
+                    }
+                }
+            }
+
+            // ─── Input Bar ──────────────────────
+            if (isAutomationActive) {
+                Button(
+                    onClick = { viewModel.stopAutomation() },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    Text("Stop Automation", color = Color.White)
+                }
+            } else {
+                ChatInputBar(
+                    value = inputQuery,
+                    onValueChange = viewModel::onQueryChanged,
+                    onSend = viewModel::sendPrompt
+                )
             }
         }
 
-        // ─── Input Bar ──────────────────────
-        if (isAutomationActive) {
-            Button(
-                onClick = { viewModel.stopAutomation() },
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-            ) {
-                Text("Stop Automation", color = Color.White)
-            }
-        } else {
-            ChatInputBar(
-                value = inputQuery,
-                onValueChange = viewModel::onQueryChanged,
-                onSend = viewModel::sendPrompt
+        // ─── History Panel Overlay ──────────────────
+        AnimatedVisibility(
+            visible = showHistory,
+            enter = fadeIn(tween(200)) + slideInHorizontally(tween(300)) { -it },
+            exit = fadeOut(tween(200)) + slideOutHorizontally(tween(250)) { -it }
+        ) {
+            ChatHistoryPanel(
+                sessions = chatHistorySessions,
+                onSessionClick = { session ->
+                    viewModel.loadChatSession(session.sessionId)
+                },
+                onDeleteSession = { viewModel.deleteSession(it.sessionId) },
+                onClose = { viewModel.toggleHistory() }
             )
         }
     }

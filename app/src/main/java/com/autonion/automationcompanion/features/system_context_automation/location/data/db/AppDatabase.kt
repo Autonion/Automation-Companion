@@ -16,7 +16,7 @@ import com.autonion.automationcompanion.features.omni_chatbot.data.db.OmniChatSe
 
 @Database(
     entities = [Slot::class, ExecutionLog::class, OmniChatSessionEntity::class, OmniChatMessageEntity::class],
-    version = 6, // ⬅️ bump version for Omni-Chat history
+    version = 7, // ⬅️ bump version for module column in chat sessions
     exportSchema = false
 )
 @TypeConverters(AutomationActionConverter::class)
@@ -38,7 +38,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "locauto.db"
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                     .build()
                     .also { INSTANCE = it }
             }

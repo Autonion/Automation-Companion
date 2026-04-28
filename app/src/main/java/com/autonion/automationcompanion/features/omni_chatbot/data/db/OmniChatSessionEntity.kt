@@ -9,5 +9,6 @@ data class OmniChatSessionEntity(
     val sessionId: String,
     val title: String,
     val timestamp: Long,
-    val previewText: String
+    val previewText: String,
+    val module: String = "omni" // "omni", "semantic", "cross_device"
 )

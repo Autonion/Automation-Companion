@@ -22,6 +22,9 @@ interface OmniChatDao {
     @Query("SELECT * FROM omni_chat_sessions ORDER BY timestamp DESC")
     fun getAllSessions(): Flow<List<OmniChatSessionEntity>>
 
+    @Query("SELECT * FROM omni_chat_sessions WHERE module = :module ORDER BY timestamp DESC")
+    fun getSessionsByModule(module: String): Flow<List<OmniChatSessionEntity>>
+
     @Query("SELECT * FROM omni_chat_messages WHERE sessionId = :sessionId ORDER BY timestamp ASC")
     suspend fun getMessagesForSession(sessionId: String): List<OmniChatMessageEntity>
 

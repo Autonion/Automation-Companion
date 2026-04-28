@@ -52,6 +52,7 @@ import android.util.Patterns
 import com.autonion.automationcompanion.features.omni_chatbot.OmniChatbotViewModel
 import com.autonion.automationcompanion.features.omni_chatbot.model.*
 import com.autonion.automationcompanion.features.semantic_automation.ml.ServerConnectionStatus
+import com.autonion.automationcompanion.ui.components.ChatHistoryPanel
 import java.util.Date
 
 // ─── Colors ──────────────────────────────────────────────
@@ -330,9 +331,13 @@ private fun OmniChatSheet(viewModel: OmniChatbotViewModel) {
                             // ── FAQ Tab ──
                             FAQBrowserUI(
                                 faqList = faqList,
-                                onFAQSelected = {
-                                    viewModel.onFAQSelected(it)
-                                    selectedTab = 1 // Switch to Chat after selecting FAQ
+                                isAIReady = isAIReady,
+                                onFAQSelected = { faq ->
+                                    if (isAIReady) {
+                                        viewModel.onFAQSelected(faq)
+                                        selectedTab = 1 // Switch to Chat only when LLM available
+                                    }
+                                    // When !isAIReady, answer is shown inline (handled inside FAQBrowserUI)
                                 }
                             )
                         }
@@ -486,131 +491,6 @@ private fun OmniTabRow(selectedTab: Int, onTabSelected: (Int) -> Unit) {
                         fontSize = 13.sp
                     )
                 }
-            }
-        }
-    }
-}
-
-// ─── Chat History Panel ──────────────────────────────────
-
-@Composable
-private fun ChatHistoryPanel(
-    sessions: List<com.autonion.automationcompanion.features.omni_chatbot.data.db.OmniChatSessionEntity>,
-    onSessionClick: (com.autonion.automationcompanion.features.omni_chatbot.data.db.OmniChatSessionEntity) -> Unit,
-    onDeleteSession: (com.autonion.automationcompanion.features.omni_chatbot.data.db.OmniChatSessionEntity) -> Unit,
-    onClose: () -> Unit
-) {
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = SheetBg.copy(alpha = 0.97f)
-    ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            // Header
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    Icons.Default.History,
-                    contentDescription = null,
-                    tint = AccentPurple,
-                    modifier = Modifier.size(22.dp)
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    "Chat History",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    modifier = Modifier.weight(1f)
-                )
-                IconButton(onClick = onClose) {
-                    Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White.copy(alpha = 0.6f))
-                }
-            }
-
-            if (sessions.isEmpty()) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            Icons.Default.ChatBubbleOutline,
-                            contentDescription = null,
-                            tint = Color.White.copy(alpha = 0.2f),
-                            modifier = Modifier.size(48.dp)
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            "No saved conversations",
-                            color = Color.White.copy(alpha = 0.4f),
-                            fontSize = 14.sp
-                        )
-                    }
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    items(sessions, key = { it.sessionId }) { session ->
-                        SessionCard(
-                            session = session,
-                            onClick = { onSessionClick(session) },
-                            onDelete = { onDeleteSession(session) }
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SessionCard(
-    session: com.autonion.automationcompanion.features.omni_chatbot.data.db.OmniChatSessionEntity,
-    onClick: () -> Unit,
-    onDelete: () -> Unit
-) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(12.dp),
-        color = CardGlass,
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.06f))
-    ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    session.previewText.take(60).ifBlank { "Untitled chat" },
-                    color = Color.White,
-                    fontWeight = FontWeight.Medium,
-                    fontSize = 14.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    DateFormat.format("MMM dd, hh:mm a", Date(session.timestamp)).toString(),
-                    color = Color.White.copy(alpha = 0.4f),
-                    fontSize = 11.sp
-                )
-            }
-            IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
-                Icon(
-                    Icons.Default.Delete,
-                    contentDescription = "Delete",
-                    tint = AccentRed.copy(alpha = 0.6f),
-                    modifier = Modifier.size(18.dp)
-                )
             }
         }
     }
@@ -1588,6 +1468,7 @@ private fun formatTime(timestamp: Long): String {
 @Composable
 private fun FAQBrowserUI(
     faqList: List<com.autonion.automationcompanion.features.omni_chatbot.knowledge.FAQRepository.FAQ>,
+    isAIReady: Boolean,
     onFAQSelected: (com.autonion.automationcompanion.features.omni_chatbot.knowledge.FAQRepository.FAQ) -> Unit
 ) {
     Column(
@@ -1598,14 +1479,72 @@ private fun FAQBrowserUI(
             .padding(horizontal = 16.dp)
     ) {
         val listState = rememberLazyListState()
-        
+        var searchQuery by remember { mutableStateOf("") }
+        var expandedFaqId by remember { mutableStateOf<String?>(null) }
+
         Text(
             "FAQ Library",
             color = Color.White.copy(alpha = 0.8f),
             fontWeight = FontWeight.SemiBold,
             fontSize = 18.sp,
-            modifier = Modifier.padding(top = 8.dp, bottom = 12.dp)
+            modifier = Modifier.padding(top = 8.dp, bottom = 8.dp)
         )
+
+        // ── Search Bar ──
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            placeholder = {
+                Text("Search FAQs...", color = Color.White.copy(alpha = 0.35f), fontSize = 14.sp)
+            },
+            leadingIcon = {
+                Icon(
+                    Icons.Default.Search,
+                    contentDescription = "Search",
+                    tint = Color.White.copy(alpha = 0.5f),
+                    modifier = Modifier.size(20.dp)
+                )
+            },
+            trailingIcon = {
+                if (searchQuery.isNotEmpty()) {
+                    IconButton(onClick = { searchQuery = "" }) {
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = "Clear",
+                            tint = Color.White.copy(alpha = 0.5f),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White,
+                cursorColor = AccentPurple,
+                focusedBorderColor = AccentPurple.copy(alpha = 0.5f),
+                unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
+                focusedContainerColor = Color.White.copy(alpha = 0.05f),
+                unfocusedContainerColor = Color.White.copy(alpha = 0.03f),
+            ),
+            shape = RoundedCornerShape(12.dp),
+            singleLine = true,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 10.dp)
+        )
+
+        // ── Filter FAQs ──
+        val filteredFaqs = remember(searchQuery, faqList) {
+            if (searchQuery.isBlank()) faqList
+            else {
+                val q = searchQuery.lowercase()
+                faqList.filter { faq ->
+                    faq.question.lowercase().contains(q) ||
+                    faq.answer.lowercase().contains(q) ||
+                    faq.tags.any { it.lowercase().contains(q) }
+                }
+            }
+        }
 
         LazyColumn(
             state = listState,
@@ -1613,20 +1552,62 @@ private fun FAQBrowserUI(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             contentPadding = PaddingValues(bottom = 16.dp)
         ) {
-            items(faqList, key = { it.question }) { faq ->
+            if (filteredFaqs.isEmpty()) {
+                item {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(top = 40.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                Icons.Default.SearchOff,
+                                contentDescription = null,
+                                tint = Color.White.copy(alpha = 0.3f),
+                                modifier = Modifier.size(48.dp)
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                "No FAQs match \"$searchQuery\"",
+                                color = Color.White.copy(alpha = 0.4f),
+                                fontSize = 14.sp
+                            )
+                        }
+                    }
+                }
+            }
+            items(filteredFaqs, key = { it.question }) { faq ->
+                val isExpanded = expandedFaqId == faq.question
                 Surface(
                     color = CardGlass,
                     shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = { onFAQSelected(faq) }
+                    modifier = Modifier.fillMaxWidth().animateItem(),
+                    onClick = {
+                        if (isAIReady) {
+                            onFAQSelected(faq)
+                        } else {
+                            // Toggle inline answer when LLM unavailable
+                            expandedFaqId = if (isExpanded) null else faq.question
+                        }
+                    }
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = faq.question,
-                            color = Color.White,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = faq.question,
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (!isAIReady) {
+                                Icon(
+                                    if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                    contentDescription = if (isExpanded) "Collapse" else "Expand",
+                                    tint = Color.White.copy(alpha = 0.4f),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
                         if (faq.tags.isNotEmpty()) {
                             Spacer(modifier = Modifier.height(6.dp))
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1644,6 +1625,24 @@ private fun FAQBrowserUI(
                                         )
                                     }
                                 }
+                            }
+                        }
+                        // ── Inline Answer (shown when LLM unavailable) ──
+                        AnimatedVisibility(
+                            visible = isExpanded && !isAIReady,
+                            enter = expandVertically(tween(250)) + fadeIn(tween(200)),
+                            exit = shrinkVertically(tween(200)) + fadeOut(tween(150))
+                        ) {
+                            Column {
+                                Spacer(modifier = Modifier.height(10.dp))
+                                HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Text(
+                                    text = faq.answer,
+                                    color = Color.White.copy(alpha = 0.75f),
+                                    fontSize = 13.sp,
+                                    lineHeight = 19.sp
+                                )
                             }
                         }
                     }

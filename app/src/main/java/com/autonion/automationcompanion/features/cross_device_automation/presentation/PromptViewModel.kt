@@ -15,6 +15,9 @@ import com.autonion.automationcompanion.features.cross_device_automation.engine.
 import com.autonion.automationcompanion.features.cross_device_automation.engine.GestureType
 import com.autonion.automationcompanion.features.cross_device_automation.engine.HardwareButtonMapper
 import com.autonion.automationcompanion.features.semantic_automation.memory.AutomationChatMemory
+import com.autonion.automationcompanion.features.omni_chatbot.data.db.OmniChatSessionEntity
+import com.autonion.automationcompanion.features.omni_chatbot.data.db.OmniChatMessageEntity
+import com.autonion.automationcompanion.features.system_context_automation.location.data.db.AppDatabase
 import android.view.KeyEvent
 
 data class ChatMessage(
@@ -39,8 +42,25 @@ class PromptViewModel(
     val isAutomationActive: StateFlow<Boolean> = _isAutomationActive.asStateFlow()
 
     private val chatMemory = AutomationChatMemory.getInstance(context)
+    private val chatDao = AppDatabase.get(context).omniChatDao()
+
+    // ─── Session & History State ────────────────────────────
+    private val _chatSessionId = MutableStateFlow(UUID.randomUUID().toString())
+
+    private val _showHistory = MutableStateFlow(false)
+    val showHistory: StateFlow<Boolean> = _showHistory.asStateFlow()
+
+    private val _chatHistorySessions = MutableStateFlow<List<OmniChatSessionEntity>>(emptyList())
+    val chatHistorySessions: StateFlow<List<OmniChatSessionEntity>> = _chatHistorySessions.asStateFlow()
 
     init {
+        // Collect chat history sessions for this module
+        viewModelScope.launch {
+            chatDao.getSessionsByModule("cross_device").collect { sessions ->
+                _chatHistorySessions.value = sessions
+            }
+        }
+
         viewModelScope.launch {
             try {
                 manager.networkingManager.responseFlow.collect { response ->
@@ -77,6 +97,25 @@ class PromptViewModel(
         if (promptText.isBlank()) return
 
         viewModelScope.launch {
+            // Add user message
+            addMessage(ChatMessage(text = promptText, isUser = true))
+
+            // ── 1. Hardware Remote mapping (volume buttons) ──
+            if (parseHardwareMapping(promptText)) {
+                _inputQuery.value = ""
+                return@launch
+            }
+
+            // ── 2. Direct keyboard intent (no LLM needed) ──
+            val directKey = parseKeyboardIntent(promptText)
+            if (directKey != null) {
+                broadcastKeyPress(directKey)
+                addMessage(ChatMessage(text = "⌨️ Pressed $directKey", isUser = false))
+                _inputQuery.value = ""
+                return@launch
+            }
+
+            // ── 3. Full prompt → broadcast to Desktop Agent (LLM path) ──
             val prompt = AutomationPrompt(
                 transactionId = UUID.randomUUID().toString(),
                 prompt = promptText,
@@ -84,20 +123,8 @@ class PromptViewModel(
                 context = chatMemory.buildContextSummary()
             )
 
-            // Add user message
-            addMessage(ChatMessage(text = promptText, isUser = true))
-
-            if (parseHardwareMapping(promptText)) {
-                _inputQuery.value = ""
-                return@launch
-            }
-
-            // Broadcast to all connected devices (Desktop Agent)
             manager.networkingManager.broadcast(prompt)
-            
             _isAutomationActive.value = true
-
-            // Clear input
             _inputQuery.value = ""
         }
     }
@@ -107,6 +134,72 @@ class PromptViewModel(
         addMessage(ChatMessage(text = "Stopping automation...", isUser = false))
         manager.stopRemoteAutomation()
     }
+
+    // ─── Direct Keyboard Intent Parser ──────────────────────────
+    // Recognizes simple key press commands like "press escape", "click enter",
+    // "hit tab", "press the space button" etc. and sends them directly as
+    // structured key_press commands without going through the LLM.
+
+    private val keyMap = mapOf(
+        "escape" to "Escape", "esc" to "Escape",
+        "enter" to "Return", "return" to "Return",
+        "tab" to "Tab",
+        "space" to "Space", "spacebar" to "Space",
+        "backspace" to "Backspace",
+        "delete" to "Delete", "del" to "Delete",
+        "home" to "Home", "end" to "End",
+        "page up" to "Page_Up", "pageup" to "Page_Up",
+        "page down" to "Page_Down", "pagedown" to "Page_Down",
+        "up arrow" to "Up", "down arrow" to "Down",
+        "left arrow" to "Left", "right arrow" to "Right",
+        "up" to "Up", "down" to "Down", "left" to "Left", "right" to "Right",
+        "f1" to "F1", "f2" to "F2", "f3" to "F3", "f4" to "F4",
+        "f5" to "F5", "f6" to "F6", "f7" to "F7", "f8" to "F8",
+        "f9" to "F9", "f10" to "F10", "f11" to "F11", "f12" to "F12",
+        "caps lock" to "Caps_Lock", "capslock" to "Caps_Lock",
+        "print screen" to "Print_Screen", "printscreen" to "Print_Screen",
+        "insert" to "Insert", "pause" to "Pause",
+        "num lock" to "Num_Lock", "numlock" to "Num_Lock",
+        "scroll lock" to "Scroll_Lock",
+        "windows" to "Win", "win" to "Win",
+        "alt" to "Alt", "ctrl" to "Ctrl", "control" to "Ctrl",
+        "shift" to "Shift",
+        "a" to "a", "b" to "b", "c" to "c", "d" to "d", "e" to "e",
+        "f" to "f", "g" to "g", "h" to "h", "i" to "i", "j" to "j",
+        "k" to "k", "l" to "l", "m" to "m", "n" to "n", "o" to "o",
+        "p" to "p", "q" to "q", "r" to "r", "s" to "s", "t" to "t",
+        "u" to "u", "v" to "v", "w" to "w", "x" to "x", "y" to "y",
+        "z" to "z",
+        "0" to "0", "1" to "1", "2" to "2", "3" to "3", "4" to "4",
+        "5" to "5", "6" to "6", "7" to "7", "8" to "8", "9" to "9",
+        "minus" to "Minus", "plus" to "Plus", "equals" to "Equal",
+    )
+
+    // Match patterns like: "press escape", "click on the enter key",
+    // "hit the tab button", "tap space", "push delete"
+    private val keyCommandRegex = Regex(
+        "^(?:please\\s+)?(?:press|click|hit|tap|push|type)\\s+" +
+        "(?:on\\s+)?(?:the\\s+)?(.+?)(?:\\s+(?:button|key|btn))?\\s*$",
+        RegexOption.IGNORE_CASE
+    )
+
+    private fun parseKeyboardIntent(text: String): String? {
+        val lower = text.lowercase().trim()
+        val match = keyCommandRegex.find(lower) ?: return null
+        val captured = match.groupValues[1].trim()
+        return keyMap[captured]
+    }
+
+    private fun broadcastKeyPress(keyName: String) {
+        val command = mapOf(
+            "type" to "key_press",
+            "keyName" to keyName,
+            "transactionId" to UUID.randomUUID().toString()
+        )
+        manager.networkingManager.broadcast(command)
+    }
+
+    // ─── Hardware Remote Parser ─────────────────────────────────
     
     private fun parseHardwareMapping(promptText: String): Boolean {
         val lowerText = promptText.lowercase()
@@ -140,9 +233,74 @@ class PromptViewModel(
         return false
     }
 
+    // ─── Chat History & Session Management ───────────────────
+
+    fun clearChat() {
+        chatMemory.clearSession()
+        _messages.value = emptyList()
+        _chatSessionId.value = UUID.randomUUID().toString()
+        _showHistory.value = false
+    }
+
+    fun toggleHistory() {
+        _showHistory.value = !_showHistory.value
+    }
+
+    fun loadChatSession(sessionId: String) {
+        viewModelScope.launch {
+            val dbMessages = chatDao.getMessagesForSession(sessionId)
+            _chatSessionId.value = sessionId
+            val mappedMessages = dbMessages.map { entity ->
+                ChatMessage(
+                    id = entity.messageId,
+                    text = entity.text,
+                    isUser = entity.isUser,
+                    timestamp = entity.timestamp
+                )
+            }.reversed()
+            _messages.value = mappedMessages
+            _showHistory.value = false
+        }
+    }
+
+    fun deleteSession(sessionId: String) {
+        viewModelScope.launch {
+            chatDao.deleteSession(sessionId)
+        }
+    }
+
+    private fun persistSessionAndMessage(message: ChatMessage) {
+        viewModelScope.launch {
+            val sessionId = _chatSessionId.value
+            val currentMessages = _messages.value
+            
+            val sessionEntity = OmniChatSessionEntity(
+                sessionId = sessionId,
+                title = currentMessages.lastOrNull { it.isUser }?.text?.take(30) ?: "New Chat",
+                timestamp = System.currentTimeMillis(),
+                previewText = message.text.take(50),
+                module = "cross_device"
+            )
+            chatDao.insertSession(sessionEntity)
+            
+            val messageEntity = OmniChatMessageEntity(
+                messageId = message.id,
+                sessionId = sessionId,
+                text = message.text,
+                isUser = message.isUser,
+                mode = "DIRECT",
+                timestamp = message.timestamp,
+                actionWidgetJson = null,
+                suggestedWalkthroughId = null
+            )
+            chatDao.insertMessage(messageEntity)
+        }
+    }
+
     private fun addMessage(message: ChatMessage) {
         val current = _messages.value.toMutableList()
         current.add(0, message) // Add to top (for reverseLayout)
         _messages.value = current
+        persistSessionAndMessage(message)
     }
 }

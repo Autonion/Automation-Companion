@@ -34,9 +34,14 @@ import androidx.compose.ui.unit.sp
 import com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationService
 import com.autonion.automationcompanion.features.semantic_automation.model.AutomationStatus
 import com.autonion.automationcompanion.ui.components.AuroraBackground
+import com.autonion.automationcompanion.ui.components.ChatHistoryPanel
+import com.autonion.automationcompanion.features.omni_chatbot.data.db.OmniChatSessionEntity
+import com.autonion.automationcompanion.features.omni_chatbot.data.db.OmniChatMessageEntity
+import com.autonion.automationcompanion.features.system_context_automation.location.data.db.AppDatabase
 import androidx.compose.material.icons.outlined.Info
 import com.autonion.automationcompanion.features.omni_chatbot.ui.LocalStartWalkthrough
 import com.autonion.automationcompanion.ui.theme.*
+import kotlinx.coroutines.launch
 import java.util.*
 
 // ─── Color Palette ────────────────────────────────────────────
@@ -71,7 +76,40 @@ fun SemanticAutomationScreen(
     // Chat state
     val messages = remember { mutableStateListOf<SemanticMessage>() }
     val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
+    // ─── Chat History Persistence ─────────────────────────────
+    val chatDao = remember { AppDatabase.get(context).omniChatDao() }
+    var chatSessionId by remember { mutableStateOf(UUID.randomUUID().toString()) }
+    var showHistory by remember { mutableStateOf(false) }
+    val chatHistorySessions by chatDao.getSessionsByModule("semantic").collectAsState(initial = emptyList())
+
+    // Helper to persist messages
+    fun persistMessage(msg: SemanticMessage) {
+        scope.launch {
+            val sessionEntity = OmniChatSessionEntity(
+                sessionId = chatSessionId,
+                title = messages.lastOrNull { it.isUser }?.text?.take(30) ?: "New Chat",
+                timestamp = System.currentTimeMillis(),
+                previewText = msg.text.take(50),
+                module = "semantic"
+            )
+            chatDao.insertSession(sessionEntity)
+
+            val messageEntity = OmniChatMessageEntity(
+                messageId = msg.id,
+                sessionId = chatSessionId,
+                text = msg.text,
+                isUser = msg.isUser,
+                mode = "DIRECT",
+                timestamp = msg.timestamp,
+                actionWidgetJson = null,
+                suggestedWalkthroughId = null
+            )
+            chatDao.insertMessage(messageEntity)
+        }
+    }
     LaunchedEffect(messages.size, messages.firstOrNull()?.text?.length) {
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(0)
@@ -225,6 +263,41 @@ fun SemanticAutomationScreen(
                         .imePadding()
                         .then(if (!isAIReady) Modifier.blur(12.dp) else Modifier)
                 ) {
+                // ─── Chat Header (New Chat + History) ────────────
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = {
+                        messages.clear()
+                        chatSessionId = UUID.randomUUID().toString()
+                        showHistory = false
+                    }) {
+                        Icon(
+                            Icons.Default.Add,
+                            contentDescription = "New Chat",
+                            tint = Color.White.copy(alpha = 0.6f),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text("New Chat", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    TextButton(onClick = { showHistory = !showHistory }) {
+                        Icon(
+                            Icons.Default.History,
+                            contentDescription = "History",
+                            tint = Color.White.copy(alpha = 0.6f),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text("History", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
+                    }
+                }
+
                 // ─── Chat Messages ──────────────────────
                 if (messages.isEmpty()) {
                     Box(
@@ -376,7 +449,7 @@ fun SemanticAutomationScreen(
                                     id = UUID.randomUUID().toString(),
                                     text = command,
                                     isUser = true
-                                )
+                                ).also { persistMessage(it) }
                             )
                             if (status == AutomationStatus.AWAITING_USER_INPUT) {
                                 engine?.resumeWithUserChoice(command.trim())
@@ -406,6 +479,39 @@ fun SemanticAutomationScreen(
                             optionalChip = if (!isExtensionConnected) "Lemur browser extension not connected" else null
                         )
                     }
+                }
+
+                // ─── History Panel Overlay ────────────────────
+                AnimatedVisibility(
+                    visible = showHistory,
+                    enter = fadeIn(tween(200)) + slideInHorizontally(tween(300)) { -it },
+                    exit = fadeOut(tween(200)) + slideOutHorizontally(tween(250)) { -it }
+                ) {
+                    ChatHistoryPanel(
+                        sessions = chatHistorySessions,
+                        onSessionClick = { session ->
+                            scope.launch {
+                                val dbMessages = chatDao.getMessagesForSession(session.sessionId)
+                                chatSessionId = session.sessionId
+                                messages.clear()
+                                messages.addAll(
+                                    dbMessages.map { entity ->
+                                        SemanticMessage(
+                                            id = entity.messageId,
+                                            text = entity.text,
+                                            isUser = entity.isUser,
+                                            timestamp = entity.timestamp
+                                        )
+                                    }.reversed()
+                                )
+                                showHistory = false
+                            }
+                        },
+                        onDeleteSession = { session ->
+                            scope.launch { chatDao.deleteSession(session.sessionId) }
+                        },
+                        onClose = { showHistory = false }
+                    )
                 }
             }
         }
