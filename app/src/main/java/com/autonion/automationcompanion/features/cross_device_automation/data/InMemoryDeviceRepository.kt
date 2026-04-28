@@ -58,4 +58,10 @@ class InMemoryDeviceRepository : DeviceRepository {
             }
         }
     }
+
+    override suspend fun deselectAllDevices() {
+        _devices.update { currentList ->
+            currentList.map { it.copy(isSelected = false) }
+        }
+    }
 }

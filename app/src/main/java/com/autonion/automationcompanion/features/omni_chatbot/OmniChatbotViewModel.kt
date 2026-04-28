@@ -173,7 +173,7 @@ class OmniChatbotViewModel(
         }
 
         viewModelScope.launch {
-            omniChatDao.getAllSessions().collect { sessions ->
+            omniChatDao.getSessionsByModule("omni").collect { sessions ->
                 _chatHistorySessions.value = sessions
             }
         }

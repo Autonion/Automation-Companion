@@ -1582,12 +1582,8 @@ private fun FAQBrowserUI(
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth().animateItem(),
                     onClick = {
-                        if (isAIReady) {
-                            onFAQSelected(faq)
-                        } else {
-                            // Toggle inline answer when LLM unavailable
-                            expandedFaqId = if (isExpanded) null else faq.question
-                        }
+                        // Always toggle inline answer
+                        expandedFaqId = if (isExpanded) null else faq.question
                     }
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
@@ -1599,14 +1595,12 @@ private fun FAQBrowserUI(
                                 fontWeight = FontWeight.Medium,
                                 modifier = Modifier.weight(1f)
                             )
-                            if (!isAIReady) {
-                                Icon(
-                                    if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                                    contentDescription = if (isExpanded) "Collapse" else "Expand",
-                                    tint = Color.White.copy(alpha = 0.4f),
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
+                            Icon(
+                                if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                contentDescription = if (isExpanded) "Collapse" else "Expand",
+                                tint = Color.White.copy(alpha = 0.4f),
+                                modifier = Modifier.size(20.dp)
+                            )
                         }
                         if (faq.tags.isNotEmpty()) {
                             Spacer(modifier = Modifier.height(6.dp))
@@ -1627,9 +1621,9 @@ private fun FAQBrowserUI(
                                 }
                             }
                         }
-                        // ── Inline Answer (shown when LLM unavailable) ──
+                        // ── Inline Answer (always available) ──
                         AnimatedVisibility(
-                            visible = isExpanded && !isAIReady,
+                            visible = isExpanded,
                             enter = expandVertically(tween(250)) + fadeIn(tween(200)),
                             exit = shrinkVertically(tween(200)) + fadeOut(tween(150))
                         ) {

@@ -157,7 +157,7 @@ fun SemanticAutomationScreen(
                         id = UUID.randomUUID().toString(),
                         text = "Task completed successfully.",
                         isUser = false
-                    )
+                    ).also { persistMessage(it) }
                 )
             }
             AutomationStatus.FAILED -> {
@@ -168,7 +168,7 @@ fun SemanticAutomationScreen(
                         id = UUID.randomUUID().toString(),
                         text = "Task failed to complete.$reason",
                         isUser = false
-                    )
+                    ).also { persistMessage(it) }
                 )
             }
             AutomationStatus.CANCELLED -> {
@@ -178,7 +178,7 @@ fun SemanticAutomationScreen(
                         id = UUID.randomUUID().toString(),
                         text = "Task cancelled.",
                         isUser = false
-                    )
+                    ).also { persistMessage(it) }
                 )
             }
             AutomationStatus.AWAITING_USER_INPUT -> {
@@ -191,7 +191,7 @@ fun SemanticAutomationScreen(
                             isUser = false,
                             isInteractivePrompt = true,
                             promptOptions = userPromptOptions
-                        )
+                        ).also { persistMessage(it) }
                     )
                 }
             }
