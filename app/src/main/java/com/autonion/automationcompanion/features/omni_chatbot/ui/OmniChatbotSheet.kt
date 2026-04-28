@@ -8,6 +8,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -20,6 +21,8 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.animation.animateContentSize
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -28,6 +31,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -280,10 +284,10 @@ private fun OmniChatSheet(viewModel: OmniChatbotViewModel) {
                 ChatSheetHeader(
                     onClose = { viewModel.collapse() },
                     onSettingsClick = { viewModel.toggleSettings() },
-                    onFAQBrowserClick = { viewModel.toggleFAQBrowser() },
+                    onNewChatClick = { viewModel.clearChat() },
+                    onHistoryClick = { viewModel.toggleHistory() },
                     connectionStatus = viewModel.llmConnectionStatus.collectAsState().value,
                     showSettings = showSettings,
-                    showFAQBrowser = showFAQBrowser,
                     isDragging = dragOffsetY > 0f
                 )
             }
@@ -297,60 +301,317 @@ private fun OmniChatSheet(viewModel: OmniChatbotViewModel) {
                 LLMSettingsPanel(viewModel = viewModel)
             }
 
-            // ── FAQ Browser Panel ──
-            AnimatedVisibility(
-                visible = showFAQBrowser,
-                enter = expandVertically(tween(300)) + fadeIn(tween(200)),
-                exit = shrinkVertically(tween(250)) + fadeOut(tween(150))
+            // ── Main Content Area ──
+            val isAIReady by viewModel.isAIReady.collectAsState()
+            val showHistory by viewModel.showHistory.collectAsState()
+            val chatHistorySessions by viewModel.chatHistorySessions.collectAsState()
+
+            // ── Tab State ──
+            var selectedTab by remember { mutableIntStateOf(1) } // Default to Chat tab
+
+            // ── Tab Row ──
+            OmniTabRow(selectedTab = selectedTab, onTabSelected = { selectedTab = it })
+
+            // ── Tabbed Content ──
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                AnimatedContent(
+                    targetState = selectedTab,
+                    transitionSpec = {
+                        fadeIn(tween(250)) + slideInHorizontally(
+                            tween(250),
+                            initialOffsetX = { if (targetState > initialState) it / 4 else -it / 4 }
+                        ) togetherWith fadeOut(tween(200))
+                    },
+                    label = "OmniTabContent",
+                    modifier = Modifier.fillMaxSize()
+                ) { tab ->
+                    when (tab) {
+                        0 -> {
+                            // ── FAQ Tab ──
+                            FAQBrowserUI(
+                                faqList = faqList,
+                                onFAQSelected = {
+                                    viewModel.onFAQSelected(it)
+                                    selectedTab = 1 // Switch to Chat after selecting FAQ
+                                }
+                            )
+                        }
+                        1 -> {
+                            // ── Chat Tab ──
+                            Column(modifier = Modifier.fillMaxSize()) {
+                                // ── FAQ Chips ──
+                                AnimatedVisibility(visible = messages.isEmpty() && !showSettings) {
+                                    FAQChipRow(
+                                        chips = faqChips,
+                                        onChipClick = { viewModel.processPrompt(it.question) }
+                                    )
+                                }
+
+                                // ── Messages ──
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxWidth(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .then(if (!isAIReady) Modifier.blur(12.dp) else Modifier),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (messages.isEmpty() && !showSettings) {
+                                            EmptyChatState()
+                                        } else {
+                                            LazyColumn(
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .padding(horizontal = 12.dp),
+                                                state = listState,
+                                                reverseLayout = true,
+                                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                                                contentPadding = PaddingValues(vertical = 8.dp)
+                                            ) {
+                                                items(messages, key = { it.id }) { message ->
+                                                    ChatBubble(
+                                                        message = message,
+                                                        onStopTask = { taskId -> viewModel.stopScheduledTask(taskId) },
+                                                        onStartWalkthrough = { featureId -> viewModel.startWalkthrough(featureId) }
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    if (!isAIReady) {
+                                        com.autonion.automationcompanion.ui.components.ConnectionRequiredOverlay(
+                                            message = "To use Omni-Chat AI, please connect to a Server LLM or select a Local SLM.",
+                                            steps = listOf(
+                                                "Click the ⚙️ icon above.",
+                                                "Choose 'Server LLM' and enter your Ollama IP.",
+                                                "Or choose 'On-Device SLM' to run locally."
+                                            )
+                                        )
+                                    }
+                                }
+
+                                // ── Input Bar ──
+                                ChatInputBar(
+                                    value = inputText,
+                                    onValueChange = { viewModel.onInputChanged(it) },
+                                    onSend = { viewModel.processPrompt() }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // ── History Panel Overlay ──
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = showHistory,
+                    enter = fadeIn(tween(200)) + slideInHorizontally(tween(300)) { -it },
+                    exit = fadeOut(tween(200)) + slideOutHorizontally(tween(250)) { -it }
+                ) {
+                    ChatHistoryPanel(
+                        sessions = chatHistorySessions,
+                        onSessionClick = { session ->
+                            viewModel.loadChatSession(session.sessionId)
+                            viewModel.toggleHistory()
+                        },
+                        onDeleteSession = { viewModel.deleteSession(it.sessionId) },
+                        onClose = { viewModel.toggleHistory() }
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ─── Tab Row ─────────────────────────────────────────────
+
+private data class OmniTab(val title: String, val icon: androidx.compose.ui.graphics.vector.ImageVector)
+
+@Composable
+private fun OmniTabRow(selectedTab: Int, onTabSelected: (Int) -> Unit) {
+    val tabs = listOf(
+        OmniTab("FAQ", Icons.Default.MenuBook),
+        OmniTab("Chat", Icons.Default.Chat)
+    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color.White.copy(alpha = 0.05f))
+            .padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        tabs.forEachIndexed { index, tab ->
+            val isSelected = index == selectedTab
+            val animatedAlpha by animateFloatAsState(
+                if (isSelected) 1f else 0f,
+                animationSpec = tween(200),
+                label = "tab_bg_$index"
+            )
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(
+                        if (isSelected) Brush.horizontalGradient(
+                            listOf(AccentPurple.copy(alpha = 0.3f), AccentBlue.copy(alpha = 0.2f))
+                        ) else Brush.horizontalGradient(
+                            listOf(Color.Transparent, Color.Transparent)
+                        )
+                    )
+                    .clickable { onTabSelected(index) }
+                    .padding(vertical = 8.dp),
+                contentAlignment = Alignment.Center
             ) {
-                FAQBrowserUI(faqList = faqList, onFAQSelected = { viewModel.onFAQSelected(it) })
+                Row(
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        tab.icon,
+                        contentDescription = tab.title,
+                        tint = if (isSelected) Color.White else Color.White.copy(alpha = 0.4f),
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        tab.title,
+                        color = if (isSelected) Color.White else Color.White.copy(alpha = 0.4f),
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                        fontSize = 13.sp
+                    )
+                }
             }
+        }
+    }
+}
 
-            // ── FAQ Chips ──
-            AnimatedVisibility(visible = messages.isEmpty() && !showSettings && !showFAQBrowser) {
-                FAQChipRow(
-                    chips = faqChips,
-                    onChipClick = { viewModel.processPrompt(it.question) }
+// ─── Chat History Panel ──────────────────────────────────
+
+@Composable
+private fun ChatHistoryPanel(
+    sessions: List<com.autonion.automationcompanion.features.omni_chatbot.data.db.OmniChatSessionEntity>,
+    onSessionClick: (com.autonion.automationcompanion.features.omni_chatbot.data.db.OmniChatSessionEntity) -> Unit,
+    onDeleteSession: (com.autonion.automationcompanion.features.omni_chatbot.data.db.OmniChatSessionEntity) -> Unit,
+    onClose: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = SheetBg.copy(alpha = 0.97f)
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Header
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.History,
+                    contentDescription = null,
+                    tint = AccentPurple,
+                    modifier = Modifier.size(22.dp)
                 )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "Chat History",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(onClick = onClose) {
+                    Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White.copy(alpha = 0.6f))
+                }
             }
 
-            // ── Messages ──
-            if (messages.isEmpty() && !showSettings && !showFAQBrowser) {
+            if (sessions.isEmpty()) {
                 Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
+                    modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    EmptyChatState()
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            Icons.Default.ChatBubbleOutline,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = 0.2f),
+                            modifier = Modifier.size(48.dp)
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "No saved conversations",
+                            color = Color.White.copy(alpha = 0.4f),
+                            fontSize = 14.sp
+                        )
+                    }
                 }
             } else {
                 LazyColumn(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp),
-                    state = listState,
-                    reverseLayout = true,
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                    contentPadding = PaddingValues(vertical = 8.dp)
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    items(messages, key = { it.id }) { message ->
-                        ChatBubble(
-                            message = message,
-                            onStopTask = { taskId -> viewModel.stopScheduledTask(taskId) },
-                            onStartWalkthrough = { featureId -> viewModel.startWalkthrough(featureId) }
+                    items(sessions, key = { it.sessionId }) { session ->
+                        SessionCard(
+                            session = session,
+                            onClick = { onSessionClick(session) },
+                            onDelete = { onDeleteSession(session) }
                         )
                     }
                 }
             }
+        }
+    }
+}
 
-            // ── Input Bar ──
-            ChatInputBar(
-                value = inputText,
-                onValueChange = { viewModel.onInputChanged(it) },
-                onSend = { viewModel.processPrompt() }
-            )
+@Composable
+private fun SessionCard(
+    session: com.autonion.automationcompanion.features.omni_chatbot.data.db.OmniChatSessionEntity,
+    onClick: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(12.dp),
+        color = CardGlass,
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.06f))
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    session.previewText.take(60).ifBlank { "Untitled chat" },
+                    color = Color.White,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 14.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    DateFormat.format("MMM dd, hh:mm a", Date(session.timestamp)).toString(),
+                    color = Color.White.copy(alpha = 0.4f),
+                    fontSize = 11.sp
+                )
+            }
+            IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                Icon(
+                    Icons.Default.Delete,
+                    contentDescription = "Delete",
+                    tint = AccentRed.copy(alpha = 0.6f),
+                    modifier = Modifier.size(18.dp)
+                )
+            }
         }
     }
 }
@@ -361,10 +622,10 @@ private fun OmniChatSheet(viewModel: OmniChatbotViewModel) {
 private fun ChatSheetHeader(
     onClose: () -> Unit,
     onSettingsClick: () -> Unit,
-    onFAQBrowserClick: () -> Unit,
+    onNewChatClick: () -> Unit,
+    onHistoryClick: () -> Unit,
     connectionStatus: ServerConnectionStatus,
     showSettings: Boolean,
-    showFAQBrowser: Boolean,
     isDragging: Boolean = false
 ) {
     Column(
@@ -426,13 +687,22 @@ private fun ChatSheetHeader(
                 ServerConnectionStatus.DISCONNECTED -> AccentRed
             }
 
-            // FAQ Browser button
-            IconButton(onClick = onFAQBrowserClick) {
+            // New Chat button
+            IconButton(onClick = onNewChatClick) {
                 Icon(
-                    if (showFAQBrowser) Icons.Default.Close else Icons.Default.MenuBook,
-                    contentDescription = "Browse FAQs",
-                    tint = if (showFAQBrowser) Color.White.copy(alpha = 0.8f)
-                           else Color.White.copy(alpha = 0.6f),
+                    Icons.Default.AddComment,
+                    contentDescription = "New Chat",
+                    tint = Color.White.copy(alpha = 0.8f),
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+
+            // History button
+            IconButton(onClick = onHistoryClick) {
+                Icon(
+                    Icons.Default.History,
+                    contentDescription = "Chat History",
+                    tint = Color.White.copy(alpha = 0.6f),
                     modifier = Modifier.size(22.dp)
                 )
             }

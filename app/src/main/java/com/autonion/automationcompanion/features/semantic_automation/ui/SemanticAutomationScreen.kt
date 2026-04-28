@@ -21,10 +21,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -192,12 +194,37 @@ fun SemanticAutomationScreen(
             },
             containerColor = Color.Transparent
         ) { innerPadding ->
-            Column(
+            // ─── Connection State for Overlay ────────────
+            val context = LocalContext.current
+            val llmEngine = remember { com.autonion.automationcompanion.features.semantic_automation.ml.LocalServerLLMEngine.getInstance(context) }
+            val llmConnectionStatus by llmEngine.connectionStatus.collectAsState()
+            val extensionBridge = remember { com.autonion.automationcompanion.features.semantic_automation.core.ExtensionBridgeServer.getInstance(context) }
+            val isExtensionConnected by extensionBridge.isExtensionConnected.collectAsState()
+
+            val localInferenceMode = remember {
+                val prefs = context.getSharedPreferences("inference_prefs", android.content.Context.MODE_PRIVATE)
+                val mode = prefs.getString("mode", com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.SERVER_LLM.name)
+                com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.valueOf(mode!!)
+            }
+
+            val isAIReady = when (localInferenceMode) {
+                com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.SERVER_LLM ->
+                    llmConnectionStatus == com.autonion.automationcompanion.features.semantic_automation.ml.ServerConnectionStatus.CONNECTED
+                com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.LOCAL_SLM ->
+                    true // SLM runs locally, always ready
+            }
+
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
-                    .imePadding()
             ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .imePadding()
+                        .then(if (!isAIReady) Modifier.blur(12.dp) else Modifier)
+                ) {
                 // ─── Chat Messages ──────────────────────
                 if (messages.isEmpty()) {
                     Box(
@@ -361,6 +388,25 @@ fun SemanticAutomationScreen(
                     },
                     isActive = isActive
                 )
+                }
+
+                // ─── Connection Required Overlay ──────────
+                if (!isAIReady) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        com.autonion.automationcompanion.ui.components.ConnectionRequiredOverlay(
+                            message = "Connect to a Server LLM or configure a Local SLM to use Semantic Automation.",
+                            steps = listOf(
+                                "Tap the ⚙️ icon to open SLM Hub.",
+                                "Choose 'Server LLM' and enter your Ollama IP.",
+                                "Or download a local SLM model."
+                            ),
+                            optionalChip = if (!isExtensionConnected) "Lemur browser extension not connected" else null
+                        )
+                    }
+                }
             }
         }
     }

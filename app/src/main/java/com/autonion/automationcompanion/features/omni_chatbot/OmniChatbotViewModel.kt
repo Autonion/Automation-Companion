@@ -42,6 +42,12 @@ import dev.langchain4j.data.message.SystemMessage
 import dev.langchain4j.data.message.UserMessage
 import dev.langchain4j.data.message.AiMessage
 import dev.langchain4j.model.chat.ChatLanguageModel
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
+import com.autonion.automationcompanion.features.system_context_automation.location.data.db.AppDatabase
+import com.autonion.automationcompanion.features.omni_chatbot.data.db.OmniChatSessionEntity
+import com.autonion.automationcompanion.features.omni_chatbot.data.db.OmniChatMessageEntity
 
 /**
  * ViewModel for the Omni-Chatbot.
@@ -60,6 +66,8 @@ class OmniChatbotViewModel(
         private const val TAG = "OmniChatbot"
     }
 
+    private val omniChatDao = AppDatabase.get(context).omniChatDao()
+
     // ─── LLM Engine (exposed for in-chat settings) ──────────
     private val llmEngine = LocalServerLLMEngine.getInstance(context)
     // For reading/writing inference mode prefs (uses SharedPreferences — instance doesn't matter)
@@ -77,6 +85,20 @@ class OmniChatbotViewModel(
     private val _showSettings = MutableStateFlow(false)
     val showSettings: StateFlow<Boolean> = _showSettings.asStateFlow()
 
+    private val _showHistory = MutableStateFlow(false)
+    val showHistory: StateFlow<Boolean> = _showHistory.asStateFlow()
+
+    val isAIReady: StateFlow<Boolean> = combine(
+        llmConnectionStatus,
+        inferenceMode
+    ) { status, mode ->
+        if (mode == com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.SERVER_LLM) {
+            status == ServerConnectionStatus.CONNECTED
+        } else {
+            true // SLM mode doesn't strictly depend on server connection
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
     // ─── State ──────────────────────────────────────────────
     private val _inputText = MutableStateFlow("")
     val inputText: StateFlow<String> = _inputText.asStateFlow()
@@ -89,6 +111,12 @@ class OmniChatbotViewModel(
 
     private val _currentRoute = MutableStateFlow<String?>("home")
     val currentRoute: StateFlow<String?> = _currentRoute.asStateFlow()
+
+    private val _chatSessionId = MutableStateFlow(UUID.randomUUID().toString())
+    val chatSessionId: StateFlow<String> = _chatSessionId.asStateFlow()
+
+    private val _chatHistorySessions = MutableStateFlow<List<OmniChatSessionEntity>>(emptyList())
+    val chatHistorySessions: StateFlow<List<OmniChatSessionEntity>> = _chatHistorySessions.asStateFlow()
 
     /** Active scheduled task jobs, keyed by task ID */
     private val scheduledJobs = mutableMapOf<String, Job>()
@@ -138,11 +166,16 @@ class OmniChatbotViewModel(
     // ─── Init: Wire up Desktop response flow ────────────────
     init {
         viewModelScope.launch {
-            // Load large embeddings in background immediately without blocking UI
             faqRepository.loadFAQs(context)
             _faqList.value = faqRepository.getAllFAQs()
             
             knowledgeStore.loadFromAssets(context)
+        }
+
+        viewModelScope.launch {
+            omniChatDao.getAllSessions().collect { sessions ->
+                _chatHistorySessions.value = sessions
+            }
         }
 
         viewModelScope.launch {
@@ -170,6 +203,51 @@ class OmniChatbotViewModel(
     fun collapse() {
         _isExpanded.value = false
         _showSettings.value = false
+    }
+
+    fun clearChat() {
+        chatMemory.clear()
+        _messages.value = emptyList()
+        _chatSessionId.value = UUID.randomUUID().toString()
+        _showHistory.value = false
+    }
+
+    fun toggleHistory() {
+        _showHistory.value = !_showHistory.value
+        if (_showHistory.value) _showSettings.value = false
+    }
+
+    fun deleteSession(sessionId: String) {
+        viewModelScope.launch {
+            omniChatDao.deleteSession(sessionId)
+        }
+    }
+
+    fun loadChatSession(sessionId: String) {
+        viewModelScope.launch {
+            val dbMessages = omniChatDao.getMessagesForSession(sessionId)
+            _chatSessionId.value = sessionId
+            val mappedMessages = dbMessages.map { entity ->
+                OmniChatMessage(
+                    id = entity.messageId,
+                    text = entity.text,
+                    isUser = entity.isUser,
+                    mode = ResponseMode.valueOf(entity.mode),
+                    timestamp = entity.timestamp,
+                    actionWidget = null,
+                    suggestedWalkthroughId = entity.suggestedWalkthroughId
+                )
+            }.reversed() // Reverse to match the UI's newest-first order
+            
+            _messages.value = mappedMessages
+            
+            // Rebuild memory
+            chatMemory.clear()
+            mappedMessages.reversed().forEach { msg ->
+                if (msg.isUser) chatMemory.add(UserMessage(msg.text))
+                else chatMemory.add(AiMessage(msg.text))
+            }
+        }
     }
 
     fun expand() {
@@ -625,20 +703,31 @@ class OmniChatbotViewModel(
                 return@launch
             }
 
-            val systemPrompt = buildString {
+            // ── Stable system prompt — identity + rules only, NEVER changes ──
+            // This mirrors how ChatGPT/Gemini work: constant system identity
+            // with conversation history flowing naturally between turns.
+            val baseSystemPrompt = buildString {
                 append("/no_think\n")
                 append("You are Autonion, an AI assistant built into an Android automation app.\n\n")
                 append("STRICT RULES:\n")
-                append("1. Answer ONLY using the knowledge provided below. Do NOT add information that is not in the knowledge.\n")
-                append("2. If the knowledge below does NOT contain information to answer the question, say exactly: \"I don't have specific information about that in my knowledge base.\"\n")
+                append("1. Answer ONLY using the reference knowledge provided for each question. Do NOT add information that is not in the knowledge.\n")
+                append("2. If the reference knowledge does NOT contain information to answer the question, say exactly: \"I don't have specific information about that in my knowledge base.\"\n")
                 append("3. Do NOT make up features, capabilities, or instructions that are not explicitly described in the knowledge.\n")
                 append("4. Be concise and direct. Use bullet points where appropriate.\n")
                 append("5. Do NOT use <think> tags or internal reasoning. Answer immediately.\n")
                 append("6. If your answer is primarily about one of these features, append the tag on a new line at the very end of your response: [WALKTHROUGH:feature_id]\n")
                 append("   Available features: flow_builder, gesture_recording, semantic_automation, cross_device, visual_trigger, screen_ml, system_context, debugger\n")
                 append("   IMPORTANT: Do NOT append a WALKTHROUGH tag for browser extension, extension installation, or extension setup topics. Those have no walkthrough.\n")
-                append("7. IMPORTANT: There are TWO different extensions. The 'Autonion Extension' is for Desktop PC browsers. The 'Autonion Android Extension' is for Mobile phone browsers. If the user asks about an 'extension' without specifying PC or Mobile, explicitly mention both, explain the difference, and you MUST provide the exact github.com download URLs for BOTH extensions exactly as they appear in the knowledge below.\n\n")
-                append("KNOWLEDGE:\n")
+                append("7. IMPORTANT: There are TWO different extensions. The 'Autonion Extension' is for Desktop PC browsers. The 'Autonion Android Extension' is for Mobile phone browsers. If the user asks about an 'extension' without specifying PC or Mobile, explicitly mention both, explain the difference, and you MUST provide the exact github.com download URLs for BOTH extensions exactly as they appear in the knowledge below.\n")
+            }
+
+            // ── Per-query knowledge — scoped to current question only ──
+            // Placed right before the user's question so the model knows
+            // this knowledge is for THIS turn, not for the conversation history.
+            val knowledgeContext = buildString {
+                append("REFERENCE KNOWLEDGE FOR THE FOLLOWING QUESTION ONLY:\n")
+                append("(Use this knowledge to answer the user's next message. ")
+                append("Do NOT apply it to previous conversation topics.)\n\n")
                 append(contextText)
             }
 
@@ -649,9 +738,15 @@ class OmniChatbotViewModel(
                     if (model != null) {
                         val userMsg = UserMessage(result.rawPrompt)
                         
+                        // Message ordering mirrors ChatGPT architecture:
+                        // 1. Stable system identity (constant across turns)
+                        // 2. Full conversation history (natural flow)
+                        // 3. Per-query knowledge (scoped to current question)
+                        // 4. Current user question
                         val allMessages = mutableListOf<dev.langchain4j.data.message.ChatMessage>()
-                        allMessages.add(SystemMessage(systemPrompt))
+                        allMessages.add(SystemMessage(baseSystemPrompt))
                         allMessages.addAll(chatMemory.messages())
+                        allMessages.add(SystemMessage(knowledgeContext))
                         allMessages.add(userMsg)
                         
                         val response = model.generate(allMessages)
@@ -907,11 +1002,39 @@ class OmniChatbotViewModel(
     //  MESSAGE MANAGEMENT
     // ═══════════════════════════════════════════════════════════
 
+    private fun persistSessionAndMessage(message: OmniChatMessage) {
+        viewModelScope.launch {
+            val sessionId = _chatSessionId.value
+            val currentMessages = _messages.value
+            
+            val sessionEntity = OmniChatSessionEntity(
+                sessionId = sessionId,
+                title = currentMessages.lastOrNull { it.isUser }?.text?.take(30) ?: "New Chat",
+                timestamp = System.currentTimeMillis(),
+                previewText = message.text.take(50)
+            )
+            omniChatDao.insertSession(sessionEntity)
+            
+            val messageEntity = OmniChatMessageEntity(
+                messageId = message.id,
+                sessionId = sessionId,
+                text = message.text,
+                isUser = message.isUser,
+                mode = message.mode.name,
+                timestamp = message.timestamp,
+                actionWidgetJson = null,
+                suggestedWalkthroughId = message.suggestedWalkthroughId
+            )
+            omniChatDao.insertMessage(messageEntity)
+        }
+    }
+
     private fun addMessage(message: OmniChatMessage) {
         val cleaned = if (!message.isUser) message.copy(text = stripMarkdown(message.text)) else message
         val current = _messages.value.toMutableList()
         current.add(0, cleaned) // Newest first (for reverseLayout)
         _messages.value = current
+        persistSessionAndMessage(cleaned)
     }
 
     private fun updateLastBotMessage(
@@ -934,15 +1057,17 @@ class OmniChatbotViewModel(
                 suggestedWalkthroughId = suggestedWalkthroughId ?: current[lastBotIdx].suggestedWalkthroughId
             )
             _messages.value = current
+            persistSessionAndMessage(current[lastBotIdx])
         } else {
-            addMessage(OmniChatMessage(
+            val msg = OmniChatMessage(
                 text = cleanedText, 
                 isUser = false, 
                 mode = mode, 
                 isStreaming = streaming,
                 actionWidget = actionWidget,
                 suggestedWalkthroughId = suggestedWalkthroughId
-            ))
+            )
+            addMessage(msg)
         }
     }
 

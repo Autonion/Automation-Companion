@@ -23,6 +23,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
@@ -128,6 +129,17 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
                 )
             }
         ) { innerPadding ->
+            // ─── Connection State for Overlay ────────────
+            val llmEngine = remember { com.autonion.automationcompanion.features.semantic_automation.ml.LocalServerLLMEngine.getInstance(context) }
+            val llmConnectionStatus by llmEngine.connectionStatus.collectAsState()
+            val crossManager = remember { CrossDeviceAutomationManager.getInstance(context) }
+            val devices by crossManager.deviceRepository.getAllDevices().collectAsState(initial = emptyList())
+            val hasAgentConnection = devices.any {
+                it.isSelected && it.status == com.autonion.automationcompanion.features.cross_device_automation.domain.DeviceStatus.ONLINE
+            }
+            val isLLMConnected = llmConnectionStatus == com.autonion.automationcompanion.features.semantic_automation.ml.ServerConnectionStatus.CONNECTED
+            val isAIReady = hasAgentConnection && isLLMConnected
+
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -178,8 +190,42 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
                     label = "TabContent"
                 ) { tab ->
                     when (tab) {
-                        0 -> PromptScreen()
-                        1 -> DesktopAutomationScreen()
+                        0, 1 -> {
+                            // Ask & Rules tabs need agent + LLM connection
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .then(if (!isAIReady) Modifier.blur(12.dp) else Modifier)
+                                ) {
+                                    when (tab) {
+                                        0 -> PromptScreen()
+                                        1 -> DesktopAutomationScreen()
+                                    }
+                                }
+                                if (!isAIReady) {
+                                    Box(
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        com.autonion.automationcompanion.ui.components.ConnectionRequiredOverlay(
+                                            message = "Connect to a Desktop Agent and Ollama LLM to use Cross-Device Automation.",
+                                            steps = listOf(
+                                                "Go to the Devices tab and select a desktop.",
+                                                "Make sure Ollama is running on the desktop.",
+                                                "Configure the LLM server in SLM Hub."
+                                            ),
+                                            optionalChip = when {
+                                                !hasAgentConnection && !isLLMConnected -> "Agent disconnected · LLM disconnected"
+                                                !hasAgentConnection -> "Desktop Agent not connected"
+                                                !isLLMConnected -> "Ollama LLM not connected"
+                                                else -> null
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
                         2 -> DeviceManagementScreen()
                     }
                 }
