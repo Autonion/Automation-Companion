@@ -107,10 +107,11 @@ class PromptViewModel(
             }
 
             // ── 2. Direct keyboard intent (no LLM needed) ──
-            val directKey = parseKeyboardIntent(promptText)
-            if (directKey != null) {
-                broadcastKeyPress(directKey)
-                addMessage(ChatMessage(text = "⌨️ Pressed $directKey", isUser = false))
+            val directKeys = parseKeyboardIntent(promptText)
+            if (directKeys != null) {
+                broadcastKeyPress(directKeys)
+                val keyLabel = directKeys.joinToString("+")
+                addMessage(ChatMessage(text = "⌨️ Pressed $keyLabel", isUser = false))
                 _inputQuery.value = ""
                 return@launch
             }
@@ -137,8 +138,8 @@ class PromptViewModel(
 
     // ─── Direct Keyboard Intent Parser ──────────────────────────
     // Recognizes simple key press commands like "press escape", "click enter",
-    // "hit tab", "press the space button" etc. and sends them directly as
-    // structured key_press commands without going through the LLM.
+    // "hit tab", "press ctrl+shift+esc", "press win+v" etc. and sends them
+    // directly as structured key_press commands without going through the LLM.
 
     private val keyMap = mapOf(
         "escape" to "Escape", "esc" to "Escape",
@@ -158,12 +159,15 @@ class PromptViewModel(
         "f9" to "F9", "f10" to "F10", "f11" to "F11", "f12" to "F12",
         "caps lock" to "Caps_Lock", "capslock" to "Caps_Lock",
         "print screen" to "Print_Screen", "printscreen" to "Print_Screen",
-        "insert" to "Insert", "pause" to "Pause",
+        "prtsc" to "Print_Screen", "prtscn" to "Print_Screen",
+        "insert" to "Insert", "ins" to "Insert",
+        "pause" to "Pause", "break" to "Pause",
         "num lock" to "Num_Lock", "numlock" to "Num_Lock",
-        "scroll lock" to "Scroll_Lock",
-        "windows" to "Win", "win" to "Win",
-        "alt" to "Alt", "ctrl" to "Ctrl", "control" to "Ctrl",
-        "shift" to "Shift",
+        "scroll lock" to "Scroll_Lock", "scrolllock" to "Scroll_Lock",
+        "windows" to "win", "win" to "win",
+        "alt" to "alt", "ctrl" to "ctrl", "control" to "ctrl",
+        "shift" to "shift",
+        "menu" to "Menu", "context menu" to "Menu",
         "a" to "a", "b" to "b", "c" to "c", "d" to "d", "e" to "e",
         "f" to "f", "g" to "g", "h" to "h", "i" to "i", "j" to "j",
         "k" to "k", "l" to "l", "m" to "m", "n" to "n", "o" to "o",
@@ -172,28 +176,55 @@ class PromptViewModel(
         "z" to "z",
         "0" to "0", "1" to "1", "2" to "2", "3" to "3", "4" to "4",
         "5" to "5", "6" to "6", "7" to "7", "8" to "8", "9" to "9",
-        "minus" to "Minus", "plus" to "Plus", "equals" to "Equal",
+        "minus" to "Minus", "-" to "Minus",
+        "plus" to "Plus", "=" to "Equal", "equals" to "Equal",
+        "[" to "[", "]" to "]",
+        "\\" to "\\", "/" to "/",
+        ";" to ";", "'" to "'", "," to ",", "." to ".",
+        "`" to "`", "tilde" to "`",
+        "volume up" to "volumeup", "volume down" to "volumedown",
+        "volume mute" to "volumemute", "mute" to "volumemute",
+        "play pause" to "playpause", "play" to "playpause",
+        "next track" to "nexttrack", "prev track" to "prevtrack",
+        "stop" to "stop",
     )
 
     // Match patterns like: "press escape", "click on the enter key",
-    // "hit the tab button", "tap space", "push delete"
+    // "hit the tab button", "tap space", "push delete",
+    // "press ctrl+shift+esc", "press win+v"
     private val keyCommandRegex = Regex(
         "^(?:please\\s+)?(?:press|click|hit|tap|push|type)\\s+" +
         "(?:on\\s+)?(?:the\\s+)?(.+?)(?:\\s+(?:button|key|btn))?\\s*$",
         RegexOption.IGNORE_CASE
     )
 
-    private fun parseKeyboardIntent(text: String): String? {
+    /**
+     * Parses a prompt for keyboard intent.
+     * Returns a list of key names for combos (e.g. ["ctrl", "shift", "Escape"]),
+     * a single-element list for single keys, or null if no match.
+     */
+    private fun parseKeyboardIntent(text: String): List<String>? {
         val lower = text.lowercase().trim()
         val match = keyCommandRegex.find(lower) ?: return null
         val captured = match.groupValues[1].trim()
-        return keyMap[captured]
+
+        // Check for key combo patterns: "ctrl+shift+esc", "win+v", "alt+f4"
+        if (captured.contains("+")) {
+            val parts = captured.split("+").map { it.trim() }
+            val resolvedKeys = parts.map { part -> keyMap[part] ?: return null }
+            return resolvedKeys
+        }
+
+        // Single key lookup
+        val resolved = keyMap[captured] ?: return null
+        return listOf(resolved)
     }
 
-    private fun broadcastKeyPress(keyName: String) {
+    private fun broadcastKeyPress(keys: List<String>) {
         val command = mapOf(
             "type" to "key_press",
-            "keyName" to keyName,
+            "keys" to keys,
+            "keyName" to keys.joinToString("+"),  // backward compat
             "transactionId" to UUID.randomUUID().toString()
         )
         manager.networkingManager.broadcast(command)

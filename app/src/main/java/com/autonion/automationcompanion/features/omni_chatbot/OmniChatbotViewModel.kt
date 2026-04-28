@@ -124,6 +124,9 @@ class OmniChatbotViewModel(
     /** Track completed transactions to prevent duplicate completion messages */
     private val completedTransactions = mutableSetOf<String>()
 
+    /** Track transaction IDs initiated by Omni-Chat to avoid persisting cross-device responses */
+    private val sentTransactionIds = mutableSetOf<String>()
+
     // ─── RAG + FAQ (initialized synchronously, loaded asynchronously) ─────
     private val faqRepository = FAQRepository()
     private val knowledgeStore = KnowledgeStore(intentClassifier.embedder)
@@ -891,9 +894,24 @@ class OmniChatbotViewModel(
             else -> "$emoji ${response.message}"
         }
 
+        // Only persist desktop responses that were initiated by Omni-Chat.
+        // Cross-device responses are persisted by the PromptViewModel instead.
+        val isOmniInitiated = sentTransactionIds.contains(response.transactionId)
+
         when (response.status) {
-            ResponseStatus.IN_PROGRESS -> updateLastBotMessage(text, mode)
-            else -> addMessage(OmniChatMessage(text = text, isUser = false, mode = mode))
+            ResponseStatus.IN_PROGRESS -> {
+                if (isOmniInitiated) updateLastBotMessage(text, mode)
+                else updateLastBotMessageUI(text, mode)
+            }
+            else -> {
+                if (isOmniInitiated) addMessage(OmniChatMessage(text = text, isUser = false, mode = mode))
+                else addMessageToUI(OmniChatMessage(text = text, isUser = false, mode = mode))
+            }
+        }
+
+        // Clean up finished transactions
+        if (isOmniInitiated && (response.status == ResponseStatus.COMPLETED || response.status == ResponseStatus.FAILED || response.status == ResponseStatus.CANCELLED)) {
+            sentTransactionIds.remove(response.transactionId)
         }
     }
 
@@ -973,8 +991,13 @@ class OmniChatbotViewModel(
     }
 
     private fun buildStructuredCommand(result: IntentResult): Map<String, Any?> {
+        val txnId = UUID.randomUUID().toString()
+        sentTransactionIds.add(txnId) // Track so we persist responses for this transaction
+        // Cap at 50 to prevent memory leak
+        if (sentTransactionIds.size > 50) sentTransactionIds.remove(sentTransactionIds.first())
+
         val command = mutableMapOf<String, Any?>(
-            "transactionId" to UUID.randomUUID().toString(),
+            "transactionId" to txnId,
             "prompt" to result.rawPrompt,
             "timestamp" to System.currentTimeMillis(),
             "sourceDeviceId" to "android_controller"
@@ -1035,6 +1058,27 @@ class OmniChatbotViewModel(
         current.add(0, cleaned) // Newest first (for reverseLayout)
         _messages.value = current
         persistSessionAndMessage(cleaned)
+    }
+
+    /** Add message to in-memory UI list only (no DB persistence). */
+    private fun addMessageToUI(message: OmniChatMessage) {
+        val cleaned = if (!message.isUser) message.copy(text = stripMarkdown(message.text)) else message
+        val current = _messages.value.toMutableList()
+        current.add(0, cleaned)
+        _messages.value = current
+    }
+
+    /** Update last bot message in UI only (no DB persistence). */
+    private fun updateLastBotMessageUI(text: String, mode: ResponseMode) {
+        val cleanedText = stripMarkdown(text)
+        val current = _messages.value.toMutableList()
+        val lastBotIdx = current.indexOfFirst { !it.isUser }
+        if (lastBotIdx >= 0) {
+            current[lastBotIdx] = current[lastBotIdx].copy(text = cleanedText, mode = mode)
+            _messages.value = current
+        } else {
+            addMessageToUI(OmniChatMessage(text = cleanedText, isUser = false, mode = mode))
+        }
     }
 
     private fun updateLastBotMessage(

@@ -68,10 +68,12 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
 
     val context = LocalContext.current
     var showPermissionDialog by remember { mutableStateOf(false) }
+    var dialogAlreadyShown by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        if (!com.autonion.automationcompanion.AccessibilityRouter.isServiceConnected()) {
+        if (!dialogAlreadyShown && !com.autonion.automationcompanion.AccessibilityRouter.isServiceConnected()) {
             showPermissionDialog = true
+            dialogAlreadyShown = true
         }
     }
 
@@ -142,6 +144,12 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
             }
             val isLLMConnected = llmConnectionStatus == com.autonion.automationcompanion.features.semantic_automation.ml.ServerConnectionStatus.CONNECTED
             val isAIReady = hasAgentConnection && isLLMConnected
+
+            // Trigger Ollama auto-connect when the screen is opened,
+            // so it doesn't require Omni-Chat to be opened first
+            LaunchedEffect(Unit) {
+                llmEngine.autoConnectIfNeeded()
+            }
 
             Column(
                 modifier = Modifier
