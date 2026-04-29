@@ -145,10 +145,13 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
             val isLLMConnected = llmConnectionStatus == com.autonion.automationcompanion.features.semantic_automation.ml.ServerConnectionStatus.CONNECTED
             val isAIReady = hasAgentConnection && isLLMConnected
 
-            // Trigger Ollama auto-connect when the screen is opened,
-            // so it doesn't require Omni-Chat to be opened first
-            LaunchedEffect(Unit) {
-                llmEngine.autoConnectIfNeeded()
+            // Trigger Ollama auto-connect when a desktop agent comes online.
+            // Keyed on hasAgentConnection so it re-fires when devices load from DB
+            // (on first open, devices may not have emitted yet when Unit fires).
+            LaunchedEffect(hasAgentConnection) {
+                if (hasAgentConnection) {
+                    llmEngine.autoConnectIfNeeded()
+                }
             }
 
             Column(
