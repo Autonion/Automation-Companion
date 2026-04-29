@@ -227,8 +227,9 @@ fun ModelManagerScreen(
                 )
             }
 
-            // ── Server LLM Section (shown when SERVER_LLM mode selected or always visible) ──
-            item {
+            // ── Server LLM Section ──
+            if (inferenceMode == SemanticAutomationEngine.InferenceMode.SERVER_LLM) {
+                item {
                 ServerConnectionCard(
                     connectionStatus = connectionStatus,
                     serverUrl = serverUrl,
@@ -254,15 +255,18 @@ fun ModelManagerScreen(
                     isCrossDeviceEnabled = isCrossDeviceEnabled
                 )
             }
+            } // End of LOCAL_SERVER_LLM section
 
-            // ── Hardware Assessment ──
-            item {
+            // ── On-Device SLM Section ──
+            if (inferenceMode == SemanticAutomationEngine.InferenceMode.LOCAL_SLM) {
+                // ── Hardware Assessment ──
+                item {
                 HardwareCard(totalRamGb)
             }
 
-            // ── Available Models ──
+            // ── On-Device SLM Catalog ──
             item {
-                Text("Available Models", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                Text("On-Device SLM Catalog", fontWeight = FontWeight.Bold, fontSize = 20.sp)
                 Text(
                     "Models compatible with your device are highlighted. Tap to download.",
                     fontSize = 13.sp,
@@ -337,6 +341,7 @@ fun ModelManagerScreen(
                     )
                 }
             }
+            } // End of ON_DEVICE_SLM section
         }
     }
 }
@@ -535,7 +540,7 @@ private fun InferenceModeSelector(
             Spacer(modifier = Modifier.height(12.dp))
 
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Max),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 val slmSelected = currentMode == SemanticAutomationEngine.InferenceMode.LOCAL_SLM
@@ -544,14 +549,15 @@ private fun InferenceModeSelector(
                 // On-Device SLM button
                 OutlinedButton(
                     onClick = { onModeChanged(SemanticAutomationEngine.InferenceMode.LOCAL_SLM) },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
                     colors = ButtonDefaults.outlinedButtonColors(
                         containerColor = if (slmSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
                     ),
                     border = BorderStroke(
                         1.dp,
                         if (slmSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
-                    )
+                    ),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp)
                 ) {
                     Icon(
                         Icons.Default.Memory,
@@ -563,21 +569,23 @@ private fun InferenceModeSelector(
                     Text(
                         "On-Device SLM",
                         fontWeight = if (slmSelected) FontWeight.Bold else FontWeight.Normal,
-                        fontSize = 13.sp
+                        fontSize = 13.sp,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
                 }
 
                 // Server LLM button
                 OutlinedButton(
                     onClick = { onModeChanged(SemanticAutomationEngine.InferenceMode.SERVER_LLM) },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
                     colors = ButtonDefaults.outlinedButtonColors(
                         containerColor = if (serverSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
                     ),
                     border = BorderStroke(
                         1.dp,
                         if (serverSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
-                    )
+                    ),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp)
                 ) {
                     Icon(
                         Icons.Default.Cloud,
@@ -589,7 +597,8 @@ private fun InferenceModeSelector(
                     Text(
                         "Local Server LLM",
                         fontWeight = if (serverSelected) FontWeight.Bold else FontWeight.Normal,
-                        fontSize = 13.sp
+                        fontSize = 13.sp,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
                 }
             }
@@ -645,7 +654,7 @@ private fun ServerConnectionCard(
 
                     Icon(statusIcon, contentDescription = null, tint = statusColor, modifier = Modifier.size(22.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Desktop LLM Server", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Text("Local Server LLM", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                 }
 
                 // Status chip
