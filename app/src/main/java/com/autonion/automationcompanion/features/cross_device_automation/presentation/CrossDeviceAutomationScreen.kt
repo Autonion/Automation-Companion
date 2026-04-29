@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.Accessibility
 import com.autonion.automationcompanion.features.omni_chatbot.ui.LocalStartWalkthrough
 import com.autonion.automationcompanion.features.cross_device_automation.engine.HardwareButtonMapper
 import com.autonion.automationcompanion.ui.components.ChatHistoryPanel
+import com.autonion.automationcompanion.ui.components.ConnectionRequiredOverlay
 import kotlinx.coroutines.launch
 import java.util.Date
 
@@ -222,7 +223,7 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
                                         modifier = Modifier.fillMaxSize(),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        com.autonion.automationcompanion.ui.components.ConnectionRequiredOverlay(
+                                        ConnectionRequiredOverlay(
                                             message = "Connect to a Desktop Agent and Ollama LLM to use Cross-Device Automation.",
                                             steps = listOf(
                                                 "Go to the Devices tab and select a desktop.",
