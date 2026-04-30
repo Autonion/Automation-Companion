@@ -142,4 +142,7 @@ dependencies {
     // Langchain4j (for chat memory and Ollama integration)
     implementation("dev.langchain4j:langchain4j:0.33.0")
     implementation("dev.langchain4j:langchain4j-ollama:0.33.0")
+
+    // Security — Encrypted SharedPreferences for API key storage
+    implementation(libs.androidx.security.crypto)
 }

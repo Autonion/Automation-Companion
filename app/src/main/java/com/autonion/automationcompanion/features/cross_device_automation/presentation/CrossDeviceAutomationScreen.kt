@@ -136,24 +136,14 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
             }
         ) { innerPadding ->
             // ─── Connection State for Overlay ────────────
-            val llmEngine = remember { com.autonion.automationcompanion.features.semantic_automation.ml.LocalServerLLMEngine.getInstance(context) }
-            val llmConnectionStatus by llmEngine.connectionStatus.collectAsState()
+            // Cross-Device only needs a connected Desktop Agent.
+            // The Agent handles its own LLM (Ollama or Cloud API).
             val crossManager = remember { CrossDeviceAutomationManager.getInstance(context) }
             val devices by crossManager.deviceRepository.getAllDevices().collectAsState(initial = emptyList())
             val hasAgentConnection = devices.any {
                 it.isSelected && it.status == com.autonion.automationcompanion.features.cross_device_automation.domain.DeviceStatus.ONLINE
             }
-            val isLLMConnected = llmConnectionStatus == com.autonion.automationcompanion.features.semantic_automation.ml.ServerConnectionStatus.CONNECTED
-            val isAIReady = hasAgentConnection && isLLMConnected
-
-            // Trigger Ollama auto-connect when a desktop agent comes online.
-            // Keyed on hasAgentConnection so it re-fires when devices load from DB
-            // (on first open, devices may not have emitted yet when Unit fires).
-            LaunchedEffect(hasAgentConnection) {
-                if (hasAgentConnection) {
-                    llmEngine.autoConnectIfNeeded()
-                }
-            }
+            val isAIReady = hasAgentConnection
 
             Column(
                 modifier = Modifier
@@ -224,18 +214,13 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
                                         contentAlignment = Alignment.Center
                                     ) {
                                         ConnectionRequiredOverlay(
-                                            message = "Connect to a Desktop Agent and Ollama LLM to use Cross-Device Automation.",
+                                            message = "Connect to a Desktop Agent to use Cross-Device Automation.",
                                             steps = listOf(
                                                 "Go to the Devices tab and select a desktop.",
-                                                "Make sure Ollama is running on the desktop.",
-                                                "Configure the LLM server in SLM Hub."
+                                                "The AI model is configured on the Desktop Agent.",
+                                                "Open Agent Settings → AI Settings to select a model."
                                             ),
-                                            optionalChip = when {
-                                                !hasAgentConnection && !isLLMConnected -> "Agent disconnected · LLM disconnected"
-                                                !hasAgentConnection -> "Desktop Agent not connected"
-                                                !isLLMConnected -> "Ollama LLM not connected"
-                                                else -> null
-                                            }
+                                            optionalChip = "Desktop Agent not connected"
                                         )
                                     }
                                 }

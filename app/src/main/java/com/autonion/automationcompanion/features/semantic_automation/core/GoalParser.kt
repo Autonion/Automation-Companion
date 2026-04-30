@@ -3,6 +3,8 @@ package com.autonion.automationcompanion.features.semantic_automation.core
 import android.content.Context
 import android.util.Log
 import com.autonion.automationcompanion.features.semantic_automation.ml.LocalServerLLMEngine
+import com.autonion.automationcompanion.features.semantic_automation.ml.CloudApiLLMEngine
+import com.autonion.automationcompanion.features.semantic_automation.ml.CloudApiConnectionStatus
 import com.autonion.automationcompanion.features.semantic_automation.ml.ServerConnectionStatus
 import com.autonion.automationcompanion.features.semantic_automation.model.SemanticGoal
 import org.json.JSONObject
@@ -128,9 +130,52 @@ class GoalParser(private val context: Context) {
             return null
         }
 
+        return parseGoalFromJson(command, responseJson)
+    }
+
+    /**
+     * Parse a raw user command into a [SemanticGoal] using the Cloud API LLM.
+     *
+     * @param rawCommand The user's natural language command
+     * @param cloudEngine The configured Cloud API engine
+     * @param conversationContext Optional context from previous goals for better parsing
+     * @return Parsed [SemanticGoal], or null if engine is not configured or parsing failed
+     */
+    suspend fun parse(rawCommand: String, cloudEngine: CloudApiLLMEngine, conversationContext: String? = null): SemanticGoal? {
+        val command = rawCommand.trim()
+        Log.d(TAG, "Parsing with Cloud API engine: \"$command\"")
+
+        if (cloudEngine.connectionStatus.value != CloudApiConnectionStatus.CONNECTED) {
+            Log.w(TAG, "Cloud API not connected — cannot parse goal")
+            return null
+        }
+
+        val userPrompt = buildString {
+            if (!conversationContext.isNullOrBlank()) {
+                append("CONTEXT: $conversationContext\n\n")
+            }
+            append(command)
+        }
+
+        val responseJson = cloudEngine.chatSimpleJson(
+            systemPrompt = SYSTEM_PROMPT,
+            userPrompt = userPrompt
+        )
+
+        if (responseJson == null) {
+            Log.w(TAG, "Cloud API returned null response for goal parsing")
+            return null
+        }
+
+        return parseGoalFromJson(command, responseJson)
+    }
+
+    /**
+     * Shared JSON → SemanticGoal parsing logic used by both engine overloads.
+     */
+    private fun parseGoalFromJson(rawCommand: String, responseJson: String): SemanticGoal? {
         return try {
             val json = JSONObject(responseJson.trim().let { raw ->
-                // Safety: extract JSON object if there's extra text
                 val start = raw.indexOf('{')
                 val end = raw.lastIndexOf('}')
                 if (start >= 0 && end > start) raw.substring(start, end + 1) else raw
@@ -151,14 +196,14 @@ class GoalParser(private val context: Context) {
                 query = searchQuery,
                 targetApp = appName,
                 domain = domain,
-                rawCommand = command,
+                rawCommand = rawCommand,
                 confidence = confidence
             )
 
-            Log.d(TAG, "LLM parsed → task=${goal.task}, app=${goal.targetApp}, domain=${goal.domain}, query=${goal.query}, confidence=${goal.confidence}")
+            Log.d(TAG, "Parsed → task=${goal.task}, app=${goal.targetApp}, domain=${goal.domain}, query=${goal.query}, confidence=${goal.confidence}")
             goal
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to parse LLM response: $responseJson", e)
+            Log.e(TAG, "Failed to parse response: $responseJson", e)
             null
         }
     }

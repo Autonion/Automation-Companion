@@ -35,6 +35,7 @@ onnxruntimeAndroid = "1.17.0"
 mediapipeGenai = "0.10.14"
 retrofit = "2.11.0"
 javaWebsocket = "1.5.3"
+securityCrypto = "1.1.0-alpha06"
 
 [libraries]
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activity" }
@@ -83,6 +84,7 @@ mediapipe-tasks-genai = { module = "com.google.mediapipe:tasks-genai", version.r
 retrofit = { module = "com.squareup.retrofit2:retrofit", version.ref = "retrofit" }
 retrofit-converter-gson = { module = "com.squareup.retrofit2:converter-gson", version.ref = "retrofit" }
 java-websocket = { module = "org.java-websocket:Java-WebSocket", version.ref = "javaWebsocket" }
+androidx-security-crypto = { module = "androidx.security:security-crypto", version.ref = "securityCrypto" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

@@ -21,6 +21,8 @@ import com.autonion.automationcompanion.features.omni_chatbot.knowledge.RAGPromp
 import com.autonion.automationcompanion.features.omni_chatbot.model.*
 import com.autonion.automationcompanion.features.semantic_automation.ml.LocalServerLLMEngine
 import com.autonion.automationcompanion.features.semantic_automation.ml.ServerConnectionStatus
+import com.autonion.automationcompanion.features.semantic_automation.ml.CloudApiLLMEngine
+import com.autonion.automationcompanion.features.semantic_automation.ml.CloudApiConnectionStatus
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -68,8 +70,9 @@ class OmniChatbotViewModel(
 
     private val omniChatDao = AppDatabase.get(context).omniChatDao()
 
-    // ─── LLM Engine (exposed for in-chat settings) ──────────
+    // ─── LLM Engines (exposed for in-chat settings) ──────────
     private val llmEngine = LocalServerLLMEngine.getInstance(context)
+    private val cloudApiEngine = CloudApiLLMEngine.getInstance(context)
     // For reading/writing inference mode prefs (uses SharedPreferences — instance doesn't matter)
     private val inferencePrefsEngine = com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine(context)
 
@@ -88,14 +91,19 @@ class OmniChatbotViewModel(
     private val _showHistory = MutableStateFlow(false)
     val showHistory: StateFlow<Boolean> = _showHistory.asStateFlow()
 
+    val cloudConnectionStatus = cloudApiEngine.connectionStatus
+
     val isAIReady: StateFlow<Boolean> = combine(
         llmConnectionStatus,
+        cloudConnectionStatus,
         inferenceMode
-    ) { status, mode ->
-        if (mode == com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.SERVER_LLM) {
-            status == ServerConnectionStatus.CONNECTED
-        } else {
-            true // SLM mode doesn't strictly depend on server connection
+    ) { serverStatus, cloudStatus, mode ->
+        when (mode) {
+            com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.SERVER_LLM ->
+                serverStatus == ServerConnectionStatus.CONNECTED
+            com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.CLOUD_API ->
+                cloudStatus == CloudApiConnectionStatus.CONNECTED
+            else -> true // SLM mode doesn't strictly depend on server connection
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
@@ -736,40 +744,75 @@ class OmniChatbotViewModel(
 
             var rawAnswer: String? = null
             try {
-                withContext(Dispatchers.IO) {
-                    val model = getLangchainModel()
-                    if (model != null) {
-                        val userMsg = UserMessage(result.rawPrompt)
-                        
-                        // Message ordering mirrors ChatGPT architecture:
-                        // 1. Stable system identity (constant across turns)
-                        // 2. Full conversation history (natural flow)
-                        // 3. Per-query knowledge (scoped to current question)
-                        // 4. Current user question
-                        val allMessages = mutableListOf<dev.langchain4j.data.message.ChatMessage>()
-                        allMessages.add(SystemMessage(baseSystemPrompt))
-                        allMessages.addAll(chatMemory.messages())
-                        allMessages.add(SystemMessage(knowledgeContext))
-                        allMessages.add(userMsg)
-                        
-                        val response = model.generate(allMessages)
-                        var content = response.content().text().trim()
-                        
-                        if (content.contains("</think>")) {
-                            content = content.substringAfter("</think>").trim()
-                        } else if (content.startsWith("<think>")) {
-                            content = ""
+                val currentMode = _inferenceMode.value
+                if (currentMode == com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.CLOUD_API) {
+                    // ── Cloud API path ──
+                    withContext(Dispatchers.IO) {
+                        val historyMessages = mutableListOf<Map<String, String>>()
+                        historyMessages.add(mapOf("role" to "system", "content" to baseSystemPrompt))
+                        // Add conversation memory
+                        for (msg in chatMemory.messages()) {
+                            when (msg) {
+                                is SystemMessage -> historyMessages.add(mapOf("role" to "system", "content" to msg.text()))
+                                is UserMessage -> historyMessages.add(mapOf("role" to "user", "content" to msg.singleText()))
+                                is AiMessage -> historyMessages.add(mapOf("role" to "assistant", "content" to msg.text()))
+                            }
                         }
-                        
-                        if (content.isNotBlank()) {
-                            rawAnswer = content
-                            chatMemory.add(userMsg)
-                            chatMemory.add(AiMessage(rawAnswer))
+                        historyMessages.add(mapOf("role" to "system", "content" to knowledgeContext))
+                        historyMessages.add(mapOf("role" to "user", "content" to result.rawPrompt))
+
+                        val cloudResponse = cloudApiEngine.chatForQAWithHistory(historyMessages)
+                        if (!cloudResponse.isNullOrBlank()) {
+                            var content = cloudResponse.trim()
+                            if (content.contains("</think>")) {
+                                content = content.substringAfter("</think>").trim()
+                            } else if (content.startsWith("<think>")) {
+                                content = ""
+                            }
+                            if (content.isNotBlank()) {
+                                rawAnswer = content
+                                chatMemory.add(UserMessage(result.rawPrompt))
+                                chatMemory.add(AiMessage(rawAnswer))
+                            }
+                        }
+                    }
+                } else {
+                    // ── Local Server LLM path (Langchain4j / Ollama) ──
+                    withContext(Dispatchers.IO) {
+                        val model = getLangchainModel()
+                        if (model != null) {
+                            val userMsg = UserMessage(result.rawPrompt)
+
+                            // Message ordering mirrors ChatGPT architecture:
+                            // 1. Stable system identity (constant across turns)
+                            // 2. Full conversation history (natural flow)
+                            // 3. Per-query knowledge (scoped to current question)
+                            // 4. Current user question
+                            val allMessages = mutableListOf<dev.langchain4j.data.message.ChatMessage>()
+                            allMessages.add(SystemMessage(baseSystemPrompt))
+                            allMessages.addAll(chatMemory.messages())
+                            allMessages.add(SystemMessage(knowledgeContext))
+                            allMessages.add(userMsg)
+
+                            val response = model.generate(allMessages)
+                            var content = response.content().text().trim()
+
+                            if (content.contains("</think>")) {
+                                content = content.substringAfter("</think>").trim()
+                            } else if (content.startsWith("<think>")) {
+                                content = ""
+                            }
+
+                            if (content.isNotBlank()) {
+                                rawAnswer = content
+                                chatMemory.add(userMsg)
+                                chatMemory.add(AiMessage(rawAnswer))
+                            }
                         }
                     }
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Langchain Q&A generation failed", e)
+                Log.e(TAG, "Q&A generation failed (${_inferenceMode.value})", e)
             }
 
             // Parse [WALKTHROUGH:feature_id] tag from the LLM response.

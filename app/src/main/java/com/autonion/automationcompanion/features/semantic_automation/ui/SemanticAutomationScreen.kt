@@ -245,9 +245,14 @@ fun SemanticAutomationScreen(
                 com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.valueOf(mode!!)
             }
 
+            val cloudApiEngine = remember { com.autonion.automationcompanion.features.semantic_automation.ml.CloudApiLLMEngine.getInstance(context) }
+            val cloudConnectionStatus by cloudApiEngine.connectionStatus.collectAsState()
+
             val isAIReady = when (localInferenceMode) {
                 com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.SERVER_LLM ->
                     llmConnectionStatus == com.autonion.automationcompanion.features.semantic_automation.ml.ServerConnectionStatus.CONNECTED
+                com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.CLOUD_API ->
+                    cloudConnectionStatus == com.autonion.automationcompanion.features.semantic_automation.ml.CloudApiConnectionStatus.CONNECTED
                 com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.LOCAL_SLM ->
                     true // SLM runs locally, always ready
             }
@@ -465,17 +470,34 @@ fun SemanticAutomationScreen(
 
                 // ─── Connection Required Overlay ──────────
                 if (!isAIReady) {
+                    val overlayMessage = when (localInferenceMode) {
+                        com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.CLOUD_API ->
+                            "Configure your Cloud API key and select a model to use Semantic Automation."
+                        com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.SERVER_LLM ->
+                            "Connect to a Server LLM to use Semantic Automation."
+                        else ->
+                            "Configure a Local SLM or connect to a Server LLM to use Semantic Automation."
+                    }
+                    val overlaySteps = when (localInferenceMode) {
+                        com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.CLOUD_API -> listOf(
+                            "Tap the ⚙️ icon to open AI Engine Hub.",
+                            "Select 'Cloud API' inference mode.",
+                            "Choose a provider and enter your API key.",
+                            "Tap 'Save & Test Connection'."
+                        )
+                        else -> listOf(
+                            "Tap the ⚙️ icon to open AI Engine Hub.",
+                            "Choose 'Server LLM', 'Cloud API', or 'On-Device SLM'.",
+                            "Configure the connection and test it."
+                        )
+                    }
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
                         com.autonion.automationcompanion.ui.components.ConnectionRequiredOverlay(
-                            message = "Connect to a Server LLM or configure a Local SLM to use Semantic Automation.",
-                            steps = listOf(
-                                "Tap the ⚙️ icon to open SLM Hub.",
-                                "Choose 'Server LLM' and enter your Ollama IP.",
-                                "Or download a local SLM model."
-                            ),
+                            message = overlayMessage,
+                            steps = overlaySteps,
                             optionalChip = if (!isExtensionConnected) "Lemur browser extension not connected" else null
                         )
                     }

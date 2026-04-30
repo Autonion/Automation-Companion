@@ -39,6 +39,12 @@ import com.autonion.automationcompanion.features.semantic_automation.core.Semant
 import com.autonion.automationcompanion.features.semantic_automation.ml.LocalServerLLMEngine
 import com.autonion.automationcompanion.features.semantic_automation.ml.ModelStorageManager
 import com.autonion.automationcompanion.features.semantic_automation.ml.ServerConnectionStatus
+import com.autonion.automationcompanion.features.semantic_automation.ml.CloudApiLLMEngine
+import com.autonion.automationcompanion.features.semantic_automation.ml.CloudApiConnectionStatus
+import com.autonion.automationcompanion.features.semantic_automation.ml.CLOUD_API_PROVIDERS
+import com.autonion.automationcompanion.features.semantic_automation.consent.CloudApiConsentManager
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -181,6 +187,48 @@ fun ModelManagerScreen(
     actManager.getMemoryInfo(memInfo)
     val totalRamGb = memInfo.totalMem / (1024.0 * 1024.0 * 1024.0)
 
+    // Cloud API state
+    val cloudApiEngine = remember { CloudApiLLMEngine.getInstance(context) }
+    val cloudConnectionStatus by cloudApiEngine.connectionStatus.collectAsState()
+    val cloudErrorMessage by cloudApiEngine.errorMessage.collectAsState()
+    val selectedCloudProvider by cloudApiEngine.selectedProvider.collectAsState()
+    var apiKeyInput by remember { mutableStateOf(cloudApiEngine.apiKey) }
+    var modelNameInput by remember { mutableStateOf(cloudApiEngine.modelName) }
+    var customBaseUrlInput by remember { mutableStateOf(cloudApiEngine.baseUrl) }
+    var showApiKey by remember { mutableStateOf(false) }
+    var showProviderDropdown by remember { mutableStateOf(false) }
+    var showCloudModelDropdown by remember { mutableStateOf(false) }
+
+    // Consent dialog state
+    var showConsentDialog by remember { mutableStateOf(false) }
+    var pendingModeSwitch by remember { mutableStateOf<SemanticAutomationEngine.InferenceMode?>(null) }
+
+    // Intercept mode changes to enforce consent for Cloud API
+    val handleModeChanged: (SemanticAutomationEngine.InferenceMode) -> Unit = { mode ->
+        if (mode == SemanticAutomationEngine.InferenceMode.CLOUD_API && !CloudApiConsentManager.hasConsent(context)) {
+            pendingModeSwitch = mode
+            showConsentDialog = true
+        } else {
+            onInferenceModeChanged(mode)
+        }
+    }
+
+    // Show consent dialog when needed
+    if (showConsentDialog) {
+        CloudApiDisclaimerDialog(
+            onAccept = {
+                CloudApiConsentManager.setConsent(context, true)
+                showConsentDialog = false
+                pendingModeSwitch?.let { onInferenceModeChanged(it) }
+                pendingModeSwitch = null
+            },
+            onDecline = {
+                showConsentDialog = false
+                pendingModeSwitch = null
+            }
+        )
+    }
+
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
@@ -223,7 +271,7 @@ fun ModelManagerScreen(
             item {
                 InferenceModeSelector(
                     currentMode = inferenceMode,
-                    onModeChanged = onInferenceModeChanged
+                    onModeChanged = handleModeChanged
                 )
             }
 
@@ -256,6 +304,48 @@ fun ModelManagerScreen(
                 )
             }
             } // End of LOCAL_SERVER_LLM section
+
+            // ── Cloud API Section ──
+            if (inferenceMode == SemanticAutomationEngine.InferenceMode.CLOUD_API) {
+                item {
+                    CloudApiSettingsCard(
+                        cloudConnectionStatus = cloudConnectionStatus,
+                        cloudErrorMessage = cloudErrorMessage,
+                        selectedProvider = selectedCloudProvider,
+                        apiKeyInput = apiKeyInput,
+                        onApiKeyChanged = { apiKeyInput = it },
+                        showApiKey = showApiKey,
+                        onToggleApiKeyVisibility = { showApiKey = !showApiKey },
+                        modelNameInput = modelNameInput,
+                        onModelNameChanged = { modelNameInput = it },
+                        customBaseUrlInput = customBaseUrlInput,
+                        onBaseUrlChanged = { customBaseUrlInput = it },
+                        showProviderDropdown = showProviderDropdown,
+                        onToggleProviderDropdown = { showProviderDropdown = !showProviderDropdown },
+                        onProviderSelected = { provider ->
+                            cloudApiEngine.setProvider(provider)
+                            modelNameInput = provider.defaultModel
+                            customBaseUrlInput = provider.baseUrl
+                            showProviderDropdown = false
+                        },
+                        showModelDropdown = showCloudModelDropdown,
+                        onToggleModelDropdown = { showCloudModelDropdown = !showCloudModelDropdown },
+                        onModelSelected = { model ->
+                            modelNameInput = model
+                            cloudApiEngine.setModelName(model)
+                            showCloudModelDropdown = false
+                        },
+                        onSaveAndConnect = {
+                            cloudApiEngine.setApiKey(apiKeyInput)
+                            if (selectedCloudProvider.id == "custom") {
+                                cloudApiEngine.setBaseUrl(customBaseUrlInput)
+                            }
+                            cloudApiEngine.setModelName(modelNameInput)
+                            coroutineScope.launch { cloudApiEngine.initialize() }
+                        }
+                    )
+                }
+            } // End of CLOUD_API section
 
             // ── On-Device SLM Section ──
             if (inferenceMode == SemanticAutomationEngine.InferenceMode.LOCAL_SLM) {
@@ -541,10 +631,11 @@ private fun InferenceModeSelector(
 
             Row(
                 modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Max),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 val slmSelected = currentMode == SemanticAutomationEngine.InferenceMode.LOCAL_SLM
                 val serverSelected = currentMode == SemanticAutomationEngine.InferenceMode.SERVER_LLM
+                val cloudSelected = currentMode == SemanticAutomationEngine.InferenceMode.CLOUD_API
 
                 // On-Device SLM button
                 OutlinedButton(
@@ -557,19 +648,19 @@ private fun InferenceModeSelector(
                         1.dp,
                         if (slmSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
                     ),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp)
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 12.dp)
                 ) {
                     Icon(
                         Icons.Default.Memory,
                         contentDescription = null,
-                        modifier = Modifier.size(16.dp),
+                        modifier = Modifier.size(14.dp),
                         tint = if (slmSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        "On-Device SLM",
+                        "On-Device",
                         fontWeight = if (slmSelected) FontWeight.Bold else FontWeight.Normal,
-                        fontSize = 13.sp,
+                        fontSize = 12.sp,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
                 }
@@ -585,19 +676,47 @@ private fun InferenceModeSelector(
                         1.dp,
                         if (serverSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
                     ),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 12.dp)
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 12.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Wifi,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                        tint = if (serverSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        "Local Server",
+                        fontWeight = if (serverSelected) FontWeight.Bold else FontWeight.Normal,
+                        fontSize = 12.sp,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                }
+
+                // Cloud API button
+                OutlinedButton(
+                    onClick = { onModeChanged(SemanticAutomationEngine.InferenceMode.CLOUD_API) },
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = if (cloudSelected) Color(0xFFFFF3E0) else Color.Transparent
+                    ),
+                    border = BorderStroke(
+                        1.dp,
+                        if (cloudSelected) Color(0xFFF57C00) else MaterialTheme.colorScheme.outline
+                    ),
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 12.dp)
                 ) {
                     Icon(
                         Icons.Default.Cloud,
                         contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                        tint = if (serverSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                        modifier = Modifier.size(14.dp),
+                        tint = if (cloudSelected) Color(0xFFF57C00) else MaterialTheme.colorScheme.onSurface
                     )
-                    Spacer(modifier = Modifier.width(6.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        "Local Server LLM",
-                        fontWeight = if (serverSelected) FontWeight.Bold else FontWeight.Normal,
-                        fontSize = 13.sp,
+                        "Cloud API",
+                        fontWeight = if (cloudSelected) FontWeight.Bold else FontWeight.Normal,
+                        fontSize = 12.sp,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
                 }
@@ -791,6 +910,285 @@ private fun ServerConnectionCard(
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+// ─── Cloud API Settings Card ─────────────────────────────────
+
+@Composable
+private fun CloudApiSettingsCard(
+    cloudConnectionStatus: CloudApiConnectionStatus,
+    cloudErrorMessage: String?,
+    selectedProvider: com.autonion.automationcompanion.features.semantic_automation.ml.CloudApiProvider,
+    apiKeyInput: String,
+    onApiKeyChanged: (String) -> Unit,
+    showApiKey: Boolean,
+    onToggleApiKeyVisibility: () -> Unit,
+    modelNameInput: String,
+    onModelNameChanged: (String) -> Unit,
+    customBaseUrlInput: String,
+    onBaseUrlChanged: (String) -> Unit,
+    showProviderDropdown: Boolean,
+    onToggleProviderDropdown: () -> Unit,
+    onProviderSelected: (com.autonion.automationcompanion.features.semantic_automation.ml.CloudApiProvider) -> Unit,
+    showModelDropdown: Boolean,
+    onToggleModelDropdown: () -> Unit,
+    onModelSelected: (String) -> Unit,
+    onSaveAndConnect: () -> Unit
+) {
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = when (cloudConnectionStatus) {
+                CloudApiConnectionStatus.CONNECTED -> Color(0xFFFFF3E0).copy(alpha = 0.6f)
+                CloudApiConnectionStatus.CONNECTING -> MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.4f)
+                CloudApiConnectionStatus.ERROR -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)
+                CloudApiConnectionStatus.DISCONNECTED -> MaterialTheme.colorScheme.surfaceVariant
+            }
+        ),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            // ── Header ──
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        when (cloudConnectionStatus) {
+                            CloudApiConnectionStatus.CONNECTED -> Icons.Default.CheckCircle
+                            CloudApiConnectionStatus.ERROR -> Icons.Default.Warning
+                            else -> Icons.Default.Cloud
+                        },
+                        contentDescription = null,
+                        tint = when (cloudConnectionStatus) {
+                            CloudApiConnectionStatus.CONNECTED -> Color(0xFFF57C00)
+                            CloudApiConnectionStatus.ERROR -> MaterialTheme.colorScheme.error
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Cloud API Configuration", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                }
+                Text(
+                    when (cloudConnectionStatus) {
+                        CloudApiConnectionStatus.CONNECTED -> "Connected"
+                        CloudApiConnectionStatus.CONNECTING -> "Testing…"
+                        CloudApiConnectionStatus.ERROR -> "Error"
+                        CloudApiConnectionStatus.DISCONNECTED -> "Not Connected"
+                    },
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = when (cloudConnectionStatus) {
+                        CloudApiConnectionStatus.CONNECTED -> Color(0xFFF57C00)
+                        CloudApiConnectionStatus.ERROR -> MaterialTheme.colorScheme.error
+                        CloudApiConnectionStatus.CONNECTING -> MaterialTheme.colorScheme.tertiary
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
+            }
+
+            if (cloudConnectionStatus == CloudApiConnectionStatus.CONNECTING) {
+                Spacer(modifier = Modifier.height(8.dp))
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
+
+            // ── Error message ──
+            if (!cloudErrorMessage.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        cloudErrorMessage,
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.padding(10.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // ── Provider Selector ──
+            Text("Provider", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+            Spacer(modifier = Modifier.height(6.dp))
+            Box(modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(
+                    onClick = onToggleProviderDropdown,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        selectedProvider.displayName,
+                        modifier = Modifier.weight(1f),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Start
+                    )
+                    Text("▼", fontSize = 12.sp)
+                }
+                DropdownMenu(
+                    expanded = showProviderDropdown,
+                    onDismissRequest = onToggleProviderDropdown
+                ) {
+                    CLOUD_API_PROVIDERS.forEach { provider ->
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text(provider.displayName, fontWeight = FontWeight.Medium)
+                                    Text(
+                                        provider.description,
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            },
+                            onClick = { onProviderSelected(provider) },
+                            leadingIcon = {
+                                if (provider.id == selectedProvider.id) {
+                                    Icon(Icons.Default.CheckCircle, null, tint = Color(0xFFF57C00), modifier = Modifier.size(18.dp))
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // ── API Key ──
+            Text("API Key", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+            Spacer(modifier = Modifier.height(6.dp))
+            OutlinedTextField(
+                value = apiKeyInput,
+                onValueChange = onApiKeyChanged,
+                modifier = Modifier.fillMaxWidth(),
+                placeholder = { Text("sk-...  or  AIza...", fontSize = 14.sp) },
+                singleLine = true,
+                visualTransformation = if (showApiKey) {
+                    androidx.compose.ui.text.input.VisualTransformation.None
+                } else {
+                    androidx.compose.ui.text.input.PasswordVisualTransformation()
+                },
+                trailingIcon = {
+                    IconButton(onClick = onToggleApiKeyVisibility) {
+                        Icon(
+                            if (showApiKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            contentDescription = if (showApiKey) "Hide" else "Show",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                },
+                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp)
+            )
+            Text(
+                "\uD83D\uDD12 Encrypted with AES-256-GCM via Android Keystore",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // ── Model Name ──
+            Text("Model", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+            Spacer(modifier = Modifier.height(6.dp))
+            if (selectedProvider.suggestedModels.isNotEmpty()) {
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedButton(
+                        onClick = onToggleModelDropdown,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            modelNameInput.ifBlank { "Select model" },
+                            modifier = Modifier.weight(1f),
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Start,
+                            fontSize = 13.sp
+                        )
+                        Text("▼", fontSize = 12.sp)
+                    }
+                    DropdownMenu(
+                        expanded = showModelDropdown,
+                        onDismissRequest = onToggleModelDropdown
+                    ) {
+                        selectedProvider.suggestedModels.forEach { model ->
+                            DropdownMenuItem(
+                                text = { Text(model, fontSize = 13.sp) },
+                                onClick = { onModelSelected(model) },
+                                leadingIcon = {
+                                    if (model == modelNameInput) {
+                                        Icon(Icons.Default.CheckCircle, null, tint = Color(0xFFF57C00), modifier = Modifier.size(16.dp))
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+            } else {
+                OutlinedTextField(
+                    value = modelNameInput,
+                    onValueChange = onModelNameChanged,
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("e.g. gpt-4o-mini", fontSize = 14.sp) },
+                    singleLine = true,
+                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp)
+                )
+            }
+
+            // ── Custom Base URL (only for Custom provider) ──
+            if (selectedProvider.id == "custom") {
+                Spacer(modifier = Modifier.height(12.dp))
+                Text("API Endpoint URL", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                Spacer(modifier = Modifier.height(6.dp))
+                OutlinedTextField(
+                    value = customBaseUrlInput,
+                    onValueChange = onBaseUrlChanged,
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("https://your-api.example.com/v1/chat/completions", fontSize = 12.sp) },
+                    singleLine = true,
+                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // ── Connect Button ──
+            Button(
+                onClick = onSaveAndConnect,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = apiKeyInput.isNotBlank() && modelNameInput.isNotBlank() &&
+                        (selectedProvider.id != "custom" || customBaseUrlInput.isNotBlank()) &&
+                        cloudConnectionStatus != CloudApiConnectionStatus.CONNECTING,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFF57C00)
+                )
+            ) {
+                Icon(
+                    if (cloudConnectionStatus == CloudApiConnectionStatus.CONNECTED) Icons.Default.Refresh else Icons.Default.Cloud,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    if (cloudConnectionStatus == CloudApiConnectionStatus.CONNECTED) "Re-test Connection" else "Save & Test Connection",
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            // ── Connection info ──
+            if (cloudConnectionStatus == CloudApiConnectionStatus.CONNECTED) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    "✅ Connected to ${selectedProvider.displayName} — ${modelNameInput}",
+                    fontSize = 12.sp,
+                    color = Color(0xFFF57C00),
+                    fontWeight = FontWeight.Medium
+                )
             }
         }
     }

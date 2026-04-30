@@ -12,6 +12,7 @@ import com.autonion.automationcompanion.features.screen_understanding_ml.logic.A
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.ActionIntent
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.ActionType
 import com.autonion.automationcompanion.features.semantic_automation.ml.LocalServerLLMEngine
+import com.autonion.automationcompanion.features.semantic_automation.ml.CloudApiLLMEngine
 import com.autonion.automationcompanion.features.semantic_automation.ml.MLActionPredictor
 import com.autonion.automationcompanion.features.semantic_automation.ml.ModelStorageManager
 import com.autonion.automationcompanion.features.semantic_automation.ml.OnDeviceSLMEngine
@@ -70,11 +71,14 @@ class SemanticAutomationEngine(private val context: Context) {
     // Phase 4: Local Server LLM (Ollama via Retrofit)
     val localServerEngine = LocalServerLLMEngine.getInstance(context)
 
+    // Phase 6: Cloud API LLM (OpenAI-compatible endpoints)
+    val cloudApiEngine = CloudApiLLMEngine.getInstance(context)
+
     // Phase 5: Browser Extension Bridge (starts WebSocket server on port 54321)
     val extensionBridge: ExtensionBridgeServer = ExtensionBridgeServer.getInstance(context)
 
     // Inference Mode Preference: user chooses which engine to prioritize
-    enum class InferenceMode { LOCAL_SLM, SERVER_LLM }
+    enum class InferenceMode { LOCAL_SLM, SERVER_LLM, CLOUD_API }
     private val inferencePrefs = context.getSharedPreferences("inference_prefs", Context.MODE_PRIVATE)
     var inferenceMode: InferenceMode
         get() = try {
@@ -122,7 +126,7 @@ class SemanticAutomationEngine(private val context: Context) {
         // ── Step 0: Decompose command ──
         val subGoals = taskDecomposer.decompose(
             rawCommand,
-            llmEngine = localServerEngine,
+            llmEngine = if (inferenceMode == InferenceMode.CLOUD_API) null else localServerEngine,
             conversationContext = chatMemory.buildContextSummary()
         )
 
@@ -149,7 +153,10 @@ class SemanticAutomationEngine(private val context: Context) {
         // Parse the FULL original command → get app/domain context (1 LLM call)
         val masterGoal = try {
             kotlinx.coroutines.withTimeoutOrNull(60_000L) {
-                goalParser.parse(rawCommand, localServerEngine, chatMemory.buildContextSummary())
+                if (inferenceMode == InferenceMode.CLOUD_API)
+                    goalParser.parse(rawCommand, cloudApiEngine, chatMemory.buildContextSummary())
+                else
+                    goalParser.parse(rawCommand, localServerEngine, chatMemory.buildContextSummary())
             }
         } catch (e: Exception) {
             Log.e(TAG, "Goal parsing exception: ${e.message}", e)
@@ -158,7 +165,7 @@ class SemanticAutomationEngine(private val context: Context) {
 
         if (masterGoal == null) {
             _status.value = AutomationStatus.FAILED
-            _lastActionDescription.value = "Could not reach Ollama — check server connection"
+            _lastActionDescription.value = "Could not reach LLM — check connection"
             chatMemory.recordGoalOutcome(rawCommand, "failed: could not parse", false)
             return
         }
@@ -237,7 +244,10 @@ class SemanticAutomationEngine(private val context: Context) {
 
         val parsedGoal = try {
             kotlinx.coroutines.withTimeoutOrNull(60_000L) {
-                goalParser.parse(rawCommand, localServerEngine, chatMemory.buildContextSummary())
+                if (inferenceMode == InferenceMode.CLOUD_API)
+                    goalParser.parse(rawCommand, cloudApiEngine, chatMemory.buildContextSummary())
+                else
+                    goalParser.parse(rawCommand, localServerEngine, chatMemory.buildContextSummary())
             }
         } catch (e: Exception) {
             Log.e(TAG, "Goal parsing exception: ${e.message}", e)
@@ -245,11 +255,11 @@ class SemanticAutomationEngine(private val context: Context) {
         }
         if (parsedGoal == null) {
             _status.value = AutomationStatus.FAILED
-            _lastActionDescription.value = "Could not reach Ollama — check server connection"
+            _lastActionDescription.value = "Could not reach LLM — check connection"
             DebugLogger.error(
                 context, LogCategory.SCREEN_CONTEXT_AI,
                 "Goal parsing failed",
-                "Ollama server not connected or timed out. Please configure the server in Settings.",
+                "LLM not connected or timed out. Please configure the server/API in Settings.",
                 TAG
             )
             return
@@ -1018,6 +1028,27 @@ class SemanticAutomationEngine(private val context: Context) {
                     }
                 } else {
                     Log.w(TAG, "Server LLM not connected, falling through to ML")
+                }
+            }
+            InferenceMode.CLOUD_API -> {
+                // Tier 1: Cloud API LLM (OpenAI-compatible endpoints)
+                if (cloudApiEngine.isConfigured) {
+                    try {
+                        val systemPrompt = UIPromptFormatter.buildSystemPrompt()
+                        val userPrompt = UIPromptFormatter.buildUserPrompt(goal, uiState, stepHistory, chatMemory.buildContextSummary())
+
+                        Log.d(TAG, "Cloud API prompt: ${userPrompt.take(500)}")
+
+                        val cloudAction = cloudApiEngine.predictNextAction(systemPrompt, userPrompt)
+                        if (cloudAction != null) {
+                            val resolved = resolveSlmAction(cloudAction, uiState)
+                            if (resolved != null) return resolved
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Cloud API prediction failed, falling through to ML", e)
+                    }
+                } else {
+                    Log.w(TAG, "Cloud API not configured, falling through to ML")
                 }
             }
             InferenceMode.LOCAL_SLM -> {

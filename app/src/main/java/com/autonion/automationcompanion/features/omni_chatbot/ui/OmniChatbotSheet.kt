@@ -52,6 +52,8 @@ import android.util.Patterns
 import com.autonion.automationcompanion.features.omni_chatbot.OmniChatbotViewModel
 import com.autonion.automationcompanion.features.omni_chatbot.model.*
 import com.autonion.automationcompanion.features.semantic_automation.ml.ServerConnectionStatus
+import com.autonion.automationcompanion.features.semantic_automation.ml.CloudApiConnectionStatus
+import com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode
 import com.autonion.automationcompanion.ui.components.ChatHistoryPanel
 import java.util.Date
 
@@ -282,12 +284,14 @@ private fun OmniChatSheet(viewModel: OmniChatbotViewModel) {
                         )
                     }
             ) {
-                ChatSheetHeader(
+            ChatSheetHeader(
                     onClose = { viewModel.collapse() },
                     onSettingsClick = { viewModel.toggleSettings() },
                     onNewChatClick = { viewModel.clearChat() },
                     onHistoryClick = { viewModel.toggleHistory() },
                     connectionStatus = viewModel.llmConnectionStatus.collectAsState().value,
+                    cloudConnectionStatus = viewModel.cloudConnectionStatus.collectAsState().value,
+                    inferenceMode = viewModel.inferenceMode.collectAsState().value,
                     showSettings = showSettings,
                     isDragging = dragOffsetY > 0f
                 )
@@ -390,10 +394,11 @@ private fun OmniChatSheet(viewModel: OmniChatbotViewModel) {
 
                                     if (!isAIReady) {
                                         com.autonion.automationcompanion.ui.components.ConnectionRequiredOverlay(
-                                            message = "To use Omni-Chat AI, please connect to a Server LLM or select a Local SLM.",
+                                            message = "To use Omni-Chat AI, connect a Server LLM, select a Cloud API, or use an On-Device SLM.",
                                             steps = listOf(
                                                 "Click the ⚙️ icon above.",
                                                 "Choose 'Server LLM' and enter your Ollama IP.",
+                                                "Or choose 'Cloud API' (configure in AI Engine Hub).",
                                                 "Or choose 'On-Device SLM' to run locally."
                                             )
                                         )
@@ -505,6 +510,8 @@ private fun ChatSheetHeader(
     onNewChatClick: () -> Unit,
     onHistoryClick: () -> Unit,
     connectionStatus: ServerConnectionStatus,
+    cloudConnectionStatus: CloudApiConnectionStatus = CloudApiConnectionStatus.DISCONNECTED,
+    inferenceMode: InferenceMode = InferenceMode.SERVER_LLM,
     showSettings: Boolean,
     isDragging: Boolean = false
 ) {
@@ -561,10 +568,18 @@ private fun ChatSheetHeader(
             }
 
             // Connection status dot + Settings gear
-            val statusColor = when (connectionStatus) {
-                ServerConnectionStatus.CONNECTED -> AccentGreen
-                ServerConnectionStatus.CONNECTING -> AccentOrange
-                ServerConnectionStatus.DISCONNECTED -> AccentRed
+            val statusColor = when (inferenceMode) {
+                InferenceMode.CLOUD_API -> when (cloudConnectionStatus) {
+                    CloudApiConnectionStatus.CONNECTED -> AccentGreen
+                    CloudApiConnectionStatus.CONNECTING -> AccentOrange
+                    else -> AccentRed
+                }
+                InferenceMode.SERVER_LLM -> when (connectionStatus) {
+                    ServerConnectionStatus.CONNECTED -> AccentGreen
+                    ServerConnectionStatus.CONNECTING -> AccentOrange
+                    ServerConnectionStatus.DISCONNECTED -> AccentRed
+                }
+                InferenceMode.LOCAL_SLM -> AccentPurple // SLM is always "local"
             }
 
             // New Chat button
@@ -642,8 +657,11 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
     }
     var showModelDropdown by remember { mutableStateOf(false) }
 
-    val isSLM = inferenceMode == com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.LOCAL_SLM
-    val isLLM = inferenceMode == com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.SERVER_LLM
+    val isSLM = inferenceMode == InferenceMode.LOCAL_SLM
+    val isLLM = inferenceMode == InferenceMode.SERVER_LLM
+    val isCloud = inferenceMode == InferenceMode.CLOUD_API
+
+    val cloudStatus by viewModel.cloudConnectionStatus.collectAsState()
 
     Column(
         modifier = Modifier
@@ -673,9 +691,7 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
             // SLM chip
             Surface(
                 onClick = {
-                    viewModel.setInferenceMode(
-                        com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.LOCAL_SLM
-                    )
+                    viewModel.setInferenceMode(InferenceMode.LOCAL_SLM)
                 },
                 color = if (isSLM) AccentPurple.copy(alpha = 0.25f) else CardGlass,
                 shape = RoundedCornerShape(20.dp),
@@ -683,7 +699,7 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                 modifier = Modifier.weight(1f)
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
                 ) {
@@ -691,13 +707,13 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                         Icons.Default.PhoneAndroid,
                         contentDescription = null,
                         tint = if (isSLM) AccentPurple else Color.White.copy(alpha = 0.5f),
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(14.dp)
                     )
-                    Spacer(Modifier.width(6.dp))
+                    Spacer(Modifier.width(4.dp))
                     Text(
-                        "On-Device SLM",
+                        "SLM",
                         color = if (isSLM) Color.White else Color.White.copy(alpha = 0.5f),
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         fontWeight = if (isSLM) FontWeight.SemiBold else FontWeight.Normal
                     )
                 }
@@ -705,9 +721,7 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
             // LLM chip
             Surface(
                 onClick = {
-                    viewModel.setInferenceMode(
-                        com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.SERVER_LLM
-                    )
+                    viewModel.setInferenceMode(InferenceMode.SERVER_LLM)
                 },
                 color = if (isLLM) AccentPurple.copy(alpha = 0.25f) else CardGlass,
                 shape = RoundedCornerShape(20.dp),
@@ -715,22 +729,52 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                 modifier = Modifier.weight(1f)
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        Icons.Default.Dns,
+                        contentDescription = null,
+                        tint = if (isLLM) AccentPurple else Color.White.copy(alpha = 0.5f),
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        "Server",
+                        color = if (isLLM) Color.White else Color.White.copy(alpha = 0.5f),
+                        fontSize = 11.sp,
+                        fontWeight = if (isLLM) FontWeight.SemiBold else FontWeight.Normal
+                    )
+                }
+            }
+            // Cloud API chip
+            Surface(
+                onClick = {
+                    viewModel.setInferenceMode(InferenceMode.CLOUD_API)
+                },
+                color = if (isCloud) AccentBlue.copy(alpha = 0.25f) else CardGlass,
+                shape = RoundedCornerShape(20.dp),
+                border = if (isCloud) BorderStroke(1.dp, AccentBlue) else null,
+                modifier = Modifier.weight(1f)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
                 ) {
                     Icon(
                         Icons.Default.Cloud,
                         contentDescription = null,
-                        tint = if (isLLM) AccentPurple else Color.White.copy(alpha = 0.5f),
-                        modifier = Modifier.size(16.dp)
+                        tint = if (isCloud) AccentBlue else Color.White.copy(alpha = 0.5f),
+                        modifier = Modifier.size(14.dp)
                     )
-                    Spacer(Modifier.width(6.dp))
+                    Spacer(Modifier.width(4.dp))
                     Text(
-                        "Server LLM",
-                        color = if (isLLM) Color.White else Color.White.copy(alpha = 0.5f),
-                        fontSize = 12.sp,
-                        fontWeight = if (isLLM) FontWeight.SemiBold else FontWeight.Normal
+                        "Cloud API",
+                        color = if (isCloud) Color.White else Color.White.copy(alpha = 0.5f),
+                        fontSize = 11.sp,
+                        fontWeight = if (isCloud) FontWeight.SemiBold else FontWeight.Normal
                     )
                 }
             }
@@ -1000,6 +1044,71 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                         lineHeight = 15.sp
                     )
                 }
+            }
+        }
+
+        // ── Cloud API Mode Content ──
+        AnimatedVisibility(
+            visible = isCloud,
+            enter = expandVertically(tween(200)) + fadeIn(),
+            exit = shrinkVertically(tween(150)) + fadeOut()
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Status Banner
+                val cloudStatusConfig = when (cloudStatus) {
+                    CloudApiConnectionStatus.CONNECTED -> Triple(
+                        "Cloud API Connected", AccentGreen, Icons.Default.Cloud
+                    )
+                    CloudApiConnectionStatus.CONNECTING -> Triple(
+                        "Connecting…", AccentOrange, Icons.Default.Wifi
+                    )
+                    CloudApiConnectionStatus.ERROR -> Triple(
+                        "Connection Error", AccentRed, Icons.Default.CloudOff
+                    )
+                    CloudApiConnectionStatus.DISCONNECTED -> Triple(
+                        "Not Configured", AccentRed, Icons.Default.CloudOff
+                    )
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(cloudStatusConfig.second.copy(alpha = 0.12f))
+                        .padding(horizontal = 14.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        cloudStatusConfig.third,
+                        contentDescription = null,
+                        tint = cloudStatusConfig.second,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            cloudStatusConfig.first,
+                            color = Color.White,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 14.sp
+                        )
+                        Text(
+                            if (cloudStatus == CloudApiConnectionStatus.CONNECTED)
+                                "Using your configured Cloud API provider."
+                            else
+                                "Set up your API key in Settings → AI Engine Hub.",
+                            color = Color.White.copy(alpha = 0.5f),
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+
+                Text(
+                    "\uD83D\uDCA1 Configure your Cloud API provider in Settings → AI Engine Hub → Cloud API tab. Supports OpenAI, Gemini, Groq, DeepSeek, and more.",
+                    color = Color.White.copy(alpha = 0.35f),
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp
+                )
             }
         }
     }
