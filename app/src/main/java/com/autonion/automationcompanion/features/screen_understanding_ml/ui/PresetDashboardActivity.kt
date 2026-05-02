@@ -261,13 +261,6 @@ private fun PresetDashboardContent(
                         navigationIconContentColor = MaterialTheme.colorScheme.onSurface
                     ),
                     actions = {
-                        IconButton(onClick = { onTest("yolov11s_model.tflite") }) {
-                            Icon(
-                                Icons.Default.BugReport,
-                                contentDescription = "Test Detection",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
                     }
                 )
             },

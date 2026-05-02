@@ -150,13 +150,6 @@ private fun ScreenMLDashboardContent(
                         IconButton(onClick = { startWalkthrough("screen_ml") }) {
                             Icon(Icons.Outlined.Info, contentDescription = "Take a Walkthrough", tint = MaterialTheme.colorScheme.onSurface)
                         }
-                        IconButton(onClick = { onTest("yolov11s_model.tflite") }) {
-                            Icon(
-                                Icons.Default.BugReport,
-                                contentDescription = "Test Detection",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
                     }
                 )
             },
