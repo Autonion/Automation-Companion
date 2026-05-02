@@ -140,8 +140,16 @@ dependencies {
     implementation(libs.retrofit.converter.gson)
     
     // Langchain4j (for chat memory and Ollama integration)
-    implementation("dev.langchain4j:langchain4j:0.33.0")
-    implementation("dev.langchain4j:langchain4j-ollama:0.33.0")
+    // Exclude opennlp-tools: uses MethodHandle.invoke (requires API 26+), not needed for our use case
+    implementation(libs.langchain4j) {
+        exclude(group = "org.apache.opennlp")
+    }
+    implementation(libs.dev.langchain4j.ollama) {
+        exclude(group = "org.apache.opennlp")
+    }
+    implementation(libs.langchain4j.open.ai) {
+        exclude(group = "org.apache.opennlp")
+    }
 
     // Security — Encrypted SharedPreferences for API key storage
     implementation(libs.androidx.security.crypto)

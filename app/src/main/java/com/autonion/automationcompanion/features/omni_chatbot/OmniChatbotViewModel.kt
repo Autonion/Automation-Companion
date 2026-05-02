@@ -151,16 +151,35 @@ class OmniChatbotViewModel(
     private val chatMemory: ChatMemory = MessageWindowChatMemory.withMaxMessages(20)
 
     private fun getLangchainModel(): ChatLanguageModel? {
-        val url = llmEngine.serverUrl.value
-        val modelName = llmEngine.selectedModelName.value
-        if (url.isBlank() || modelName.isBlank()) return null
-        
-        val baseUrl = if (url.endsWith("/")) url else "$url/"
-        return OllamaChatModel.builder()
-            .baseUrl(baseUrl)
-            .modelName(modelName)
-            .temperature(0.3)
-            .build()
+        val currentMode = _inferenceMode.value
+        if (currentMode == com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.CLOUD_API) {
+            val url = cloudApiEngine.baseUrl
+            val apiKey = cloudApiEngine.apiKey
+            val modelName = cloudApiEngine.modelName
+            if (url.isBlank() || apiKey.isBlank() || modelName.isBlank()) return null
+            
+            // OpenAiChatModel appends "chat/completions" automatically, so strip it from baseUrl if present
+            val strippedUrl = if (url.endsWith("/chat/completions")) url.removeSuffix("chat/completions") else url
+            val baseUrl = if (strippedUrl.endsWith("/")) strippedUrl else "$strippedUrl/"
+            
+            return dev.langchain4j.model.openai.OpenAiChatModel.builder()
+                .baseUrl(baseUrl)
+                .apiKey(apiKey)
+                .modelName(modelName)
+                .temperature(0.3)
+                .build()
+        } else {
+            val url = llmEngine.serverUrl.value
+            val modelName = llmEngine.selectedModelName.value
+            if (url.isBlank() || modelName.isBlank()) return null
+            
+            val baseUrl = if (url.endsWith("/")) url else "$url/"
+            return OllamaChatModel.builder()
+                .baseUrl(baseUrl)
+                .modelName(modelName)
+                .temperature(0.3)
+                .build()
+        }
     }
 
     // ─── FAQ Browser State ──────────────────────────────────
@@ -811,43 +830,10 @@ class OmniChatbotViewModel(
 
             var rawAnswer: String? = null
             try {
-                val currentMode = _inferenceMode.value
-                if (currentMode == com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.CLOUD_API) {
-                    // ── Cloud API path ──
-                    withContext(Dispatchers.IO) {
-                        val historyMessages = mutableListOf<Map<String, String>>()
-                        historyMessages.add(mapOf("role" to "system", "content" to baseSystemPrompt))
-                        // Add conversation memory
-                        for (msg in chatMemory.messages()) {
-                            when (msg) {
-                                is SystemMessage -> historyMessages.add(mapOf("role" to "system", "content" to msg.text()))
-                                is UserMessage -> historyMessages.add(mapOf("role" to "user", "content" to msg.singleText()))
-                                is AiMessage -> historyMessages.add(mapOf("role" to "assistant", "content" to msg.text()))
-                            }
-                        }
-                        historyMessages.add(mapOf("role" to "system", "content" to knowledgeContext))
-                        historyMessages.add(mapOf("role" to "user", "content" to result.rawPrompt))
-
-                        val cloudResponse = cloudApiEngine.chatForQAWithHistory(historyMessages)
-                        if (!cloudResponse.isNullOrBlank()) {
-                            var content = cloudResponse.trim()
-                            if (content.contains("</think>")) {
-                                content = content.substringAfter("</think>").trim()
-                            } else if (content.startsWith("<think>")) {
-                                content = ""
-                            }
-                            if (content.isNotBlank()) {
-                                rawAnswer = content
-                                chatMemory.add(UserMessage(result.rawPrompt))
-                                chatMemory.add(AiMessage(rawAnswer))
-                            }
-                        }
-                    }
-                } else {
-                    // ── Local Server LLM path (Langchain4j / Ollama) ──
-                    withContext(Dispatchers.IO) {
-                        val model = getLangchainModel()
-                        if (model != null) {
+                // ── Common Langchain4j Path for both Local Server and Cloud API ──
+                withContext(Dispatchers.IO) {
+                    val model = getLangchainModel()
+                    if (model != null) {
                             val userMsg = UserMessage(result.rawPrompt)
 
                             // Message ordering mirrors ChatGPT architecture:
@@ -877,7 +863,6 @@ class OmniChatbotViewModel(
                             }
                         }
                     }
-                }
             } catch (e: Exception) {
                 Log.e(TAG, "Q&A generation failed (${_inferenceMode.value})", e)
             }
