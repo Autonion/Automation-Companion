@@ -59,6 +59,8 @@ import com.autonion.automationcompanion.features.semantic_automation.ml.CLOUD_AP
 import com.autonion.automationcompanion.features.semantic_automation.ml.CloudApiProvider
 import com.autonion.automationcompanion.features.semantic_automation.ml.CloudApiLLMEngine
 import com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode
+import com.autonion.automationcompanion.features.semantic_automation.consent.CloudApiConsentManager
+import com.autonion.automationcompanion.features.semantic_automation.ui.CloudApiDisclaimerDialog
 import com.autonion.automationcompanion.ui.components.ChatHistoryPanel
 import java.util.Date
 
@@ -696,10 +698,24 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
     var showCloudProviderDropdown by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
+    var showCloudConsentDialog by remember { mutableStateOf(false) }
     val cloudApiEngine = remember { CloudApiLLMEngine.getInstance(context) }
     var fetchedCloudModels by remember { mutableStateOf<List<String>>(emptyList()) }
     var isFetchingCloudModels by remember { mutableStateOf(false) }
     var showCloudModelDropdown by remember { mutableStateOf(false) }
+
+    if (showCloudConsentDialog) {
+        CloudApiDisclaimerDialog(
+            onAccept = {
+                CloudApiConsentManager.setConsent(context, true)
+                showCloudConsentDialog = false
+                viewModel.setInferenceMode(InferenceMode.CLOUD_API)
+            },
+            onDecline = {
+                showCloudConsentDialog = false
+            }
+        )
+    }
 
     LaunchedEffect(cloudStatus, cloudSelectedProvider, cloudBaseUrlInput, cloudApiKeyInput) {
         val isOllamaProvider = cloudSelectedProvider.id == "ollama"
@@ -809,7 +825,11 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
             // Cloud API chip
             Surface(
                 onClick = {
-                    viewModel.setInferenceMode(InferenceMode.CLOUD_API)
+                    if (CloudApiConsentManager.hasConsent(context)) {
+                        viewModel.setInferenceMode(InferenceMode.CLOUD_API)
+                    } else {
+                        showCloudConsentDialog = true
+                    }
                 },
                 color = if (isCloud) AccentBlue.copy(alpha = 0.25f) else CardGlass,
                 shape = RoundedCornerShape(20.dp),
