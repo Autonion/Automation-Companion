@@ -31,6 +31,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -644,105 +645,91 @@ private fun InferenceModeSelector(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text("Inference Engine", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                "Choose which AI engine powers Semantic Automation",
-                fontSize = 13.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(12.dp))
+        androidx.compose.foundation.layout.BoxWithConstraints {
+            val isCompact = maxWidth < 360.dp
+            val buttonHeight = if (isCompact) 72.dp else 80.dp
 
-            Row(
-                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Max),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                val slmSelected = currentMode == SemanticAutomationEngine.InferenceMode.LOCAL_SLM
-                val serverSelected = currentMode == SemanticAutomationEngine.InferenceMode.SERVER_LLM
-                val cloudSelected = currentMode == SemanticAutomationEngine.InferenceMode.CLOUD_API
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text("Inference Engine", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "Choose which AI engine powers Semantic Automation",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(12.dp))
 
-                // On-Device SLM button
-                OutlinedButton(
-                    onClick = { onModeChanged(SemanticAutomationEngine.InferenceMode.LOCAL_SLM) },
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = if (slmSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
-                    ),
-                    border = BorderStroke(
-                        1.dp,
-                        if (slmSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
-                    ),
-                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 12.dp)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(
-                        Icons.Default.Memory,
-                        contentDescription = null,
-                        modifier = Modifier.size(14.dp),
-                        tint = if (slmSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        "On-Device",
-                        fontWeight = if (slmSelected) FontWeight.Bold else FontWeight.Normal,
-                        fontSize = 12.sp,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                    )
-                }
+                    val slmSelected = currentMode == SemanticAutomationEngine.InferenceMode.LOCAL_SLM
+                    val serverSelected = currentMode == SemanticAutomationEngine.InferenceMode.SERVER_LLM
+                    val cloudSelected = currentMode == SemanticAutomationEngine.InferenceMode.CLOUD_API
 
-                // Server LLM button
-                OutlinedButton(
-                    onClick = { onModeChanged(SemanticAutomationEngine.InferenceMode.SERVER_LLM) },
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = if (serverSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
-                    ),
-                    border = BorderStroke(
-                        1.dp,
-                        if (serverSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
-                    ),
-                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 12.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Wifi,
-                        contentDescription = null,
-                        modifier = Modifier.size(14.dp),
-                        tint = if (serverSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        "Local Server",
-                        fontWeight = if (serverSelected) FontWeight.Bold else FontWeight.Normal,
-                        fontSize = 12.sp,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                    )
-                }
+                    @Composable
+                    fun ModeButton(
+                        selected: Boolean,
+                        icon: androidx.compose.ui.graphics.vector.ImageVector,
+                        label: String,
+                        onClick: () -> Unit
+                    ) {
+                        OutlinedButton(
+                            onClick = onClick,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(buttonHeight),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+                            ),
+                            border = BorderStroke(
+                                1.dp,
+                                if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                            ),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
+                            ) {
+                                Icon(
+                                    icon,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    label,
+                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                                    fontSize = if (isCompact) 11.sp else 12.sp,
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 2
+                                )
+                            }
+                        }
+                    }
 
-                // Cloud API button
-                OutlinedButton(
-                    onClick = { onModeChanged(SemanticAutomationEngine.InferenceMode.CLOUD_API) },
-                    modifier = Modifier.weight(1f).fillMaxHeight(),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = if (cloudSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
-                    ),
-                    border = BorderStroke(
-                        1.dp,
-                        if (cloudSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
-                    ),
-                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 12.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Cloud,
-                        contentDescription = null,
-                        modifier = Modifier.size(14.dp),
-                        tint = if (cloudSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                    ModeButton(
+                        selected = slmSelected,
+                        icon = Icons.Default.Memory,
+                        label = if (isCompact) "On-Device" else "On-Device",
+                        onClick = { onModeChanged(SemanticAutomationEngine.InferenceMode.LOCAL_SLM) }
                     )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        "Cloud API",
-                        fontWeight = if (cloudSelected) FontWeight.Bold else FontWeight.Normal,
-                        fontSize = 12.sp,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+
+                    ModeButton(
+                        selected = serverSelected,
+                        icon = Icons.Default.Wifi,
+                        label = "Local Server",
+                        onClick = { onModeChanged(SemanticAutomationEngine.InferenceMode.SERVER_LLM) }
+                    )
+
+                    ModeButton(
+                        selected = cloudSelected,
+                        icon = Icons.Default.Cloud,
+                        label = "Cloud API",
+                        onClick = { onModeChanged(SemanticAutomationEngine.InferenceMode.CLOUD_API) }
                     )
                 }
             }
@@ -803,11 +790,27 @@ private fun ServerConnectionCard(
 
                 // Status chip
                 val statusText = when (connectionStatus) {
-                    ServerConnectionStatus.CONNECTED -> "🟢 Connected"
-                    ServerConnectionStatus.CONNECTING -> "🟡 Connecting…"
-                    ServerConnectionStatus.DISCONNECTED -> "🔴 Disconnected"
+                    ServerConnectionStatus.CONNECTED -> "Connected"
+                    ServerConnectionStatus.CONNECTING -> "Connecting…"
+                    ServerConnectionStatus.DISCONNECTED -> "Not Connected"
                 }
-                Text(statusText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
+                ) {
+                    Text(
+                        statusText,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        color = when (connectionStatus) {
+                            ServerConnectionStatus.CONNECTED -> MaterialTheme.colorScheme.primary
+                            ServerConnectionStatus.CONNECTING -> MaterialTheme.colorScheme.tertiary
+                            ServerConnectionStatus.DISCONNECTED -> MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                }
             }
 
             // Connected info
