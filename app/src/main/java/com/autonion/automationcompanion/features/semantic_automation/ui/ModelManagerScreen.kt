@@ -207,16 +207,14 @@ fun ModelManagerScreen(
         val isOllamaCustom = selectedCloudProvider.id == "custom" && customBaseUrlInput.contains("ollama.com", ignoreCase = true)
         val isOllamaUrl = selectedCloudProvider.baseUrl.contains("ollama.com", ignoreCase = true)
 
-        if ((isOllamaProvider || isOllamaCustom || isOllamaUrl) && apiKeyInput.isNotBlank()) {
-            // For Ollama Cloud, fetch models as soon as API key is present — don't require CONNECTED
+        val effectiveUrl = if (selectedCloudProvider.id == "custom") customBaseUrlInput else selectedCloudProvider.baseUrl
+        if (isOllamaProvider || isOllamaCustom || isOllamaUrl) {
+            // For Ollama Cloud, fetch models as soon as URL is known — don't require CONNECTED
             isFetchingCloudModels = true
-            fetchedCloudModels = cloudApiEngine.getAvailableModels() ?: emptyList()
-            isFetchingCloudModels = false
-        } else if (cloudConnectionStatus == CloudApiConnectionStatus.CONNECTED &&
-            (isOllamaCustom || isOllamaUrl)
-        ) {
-            isFetchingCloudModels = true
-            fetchedCloudModels = cloudApiEngine.getAvailableModels() ?: emptyList()
+            fetchedCloudModels = cloudApiEngine.getAvailableModels(
+                currentApiKey = apiKeyInput,
+                currentBaseUrl = effectiveUrl
+            ) ?: emptyList()
             isFetchingCloudModels = false
         } else {
             fetchedCloudModels = emptyList()

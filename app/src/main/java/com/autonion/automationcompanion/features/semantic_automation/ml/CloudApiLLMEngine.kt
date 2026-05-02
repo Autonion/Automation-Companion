@@ -59,7 +59,7 @@ val CLOUD_API_PROVIDERS = listOf(
     CloudApiProvider(
         id = "deepseek",
         displayName = "DeepSeek",
-        baseUrl = "https://api.deepseek.com/v1/chat/completions",
+        baseUrl = "https://api.deepseek.com/chat/completions",
         defaultModel = "deepseek-chat",
         suggestedModels = listOf("deepseek-chat", "deepseek-reasoner"),
         description = "High-quality reasoning at very low cost."
@@ -91,7 +91,7 @@ val CLOUD_API_PROVIDERS = listOf(
     CloudApiProvider(
         id = "ollama",
         displayName = "Ollama Cloud",
-        baseUrl = "https://api.ollama.com/v1/chat/completions",
+        baseUrl = "https://ollama.com/v1/chat/completions",
         defaultModel = "",
         suggestedModels = emptyList(),
         description = "Ollama Cloud — your personal cloud LLM. Models fetched automatically."
@@ -262,17 +262,20 @@ class CloudApiLLMEngine private constructor(
     /**
      * Fetches available models from the /v1/models endpoint if the provider is Ollama Cloud.
      */
-    suspend fun getAvailableModels(): List<String>? = withContext(Dispatchers.IO) {
-        if (!isConfigured) return@withContext null
-        if (!baseUrl.contains("ollama.com", ignoreCase = true)) return@withContext null
+    suspend fun getAvailableModels(
+        currentApiKey: String = this.apiKey,
+        currentBaseUrl: String = this.baseUrl
+    ): List<String>? = withContext(Dispatchers.IO) {
+        if (currentBaseUrl.isBlank()) return@withContext null
+        if (!currentBaseUrl.contains("ollama.com", ignoreCase = true)) return@withContext null
 
         try {
-            val modelsUrl = baseUrl.replace("/chat/completions", "/models")
-            val request = Request.Builder()
-                .url(modelsUrl)
-                .addHeader("Authorization", "Bearer $apiKey")
-                .get()
-                .build()
+            val modelsUrl = currentBaseUrl.replace("/chat/completions", "/models")
+            val requestBuilder = Request.Builder().url(modelsUrl).get()
+            if (currentApiKey.isNotBlank()) {
+                requestBuilder.addHeader("Authorization", "Bearer $currentApiKey")
+            }
+            val request = requestBuilder.build()
 
             val response = httpClient.newCall(request).execute()
             val responseBody = response.body?.string() ?: ""
