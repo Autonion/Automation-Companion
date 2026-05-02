@@ -741,6 +741,36 @@ class OmniChatbotViewModel(
                 return@launch
             }
 
+            // Case B: Chunks found but no LLM available — check based on active inference mode
+            val currentMode = _inferenceMode.value
+            val isLlmAvailable = when (currentMode) {
+                com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.CLOUD_API ->
+                    cloudApiEngine.connectionStatus.value == CloudApiConnectionStatus.CONNECTED || cloudApiEngine.isConfigured
+                com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.SERVER_LLM ->
+                    llmEngine.connectionStatus.value == ServerConnectionStatus.CONNECTED
+                com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.LOCAL_SLM ->
+                    true // SLM is always available on-device
+            }
+            if (!isLlmAvailable) {
+                val cleanText = cleanKnowledgeChunk(chunks.first().text.take(1000), maxLength = 600)
+                val fallback = when (currentMode) {
+                    com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.CLOUD_API -> buildString {
+                        append(cleanText)
+                        append("\n\n💡 For smarter answers, configure Cloud API:\n")
+                        append("• Tap ⚙️ above and select a provider\n")
+                        append("• Enter your API key and save")
+                    }
+                    else -> buildString {
+                        append(cleanText)
+                        append("\n\n💡 For smarter answers, connect to Ollama:\n")
+                        append("• Run \"ollama serve\" on your PC\n")
+                        append("• Tap ⚙️ above and enter your PC's IP address")
+                    }
+                }
+                updateLastBotMessage(fallback, ResponseMode.KNOWLEDGE)
+                return@launch
+            }
+
             // Combine up to 3 chunks, truncating total to ~2500 chars for context window
             val contextText = buildString {
                 for ((i, chunk) in chunks.withIndex()) {
@@ -750,18 +780,6 @@ class OmniChatbotViewModel(
                 }
             }
 
-            // Case B: Chunks found but no LLM — show clean fallback
-            if (llmEngine.connectionStatus.value != ServerConnectionStatus.CONNECTED) {
-                val cleanText = cleanKnowledgeChunk(chunks.first().text.take(1000), maxLength = 600)
-                val fallback = buildString {
-                    append(cleanText)
-                    append("\n\n💡 For smarter answers, connect to Ollama:\n")
-                    append("• Run \"ollama serve\" on your PC\n")
-                    append("• Tap ⚙️ above and enter your PC's IP address")
-                }
-                updateLastBotMessage(fallback, ResponseMode.KNOWLEDGE)
-                return@launch
-            }
 
             // ── Stable system prompt — identity + rules only, NEVER changes ──
             // This mirrors how ChatGPT/Gemini work: constant system identity
