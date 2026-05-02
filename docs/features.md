@@ -33,8 +33,10 @@ Makes automation accessible to non-technical users.
 
 ### How it works
 - On-device NLP (shallow parsing or tiny TFLite model)
+- Optional Cloud API integration (OpenAI, Gemini, Groq, DeepSeek, Mistral, Together AI, OpenRouter, or any OpenAI-compatible endpoint)
 - Maps text → trigger/action templates
 - Suggests corrections in plain language
+- AI Engine Hub allows switching between On-Device SLM, Local Server LLM (Ollama), and Cloud API modes
 
 ### Example
 > "Send a WhatsApp message to Mom when I reach home."
@@ -192,9 +194,10 @@ Ships built-in automation templates for specific apps.
 - Auto minimize
 
 ### Important
-- No server required
-- No API access
-- Fully local heuristic actions
+- No server required for core automation features
+- No API access required for gesture/macro automation
+- Optional Cloud API for higher-intelligence NLP tasks
+- Fully local heuristic actions for app-specific packs
 
 ---
 

@@ -10,29 +10,44 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"/>
+    <uses-permission android:name="android.permission.CAPTURE_VIDEO_OUTPUT" tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"/>
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
 
     <uses-permission android:name="android.permission.SEND_SMS"/>
     <uses-permission android:name="android.permission.READ_CONTACTS" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+    <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 
-
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <application
-        android:allowBackup="true"
-        android:dataExtractionRules="@xml/data_extraction_rules"
-        android:fullBackupContent="@xml/backup_rules"
+        android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
+        android:usesCleartextTraffic="true"
         android:theme="@style/Theme.AutomationCompanion">
         <activity
             android:name=".MainActivity"
-            android:exported="true">
+            android:exported="true"
+            android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
@@ -46,49 +61,246 @@
             android:launchMode="singleTop" />
 
         <activity
+            android:name=".features.system_context_automation.location.LocationSlotsActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".features.system_context_automation.location.ui.SlotConfigActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:windowSoftInputMode="adjustResize"
-            android:theme="@style/Theme.AutomationCompanion" >
+            android:theme="@style/Theme.AutomationCompanion">
+
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data
+                    android:scheme="myapp"
+                    android:host="location-picker" />
+            </intent-filter>
+
         </activity>
 
+        <activity
+            android:name=".automation.actions.ui.AppPickerActivity"
+            android:exported="false"
+            android:theme="@style/Theme.AppCompat.Light.Dialog" />
+
+        <!-- Battery Trigger Activities -->
+        <activity
+            android:name=".features.system_context_automation.battery.ui.BatterySlotsActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".features.system_context_automation.battery.ui.BatteryConfigActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
         <service
-            android:name=".engine.location_receiver.TrackingForegroundService"
+            android:name=".features.system_context_automation.battery.engine.BatteryMonitoringService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <!-- Time-of-Day Trigger Activities -->
+        <activity
+            android:name=".features.system_context_automation.timeofday.ui.TimeOfDayActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".features.system_context_automation.timeofday.ui.TimeOfDayConfigActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- Wi-Fi Trigger Activities -->
+        <activity
+            android:name=".features.system_context_automation.wifi.ui.WiFiActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".features.system_context_automation.wifi.ui.WiFiConfigActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- App Specific Trigger Activities -->
+        <activity
+            android:name=".features.system_context_automation.app_specific.ui.AppSpecificActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".features.system_context_automation.app_specific.ui.AppSpecificConfigActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+
+        <!-- Screen Understanding Activities -->
+        <activity
+            android:name=".features.screen_understanding_ml.ui.PresetDashboardActivity"
+            android:exported="false" />
+        <activity
+            android:name=".features.screen_understanding_ml.ui.SetupFlowActivity"
+            android:exported="false" />
+        <activity
+            android:name=".features.screen_understanding_ml.ui.CaptureEditorActivity"
+            android:exported="false" />
+
+        <service
+            android:name=".features.system_context_automation.location.engine.location_receiver.TrackingForegroundService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="location" />
 
-        <receiver
-            android:name=".engine.location_receiver.SlotAlarmReceiver"
-            android:exported="false" />
-
-        <receiver
-            android:name=".engine.location_receiver.StopTrackingReceiver"
-            android:exported="false" />
-        <receiver
-            android:name=".engine.location_receiver.GeofenceBroadcastReceiver"
-            android:exported="false" />
-
-        <receiver
-            android:name=".engine.location_receiver.LocationReminderReceiver"
-            android:exported="false"/>
-
         <service
-            android:name=".engine.accessibility.TileTogglerAccessibilityService"
+            android:name=".features.screen_understanding_ml.core.ScreenUnderstandingService"
             android:enabled="true"
             android:exported="false"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            android:foregroundServiceType="mediaProjection" />
 
+        <!-- Flow Automation Engine -->
+        <activity
+            android:name=".features.flow_automation.ui.FlowMediaProjectionActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <service
+            android:name=".features.flow_automation.engine.FlowExecutionService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+
+        <receiver
+            android:name=".features.system_context_automation.location.engine.location_receiver.SlotAlarmReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".features.system_context_automation.location.engine.location_receiver.StopTrackingReceiver"
+            android:exported="false" />
+        <receiver
+            android:name=".features.system_context_automation.location.engine.location_receiver.GeofenceBroadcastReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".automation.actions.receivers.DelayedNotificationReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".features.system_context_automation.location.engine.location_receiver.LocationReminderReceiver"
+            android:exported="false"/>
+
+        <receiver
+            android:name=".features.system_context_automation.location.engine.location_receiver.SlotStartAlarmReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".features.system_context_automation.location.engine.location_receiver.MidnightResetReceiver"
+            android:exported="false" />
+        <receiver
+            android:name=".features.system_context_automation.location.engine.location_receiver.BootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".features.system_context_automation.location.engine.time.TimeTickReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.TIME_TICK" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Battery Trigger Receiver -->
+        <receiver
+            android:name=".features.system_context_automation.battery.engine.BatteryBroadcastReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BATTERY_CHANGED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Time-of-Day Trigger Receiver -->
+        <receiver
+            android:name=".features.system_context_automation.timeofday.engine.TimeOfDayReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.autonion.automationcompanion.action.TIME_OF_DAY_ALARM" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Wi-Fi Trigger Receiver (for Android < 7 only, Android 7+ uses NetworkCallback) -->
+        <receiver
+            android:name=".features.system_context_automation.wifi.engine.WiFiBroadcastReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.net.wifi.WIFI_STATE_CHANGED" />
+                <action android:name="android.net.wifi.NETWORK_STATE_CHANGED_ACTION" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Overlay Service -->
+        <service
+            android:name=".features.gesture_recording_playback.overlay.OverlayService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property android:name="android.app.property.FOREGROUND_SERVICE_TYPE" android:value="specialUse" />
+        </service>
+
+        <!-- Hardware Remote Foreground Service (keeps WiFi alive during screen-off) -->
+        <service
+            android:name=".features.cross_device_automation.engine.HardwareRemoteForegroundService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property android:name="android.app.property.FOREGROUND_SERVICE_TYPE" android:value="specialUse" />
+        </service>
+
+        <service
+            android:name=".features.gesture_recording_playback.overlay.AutomationService"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
             </intent-filter>
-
             <meta-data
                 android:name="android.accessibilityservice"
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
 
+
+        <activity
+            android:name=".features.visual_trigger.ui.VisionEditorActivity"
+            android:exported="false"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.AutomationCompanion"/>
+
+        <service
+            android:name=".features.visual_trigger.service.CaptureOverlayService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+
+        <service
+            android:name=".features.visual_trigger.service.VisionExecutionService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
+
+        <!-- Semantic Automation -->
+        <activity
+            android:name=".features.semantic_automation.ui.SemanticAutomationActivity"
+            android:exported="false" />
+
+        <service
+            android:name=".features.semantic_automation.core.SemanticAutomationService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="mediaProjection" />
 
     </application>
 

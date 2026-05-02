@@ -1,0 +1,4 @@
+*.so filter=lfs diff=lfs merge=lfs -text
+app/src/main/jniLibs/** filter=lfs diff=lfs merge=lfs -text
+app/src/main/opencv/** filter=lfs diff=lfs merge=lfs -text
+*.onnx filter=lfs diff=lfs merge=lfs -text
