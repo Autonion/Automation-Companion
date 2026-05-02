@@ -66,7 +66,7 @@ fun SystemContextMainScreen(onBack: () -> Unit) {
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("System Context Automation") },
+                    title = { Text("System Context Automation", fontWeight = FontWeight.Bold) },
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(

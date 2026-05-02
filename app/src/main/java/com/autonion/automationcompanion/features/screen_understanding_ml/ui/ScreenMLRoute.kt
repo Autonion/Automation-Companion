@@ -135,7 +135,7 @@ private fun ScreenMLDashboardContent(
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("UI Recognition AI") },
+                    title = { Text("UI Recognition AI", fontWeight = FontWeight.Bold) },
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")

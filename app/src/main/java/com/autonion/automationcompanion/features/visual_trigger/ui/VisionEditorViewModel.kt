@@ -481,6 +481,7 @@ class VisionEditorViewModel(application: Application) : AndroidViewModel(applica
                     name = "Flow Vision Config",
                     regions = visionRegions,
                     isActive = true,
+                    executionMode = _executionMode.value,
                     captureImagePath = captureFile.absolutePath
                 )
                 

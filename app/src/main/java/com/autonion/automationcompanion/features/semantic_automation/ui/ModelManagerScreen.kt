@@ -269,7 +269,7 @@ fun ModelManagerScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("AI Engine Hub") },
+                title = { Text("AI Engine Hub", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")

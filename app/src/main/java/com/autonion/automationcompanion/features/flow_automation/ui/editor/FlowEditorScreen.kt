@@ -187,63 +187,93 @@ fun FlowEditorScreen(
             }
 
             // Editable flow title
-            var titleText by remember(state.graph.id) { mutableStateOf(state.graph.name) }
-            val focusRequester = remember { FocusRequester() }
-            val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
-            var isTitleFocused by remember { mutableStateOf(false) }
+            var showEditTitleDialog by remember { mutableStateOf(false) }
+            
             Row(
                 modifier = Modifier
                     .weight(1f)
                     .padding(horizontal = 8.dp)
-                    .clickable { focusRequester.requestFocus() },
+                    .clickable { showEditTitleDialog = true }
+                    .padding(vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                BasicTextField(
-                    value = titleText,
-                    onValueChange = {
-                        titleText = it
-                        viewModel.renameFlow(it)
-                    },
-                    textStyle = TextStyle(
-                        color = editorColors.topBarText,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp
-                    ),
-                    singleLine = true,
-                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
-                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { focusManager.clearFocus() }),
-                    modifier = Modifier
-                        .weight(1f, fill = false)
-                        .focusRequester(focusRequester)
-                        .onFocusChanged { isTitleFocused = it.isFocused },
-                    cursorBrush = androidx.compose.ui.graphics.SolidColor(Color(0xFF64FFDA)),
-                    decorationBox = { innerTextField ->
-                        Column {
-                            Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                                if (titleText.isEmpty()) {
-                                    Text("Untitled Flow", color = editorColors.topBarDimText, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                                }
-                                innerTextField()
-                            }
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(1.5.dp)
-                                    .background(
-                                        if (isTitleFocused) Color(0xFF64FFDA)
-                                        else editorColors.topBarDimText.copy(alpha = 0.3f)
-                                    )
-                            )
-                        }
-                    }
+                Text(
+                    text = state.graph.name.ifEmpty { "Untitled Flow" },
+                    color = if (state.graph.name.isEmpty()) editorColors.topBarDimText else editorColors.topBarText,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    modifier = Modifier.weight(1f, fill = false),
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                 )
-                Spacer(Modifier.width(6.dp))
+                Spacer(Modifier.width(8.dp))
                 Icon(
                     Icons.Default.Edit,
                     contentDescription = "Edit Flow Name",
-                    tint = if (isTitleFocused) Color(0xFF64FFDA) else editorColors.topBarDimText,
-                    modifier = Modifier.size(14.dp)
+                    tint = editorColors.topBarDimText,
+                    modifier = Modifier.size(16.dp)
                 )
+            }
+
+            if (showEditTitleDialog) {
+                var tempTitle by remember { mutableStateOf(state.graph.name) }
+                val focusRequester = remember { FocusRequester() }
+                
+                AlertDialog(
+                    onDismissRequest = { showEditTitleDialog = false },
+                    title = { Text("Edit Flow Name", color = Color.White) },
+                    text = {
+                        OutlinedTextField(
+                            value = tempTitle,
+                            onValueChange = { tempTitle = it },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(focusRequester),
+                            singleLine = true,
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                                imeAction = androidx.compose.ui.text.input.ImeAction.Done
+                            ),
+                            keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                                onDone = {
+                                    if (tempTitle.isNotBlank()) {
+                                        viewModel.renameFlow(tempTitle)
+                                    }
+                                    showEditTitleDialog = false
+                                }
+                            ),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White.copy(alpha = 0.8f),
+                                focusedBorderColor = Color(0xFF64FFDA),
+                                unfocusedBorderColor = Color.White.copy(alpha = 0.3f),
+                                cursorColor = Color(0xFF64FFDA)
+                            )
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                if (tempTitle.isNotBlank()) {
+                                    viewModel.renameFlow(tempTitle)
+                                }
+                                showEditTitleDialog = false
+                            }
+                        ) {
+                            Text("Save", color = Color(0xFF64FFDA))
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showEditTitleDialog = false }) {
+                            Text("Cancel", color = Color.White.copy(alpha = 0.5f))
+                        }
+                    },
+                    containerColor = Color(0xFF1E2024)
+                )
+                
+                LaunchedEffect(Unit) {
+                    kotlinx.coroutines.delay(100)
+                    focusRequester.requestFocus()
+                }
             }
 
             // Undo / Redo

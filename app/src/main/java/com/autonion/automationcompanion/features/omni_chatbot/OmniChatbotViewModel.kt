@@ -1239,31 +1239,40 @@ class OmniChatbotViewModel(
     //  COMPANION WALKTHROUGH
     // ═══════════════════════════════════════════════════════════
 
+    /** Tracks whether the current walkthrough was started from Omni-Chat UI */
+    private var _walkthroughFromOmniChat = false
+
     /**
      * Start a guided walkthrough for the given feature.
      * Collapses the chat sheet and navigates to the feature's first screen.
      */
-    fun startWalkthrough(featureId: String) {
+    fun startWalkthrough(featureId: String, fromOmniChat: Boolean = false) {
         val script = WalkthroughRegistry.getScript(featureId)
         if (script == null) {
-            addMessage(OmniChatMessage(
-                text = "Sorry, I don't have a guided walkthrough for that feature yet.",
-                isUser = false,
-                mode = ResponseMode.SYSTEM
-            ))
+            if (fromOmniChat) {
+                addMessage(OmniChatMessage(
+                    text = "Sorry, I don't have a guided walkthrough for that feature yet.",
+                    isUser = false,
+                    mode = ResponseMode.SYSTEM
+                ))
+            }
             return
         }
 
         _activeWalkthrough.value = script
         _currentStepIndex.value = 0
+        _walkthroughFromOmniChat = fromOmniChat
         collapse() // Hide the chat sheet
 
-        // Add companion message to chat
-        addMessage(OmniChatMessage(
-            text = "\uD83E\uDDED Starting guided walkthrough: ${script.featureName}\n${script.description}",
-            isUser = false,
-            mode = ResponseMode.COMPANION
-        ))
+        // Only add companion message if started from Omni-Chat,
+        // not when triggered from a feature's own info button.
+        if (fromOmniChat) {
+            addMessage(OmniChatMessage(
+                text = "\uD83E\uDDED Starting guided walkthrough: ${script.featureName}\n${script.description}",
+                isUser = false,
+                mode = ResponseMode.COMPANION
+            ))
+        }
 
         // Navigate to the first step's route — but only if we're not already there.
         // Without this check, pressing the walkthrough icon from inside the feature
@@ -1318,16 +1327,20 @@ class OmniChatbotViewModel(
     /** Dismiss the active walkthrough and return to normal mode. */
     fun dismissWalkthrough() {
         val wasActive = _activeWalkthrough.value != null
+        val wasFromOmniChat = _walkthroughFromOmniChat
         _activeWalkthrough.value = null
         _currentStepIndex.value = 0
+        _walkthroughFromOmniChat = false
 
-        if (wasActive) {
+        if (wasActive && wasFromOmniChat) {
             addMessage(OmniChatMessage(
                 text = "Walkthrough complete! Feel free to ask me anything else. \uD83D\uDE0A",
                 isUser = false,
                 mode = ResponseMode.COMPANION
             ))
-            Log.d(TAG, "Walkthrough dismissed")
+            Log.d(TAG, "Walkthrough dismissed (from Omni-Chat)")
+        } else if (wasActive) {
+            Log.d(TAG, "Walkthrough dismissed (from feature)")
         }
     }
 

@@ -145,6 +145,7 @@ private fun AppPickerDropdown(
     accentColor: Color,
     modifier: Modifier = Modifier
 ) {
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     val context = LocalContext.current
     val installedApps = remember {
         val pm = context.packageManager
@@ -209,6 +210,12 @@ private fun AppPickerDropdown(
                     .menuAnchor(),
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
                 colors = flowTextFieldColors(),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { 
+                    expanded = false
+                    // Also clear focus to close the keyboard
+                    focusManager.clearFocus()
+                }),
                 singleLine = true
             )
 
@@ -287,6 +294,7 @@ private fun StartNodeConfig(node: StartNode, onUpdate: (FlowNode) -> Unit) {
 
 @Composable
 private fun LaunchAppNodeConfig(node: LaunchAppNode, onUpdate: (FlowNode) -> Unit) {
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     AppPickerDropdown(
         selectedPackage = node.appPackageName,
         onAppSelected = { pkg ->
@@ -307,7 +315,8 @@ private fun LaunchAppNodeConfig(node: LaunchAppNode, onUpdate: (FlowNode) -> Uni
         },
         label = { Text("Launch Delay (ms)") },
         modifier = Modifier.fillMaxWidth(),
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
         colors = flowTextFieldColors()
     )
     Text(
@@ -319,6 +328,7 @@ private fun LaunchAppNodeConfig(node: LaunchAppNode, onUpdate: (FlowNode) -> Uni
 
 @Composable
 private fun GestureNodeConfig(node: GestureNode, onUpdate: (FlowNode) -> Unit, onLaunchOverlay: (FlowNode) -> Unit) {
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     if (node.recordedActionsJson.isNotEmpty()) {
         Text("✓ Recorded actions available.", color = Color(0xFF64FFDA), fontSize = 12.sp)
         Spacer(Modifier.height(8.dp))
@@ -394,7 +404,8 @@ private fun GestureNodeConfig(node: GestureNode, onUpdate: (FlowNode) -> Unit, o
                             },
                             label = { Text("X") },
                             modifier = Modifier.weight(1f),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                            keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                             colors = flowTextFieldColors()
                         )
                         OutlinedTextField(
@@ -406,7 +417,8 @@ private fun GestureNodeConfig(node: GestureNode, onUpdate: (FlowNode) -> Unit, o
                             },
                             label = { Text("Y") },
                             modifier = Modifier.weight(1f),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                            keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                             colors = flowTextFieldColors()
                         )
                     }
@@ -421,6 +433,8 @@ private fun GestureNodeConfig(node: GestureNode, onUpdate: (FlowNode) -> Unit, o
                         },
                         label = { Text("Context Key") },
                         modifier = Modifier.fillMaxWidth(),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                         colors = flowTextFieldColors()
                     )
                 }
@@ -438,7 +452,8 @@ private fun GestureNodeConfig(node: GestureNode, onUpdate: (FlowNode) -> Unit, o
                 },
                 label = { Text("Duration (ms)") },
                 modifier = Modifier.fillMaxWidth(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                 colors = flowTextFieldColors()
             )
         }
@@ -447,6 +462,7 @@ private fun GestureNodeConfig(node: GestureNode, onUpdate: (FlowNode) -> Unit, o
 
 @Composable
 private fun VisualTriggerNodeConfig(node: VisualTriggerNode, onUpdate: (FlowNode) -> Unit, onLaunchOverlay: (FlowNode) -> Unit) {
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     if (node.visionPresetJson.isNotEmpty()) {
         Text("✓ Vision configuration available.", color = Color(0xFF64FFDA), fontSize = 12.sp)
         Spacer(Modifier.height(8.dp))
@@ -490,6 +506,8 @@ private fun VisualTriggerNodeConfig(node: VisualTriggerNode, onUpdate: (FlowNode
         },
         label = { Text("Output Context Key") },
         modifier = Modifier.fillMaxWidth(),
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
         colors = flowTextFieldColors()
     )
 
@@ -550,6 +568,7 @@ private fun VisualTriggerNodeConfig(node: VisualTriggerNode, onUpdate: (FlowNode
 
 @Composable
 private fun ScreenMLNodeConfig(node: ScreenMLNode, onUpdate: (FlowNode) -> Unit, onLaunchOverlay: (FlowNode) -> Unit) {
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     if (node.automationStepsJson.isNotEmpty()) {
         Text("✓ Screen ML actions available.", color = Color(0xFF64FFDA), fontSize = 12.sp)
         Spacer(Modifier.height(8.dp))
@@ -575,6 +594,8 @@ private fun ScreenMLNodeConfig(node: ScreenMLNode, onUpdate: (FlowNode) -> Unit,
         },
         label = { Text("Output Context Key") },
         modifier = Modifier.fillMaxWidth(),
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
         colors = flowTextFieldColors()
     )
 
@@ -625,6 +646,7 @@ private fun ScreenMLNodeConfig(node: ScreenMLNode, onUpdate: (FlowNode) -> Unit,
 
 @Composable
 private fun DelayNodeConfig(node: DelayNode, onUpdate: (FlowNode) -> Unit) {
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     var delay by remember(node.id) { mutableStateOf(node.delayMs.toString()) }
 
     OutlinedTextField(
@@ -636,7 +658,8 @@ private fun DelayNodeConfig(node: DelayNode, onUpdate: (FlowNode) -> Unit) {
         },
         label = { Text("Delay (ms)") },
         modifier = Modifier.fillMaxWidth(),
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
         colors = flowTextFieldColors()
     )
 
@@ -651,6 +674,7 @@ private fun DelayNodeConfig(node: DelayNode, onUpdate: (FlowNode) -> Unit) {
 
 @Composable
 private fun RepeatNodeConfig(node: RepeatNode, onUpdate: (FlowNode) -> Unit) {
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     var isInfinite by remember(node.id) { mutableStateOf(node.repeatCount == 0) }
     var countText by remember(node.id) { mutableStateOf(if (node.repeatCount == 0) "" else node.repeatCount.toString()) }
     var delayText by remember(node.id) { mutableStateOf(node.delayBetweenMs.toString()) }
@@ -706,7 +730,8 @@ private fun RepeatNodeConfig(node: RepeatNode, onUpdate: (FlowNode) -> Unit) {
                 },
                 label = { Text("Repeat Count") },
                 modifier = Modifier.fillMaxWidth(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                 colors = flowTextFieldColors()
             )
         }
@@ -724,7 +749,8 @@ private fun RepeatNodeConfig(node: RepeatNode, onUpdate: (FlowNode) -> Unit) {
         },
         label = { Text("Delay Between Iterations (ms)") },
         modifier = Modifier.fillMaxWidth(),
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
         colors = flowTextFieldColors()
     )
 
