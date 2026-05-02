@@ -21,6 +21,11 @@ data class UIStateElement(
     val isEditable: Boolean = false,
     val isChecked: Boolean? = null,  // For toggles, checkboxes, radios
     val className: String? = null,   // Android view class name if from accessibility
+    val resourceId: String? = null,
+    val contentDescription: String? = null,
+    val hierarchyPath: String? = null,
+    val isEnabled: Boolean = true,
+    val isFocused: Boolean = false,
     val confidence: Float = 1.0f,    // 1.0 for accessibility, model confidence for YOLO
     val source: ElementSource = ElementSource.ACCESSIBILITY
 )

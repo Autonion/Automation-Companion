@@ -4,7 +4,7 @@
 
 ---
 
-# **AI-Powered On-Device Automation Companion — Project Overview**
+# **AI-Powered Offline-First, Cloud-Enhanced Automation Companion — Project Overview**
 
 ## 📌 Purpose
 
@@ -20,7 +20,7 @@ It also serves as a reference for **AI assistants (e.g., ChatGPT)** to understan
 
 # 1. 🚀 **Project Summary**
 
-The Automation Companion is an offline-first Android app that allows users to create automations using:
+The Automation Companion is an **offline-first, cloud-enhanced** Android app that allows users to create automations using:
 
 * Triggers
 * Conditions
@@ -30,9 +30,13 @@ The Automation Companion is an offline-first Android app that allows users to cr
 * System context triggers
 * On-device ML
 * Emergency triggers
+* **Optional Cloud API integration** (OpenAI, Gemini, Groq, DeepSeek, Mistral, Together AI, OpenRouter)
 
-Everything runs **on-device**, with **no external servers**.
+All core features run **on-device** with **no external servers required**.
+An optional **Cloud API** mode enables users to leverage powerful third-party LLMs for higher-intelligence tasks.
 The app includes a **visual workflow builder**, **Accessibility-based recorder**, **macro replay engine**, and **feature-specific modules**.
+
+> ⚠️ **Privacy Notice:** When Cloud API mode is enabled, user prompts and automation commands are sent to the selected third-party API provider. API keys are encrypted on-device with AES-256-GCM via Android Keystore. Autonion does not collect, store, or forward any user data.
 
 ---
 
@@ -110,7 +114,7 @@ Below is the official list with canonical names (AI should use *exact* names):
 | gesture_recording_playback              | Record user gestures using Accessibility and replay as macros |
 | dynamic_ui_path_recording               | UI path-based recording (selectors instead of coordinates)    |
 | screen_understanding_using_on_device_ml | On-device ML to detect UI elements, OCR, semantics            |
-| semantic_automation                     | Natural language → automation graph                           |
+| semantic_automation                     | Natural language → automation graph (local SLM, local server LLM, or Cloud API) |
 | conditional_macros                      | Add conditions, branching, and guards                         |
 | multi_step_multi_app_pipeline           | Run multi-app automation sequences                            |
 | robust_error_handling_recovery          | Retry logic, fallback, error boundaries                       |

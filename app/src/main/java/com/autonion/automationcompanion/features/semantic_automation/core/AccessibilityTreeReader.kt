@@ -11,7 +11,6 @@ import com.autonion.automationcompanion.AccessibilityRouter
 import com.autonion.automationcompanion.features.semantic_automation.model.ElementSource
 import com.autonion.automationcompanion.features.semantic_automation.model.ScreenUIState
 import com.autonion.automationcompanion.features.semantic_automation.model.UIStateElement
-import java.util.UUID
 
 /**
  * Reads the Android Accessibility tree and converts it into a [ScreenUIState].
@@ -358,7 +357,25 @@ object AccessibilityTreeReader : AccessibilityFeature {
      * by bounds and text/type.
      */
     private fun findMatchingNode(root: AccessibilityNodeInfo, target: UIStateElement): AccessibilityNodeInfo? {
-        // Strategy 1: If we have text, find by text first (most reliable)
+        // Strategy 1: Resource IDs are stable across captures when apps expose them.
+        if (!target.resourceId.isNullOrBlank()) {
+            try {
+                val byId = root.findAccessibilityNodeInfosByViewId(target.resourceId)
+                if (byId.isNotEmpty()) {
+                    val match = byId.minByOrNull { node ->
+                        val b = Rect()
+                        node.getBoundsInScreen(b)
+                        boundsDifference(b, target.bounds)
+                    }
+                    byId.filter { it != match }.forEach { it.recycle() }
+                    if (match != null) return match
+                }
+            } catch (e: Exception) {
+                Log.d(TAG, "find by resourceId failed for ${target.resourceId}: ${e.message}")
+            }
+        }
+
+        // Strategy 2: If we have text, find by text first.
         if (!target.text.isNullOrBlank()) {
             val byText = root.findAccessibilityNodeInfosByText(target.text)
             if (byText.isNotEmpty()) {
@@ -374,7 +391,7 @@ object AccessibilityTreeReader : AccessibilityFeature {
             }
         }
 
-        // Strategy 2: Traverse and match by bounds
+        // Strategy 3: Traverse and match by bounds
         return findByBounds(root, target.bounds)
     }
 
@@ -413,7 +430,7 @@ object AccessibilityTreeReader : AccessibilityFeature {
     // Tree traversal for capture
     // ──────────────────────────────────────────────────────────
 
-    private fun traverseNode(node: AccessibilityNodeInfo, out: MutableList<UIStateElement>) {
+    private fun traverseNode(node: AccessibilityNodeInfo, out: MutableList<UIStateElement>, path: String = "0") {
         if (!node.isVisibleToUser) return
 
         val bounds = Rect()
@@ -421,14 +438,18 @@ object AccessibilityTreeReader : AccessibilityFeature {
 
         if (bounds.width() <= 0 || bounds.height() <= 0) return
 
-        val text = node.text?.toString() ?: node.contentDescription?.toString()
+        val nodeText = node.text?.toString()
+        val contentDescription = node.contentDescription?.toString()
+        val text = nodeText ?: contentDescription
+        val resourceId = node.viewIdResourceName
         val isInteractive = node.isClickable || node.isEditable || node.isCheckable || node.isScrollable
 
         if (isInteractive || !text.isNullOrBlank()) {
             val type = mapClassName(node.className?.toString(), node)
+            val stableId = buildStableElementId(node, bounds, path, text, resourceId, contentDescription)
             out.add(
                 UIStateElement(
-                    id = UUID.randomUUID().toString(),
+                    id = stableId,
                     type = type,
                     text = text,
                     bounds = RectF(
@@ -442,6 +463,11 @@ object AccessibilityTreeReader : AccessibilityFeature {
                     isEditable = node.isEditable,
                     isChecked = if (node.isCheckable) node.isChecked else null,
                     className = node.className?.toString(),
+                    resourceId = resourceId,
+                    contentDescription = contentDescription,
+                    hierarchyPath = path,
+                    isEnabled = node.isEnabled,
+                    isFocused = node.isFocused,
                     confidence = 1.0f,
                     source = ElementSource.ACCESSIBILITY
                 )
@@ -450,9 +476,30 @@ object AccessibilityTreeReader : AccessibilityFeature {
 
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
-            traverseNode(child, out)
+            traverseNode(child, out, "$path/$i")
             child.recycle()
         }
+    }
+
+    private fun buildStableElementId(
+        node: AccessibilityNodeInfo,
+        bounds: Rect,
+        path: String,
+        text: String?,
+        resourceId: String?,
+        contentDescription: String?
+    ): String {
+        val bucketedBounds = "${bounds.left / 8},${bounds.top / 8},${bounds.width() / 8},${bounds.height() / 8}"
+        val raw = listOf(
+            node.packageName?.toString().orEmpty(),
+            resourceId.orEmpty(),
+            node.className?.toString().orEmpty(),
+            text.orEmpty(),
+            contentDescription.orEmpty(),
+            bucketedBounds,
+            path
+        ).joinToString("|")
+        return "a11y_${Integer.toHexString(raw.hashCode())}"
     }
 
     private fun mapClassName(className: String?, node: AccessibilityNodeInfo): String {

@@ -1,7 +1,7 @@
 <p align="center">
   <h1 align="center">🤖 Automation Companion</h1>
   <p align="center">
-    <b>AI-Powered, On-Device Android Automation — No Root, No Cloud, No Limits.</b>
+    <b>AI-Powered, Offline-First Android Automation — No Root, Your Cloud, Your Choice.</b>
   </p>
   <p align="center">
     <a href="#-features">Features</a> •
@@ -24,7 +24,7 @@
 
 ## 📖 Overview
 
-**Automation Companion** is an offline-first Android application that empowers users to create powerful automations — from simple gesture macros to complex, multi-app workflows — entirely on-device. It leverages **Accessibility Services**, **on-device ML (TFLite + ML Kit)**, **screen capture**, and **system event receivers** to automate virtually anything on your phone, without requiring root access or cloud connectivity.
+**Automation Companion** is an offline-first, cloud-enhanced Android application that empowers users to create powerful automations — from simple gesture macros to complex, multi-app workflows. It leverages **Accessibility Services**, **on-device ML (TFLite + ML Kit)**, **screen capture**, and **system event receivers** to automate virtually anything on your phone, without requiring root access. All core features work entirely on-device; an optional **Cloud API** integration unlocks access to powerful third-party LLMs (GPT-4o, Gemini, Groq, DeepSeek, etc.) for higher-intelligence automation tasks.
 
 Think of it as **Tasker meets IFTTT meets RPA** — built natively for modern Android with Jetpack Compose.
 
@@ -36,7 +36,7 @@ Think of it as **Tasker meets IFTTT meets RPA** — built natively for modern An
 
 | Feature | Description |
 |---------|-------------|
-| **💬 Omni-Chatbot & AI Integration** | Natural language automation via local LLMs, Langchain chat memory, RAG knowledge store, and FAQ repository |
+| **💬 Omni-Chatbot & AI Integration** | Natural language automation via local LLMs or cloud APIs (OpenAI, Gemini, Groq, etc.), Langchain chat memory, RAG knowledge store, and FAQ repository |
 | **🤖 Semantic Automation** | Agentic, natural-language → automation conversion with hardware remote capabilities to control desktop agents directly |
 | **🎮 Gesture Recording & Playback** | Record taps, swipes, long-presses, scrolls, and text inputs via AccessibilityService and replay them as macros |
 | **🔀 Flow Automation** | Visual node-based workflow editor with drag-to-connect edges, conditional branching, and multi-node execution |
@@ -95,7 +95,8 @@ app/src/main/java/com/autonion/automationcompanion/
 
 ### Key Design Principles
 
-- **Offline-First** — Everything runs on-device, no external servers
+- **Offline-First, Cloud-Enhanced** — All core features run on-device with zero cloud dependency; optional Cloud API integration for higher-intelligence LLMs
+- **Privacy-Aware** — Cloud API usage requires explicit user consent; API keys encrypted with AES-256-GCM; data goes directly from device to provider — Autonion never collects or forwards any data
 - **Modular Features** — Each feature is fully isolated with its own UI, engine, and models
 - **Trigger-Agnostic Actions** — Actions (SMS, volume, brightness, DnD) are decoupled from triggers and reusable everywhere
 - **MVVM Pattern** — ViewModels manage UI state; clean separation between UI and business logic
@@ -151,7 +152,8 @@ The app requests several permissions at runtime for its automation capabilities:
 | **Database** | Room (with KSP) |
 | **ML / Vision** | TensorFlow Lite (LiteRT), ML Kit Text Recognition |
 | **Native** | C++ via CMake (OpenCV integration) |
-| **Networking** | OkHttp (LAN cross-device sync) |
+| **Networking** | OkHttp (LAN cross-device sync, Cloud API integration) |
+| **Security** | EncryptedSharedPreferences (AES-256-GCM via Android Keystore) |
 | **Serialization** | Kotlinx Serialization, Gson |
 | **Async** | Kotlin Coroutines, WorkManager |
 | **Location** | Google Play Services Location, OSMDroid maps |

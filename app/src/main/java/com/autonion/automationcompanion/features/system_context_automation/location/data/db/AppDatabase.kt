@@ -10,9 +10,13 @@ import com.autonion.automationcompanion.features.automation_debugger.data.Execut
 import com.autonion.automationcompanion.features.system_context_automation.location.data.dao.SlotDao
 import com.autonion.automationcompanion.features.system_context_automation.location.data.models.Slot
 
+import com.autonion.automationcompanion.features.omni_chatbot.data.db.OmniChatDao
+import com.autonion.automationcompanion.features.omni_chatbot.data.db.OmniChatMessageEntity
+import com.autonion.automationcompanion.features.omni_chatbot.data.db.OmniChatSessionEntity
+
 @Database(
-    entities = [Slot::class, ExecutionLog::class],
-    version = 5, // ⬅️ bump version for automation debugger logs
+    entities = [Slot::class, ExecutionLog::class, OmniChatSessionEntity::class, OmniChatMessageEntity::class],
+    version = 7, // ⬅️ bump version for module column in chat sessions
     exportSchema = false
 )
 @TypeConverters(AutomationActionConverter::class)
@@ -20,6 +24,7 @@ abstract class AppDatabase : RoomDatabase() {
 
     abstract fun slotDao(): SlotDao
     abstract fun executionLogDao(): ExecutionLogDao
+    abstract fun omniChatDao(): OmniChatDao
 
     companion object {
 
@@ -33,7 +38,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "locauto.db"
                 )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                     .build()
                     .also { INSTANCE = it }
             }

@@ -88,6 +88,7 @@ fun AppSpecificSlotsScreen(
     // Accessibility Service State
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     var isAccessibilityEnabled by remember { mutableStateOf(false) }
+    var showAccessibilityDisclosure by remember { mutableStateOf(false) }
 
     DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
@@ -154,8 +155,7 @@ fun AppSpecificSlotsScreen(
                                 "App specific automation requires accessibility service",
                                 "AppSpecificActivity"
                             )
-                            android.widget.Toast.makeText(context, "Accessibility Service is required", android.widget.Toast.LENGTH_LONG).show()
-                            com.autonion.automationcompanion.features.system_context_automation.shared.utils.PermissionUtils.requestAccessibilityPermission(context)
+                            showAccessibilityDisclosure = true
                         }
                     },
                     containerColor = if (isAccessibilityEnabled) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -181,9 +181,7 @@ fun AppSpecificSlotsScreen(
                             title = "Accessibility Service Required",
                             description = "App automation requires Accessibility Service to detect app launches.",
                             buttonText = "Enable Service",
-                            onClick = {
-                                com.autonion.automationcompanion.features.system_context_automation.shared.utils.PermissionUtils.requestAccessibilityPermission(context)
-                            }
+                            onClick = { showAccessibilityDisclosure = true }
                         )
                     }
                 }
@@ -211,12 +209,7 @@ fun AppSpecificSlotsScreen(
                                                 "Cannot enable app automation without accessibility service",
                                                 "AppSpecificActivity"
                                             )
-                                            android.widget.Toast.makeText(
-                                                context,
-                                                "Accessibility Service permission required to enable automation",
-                                                android.widget.Toast.LENGTH_LONG
-                                            ).show()
-                                            com.autonion.automationcompanion.features.system_context_automation.shared.utils.PermissionUtils.requestAccessibilityPermission(context)
+                                            showAccessibilityDisclosure = true
                                         } else {
                                             scope.launch { dao.setEnabled(slot.id, enabled) }
                                         }
@@ -260,6 +253,18 @@ fun AppSpecificSlotsScreen(
                 }
             }
         }
+        
+        com.autonion.automationcompanion.features.system_context_automation.shared.ui.PermissionDisclosureDialog(
+            showDialog = showAccessibilityDisclosure,
+            onDismiss = { showAccessibilityDisclosure = false },
+            onContinue = {
+                showAccessibilityDisclosure = false
+                com.autonion.automationcompanion.features.system_context_automation.shared.utils.PermissionUtils.requestAccessibilityPermission(context)
+            },
+            title = "Accessibility Service Required",
+            description = "Autonion uses the Accessibility Service API to detect when specific apps are launched in order to trigger your automations. We do not collect, store, or share any of your personal data.",
+            icon = Icons.Rounded.Accessibility
+        )
     }
 }
 

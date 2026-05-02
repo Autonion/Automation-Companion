@@ -12,13 +12,21 @@ data class VisionRegion(
     val height: Int,
     val templatePath: String,
     val action: VisionAction = VisionAction.Click,
-    val color: Int
+    val color: Int,
+    val sourceCapturePath: String? = null  // Which screenshot this region was drawn on
 ) {
     // Helper to convert to Android Rect
     fun toRect(): Rect = Rect(x, y, x + width, y + height)
     
     companion object {
-        fun fromRect(id: Int, rect: Rect, templatePath: String, action: VisionAction, color: Int): VisionRegion {
+        fun fromRect(
+            id: Int,
+            rect: Rect,
+            templatePath: String,
+            action: VisionAction,
+            color: Int,
+            sourceCapturePath: String? = null
+        ): VisionRegion {
             return VisionRegion(
                 id = id,
                 x = rect.left,
@@ -27,7 +35,8 @@ data class VisionRegion(
                 height = rect.height(),
                 templatePath = templatePath,
                 action = action,
-                color = color
+                color = color,
+                sourceCapturePath = sourceCapturePath
             )
         }
     }

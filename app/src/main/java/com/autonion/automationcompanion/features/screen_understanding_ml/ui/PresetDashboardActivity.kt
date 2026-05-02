@@ -64,6 +64,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -248,7 +249,7 @@ private fun PresetDashboardContent(
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("Agent Automations") },
+                    title = { Text("UI Recognition AI", fontWeight = FontWeight.Bold) },
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -260,13 +261,6 @@ private fun PresetDashboardContent(
                         navigationIconContentColor = MaterialTheme.colorScheme.onSurface
                     ),
                     actions = {
-                        IconButton(onClick = { onTest("yolov11s_model.tflite") }) {
-                            Icon(
-                                Icons.Default.BugReport,
-                                contentDescription = "Test Detection",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
                     }
                 )
             },

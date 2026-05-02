@@ -10,11 +10,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -79,8 +83,11 @@ fun DashboardHeader(
     title: String,
     subtitle: String? = null,
     onNotificationClick: (() -> Unit)? = null,
-    onExclusionClick: () -> Unit = {}
+    onExclusionClick: () -> Unit = {},
+    onBackupClick: () -> Unit = {}
 ) {
+    var showSettingsMenu by remember { mutableStateOf(false) }
+
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 24.dp), // Increased top/bottom padding slightly
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -101,31 +108,58 @@ fun DashboardHeader(
         }
         
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            // Exclusion List Icon
-            val interactionSource = remember { MutableInteractionSource() }
-            val isPressed by interactionSource.collectIsPressedAsState()
-            val scale by animateFloatAsState(targetValue = if (isPressed) 0.85f else 1f, label = "scale")
+            // Settings Gear with Dropdown
+            Box {
+                val interactionSource = remember { MutableInteractionSource() }
+                val isPressed by interactionSource.collectIsPressedAsState()
+                val scale by animateFloatAsState(targetValue = if (isPressed) 0.85f else 1f, label = "scale")
 
-            Surface(
-                onClick = onExclusionClick,
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.surface,
-                shadowElevation = 2.dp,
-                modifier = Modifier
-                    .size(40.dp)
-                    .graphicsLayer {
-                        scaleX = scale
-                        scaleY = scale
-                    },
-                interactionSource = interactionSource,
-                // indication = LocalIndication.current // Removed as Surface handles indication internally
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.Default.Security,
-                        contentDescription = "App Exclusion",
-                        tint = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(20.dp)
+                Surface(
+                    onClick = { showSettingsMenu = true },
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surface,
+                    shadowElevation = 2.dp,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .graphicsLayer {
+                            scaleX = scale
+                            scaleY = scale
+                        },
+                    interactionSource = interactionSource,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "Settings",
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+
+                DropdownMenu(
+                    expanded = showSettingsMenu,
+                    onDismissRequest = { showSettingsMenu = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Excluded Apps") },
+                        onClick = {
+                            showSettingsMenu = false
+                            onExclusionClick()
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Default.Security, contentDescription = null)
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Backup & Restore") },
+                        onClick = {
+                            showSettingsMenu = false
+                            onBackupClick()
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Default.CloudUpload, contentDescription = null)
+                        }
                     )
                 }
             }

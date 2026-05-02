@@ -352,6 +352,12 @@ fun AppNavHost() {
             )
         }
 
+        composable("settings/backup_restore") {
+            com.autonion.automationcompanion.features.settings.BackupRestoreScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+
         } // NavHost
     } // OmniChatbotScaffold
 

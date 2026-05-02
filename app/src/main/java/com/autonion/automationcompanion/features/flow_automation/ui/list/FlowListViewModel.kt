@@ -29,6 +29,15 @@ class FlowListViewModel(application: Application) : AndroidViewModel(application
         refresh()
     }
 
+    fun renameFlow(flowId: String, newName: String) {
+        val flow = repository.load(flowId)
+        if (flow != null) {
+            val updatedFlow = flow.copy(name = newName)
+            repository.save(updatedFlow)
+            refresh()
+        }
+    }
+
     fun exportFlow(flowId: String, uri: Uri) {
         val success = repository.exportToUri(flowId, uri)
         val msg = if (success) "Flow exported successfully" else "Export failed"

@@ -135,6 +135,8 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
         hostManager.stopDiscovery()
         networkingManager.stop()
         releaseLocks()
+        // Deselect all devices so UI reflects disconnected state
+        scope.launch { deviceRepository.deselectAllDevices() }
     }
 
     private fun acquireLocks() {

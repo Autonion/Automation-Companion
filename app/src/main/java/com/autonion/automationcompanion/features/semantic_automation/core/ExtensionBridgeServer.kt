@@ -161,7 +161,7 @@ class ExtensionBridgeServer(port: Int = 54321) : WebSocketServer(InetSocketAddre
         // Log to DebugLogger so the user sees it in the app UI
         appContext?.let { ctx ->
             DebugLogger.success(
-                ctx, LogCategory.SCREEN_CONTEXT_AI,
+                ctx, LogCategory.UI_RECOGNITION_AI,
                 "Browser Extension Connected",
                 "Semantic Bridge extension connected from ${conn.remoteSocketAddress}",
                 TAG
@@ -179,7 +179,7 @@ class ExtensionBridgeServer(port: Int = 54321) : WebSocketServer(InetSocketAddre
 
             appContext?.let { ctx ->
                 DebugLogger.warning(
-                    ctx, LogCategory.SCREEN_CONTEXT_AI,
+                    ctx, LogCategory.UI_RECOGNITION_AI,
                     "Browser Extension Disconnected",
                     "Extension disconnected (code=$code, reason=$reason)",
                     TAG
@@ -263,7 +263,7 @@ class ExtensionBridgeServer(port: Int = 54321) : WebSocketServer(InetSocketAddre
         // Log to DebugLogger so user sees DOM snapshots arriving
         appContext?.let { ctx ->
             DebugLogger.info(
-                ctx, LogCategory.SCREEN_CONTEXT_AI,
+                ctx, LogCategory.UI_RECOGNITION_AI,
                 "DOM Snapshot Received",
                 "$nodeCount nodes ($interactiveCount interactive), reason=$reason\n" +
                     "URL: ${pageUrl.take(80)}\nTitle: ${pageTitle.take(60)}",

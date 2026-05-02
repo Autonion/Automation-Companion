@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material.icons.rounded.*
+import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -104,6 +105,7 @@ fun WiFiSlotsScreen(
 
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     var isLocationPermissionGranted by remember { mutableStateOf(true) }
+    var showLocationDisclosure by remember { mutableStateOf(false) }
 
     val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
@@ -163,7 +165,7 @@ fun WiFiSlotsScreen(
                 ExtendedFloatingActionButton(
                     onClick = {
                         if (!isLocationPermissionGranted) {
-                            permissionLauncher.launch(android.Manifest.permission.ACCESS_FINE_LOCATION)
+                            showLocationDisclosure = true
                         } else if (!PermissionUtils.isAccessibilityServiceEnabled(context)) {
                             Toast.makeText(context, "Accessibility Service required for automation actions", Toast.LENGTH_LONG).show()
                             PermissionUtils.requestAccessibilityPermission(context)
@@ -194,7 +196,7 @@ fun WiFiSlotsScreen(
                             title = "Location Permission Required",
                             description = "Wi-Fi automation needs location permission to detect network SSID (Android requirement).",
                             buttonText = "Allow",
-                            onClick = { permissionLauncher.launch(android.Manifest.permission.ACCESS_FINE_LOCATION) }
+                            onClick = { showLocationDisclosure = true }
                         )
                     }
                 }
@@ -217,7 +219,7 @@ fun WiFiSlotsScreen(
                                         if (enabled) {
                                             if (!PermissionUtils.isLocationPermissionGranted(context)) {
                                                 Toast.makeText(context, "Location permission required", Toast.LENGTH_LONG).show()
-                                                permissionLauncher.launch(android.Manifest.permission.ACCESS_FINE_LOCATION)
+                                                showLocationDisclosure = true
                                                 return@WiFiSlotCard
                                             }
                                             if (!PermissionUtils.isAccessibilityServiceEnabled(context)) {
@@ -268,6 +270,18 @@ fun WiFiSlotsScreen(
                 }
             }
         }
+        
+        com.autonion.automationcompanion.features.system_context_automation.shared.ui.PermissionDisclosureDialog(
+            showDialog = showLocationDisclosure,
+            onDismiss = { showLocationDisclosure = false },
+            onContinue = {
+                showLocationDisclosure = false
+                permissionLauncher.launch(android.Manifest.permission.ACCESS_FINE_LOCATION)
+            },
+            title = "Location Permission Required",
+            description = "Autonion requires location permissions in order to scan for and detect Wi-Fi network SSIDs. This is an Android requirement. We do not collect or share your location.",
+            icon = Icons.Rounded.LocationOn
+        )
     }
 }
 
@@ -497,6 +511,7 @@ class WiFiConfigActivity : AppCompatActivity() {
     private var configuredActionsState by mutableStateOf<List<ConfiguredAction>>(emptyList())
     private var connectionState by mutableStateOf(TriggerConfig.WiFi.ConnectionState.CONNECTED)
     private var ssidFilter by mutableStateOf("")
+    private var showLocationDisclosure by mutableStateOf(false)
 
     private fun updateAppAction(packageName: String) {
         if (appPickerActionIndex >= 0 && appPickerActionIndex < configuredActionsState.size) {
@@ -524,23 +539,37 @@ class WiFiConfigActivity : AppCompatActivity() {
 
         setContent {
             com.autonion.automationcompanion.ui.theme.AppTheme {
-                WiFiConfigScreen(
-                    onBack = { finish() },
-                    configuredActions = configuredActionsState,
-                    connectionState = connectionState,
-                    onConnectionStateChanged = { connectionState = it },
-                    ssidFilter = ssidFilter,
-                    onSsidFilterChanged = { ssidFilter = it },
-                    onActionsChanged = { configuredActionsState = it },
-                    onPickAppClicked = { actionIndex -> openAppPicker(actionIndex) },
-                    onSaveClicked = { cState, ssid, actions ->
-                        if (!PermissionUtils.isLocationPermissionGranted(this)) {
-                            permissionLauncher.launch(android.Manifest.permission.ACCESS_FINE_LOCATION)
-                        } else {
-                            saveWiFiSlot(this, slotId, cState, ssid, actions) { finish() }
+                androidx.compose.foundation.layout.Box(modifier = androidx.compose.ui.Modifier.fillMaxSize()) {
+                    WiFiConfigScreen(
+                        onBack = { finish() },
+                        configuredActions = configuredActionsState,
+                        connectionState = connectionState,
+                        onConnectionStateChanged = { connectionState = it },
+                        ssidFilter = ssidFilter,
+                        onSsidFilterChanged = { ssidFilter = it },
+                        onActionsChanged = { configuredActionsState = it },
+                        onPickAppClicked = { actionIndex -> openAppPicker(actionIndex) },
+                        onSaveClicked = { cState, ssid, actions ->
+                            if (!PermissionUtils.isLocationPermissionGranted(this@WiFiConfigActivity)) {
+                                showLocationDisclosure = true
+                            } else {
+                                saveWiFiSlot(this@WiFiConfigActivity, slotId, cState, ssid, actions) { finish() }
+                            }
                         }
-                    }
-                )
+                    )
+                    
+                    com.autonion.automationcompanion.features.system_context_automation.shared.ui.PermissionDisclosureDialog(
+                        showDialog = showLocationDisclosure,
+                        onDismiss = { showLocationDisclosure = false },
+                        onContinue = {
+                            showLocationDisclosure = false
+                            permissionLauncher.launch(android.Manifest.permission.ACCESS_FINE_LOCATION)
+                        },
+                        title = "Location Permission Required",
+                        description = "Autonion requires location permissions in order to scan for and detect Wi-Fi network SSIDs. This is an Android requirement. We do not collect or share your location.",
+                        icon = androidx.compose.material.icons.Icons.Rounded.LocationOn
+                    )
+                }
             }
         }
     }

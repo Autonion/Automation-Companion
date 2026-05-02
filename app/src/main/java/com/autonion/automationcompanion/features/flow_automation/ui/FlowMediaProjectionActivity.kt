@@ -7,10 +7,18 @@ import android.media.projection.MediaProjectionManager
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Screenshot
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import com.autonion.automationcompanion.features.flow_automation.engine.FlowExecutionService
 import com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract
+import com.autonion.automationcompanion.features.system_context_automation.shared.ui.PermissionDisclosureDialog
 import com.autonion.automationcompanion.features.visual_trigger.service.CaptureOverlayService
+import com.autonion.automationcompanion.ui.theme.AppTheme
 
 /**
  * A transparent helper activity designed to request MediaProjection permission
@@ -27,6 +35,8 @@ class FlowMediaProjectionActivity : ComponentActivity() {
         const val EXTRA_FLOW_ID = "EXTRA_FLOW_ID"
         const val EXTRA_NODE_ID = "EXTRA_NODE_ID"
     }
+
+    private var showMediaProjectionDisclosure by mutableStateOf(true)
 
     private val projectionLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == Activity.RESULT_OK && result.data != null) {
@@ -77,8 +87,26 @@ class FlowMediaProjectionActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
-        val mpManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        projectionLauncher.launch(mpManager.createScreenCaptureIntent())
+
+        setContent {
+            AppTheme {
+                PermissionDisclosureDialog(
+                    showDialog = showMediaProjectionDisclosure,
+                    title = "Screen Capture Required",
+                    description = "Autonion needs to capture your screen to detect visual elements and execute automation flows. The screen content is processed locally on your device and is not stored or shared.",
+                    icon = Icons.Default.Screenshot,
+                    onDismiss = {
+                        showMediaProjectionDisclosure = false
+                        finish()
+                        overridePendingTransition(0, 0)
+                    },
+                    onContinue = {
+                        showMediaProjectionDisclosure = false
+                        val mpManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                        projectionLauncher.launch(mpManager.createScreenCaptureIntent())
+                    }
+                )
+            }
+        }
     }
 }

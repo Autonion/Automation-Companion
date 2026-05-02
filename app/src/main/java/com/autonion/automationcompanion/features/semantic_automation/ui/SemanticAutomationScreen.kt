@@ -5,6 +5,8 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -21,10 +23,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -32,9 +38,14 @@ import androidx.compose.ui.unit.sp
 import com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationService
 import com.autonion.automationcompanion.features.semantic_automation.model.AutomationStatus
 import com.autonion.automationcompanion.ui.components.AuroraBackground
+import com.autonion.automationcompanion.ui.components.ChatHistoryPanel
+import com.autonion.automationcompanion.features.omni_chatbot.data.db.OmniChatSessionEntity
+import com.autonion.automationcompanion.features.omni_chatbot.data.db.OmniChatMessageEntity
+import com.autonion.automationcompanion.features.system_context_automation.location.data.db.AppDatabase
 import androidx.compose.material.icons.outlined.Info
 import com.autonion.automationcompanion.features.omni_chatbot.ui.LocalStartWalkthrough
 import com.autonion.automationcompanion.ui.theme.*
+import kotlinx.coroutines.launch
 import java.util.*
 
 // ─── Color Palette ────────────────────────────────────────────
@@ -69,7 +80,40 @@ fun SemanticAutomationScreen(
     // Chat state
     val messages = remember { mutableStateListOf<SemanticMessage>() }
     val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
+    // ─── Chat History Persistence ─────────────────────────────
+    val chatDao = remember { AppDatabase.get(context).omniChatDao() }
+    var chatSessionId by remember { mutableStateOf(UUID.randomUUID().toString()) }
+    var showHistory by remember { mutableStateOf(false) }
+    val chatHistorySessions by chatDao.getSessionsByModule("semantic").collectAsState(initial = emptyList())
+
+    // Helper to persist messages
+    fun persistMessage(msg: SemanticMessage) {
+        scope.launch {
+            val sessionEntity = OmniChatSessionEntity(
+                sessionId = chatSessionId,
+                title = messages.lastOrNull { it.isUser }?.text?.take(30) ?: "New Chat",
+                timestamp = System.currentTimeMillis(),
+                previewText = msg.text.take(50),
+                module = "semantic"
+            )
+            chatDao.upsertSession(sessionEntity)
+
+            val messageEntity = OmniChatMessageEntity(
+                messageId = msg.id,
+                sessionId = chatSessionId,
+                text = msg.text,
+                isUser = msg.isUser,
+                mode = "DIRECT",
+                timestamp = msg.timestamp,
+                actionWidgetJson = null,
+                suggestedWalkthroughId = null
+            )
+            chatDao.insertMessage(messageEntity)
+        }
+    }
     LaunchedEffect(messages.size, messages.firstOrNull()?.text?.length) {
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(0)
@@ -117,17 +161,18 @@ fun SemanticAutomationScreen(
                         id = UUID.randomUUID().toString(),
                         text = "Task completed successfully.",
                         isUser = false
-                    )
+                    ).also { persistMessage(it) }
                 )
             }
             AutomationStatus.FAILED -> {
+                val reason = if (!lastAction.isNullOrBlank()) "\n$lastAction" else ""
                 messages.add(
                     0,
                     SemanticMessage(
                         id = UUID.randomUUID().toString(),
-                        text = "Task failed to complete.",
+                        text = "Task failed to complete.$reason",
                         isUser = false
-                    )
+                    ).also { persistMessage(it) }
                 )
             }
             AutomationStatus.CANCELLED -> {
@@ -137,7 +182,7 @@ fun SemanticAutomationScreen(
                         id = UUID.randomUUID().toString(),
                         text = "Task cancelled.",
                         isUser = false
-                    )
+                    ).also { persistMessage(it) }
                 )
             }
             AutomationStatus.AWAITING_USER_INPUT -> {
@@ -150,7 +195,7 @@ fun SemanticAutomationScreen(
                             isUser = false,
                             isInteractivePrompt = true,
                             promptOptions = userPromptOptions
-                        )
+                        ).also { persistMessage(it) }
                     )
                 }
             }
@@ -162,7 +207,7 @@ fun SemanticAutomationScreen(
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("Semantic Automation", color = Color.White) },
+                    title = { Text("Semantic AI Agent", color = Color.White, fontWeight = FontWeight.Bold) },
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
@@ -191,12 +236,77 @@ fun SemanticAutomationScreen(
             },
             containerColor = Color.Transparent
         ) { innerPadding ->
-            Column(
+            // ─── Connection State for Overlay ────────────
+            val context = LocalContext.current
+            val llmEngine = remember { com.autonion.automationcompanion.features.semantic_automation.ml.LocalServerLLMEngine.getInstance(context) }
+            val llmConnectionStatus by llmEngine.connectionStatus.collectAsState()
+            val extensionBridge = remember { com.autonion.automationcompanion.features.semantic_automation.core.ExtensionBridgeServer.getInstance(context) }
+            val isExtensionConnected by extensionBridge.isExtensionConnected.collectAsState()
+
+            val localInferenceMode = remember {
+                val prefs = context.getSharedPreferences("inference_prefs", android.content.Context.MODE_PRIVATE)
+                val mode = prefs.getString("mode", com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.SERVER_LLM.name)
+                com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.valueOf(mode!!)
+            }
+
+            val cloudApiEngine = remember { com.autonion.automationcompanion.features.semantic_automation.ml.CloudApiLLMEngine.getInstance(context) }
+            val cloudConnectionStatus by cloudApiEngine.connectionStatus.collectAsState()
+
+            val isAIReady = when (localInferenceMode) {
+                com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.SERVER_LLM ->
+                    llmConnectionStatus == com.autonion.automationcompanion.features.semantic_automation.ml.ServerConnectionStatus.CONNECTED
+                com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.CLOUD_API ->
+                    cloudConnectionStatus == com.autonion.automationcompanion.features.semantic_automation.ml.CloudApiConnectionStatus.CONNECTED
+                com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.LOCAL_SLM ->
+                    true // SLM runs locally, always ready
+            }
+
+            Box(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
-                    .imePadding()
             ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .imePadding()
+                        .then(if (!isAIReady) Modifier.blur(12.dp) else Modifier)
+                ) {
+                // ─── Chat Header (New Chat + History) ────────────
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = {
+                        messages.clear()
+                        chatSessionId = UUID.randomUUID().toString()
+                        showHistory = false
+                    }) {
+                        Icon(
+                            Icons.Default.Add,
+                            contentDescription = "New Chat",
+                            tint = Color.White.copy(alpha = 0.6f),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text("New Chat", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    TextButton(onClick = { showHistory = !showHistory }) {
+                        Icon(
+                            Icons.Default.History,
+                            contentDescription = "History",
+                            tint = Color.White.copy(alpha = 0.6f),
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text("History", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
+                    }
+                }
+
                 // ─── Chat Messages ──────────────────────
                 if (messages.isEmpty()) {
                     Box(
@@ -348,7 +458,7 @@ fun SemanticAutomationScreen(
                                     id = UUID.randomUUID().toString(),
                                     text = command,
                                     isUser = true
-                                )
+                                ).also { persistMessage(it) }
                             )
                             if (status == AutomationStatus.AWAITING_USER_INPUT) {
                                 engine?.resumeWithUserChoice(command.trim())
@@ -360,6 +470,88 @@ fun SemanticAutomationScreen(
                     },
                     isActive = isActive
                 )
+                }
+
+                // ─── Connection Required Overlay ──────────
+                if (!isAIReady) {
+                    val overlayMessage = when (localInferenceMode) {
+                        com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.CLOUD_API ->
+                            "Configure your Cloud API key and select a model to use Semantic Automation."
+                        com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.SERVER_LLM ->
+                            "Connect to a Server LLM to use Semantic Automation."
+                        else ->
+                            "Configure a Local SLM or connect to a Server LLM to use Semantic Automation."
+                    }
+                    val overlaySteps = when (localInferenceMode) {
+                        com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.CLOUD_API -> listOf(
+                            "Tap the ⚙️ icon to open AI Engine Hub.",
+                            "Select 'Cloud API' inference mode.",
+                            "Choose a provider and enter your API key.",
+                            "Tap 'Save & Test Connection'."
+                        )
+                        else -> listOf(
+                            "Tap the ⚙️ icon to open AI Engine Hub.",
+                            "Choose 'Server LLM', 'Cloud API', or 'On-Device SLM'.",
+                            "Configure the connection and test it."
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = {}
+                            )
+                            .pointerInput(Unit) {
+                                awaitPointerEventScope {
+                                    while (true) {
+                                        awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
+                                    }
+                                }
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        com.autonion.automationcompanion.ui.components.ConnectionRequiredOverlay(
+                            message = overlayMessage,
+                            steps = overlaySteps,
+                            optionalChip = if (!isExtensionConnected) "Lemur browser extension not connected" else null
+                        )
+                    }
+                }
+
+                // ─── History Panel Overlay ────────────────────
+                AnimatedVisibility(
+                    visible = showHistory,
+                    enter = fadeIn(tween(200)) + slideInHorizontally(tween(300)) { -it },
+                    exit = fadeOut(tween(200)) + slideOutHorizontally(tween(250)) { -it }
+                ) {
+                    ChatHistoryPanel(
+                        sessions = chatHistorySessions,
+                        onSessionClick = { session ->
+                            scope.launch {
+                                val dbMessages = chatDao.getMessagesForSession(session.sessionId)
+                                chatSessionId = session.sessionId
+                                messages.clear()
+                                messages.addAll(
+                                    dbMessages.map { entity ->
+                                        SemanticMessage(
+                                            id = entity.messageId,
+                                            text = entity.text,
+                                            isUser = entity.isUser,
+                                            timestamp = entity.timestamp
+                                        )
+                                    }.reversed()
+                                )
+                                showHistory = false
+                            }
+                        },
+                        onDeleteSession = { session ->
+                            scope.launch { chatDao.deleteSession(session.sessionId) }
+                        },
+                        onClose = { showHistory = false }
+                    )
+                }
             }
         }
     }

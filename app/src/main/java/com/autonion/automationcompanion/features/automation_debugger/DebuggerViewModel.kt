@@ -38,8 +38,8 @@ val ALL_CATEGORIES = listOf(
         accentColor = AccentPurple
     ),
     CategorySummary(
-        category = LogCategory.SCREEN_CONTEXT_AI,
-        displayName = "Screen Context AI",
+        category = LogCategory.UI_RECOGNITION_AI,
+        displayName = "UI Recognition AI",
         description = "UI detection & OCR",
         icon = Icons.AutoMirrored.Filled.ViewQuilt,
         accentColor = AccentBlue

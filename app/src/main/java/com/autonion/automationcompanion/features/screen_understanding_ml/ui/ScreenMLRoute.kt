@@ -47,7 +47,7 @@ import com.autonion.automationcompanion.features.omni_chatbot.ui.LocalStartWalkt
 import kotlinx.coroutines.launch
 
 /**
- * Compose-based route for Screen Context AI (Screen ML).
+ * Compose-based route for UI Recognition AI (Screen ML).
  *
  * Replaces the Activity-based PresetDashboardActivity so the companion
  * overlay (Shimeji) stays visible during walkthroughs — the UI remains
@@ -135,7 +135,7 @@ private fun ScreenMLDashboardContent(
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("Agent Automations") },
+                    title = { Text("UI Recognition AI", fontWeight = FontWeight.Bold) },
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -149,13 +149,6 @@ private fun ScreenMLDashboardContent(
                     actions = {
                         IconButton(onClick = { startWalkthrough("screen_ml") }) {
                             Icon(Icons.Outlined.Info, contentDescription = "Take a Walkthrough", tint = MaterialTheme.colorScheme.onSurface)
-                        }
-                        IconButton(onClick = { onTest("yolov11s_model.tflite") }) {
-                            Icon(
-                                Icons.Default.BugReport,
-                                contentDescription = "Test Detection",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
                         }
                     }
                 )

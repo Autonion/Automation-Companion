@@ -22,7 +22,7 @@ data class ExecutionLog(
 /** Log categories matching the 7 HomeScreen feature cards */
 object LogCategory {
     const val GESTURE_RECORDING = "GESTURE_RECORDING"
-    const val SCREEN_CONTEXT_AI = "SCREEN_CONTEXT_AI"
+    const val UI_RECOGNITION_AI = "UI_RECOGNITION_AI"
     const val SEMANTIC_AUTOMATION = "SEMANTIC_AUTOMATION"
     const val CONDITIONAL_MACROS = "CONDITIONAL_MACROS"
     const val SYSTEM_CONTEXT = "SYSTEM_CONTEXT"

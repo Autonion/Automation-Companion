@@ -7,5 +7,6 @@ data class AutomationPrompt(
     val transactionId: String,
     val prompt: String,
     val timestamp: Long,
-    val sourceDeviceId: String = "android_controller"
+    val sourceDeviceId: String = "android_controller",
+    val context: String? = null
 )

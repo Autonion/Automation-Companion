@@ -16,6 +16,7 @@ class VisionEditorActivity : ComponentActivity() {
 
         val imagePath = intent.getStringExtra("IMAGE_PATH")
         val presetId = intent.getStringExtra("PRESET_ID")
+        val appendPresetId = intent.getStringExtra("EXTRA_APPEND_TO_PRESET_ID")
         val presetName = intent.getStringExtra("EXTRA_PRESET_NAME") ?: "New Automation"
         
         val isFlowMode = intent.getBooleanExtra(FlowOverlayContract.EXTRA_FLOW_MODE, false)
@@ -35,29 +36,30 @@ class VisionEditorActivity : ComponentActivity() {
                 VisionEditorScreen(
                     imagePath = imagePath ?: "",
                     presetId = presetId,
+                    appendPresetId = appendPresetId,
                     presetName = presetName,
                     isFlowMode = isFlowMode,
                     flowNodeId = flowNodeId,
-                    onSaved = { tempFilePath ->
-                        if (isFlowMode && flowNodeId != null && tempFilePath != null) {
+                    onSaved = { savedId ->
+                        if (isFlowMode && flowNodeId != null && savedId != null) {
                             val resultIntent = Intent(FlowOverlayContract.ACTION_FLOW_VISION_DONE).apply {
                                 putExtra(FlowOverlayContract.EXTRA_RESULT_NODE_ID, flowNodeId)
-                                putExtra(FlowOverlayContract.EXTRA_RESULT_FILE_PATH, tempFilePath)
+                                putExtra(FlowOverlayContract.EXTRA_RESULT_FILE_PATH, savedId)
                                 putExtra(FlowOverlayContract.EXTRA_RESULT_IMAGE_PATH, imagePath)
                             }
                             LocalBroadcastManager.getInstance(this@VisionEditorActivity).sendBroadcast(resultIntent)
                         } 
                         // Always re-show the overlay so user can capture more or close manually
-                        showOverlayAgain()
+                        showOverlayAgain(if (!isFlowMode) savedId else null)
                         finish()
                     },
                     onCancel = {
-                        showOverlayAgain()
+                        showOverlayAgain(null)
                         finish()
                     },
                     onRecapture = {
                         // Just close this activity — overlay will re-show and user can capture again
-                        showOverlayAgain()
+                        showOverlayAgain(null)
                         finish()
                     },
                     flowVisionJson = flowVisionJson
@@ -66,10 +68,13 @@ class VisionEditorActivity : ComponentActivity() {
         }
     }
 
-    private fun showOverlayAgain() {
+    private fun showOverlayAgain(presetId: String?) {
         try {
             val intent = Intent(this, CaptureOverlayService::class.java).apply {
                 action = "ACTION_SHOW_OVERLAY"
+                if (presetId != null) {
+                    putExtra("EXTRA_PRESET_ID", presetId)
+                }
             }
             startService(intent)
         } catch (_: Exception) {

@@ -2,6 +2,8 @@ package com.autonion.automationcompanion.features.flow_automation.ui.editor
 
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -9,6 +11,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Undo
@@ -21,6 +24,9 @@ import android.content.Context
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
@@ -29,6 +35,9 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.filled.Accessibility
+import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.Screenshot
 import androidx.activity.compose.BackHandler
 import com.autonion.automationcompanion.features.flow_automation.engine.FlowExecutionState
 import com.autonion.automationcompanion.features.flow_automation.model.LaunchAppNode
@@ -40,6 +49,7 @@ import com.autonion.automationcompanion.features.flow_automation.ui.editor.canva
 import com.autonion.automationcompanion.features.flow_automation.ui.editor.panels.EdgeConditionOverlay
 import com.autonion.automationcompanion.features.flow_automation.ui.editor.panels.NodeConfigPanel
 import com.autonion.automationcompanion.features.flow_automation.ui.editor.panels.NodePalette
+import com.autonion.automationcompanion.features.system_context_automation.shared.ui.PermissionDisclosureDialog
 import kotlinx.coroutines.delay
 
 /**
@@ -77,6 +87,11 @@ fun FlowEditorScreen(
     // ── MediaProjection blocking dialog ──
     var showFullScreenDialog by remember { mutableStateOf(false) }
     var pendingExecute by remember { mutableStateOf(false) }
+
+    // ── Disclosure dialog states ──
+    var showAccessibilityDisclosure by remember { mutableStateOf(false) }
+    var showOverlayDisclosure by remember { mutableStateOf(false) }
+    var showMediaProjectionDisclosure by remember { mutableStateOf(false) }
 
     // Detect if flow has LaunchApp + visual/ML nodes (needs full-screen capture)
     val hasLaunchAppNode = remember(state.graph.nodes) {
@@ -118,6 +133,7 @@ fun FlowEditorScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(editorColors.canvasBg)
+            .imePadding()
             .onSizeChanged { size ->
                 with(density) {
                     canvasSize = Size(size.width.toFloat(), size.height.toFloat())
@@ -171,27 +187,94 @@ fun FlowEditorScreen(
             }
 
             // Editable flow title
-            var titleText by remember(state.graph.id) { mutableStateOf(state.graph.name) }
-            BasicTextField(
-                value = titleText,
-                onValueChange = {
-                    titleText = it
-                    viewModel.renameFlow(it)
-                },
-                textStyle = TextStyle(
-                    color = editorColors.topBarText,
+            var showEditTitleDialog by remember { mutableStateOf(false) }
+            
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 8.dp)
+                    .clickable { showEditTitleDialog = true }
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = state.graph.name.ifEmpty { "Untitled Flow" },
+                    color = if (state.graph.name.isEmpty()) editorColors.topBarDimText else editorColors.topBarText,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp
-                ),
-                singleLine = true,
-                modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
-                decorationBox = { innerTextField ->
-                    if (titleText.isEmpty()) {
-                        Text("Untitled Flow", color = editorColors.topBarDimText, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    }
-                    innerTextField()
+                    fontSize = 16.sp,
+                    modifier = Modifier.weight(1f, fill = false),
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+                Spacer(Modifier.width(8.dp))
+                Icon(
+                    Icons.Default.Edit,
+                    contentDescription = "Edit Flow Name",
+                    tint = editorColors.topBarDimText,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+
+            if (showEditTitleDialog) {
+                var tempTitle by remember { mutableStateOf(state.graph.name) }
+                val focusRequester = remember { FocusRequester() }
+                
+                AlertDialog(
+                    onDismissRequest = { showEditTitleDialog = false },
+                    title = { Text("Edit Flow Name", color = Color.White) },
+                    text = {
+                        OutlinedTextField(
+                            value = tempTitle,
+                            onValueChange = { tempTitle = it },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(focusRequester),
+                            singleLine = true,
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                                imeAction = androidx.compose.ui.text.input.ImeAction.Done
+                            ),
+                            keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                                onDone = {
+                                    if (tempTitle.isNotBlank()) {
+                                        viewModel.renameFlow(tempTitle)
+                                    }
+                                    showEditTitleDialog = false
+                                }
+                            ),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White.copy(alpha = 0.8f),
+                                focusedBorderColor = Color(0xFF64FFDA),
+                                unfocusedBorderColor = Color.White.copy(alpha = 0.3f),
+                                cursorColor = Color(0xFF64FFDA)
+                            )
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                if (tempTitle.isNotBlank()) {
+                                    viewModel.renameFlow(tempTitle)
+                                }
+                                showEditTitleDialog = false
+                            }
+                        ) {
+                            Text("Save", color = Color(0xFF64FFDA))
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showEditTitleDialog = false }) {
+                            Text("Cancel", color = Color.White.copy(alpha = 0.5f))
+                        }
+                    },
+                    containerColor = Color(0xFF1E2024)
+                )
+                
+                LaunchedEffect(Unit) {
+                    kotlinx.coroutines.delay(100)
+                    focusRequester.requestFocus()
                 }
-            )
+            }
 
             // Undo / Redo
             IconButton(
@@ -330,7 +413,7 @@ fun FlowEditorScreen(
         }
 
         // Bottom panels
-        Column(modifier = Modifier.align(Alignment.BottomCenter)) {
+        Column(modifier = Modifier.align(Alignment.BottomCenter).imePadding()) {
             // Node palette
             AnimatedVisibility(
                 visible = state.showNodePalette,
@@ -359,14 +442,7 @@ fun FlowEditorScreen(
                         },
                         onLaunchOverlay = { node ->
                             if (!android.provider.Settings.canDrawOverlays(context)) {
-                                val intent = android.content.Intent(
-                                    android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                    android.net.Uri.parse("package:${context.packageName}")
-                                ).apply {
-                                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                                }
-                                context.startActivity(intent)
-                                android.widget.Toast.makeText(context, "Please grant 'Display over other apps' permission and try again.", android.widget.Toast.LENGTH_LONG).show()
+                                showOverlayDisclosure = true
                             } else {
                                 viewModel.launchOverlayForNode(node)
                             }
@@ -417,8 +493,7 @@ fun FlowEditorScreen(
                             viewModel.stopExecution()
                         } else {
                             if (!com.autonion.automationcompanion.AccessibilityRouter.isServiceConnected()) {
-                                android.widget.Toast.makeText(context, "Please enable Accessibility Service to run flows", android.widget.Toast.LENGTH_SHORT).show()
-                                context.startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                                showAccessibilityDisclosure = true
                             } else if (!hasVisualNodes) {
                                 // No visual/ML nodes → execute directly without MediaProjection
                                 viewModel.executeFlow()
@@ -426,9 +501,8 @@ fun FlowEditorScreen(
                                 // Has LaunchApp + visual nodes → show blocking dialog first
                                 showFullScreenDialog = true
                             } else {
-                                // Has visual nodes but no LaunchApp → request MP permission normally
-                                val mpManager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as android.media.projection.MediaProjectionManager
-                                projectionLauncher.launch(mpManager.createScreenCaptureIntent())
+                                // Has visual nodes but no LaunchApp → show disclosure then request MP
+                                showMediaProjectionDisclosure = true
                             }
                         }
                     },
@@ -446,8 +520,7 @@ fun FlowEditorScreen(
                 FloatingActionButton(
                     onClick = { 
                         if (!com.autonion.automationcompanion.AccessibilityRouter.isServiceConnected()) {
-                            android.widget.Toast.makeText(context, "Please enable Accessibility Service to add nodes", android.widget.Toast.LENGTH_SHORT).show()
-                            context.startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                            showAccessibilityDisclosure = true
                         } else {
                             viewModel.toggleNodePalette() 
                         }
@@ -513,4 +586,48 @@ fun FlowEditorScreen(
             }
         )
     }
+
+    // ── Disclosure dialogs ──
+    PermissionDisclosureDialog(
+        showDialog = showAccessibilityDisclosure,
+        title = "Accessibility Service Required",
+        description = "Autonion needs Accessibility Service to execute automation flows. It uses this permission to simulate taps, swipes, and other gestures on your behalf. Please enable it in the next screen.",
+        icon = Icons.Default.Accessibility,
+        onDismiss = { showAccessibilityDisclosure = false },
+        onContinue = {
+            showAccessibilityDisclosure = false
+            context.startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        }
+    )
+
+    PermissionDisclosureDialog(
+        showDialog = showOverlayDisclosure,
+        title = "Display Over Other Apps Required",
+        description = "Autonion needs to display over other apps to show the gesture recording overlay for configuring flow nodes.",
+        icon = Icons.Default.Layers,
+        onDismiss = { showOverlayDisclosure = false },
+        onContinue = {
+            showOverlayDisclosure = false
+            val intent = android.content.Intent(
+                android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                android.net.Uri.parse("package:${context.packageName}")
+            ).apply {
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(intent)
+        }
+    )
+
+    PermissionDisclosureDialog(
+        showDialog = showMediaProjectionDisclosure,
+        title = "Screen Capture Required",
+        description = "Autonion needs to capture your screen to detect visual elements during flow execution. The screen content is processed locally on your device and is not stored or shared.",
+        icon = Icons.Default.Screenshot,
+        onDismiss = { showMediaProjectionDisclosure = false },
+        onContinue = {
+            showMediaProjectionDisclosure = false
+            val mpManager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as android.media.projection.MediaProjectionManager
+            projectionLauncher.launch(mpManager.createScreenCaptureIntent())
+        }
+    )
 }

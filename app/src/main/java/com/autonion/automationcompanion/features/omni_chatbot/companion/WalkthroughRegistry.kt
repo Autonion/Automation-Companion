@@ -18,7 +18,7 @@ object WalkthroughRegistry {
     private val aliases: Map<String, String> = mapOf(
         "screen_understanding"  to "screen_ml",
         "screen_context"        to "screen_ml",
-        "screen_context_ai"     to "screen_ml",
+        "UI_RECOGNITION_AI"     to "screen_ml",
         "image_checker"         to "visual_trigger",
         "vision_trigger"        to "visual_trigger",
         "cross_device_sync"     to "cross_device",
@@ -105,20 +105,20 @@ object WalkthroughRegistry {
         ),
 
         // ───────────────────────────────────────────────
-        //  Screen Context AI (Screen ML)
+        //  UI Recognition AI (Screen ML)
         // ───────────────────────────────────────────────
         "screen_ml" to WalkthroughScript(
             featureId = "screen_ml",
-            featureName = "Screen Context AI",
+            featureName = "UI Recognition AI",
             description = "AI-powered screen understanding using YOLO object detection and OCR.",
             steps = listOf(
                 WalkthroughStep(
-                    instruction = "Opening Screen Context AI for you…",
+                    instruction = "Opening UI Recognition AI for you…",
                     targetRoute = AutomationRoutes.SCREEN_UNDERSTAND,
                     stepType = StepType.NAVIGATE
                 ),
                 WalkthroughStep(
-                    instruction = "This is Screen Context AI — it uses YOLO object detection " +
+                    instruction = "This is UI Recognition AI — it uses YOLO object detection " +
                             "and OCR to understand what's on your screen in real time. " +
                             "It can identify buttons, text fields, icons, and read text from any app.",
                     stepType = StepType.OBSERVE
@@ -137,7 +137,7 @@ object WalkthroughRegistry {
                     stepType = StepType.OBSERVE
                 ),
                 WalkthroughStep(
-                    instruction = "Screen Context AI works with any app — it doesn't rely on " +
+                    instruction = "UI Recognition AI works with any app — it doesn't rely on " +
                             "the accessibility tree, so it's perfect for apps that block " +
                             "standard automation. It's also available as a node in Flow Builder! 🧠",
                     stepType = StepType.OBSERVE

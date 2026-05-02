@@ -8,6 +8,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -20,6 +22,8 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.animation.animateContentSize
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -28,6 +32,8 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -48,6 +54,14 @@ import android.util.Patterns
 import com.autonion.automationcompanion.features.omni_chatbot.OmniChatbotViewModel
 import com.autonion.automationcompanion.features.omni_chatbot.model.*
 import com.autonion.automationcompanion.features.semantic_automation.ml.ServerConnectionStatus
+import com.autonion.automationcompanion.features.semantic_automation.ml.CloudApiConnectionStatus
+import com.autonion.automationcompanion.features.semantic_automation.ml.CLOUD_API_PROVIDERS
+import com.autonion.automationcompanion.features.semantic_automation.ml.CloudApiProvider
+import com.autonion.automationcompanion.features.semantic_automation.ml.CloudApiLLMEngine
+import com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode
+import com.autonion.automationcompanion.features.semantic_automation.consent.CloudApiConsentManager
+import com.autonion.automationcompanion.features.semantic_automation.ui.CloudApiDisclaimerDialog
+import com.autonion.automationcompanion.ui.components.ChatHistoryPanel
 import java.util.Date
 
 // ─── Colors ──────────────────────────────────────────────
@@ -96,7 +110,8 @@ fun OmniChatbotScaffold(
         "feature/flow_builder",
         "feature/gesture_recording_playback",
         "feature/screen_understanding_using_on_device_ml",
-        "feature/visual_trigger"
+        "feature/visual_trigger",
+        "settings/exclusion"
     )
     val shouldHideFab = hideFabRoutes.any { currentRoute?.contains(it) == true }
     val shouldShowFab = !isExpanded && !isWalkthroughActive && !shouldHideFab
@@ -120,7 +135,7 @@ fun OmniChatbotScaffold(
     Box(modifier = Modifier.fillMaxSize()) {
         // ── App Content (with walkthrough trigger available to all screens) ──
         CompositionLocalProvider(
-            LocalStartWalkthrough provides { featureId -> viewModel.startWalkthrough(featureId) }
+            LocalStartWalkthrough provides { featureId -> viewModel.startWalkthrough(featureId, fromOmniChat = false) }
         ) {
             content()
         }
@@ -277,13 +292,15 @@ private fun OmniChatSheet(viewModel: OmniChatbotViewModel) {
                         )
                     }
             ) {
-                ChatSheetHeader(
+            ChatSheetHeader(
                     onClose = { viewModel.collapse() },
                     onSettingsClick = { viewModel.toggleSettings() },
-                    onFAQBrowserClick = { viewModel.toggleFAQBrowser() },
+                    onNewChatClick = { viewModel.clearChat() },
+                    onHistoryClick = { viewModel.toggleHistory() },
                     connectionStatus = viewModel.llmConnectionStatus.collectAsState().value,
+                    cloudConnectionStatus = viewModel.cloudConnectionStatus.collectAsState().value,
+                    inferenceMode = viewModel.inferenceMode.collectAsState().value,
                     showSettings = showSettings,
-                    showFAQBrowser = showFAQBrowser,
                     isDragging = dragOffsetY > 0f
                 )
             }
@@ -297,60 +314,215 @@ private fun OmniChatSheet(viewModel: OmniChatbotViewModel) {
                 LLMSettingsPanel(viewModel = viewModel)
             }
 
-            // ── FAQ Browser Panel ──
-            AnimatedVisibility(
-                visible = showFAQBrowser,
-                enter = expandVertically(tween(300)) + fadeIn(tween(200)),
-                exit = shrinkVertically(tween(250)) + fadeOut(tween(150))
-            ) {
-                FAQBrowserUI(faqList = faqList, onFAQSelected = { viewModel.onFAQSelected(it) })
-            }
+            // ── Main Content Area ──
+            val isAIReady by viewModel.isAIReady.collectAsState()
+            val showHistory by viewModel.showHistory.collectAsState()
+            val chatHistorySessions by viewModel.chatHistorySessions.collectAsState()
 
-            // ── FAQ Chips ──
-            AnimatedVisibility(visible = messages.isEmpty() && !showSettings && !showFAQBrowser) {
-                FAQChipRow(
-                    chips = faqChips,
-                    onChipClick = { viewModel.processPrompt(it.question) }
-                )
-            }
+            // ── Tab State ──
+            var selectedTab by remember { mutableIntStateOf(1) } // Default to Chat tab
 
-            // ── Messages ──
-            if (messages.isEmpty() && !showSettings && !showFAQBrowser) {
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    EmptyChatState()
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp),
-                    state = listState,
-                    reverseLayout = true,
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                    contentPadding = PaddingValues(vertical = 8.dp)
-                ) {
-                    items(messages, key = { it.id }) { message ->
-                        ChatBubble(
-                            message = message,
-                            onStopTask = { taskId -> viewModel.stopScheduledTask(taskId) },
-                            onStartWalkthrough = { featureId -> viewModel.startWalkthrough(featureId) }
-                        )
+            // ── Tab Row ──
+            OmniTabRow(selectedTab = selectedTab, onTabSelected = { selectedTab = it })
+
+            // ── Tabbed Content ──
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                AnimatedContent(
+                    targetState = selectedTab,
+                    transitionSpec = {
+                        fadeIn(tween(250)) + slideInHorizontally(
+                            tween(250),
+                            initialOffsetX = { if (targetState > initialState) it / 4 else -it / 4 }
+                        ) togetherWith fadeOut(tween(200))
+                    },
+                    label = "OmniTabContent",
+                    modifier = Modifier.fillMaxSize()
+                ) { tab ->
+                    when (tab) {
+                        0 -> {
+                            // ── FAQ Tab ──
+                            FAQBrowserUI(
+                                faqList = faqList,
+                                isAIReady = isAIReady,
+                                onFAQSelected = { faq ->
+                                    if (isAIReady) {
+                                        viewModel.onFAQSelected(faq)
+                                        selectedTab = 1 // Switch to Chat only when LLM available
+                                    }
+                                    // When !isAIReady, answer is shown inline (handled inside FAQBrowserUI)
+                                }
+                            )
+                        }
+                        1 -> {
+                            // ── Chat Tab ──
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .then(if (!isAIReady) Modifier.blur(12.dp) else Modifier)
+                                ) {
+                                    // ── FAQ Chips ──
+                                    AnimatedVisibility(visible = messages.isEmpty() && !showSettings) {
+                                        FAQChipRow(
+                                            chips = faqChips,
+                                            onChipClick = { viewModel.processPrompt(it.question) }
+                                        )
+                                    }
+
+                                    // ── Messages ──
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .fillMaxWidth(),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        if (messages.isEmpty() && !showSettings) {
+                                            EmptyChatState()
+                                        } else {
+                                            LazyColumn(
+                                                modifier = Modifier
+                                                    .fillMaxSize()
+                                                    .padding(horizontal = 12.dp),
+                                                state = listState,
+                                                reverseLayout = true,
+                                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                                                contentPadding = PaddingValues(vertical = 8.dp)
+                                            ) {
+                                                items(messages, key = { it.id }) { message ->
+                                                    ChatBubble(
+                                                        message = message,
+                                                        onStopTask = { taskId -> viewModel.stopScheduledTask(taskId) },
+                                                        onStartWalkthrough = { featureId -> viewModel.startWalkthrough(featureId, fromOmniChat = true) }
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // ── Input Bar ──
+                                    ChatInputBar(
+                                        value = inputText,
+                                        onValueChange = { viewModel.onInputChanged(it) },
+                                        onSend = { viewModel.processPrompt() }
+                                    )
+                                }
+
+                                if (!isAIReady) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(Color.Black.copy(alpha = 0.18f))
+                                            .clickable(
+                                                interactionSource = remember { MutableInteractionSource() },
+                                                indication = null,
+                                                onClick = {}
+                                            )
+                                            .pointerInput(Unit) {
+                                                awaitPointerEventScope {
+                                                    while (true) {
+                                                        awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
+                                                    }
+                                                }
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        com.autonion.automationcompanion.ui.components.ConnectionRequiredOverlay(
+                                            message = "To use Omni-Chat AI, connect a Server LLM, select a Cloud API, or use an On-Device SLM.",
+                                            steps = listOf(
+                                                "Click the ⚙️ icon above.",
+                                                "Choose 'Server LLM' and enter your Ollama IP.",
+                                                "Or choose 'Cloud API' (configure in AI Engine Hub).",
+                                                "Or choose 'On-Device SLM' to run locally."
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
-            }
 
-            // ── Input Bar ──
-            ChatInputBar(
-                value = inputText,
-                onValueChange = { viewModel.onInputChanged(it) },
-                onSend = { viewModel.processPrompt() }
+                // ── History Panel Overlay ──
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = showHistory,
+                    enter = fadeIn(tween(200)) + slideInHorizontally(tween(300)) { -it },
+                    exit = fadeOut(tween(200)) + slideOutHorizontally(tween(250)) { -it }
+                ) {
+                    ChatHistoryPanel(
+                        sessions = chatHistorySessions,
+                        onSessionClick = { session ->
+                            viewModel.loadChatSession(session.sessionId)
+                            viewModel.toggleHistory()
+                        },
+                        onDeleteSession = { viewModel.deleteSession(it.sessionId) },
+                        onClose = { viewModel.toggleHistory() }
+                    )
+                }
+            }
+        }
+    }
+}
+
+// ─── Tab Row ─────────────────────────────────────────────
+
+private data class OmniTab(val title: String, val icon: androidx.compose.ui.graphics.vector.ImageVector)
+
+@Composable
+private fun OmniTabRow(selectedTab: Int, onTabSelected: (Int) -> Unit) {
+    val tabs = listOf(
+        OmniTab("FAQ", Icons.Default.MenuBook),
+        OmniTab("Chat", Icons.Default.Chat)
+    )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(Color.White.copy(alpha = 0.05f))
+            .padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        tabs.forEachIndexed { index, tab ->
+            val isSelected = index == selectedTab
+            val animatedAlpha by animateFloatAsState(
+                if (isSelected) 1f else 0f,
+                animationSpec = tween(200),
+                label = "tab_bg_$index"
             )
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(
+                        if (isSelected) Brush.horizontalGradient(
+                            listOf(AccentPurple.copy(alpha = 0.3f), AccentBlue.copy(alpha = 0.2f))
+                        ) else Brush.horizontalGradient(
+                            listOf(Color.Transparent, Color.Transparent)
+                        )
+                    )
+                    .clickable { onTabSelected(index) }
+                    .padding(vertical = 8.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        tab.icon,
+                        contentDescription = tab.title,
+                        tint = if (isSelected) Color.White else Color.White.copy(alpha = 0.4f),
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        tab.title,
+                        color = if (isSelected) Color.White else Color.White.copy(alpha = 0.4f),
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                        fontSize = 13.sp
+                    )
+                }
+            }
         }
     }
 }
@@ -361,14 +533,19 @@ private fun OmniChatSheet(viewModel: OmniChatbotViewModel) {
 private fun ChatSheetHeader(
     onClose: () -> Unit,
     onSettingsClick: () -> Unit,
-    onFAQBrowserClick: () -> Unit,
+    onNewChatClick: () -> Unit,
+    onHistoryClick: () -> Unit,
     connectionStatus: ServerConnectionStatus,
+    cloudConnectionStatus: CloudApiConnectionStatus = CloudApiConnectionStatus.DISCONNECTED,
+    inferenceMode: InferenceMode = InferenceMode.SERVER_LLM,
     showSettings: Boolean,
-    showFAQBrowser: Boolean,
     isDragging: Boolean = false
 ) {
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .statusBarsPadding()
+            .padding(top = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         // Drag handle indicator
@@ -420,19 +597,36 @@ private fun ChatSheetHeader(
             }
 
             // Connection status dot + Settings gear
-            val statusColor = when (connectionStatus) {
-                ServerConnectionStatus.CONNECTED -> AccentGreen
-                ServerConnectionStatus.CONNECTING -> AccentOrange
-                ServerConnectionStatus.DISCONNECTED -> AccentRed
+            val statusColor = when (inferenceMode) {
+                InferenceMode.CLOUD_API -> when (cloudConnectionStatus) {
+                    CloudApiConnectionStatus.CONNECTED -> AccentGreen
+                    CloudApiConnectionStatus.CONNECTING -> AccentOrange
+                    else -> AccentRed
+                }
+                InferenceMode.SERVER_LLM -> when (connectionStatus) {
+                    ServerConnectionStatus.CONNECTED -> AccentGreen
+                    ServerConnectionStatus.CONNECTING -> AccentOrange
+                    ServerConnectionStatus.DISCONNECTED -> AccentRed
+                }
+                InferenceMode.LOCAL_SLM -> AccentPurple // SLM is always "local"
             }
 
-            // FAQ Browser button
-            IconButton(onClick = onFAQBrowserClick) {
+            // New Chat button
+            IconButton(onClick = onNewChatClick) {
                 Icon(
-                    if (showFAQBrowser) Icons.Default.Close else Icons.Default.MenuBook,
-                    contentDescription = "Browse FAQs",
-                    tint = if (showFAQBrowser) Color.White.copy(alpha = 0.8f)
-                           else Color.White.copy(alpha = 0.6f),
+                    Icons.Default.AddComment,
+                    contentDescription = "New Chat",
+                    tint = Color.White.copy(alpha = 0.8f),
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+
+            // History button
+            IconButton(onClick = onHistoryClick) {
+                Icon(
+                    Icons.Default.History,
+                    contentDescription = "Chat History",
+                    tint = Color.White.copy(alpha = 0.6f),
                     modifier = Modifier.size(22.dp)
                 )
             }
@@ -492,8 +686,56 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
     }
     var showModelDropdown by remember { mutableStateOf(false) }
 
-    val isSLM = inferenceMode == com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.LOCAL_SLM
-    val isLLM = inferenceMode == com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.SERVER_LLM
+    val isSLM = inferenceMode == InferenceMode.LOCAL_SLM
+    val isLLM = inferenceMode == InferenceMode.SERVER_LLM
+    val isCloud = inferenceMode == InferenceMode.CLOUD_API
+
+    val cloudStatus by viewModel.cloudConnectionStatus.collectAsState()
+    val cloudSelectedProvider by viewModel.cloudSelectedProvider.collectAsState()
+    var cloudApiKeyInput by remember(viewModel.cloudApiKey) { mutableStateOf(viewModel.cloudApiKey) }
+    var cloudBaseUrlInput by remember(viewModel.cloudBaseUrl) { mutableStateOf(viewModel.cloudBaseUrl) }
+    var cloudModelInput by remember(viewModel.cloudModelName) { mutableStateOf(viewModel.cloudModelName) }
+    var showCloudProviderDropdown by remember { mutableStateOf(false) }
+
+    val context = LocalContext.current
+    var showCloudConsentDialog by remember { mutableStateOf(false) }
+    val cloudApiEngine = remember { CloudApiLLMEngine.getInstance(context) }
+    var fetchedCloudModels by remember { mutableStateOf<List<String>>(emptyList()) }
+    var isFetchingCloudModels by remember { mutableStateOf(false) }
+    var showCloudModelDropdown by remember { mutableStateOf(false) }
+
+    if (showCloudConsentDialog) {
+        CloudApiDisclaimerDialog(
+            onAccept = {
+                CloudApiConsentManager.setConsent(context, true)
+                showCloudConsentDialog = false
+                viewModel.setInferenceMode(InferenceMode.CLOUD_API)
+            },
+            onDecline = {
+                showCloudConsentDialog = false
+            }
+        )
+    }
+
+    LaunchedEffect(cloudStatus, cloudSelectedProvider, cloudBaseUrlInput, cloudApiKeyInput) {
+        val isOllamaProvider = cloudSelectedProvider.id == "ollama"
+        val isOllamaCustom = cloudSelectedProvider.id == "custom" && cloudBaseUrlInput.contains("ollama.com", ignoreCase = true)
+        val isOllamaUrl = cloudSelectedProvider.baseUrl.contains("ollama.com", ignoreCase = true)
+
+        if ((isOllamaProvider || isOllamaCustom || isOllamaUrl) && cloudApiKeyInput.isNotBlank()) {
+            isFetchingCloudModels = true
+            fetchedCloudModels = cloudApiEngine.getAvailableModels() ?: emptyList()
+            isFetchingCloudModels = false
+        } else if (cloudStatus == CloudApiConnectionStatus.CONNECTED &&
+            (isOllamaCustom || isOllamaUrl)
+        ) {
+            isFetchingCloudModels = true
+            fetchedCloudModels = cloudApiEngine.getAvailableModels() ?: emptyList()
+            isFetchingCloudModels = false
+        } else {
+            fetchedCloudModels = emptyList()
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -523,9 +765,7 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
             // SLM chip
             Surface(
                 onClick = {
-                    viewModel.setInferenceMode(
-                        com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.LOCAL_SLM
-                    )
+                    viewModel.setInferenceMode(InferenceMode.LOCAL_SLM)
                 },
                 color = if (isSLM) AccentPurple.copy(alpha = 0.25f) else CardGlass,
                 shape = RoundedCornerShape(20.dp),
@@ -533,7 +773,7 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                 modifier = Modifier.weight(1f)
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
                 ) {
@@ -541,13 +781,13 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                         Icons.Default.PhoneAndroid,
                         contentDescription = null,
                         tint = if (isSLM) AccentPurple else Color.White.copy(alpha = 0.5f),
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(14.dp)
                     )
-                    Spacer(Modifier.width(6.dp))
+                    Spacer(Modifier.width(4.dp))
                     Text(
-                        "On-Device SLM",
+                        "SLM",
                         color = if (isSLM) Color.White else Color.White.copy(alpha = 0.5f),
-                        fontSize = 12.sp,
+                        fontSize = 11.sp,
                         fontWeight = if (isSLM) FontWeight.SemiBold else FontWeight.Normal
                     )
                 }
@@ -555,9 +795,7 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
             // LLM chip
             Surface(
                 onClick = {
-                    viewModel.setInferenceMode(
-                        com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.SERVER_LLM
-                    )
+                    viewModel.setInferenceMode(InferenceMode.SERVER_LLM)
                 },
                 color = if (isLLM) AccentPurple.copy(alpha = 0.25f) else CardGlass,
                 shape = RoundedCornerShape(20.dp),
@@ -565,22 +803,56 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                 modifier = Modifier.weight(1f)
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        Icons.Default.Dns,
+                        contentDescription = null,
+                        tint = if (isLLM) AccentPurple else Color.White.copy(alpha = 0.5f),
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        "Server",
+                        color = if (isLLM) Color.White else Color.White.copy(alpha = 0.5f),
+                        fontSize = 11.sp,
+                        fontWeight = if (isLLM) FontWeight.SemiBold else FontWeight.Normal
+                    )
+                }
+            }
+            // Cloud API chip
+            Surface(
+                onClick = {
+                    if (CloudApiConsentManager.hasConsent(context)) {
+                        viewModel.setInferenceMode(InferenceMode.CLOUD_API)
+                    } else {
+                        showCloudConsentDialog = true
+                    }
+                },
+                color = if (isCloud) AccentBlue.copy(alpha = 0.25f) else CardGlass,
+                shape = RoundedCornerShape(20.dp),
+                border = if (isCloud) BorderStroke(1.dp, AccentBlue) else null,
+                modifier = Modifier.weight(1f)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
                 ) {
                     Icon(
                         Icons.Default.Cloud,
                         contentDescription = null,
-                        tint = if (isLLM) AccentPurple else Color.White.copy(alpha = 0.5f),
-                        modifier = Modifier.size(16.dp)
+                        tint = if (isCloud) AccentBlue else Color.White.copy(alpha = 0.5f),
+                        modifier = Modifier.size(14.dp)
                     )
-                    Spacer(Modifier.width(6.dp))
+                    Spacer(Modifier.width(4.dp))
                     Text(
-                        "Server LLM",
-                        color = if (isLLM) Color.White else Color.White.copy(alpha = 0.5f),
-                        fontSize = 12.sp,
-                        fontWeight = if (isLLM) FontWeight.SemiBold else FontWeight.Normal
+                        "Cloud API",
+                        color = if (isCloud) Color.White else Color.White.copy(alpha = 0.5f),
+                        fontSize = 11.sp,
+                        fontWeight = if (isCloud) FontWeight.SemiBold else FontWeight.Normal
                     )
                 }
             }
@@ -848,6 +1120,287 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                         color = Color.White.copy(alpha = 0.35f),
                         fontSize = 11.sp,
                         lineHeight = 15.sp
+                    )
+                }
+            }
+        }
+
+        // ── Cloud API Mode Content ──
+        AnimatedVisibility(
+            visible = isCloud,
+            enter = expandVertically(tween(200)) + fadeIn(),
+            exit = shrinkVertically(tween(150)) + fadeOut()
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Status Banner
+                val cloudStatusConfig = when (cloudStatus) {
+                    CloudApiConnectionStatus.CONNECTED -> Triple(
+                        "Cloud API Connected", AccentGreen, Icons.Default.Cloud
+                    )
+                    CloudApiConnectionStatus.CONNECTING -> Triple(
+                        "Connecting…", AccentOrange, Icons.Default.Wifi
+                    )
+                    CloudApiConnectionStatus.ERROR -> Triple(
+                        "Connection Error", AccentRed, Icons.Default.CloudOff
+                    )
+                    CloudApiConnectionStatus.DISCONNECTED -> Triple(
+                        "Not Configured", AccentRed, Icons.Default.CloudOff
+                    )
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(cloudStatusConfig.second.copy(alpha = 0.12f))
+                        .padding(horizontal = 14.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        cloudStatusConfig.third,
+                        contentDescription = null,
+                        tint = cloudStatusConfig.second,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            cloudStatusConfig.first,
+                            color = Color.White,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 14.sp
+                        )
+                        Text(
+                            if (cloudStatus == CloudApiConnectionStatus.CONNECTED)
+                                "Using your configured Cloud API provider."
+                            else
+                                "Ready to connect to cloud models.",
+                            color = Color.White.copy(alpha = 0.5f),
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+
+                // Provider Dropdown
+                Box {
+                    Surface(
+                        onClick = { showCloudProviderDropdown = true },
+                        color = CardGlass,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.CloudQueue,
+                                contentDescription = null,
+                                tint = AccentBlue,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                text = cloudSelectedProvider.displayName,
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Icon(
+                                Icons.Default.KeyboardArrowDown,
+                                contentDescription = null,
+                                tint = Color.White.copy(alpha = 0.4f),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+
+                    DropdownMenu(
+                        expanded = showCloudProviderDropdown,
+                        onDismissRequest = { showCloudProviderDropdown = false },
+                        modifier = Modifier.background(CardGlass)
+                    ) {
+                        CLOUD_API_PROVIDERS.forEach { provider ->
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        if (provider.id == cloudSelectedProvider.id) {
+                                            Icon(
+                                                Icons.Default.CheckCircle,
+                                                contentDescription = null,
+                                                tint = AccentGreen,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(Modifier.width(8.dp))
+                                        }
+                                        Text(
+                                            provider.displayName,
+                                            color = Color.White,
+                                            fontSize = 13.sp
+                                        )
+                                    }
+                                },
+                                onClick = {
+                                    viewModel.setCloudProvider(provider)
+                                    cloudBaseUrlInput = provider.baseUrl
+                                    cloudModelInput = provider.defaultModel
+                                    showCloudProviderDropdown = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                // Custom Base URL input (only if 'custom')
+                if (cloudSelectedProvider.id == "custom") {
+                    OutlinedTextField(
+                        value = cloudBaseUrlInput,
+                        onValueChange = { cloudBaseUrlInput = it },
+                        placeholder = { Text("Custom Base URL", color = Color.White.copy(alpha = 0.3f), fontSize = 13.sp) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = AccentBlue,
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.1f),
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        )
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // API Key Input
+                    var obscureKey by remember { mutableStateOf(true) }
+                    OutlinedTextField(
+                        value = cloudApiKeyInput,
+                        onValueChange = { cloudApiKeyInput = it },
+                        placeholder = { Text("API Key", color = Color.White.copy(alpha = 0.3f), fontSize = 13.sp) },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        visualTransformation = if (obscureKey) androidx.compose.ui.text.input.PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
+                        trailingIcon = {
+                            IconButton(onClick = { obscureKey = !obscureKey }) {
+                                Icon(
+                                    if (obscureKey) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                    contentDescription = null,
+                                    tint = Color.White.copy(alpha = 0.5f),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = AccentBlue,
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.1f),
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        )
+                    )
+
+                    // Model Name Input
+                    if (isFetchingCloudModels) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(0.6f)) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = AccentBlue)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Fetching models...", fontSize = 13.sp, color = Color.White.copy(alpha=0.7f))
+                        }
+                    } else if (fetchedCloudModels.isNotEmpty() || cloudSelectedProvider.suggestedModels.isNotEmpty()) {
+                        val modelsToShow = if (fetchedCloudModels.isNotEmpty()) fetchedCloudModels else cloudSelectedProvider.suggestedModels
+                        Box(modifier = Modifier.weight(0.6f)) {
+                            Surface(
+                                onClick = { showCloudModelDropdown = true },
+                                color = Color.Transparent,
+                                shape = RoundedCornerShape(4.dp),
+                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.5f)),
+                                modifier = Modifier.fillMaxWidth().height(56.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = cloudModelInput.ifBlank { "Model" },
+                                        color = if (cloudModelInput.isNotBlank()) Color.White else Color.White.copy(alpha = 0.3f),
+                                        fontSize = 13.sp,
+                                        modifier = Modifier.weight(1f),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Icon(
+                                        Icons.Default.KeyboardArrowDown,
+                                        contentDescription = null,
+                                        tint = Color.White.copy(alpha = 0.4f),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+
+                            DropdownMenu(
+                                expanded = showCloudModelDropdown,
+                                onDismissRequest = { showCloudModelDropdown = false },
+                                modifier = Modifier.background(CardGlass)
+                            ) {
+                                modelsToShow.forEach { model ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                if (model == cloudModelInput) {
+                                                    Icon(
+                                                        Icons.Default.CheckCircle,
+                                                        contentDescription = null,
+                                                        tint = AccentGreen,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                    Spacer(Modifier.width(8.dp))
+                                                }
+                                                Text(model, color = Color.White, fontSize = 13.sp)
+                                            }
+                                        },
+                                        onClick = {
+                                            cloudModelInput = model
+                                            showCloudModelDropdown = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        OutlinedTextField(
+                            value = cloudModelInput,
+                            onValueChange = { cloudModelInput = it },
+                            placeholder = { Text("Model", color = Color.White.copy(alpha = 0.3f), fontSize = 13.sp) },
+                            modifier = Modifier.weight(0.6f),
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = AccentBlue,
+                                unfocusedBorderColor = Color.White.copy(alpha = 0.1f),
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White
+                            )
+                        )
+                    }
+                }
+
+                Button(
+                    onClick = { viewModel.saveAndConnectCloudApi(cloudApiKeyInput, cloudBaseUrlInput, cloudModelInput) },
+                    enabled = cloudApiKeyInput.isNotBlank() && cloudStatus != CloudApiConnectionStatus.CONNECTING,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = AccentBlue,
+                        disabledContainerColor = AccentBlue.copy(alpha = 0.3f)
+                    ),
+                    modifier = Modifier.fillMaxWidth().height(48.dp)
+                ) {
+                    Text(
+                        if (cloudStatus == CloudApiConnectionStatus.CONNECTED) "Save & Reconnect" else "Save & Connect",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
             }
@@ -1318,6 +1871,7 @@ private fun formatTime(timestamp: Long): String {
 @Composable
 private fun FAQBrowserUI(
     faqList: List<com.autonion.automationcompanion.features.omni_chatbot.knowledge.FAQRepository.FAQ>,
+    isAIReady: Boolean,
     onFAQSelected: (com.autonion.automationcompanion.features.omni_chatbot.knowledge.FAQRepository.FAQ) -> Unit
 ) {
     Column(
@@ -1328,14 +1882,72 @@ private fun FAQBrowserUI(
             .padding(horizontal = 16.dp)
     ) {
         val listState = rememberLazyListState()
-        
+        var searchQuery by remember { mutableStateOf("") }
+        var expandedFaqId by remember { mutableStateOf<String?>(null) }
+
         Text(
             "FAQ Library",
             color = Color.White.copy(alpha = 0.8f),
             fontWeight = FontWeight.SemiBold,
             fontSize = 18.sp,
-            modifier = Modifier.padding(top = 8.dp, bottom = 12.dp)
+            modifier = Modifier.padding(top = 8.dp, bottom = 8.dp)
         )
+
+        // ── Search Bar ──
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            placeholder = {
+                Text("Search FAQs...", color = Color.White.copy(alpha = 0.35f), fontSize = 14.sp)
+            },
+            leadingIcon = {
+                Icon(
+                    Icons.Default.Search,
+                    contentDescription = "Search",
+                    tint = Color.White.copy(alpha = 0.5f),
+                    modifier = Modifier.size(20.dp)
+                )
+            },
+            trailingIcon = {
+                if (searchQuery.isNotEmpty()) {
+                    IconButton(onClick = { searchQuery = "" }) {
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = "Clear",
+                            tint = Color.White.copy(alpha = 0.5f),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = Color.White,
+                unfocusedTextColor = Color.White,
+                cursorColor = AccentPurple,
+                focusedBorderColor = AccentPurple.copy(alpha = 0.5f),
+                unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
+                focusedContainerColor = Color.White.copy(alpha = 0.05f),
+                unfocusedContainerColor = Color.White.copy(alpha = 0.03f),
+            ),
+            shape = RoundedCornerShape(12.dp),
+            singleLine = true,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 10.dp)
+        )
+
+        // ── Filter FAQs ──
+        val filteredFaqs = remember(searchQuery, faqList) {
+            if (searchQuery.isBlank()) faqList
+            else {
+                val q = searchQuery.lowercase()
+                faqList.filter { faq ->
+                    faq.question.lowercase().contains(q) ||
+                    faq.answer.lowercase().contains(q) ||
+                    faq.tags.any { it.lowercase().contains(q) }
+                }
+            }
+        }
 
         LazyColumn(
             state = listState,
@@ -1343,20 +1955,56 @@ private fun FAQBrowserUI(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             contentPadding = PaddingValues(bottom = 16.dp)
         ) {
-            items(faqList, key = { it.question }) { faq ->
+            if (filteredFaqs.isEmpty()) {
+                item {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(top = 40.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                Icons.Default.SearchOff,
+                                contentDescription = null,
+                                tint = Color.White.copy(alpha = 0.3f),
+                                modifier = Modifier.size(48.dp)
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                "No FAQs match \"$searchQuery\"",
+                                color = Color.White.copy(alpha = 0.4f),
+                                fontSize = 14.sp
+                            )
+                        }
+                    }
+                }
+            }
+            items(filteredFaqs, key = { it.question }) { faq ->
+                val isExpanded = expandedFaqId == faq.question
                 Surface(
                     color = CardGlass,
                     shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                    onClick = { onFAQSelected(faq) }
+                    modifier = Modifier.fillMaxWidth().animateItem(),
+                    onClick = {
+                        // Always toggle inline answer
+                        expandedFaqId = if (isExpanded) null else faq.question
+                    }
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = faq.question,
-                            color = Color.White,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = faq.question,
+                                color = Color.White,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Icon(
+                                if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                contentDescription = if (isExpanded) "Collapse" else "Expand",
+                                tint = Color.White.copy(alpha = 0.4f),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                         if (faq.tags.isNotEmpty()) {
                             Spacer(modifier = Modifier.height(6.dp))
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1374,6 +2022,24 @@ private fun FAQBrowserUI(
                                         )
                                     }
                                 }
+                            }
+                        }
+                        // ── Inline Answer (always available) ──
+                        AnimatedVisibility(
+                            visible = isExpanded,
+                            enter = expandVertically(tween(250)) + fadeIn(tween(200)),
+                            exit = shrinkVertically(tween(200)) + fadeOut(tween(150))
+                        ) {
+                            Column {
+                                Spacer(modifier = Modifier.height(10.dp))
+                                HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Text(
+                                    text = faq.answer,
+                                    color = Color.White.copy(alpha = 0.75f),
+                                    fontSize = 13.sp,
+                                    lineHeight = 19.sp
+                                )
                             }
                         }
                     }

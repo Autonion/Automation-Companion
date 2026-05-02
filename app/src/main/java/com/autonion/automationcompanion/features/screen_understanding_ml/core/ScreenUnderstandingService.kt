@@ -15,7 +15,9 @@ import android.graphics.PointF
 import android.graphics.RectF
 import android.media.projection.MediaProjectionManager
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.Log
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
@@ -74,6 +76,8 @@ class ScreenUnderstandingService : Service() {
 
     // Accumulated steps from multiple snaps
     private val accumulatedSteps: MutableList<AutomationStep> = mutableListOf()
+    // Tracks the preset ID across saves so subsequent saves update the same preset
+    private var savedPresetId: String? = null
 
     @Volatile
     private var latestElements: List<UIElement> = emptyList()
@@ -136,7 +140,7 @@ class ScreenUnderstandingService : Service() {
         val count = perceptionLayer?.getInferenceCount() ?: 0
         if (count > 0) {
             DebugLogger.info(
-                this, LogCategory.SCREEN_CONTEXT_AI,
+                this, LogCategory.UI_RECOGNITION_AI,
                 "Session ended",
                 "Processed $count frames, avg inference: ${"%.1f".format(avgMs)}ms/frame",
                 TAG
@@ -164,6 +168,8 @@ class ScreenUnderstandingService : Service() {
         }
         Log.d(TAG, "Steps added. New total: ${accumulatedSteps.size}")
         Toast.makeText(this, "Added ${steps.size} elements (Total: ${accumulatedSteps.size})", Toast.LENGTH_SHORT).show()
+        // Reveal save button now that we have captured content
+        overlay?.showSaveButton()
     }
 
     /** Save all accumulated steps as a preset */
@@ -173,8 +179,13 @@ class ScreenUnderstandingService : Service() {
             Toast.makeText(this, "No elements to save (Count: 0) — snap and select first", Toast.LENGTH_SHORT).show()
             return
         }
+        // Reuse the same preset ID within a session so repeated saves update
+        // the same file instead of creating duplicates
+        val presetId = savedPresetId ?: UUID.randomUUID().toString()
+        savedPresetId = presetId
+
         val preset = AutomationPreset(
-            id = UUID.randomUUID().toString(),
+            id = presetId,
             name = name,
             scope = ScopeType.GLOBAL,
             executionMode = ExecutionMode.STRICT,
@@ -182,7 +193,6 @@ class ScreenUnderstandingService : Service() {
         )
         presetRepository?.savePreset(preset)
         Toast.makeText(this, "Preset '$name' saved with ${accumulatedSteps.size} steps!", Toast.LENGTH_LONG).show()
-        accumulatedSteps.clear()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -269,7 +279,20 @@ class ScreenUnderstandingService : Service() {
         val metrics = resources.displayMetrics
 
         mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        mediaProjectionCore = MediaProjectionCore(this, mediaProjectionManager!!)
+        mediaProjectionCore = MediaProjectionCore(this, mediaProjectionManager!!) {
+            // MediaProjection was revoked by the OS (screen off, app closed, etc.)
+            Log.w(TAG, "MediaProjection lost — stopping service")
+            DebugLogger.warning(
+                this@ScreenUnderstandingService, LogCategory.UI_RECOGNITION_AI,
+                "Screen capture lost",
+                "MediaProjection revoked by the system — restart required",
+                TAG
+            )
+            Handler(Looper.getMainLooper()).post {
+                Toast.makeText(this@ScreenUnderstandingService, "Screen capture lost — please restart", Toast.LENGTH_LONG).show()
+            }
+            stopSelf()
+        }
         perceptionLayer = PerceptionLayer(this, modelFile)
         temporalTracker = TemporalTracker()
 
@@ -280,6 +303,7 @@ class ScreenUnderstandingService : Service() {
 
         // Clear accumulated steps for new capture session
         accumulatedSteps.clear()
+        savedPresetId = null
 
         overlay = ScreenAgentOverlay(
             context = this,
@@ -372,7 +396,7 @@ class ScreenUnderstandingService : Service() {
                 if (frameCount % 20 == 0L) {
                     val avgMs = perceptionLayer?.getAverageInferenceTimeMs() ?: 0f
                     DebugLogger.info(
-                        this@ScreenUnderstandingService, LogCategory.SCREEN_CONTEXT_AI,
+                        this@ScreenUnderstandingService, LogCategory.UI_RECOGNITION_AI,
                         "Detection stats",
                         "Frame #$frameCount: ${latestElements.size} elements, avg: ${"%.1f".format(avgMs)}ms/frame (skip every 2nd)",
                         TAG
@@ -385,7 +409,7 @@ class ScreenUnderstandingService : Service() {
     private fun captureSnapshot() {
         Log.d(TAG, "Snap clicked, latestBitmap=${latestBitmap != null}")
         DebugLogger.info(
-            this, LogCategory.SCREEN_CONTEXT_AI,
+            this, LogCategory.UI_RECOGNITION_AI,
             "Snap captured",
             "Screenshot taken for element selection",
             TAG
@@ -513,7 +537,7 @@ class ScreenUnderstandingService : Service() {
     overlay?.setPlaybackState(true)
     Toast.makeText(this, "Playing: ${preset.name}", Toast.LENGTH_SHORT).show()
     DebugLogger.info(
-        this, LogCategory.SCREEN_CONTEXT_AI,
+        this, LogCategory.UI_RECOGNITION_AI,
         "Preset started: ${preset.name}",
         "Playing ${preset.steps.size} steps (mode=${preset.executionMode})",
         "ScreenUnderstandingService"
@@ -562,7 +586,7 @@ class ScreenUnderstandingService : Service() {
                             if (success) {
                             Log.d(TAG, "Executed ${step.actionType} on ${step.label}")
                             DebugLogger.success(
-                                this@ScreenUnderstandingService, LogCategory.SCREEN_CONTEXT_AI,
+                                this@ScreenUnderstandingService, LogCategory.UI_RECOGNITION_AI,
                                 "Step ${step.orderIndex}: ${step.label}",
                                 "${step.actionType} executed successfully",
                                 "ScreenUnderstandingService"
@@ -570,7 +594,7 @@ class ScreenUnderstandingService : Service() {
                         } else {
                             Log.e(TAG, "Action ${step.actionType} failed for ${step.label}")
                             DebugLogger.error(
-                                this@ScreenUnderstandingService, LogCategory.SCREEN_CONTEXT_AI,
+                                this@ScreenUnderstandingService, LogCategory.UI_RECOGNITION_AI,
                                 "Step ${step.orderIndex} failed: ${step.label}",
                                 "${step.actionType} failed — check accessibility",
                                 "ScreenUnderstandingService"
@@ -599,7 +623,7 @@ class ScreenUnderstandingService : Service() {
             } catch (e: Exception) {
             Log.e(TAG, "Playback error", e)
             DebugLogger.error(
-                this@ScreenUnderstandingService, LogCategory.SCREEN_CONTEXT_AI,
+                this@ScreenUnderstandingService, LogCategory.UI_RECOGNITION_AI,
                 "Playback error: ${preset.name}",
                 "${e.javaClass.simpleName}: ${e.message}",
                 "ScreenUnderstandingService"
@@ -683,7 +707,7 @@ class ScreenUnderstandingService : Service() {
                         "ocr=${hybridResult.ocrScore}] " +
                         "via ${hybridResult.source}, rotated=$isRotated")
                 DebugLogger.info(
-                    this@ScreenUnderstandingService, LogCategory.SCREEN_CONTEXT_AI,
+                    this@ScreenUnderstandingService, LogCategory.UI_RECOGNITION_AI,
                     "Hybrid match: ${step.label}",
                     "conf=${"%.2f".format(hybridResult.hybridConfidence)} " +
                             "(acc=${"%.2f".format(hybridResult.accessibilityScore)}, " +

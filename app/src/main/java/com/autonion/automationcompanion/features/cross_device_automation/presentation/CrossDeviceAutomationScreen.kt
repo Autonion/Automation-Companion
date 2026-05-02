@@ -4,6 +4,8 @@ import android.text.format.DateFormat
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -15,7 +17,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Rule
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Devices
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Rule
 import androidx.compose.material.icons.filled.SettingsRemote
 import androidx.compose.material.icons.filled.SmartToy
@@ -23,11 +27,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
@@ -35,10 +42,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.autonion.automationcompanion.features.cross_device_automation.CrossDeviceAutomationManager
+import com.autonion.automationcompanion.features.system_context_automation.shared.ui.PermissionDisclosureDialog
 import com.autonion.automationcompanion.ui.components.AuroraBackground
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.filled.Accessibility
 import com.autonion.automationcompanion.features.omni_chatbot.ui.LocalStartWalkthrough
 import com.autonion.automationcompanion.features.cross_device_automation.engine.HardwareButtonMapper
+import com.autonion.automationcompanion.ui.components.ChatHistoryPanel
+import com.autonion.automationcompanion.ui.components.ConnectionRequiredOverlay
 import kotlinx.coroutines.launch
 import java.util.Date
 
@@ -62,10 +73,12 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
 
     val context = LocalContext.current
     var showPermissionDialog by remember { mutableStateOf(false) }
+    var dialogAlreadyShown by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        if (!com.autonion.automationcompanion.AccessibilityRouter.isServiceConnected()) {
+        if (!dialogAlreadyShown && !com.autonion.automationcompanion.AccessibilityRouter.isServiceConnected()) {
             showPermissionDialog = true
+            dialogAlreadyShown = true
         }
     }
 
@@ -78,20 +91,17 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
     // so it runs globally across all screens, not just this one.
 
     if (showPermissionDialog) {
-        AlertDialog(
-            onDismissRequest = { showPermissionDialog = false },
-            title = { Text("Permission Required") },
-            text = { Text("This feature requires the Automation Companion Accessibility Service to function (for Clipboard Sync). Please enable it in Settings.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    showPermissionDialog = false
-                    val intent = android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                    intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                    context.startActivity(intent)
-                }) { Text("Open Settings") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showPermissionDialog = false }) { Text("Cancel") }
+        PermissionDisclosureDialog(
+            showDialog = showPermissionDialog,
+            title = "Accessibility Service Required",
+            description = "Autonion uses the Accessibility Service for clipboard sync and executing automation actions across connected devices. Please enable it in the next screen.",
+            icon = Icons.Default.Accessibility,
+            onDismiss = { showPermissionDialog = false },
+            onContinue = {
+                showPermissionDialog = false
+                val intent = android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(intent)
             }
         )
     }
@@ -129,6 +139,16 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
                 )
             }
         ) { innerPadding ->
+            // ─── Connection State for Overlay ────────────
+            // Cross-Device only needs a connected Desktop Agent.
+            // The Agent handles its own LLM (Ollama or Cloud API).
+            val crossManager = remember { CrossDeviceAutomationManager.getInstance(context) }
+            val devices by crossManager.deviceRepository.getAllDevices().collectAsState(initial = emptyList())
+            val hasAgentConnection = devices.any {
+                it.isSelected && it.status == com.autonion.automationcompanion.features.cross_device_automation.domain.DeviceStatus.ONLINE
+            }
+            val isAIReady = hasAgentConnection
+
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -179,8 +199,50 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
                     label = "TabContent"
                 ) { tab ->
                     when (tab) {
-                        0 -> PromptScreen()
-                        1 -> DesktopAutomationScreen()
+                        0, 1 -> {
+                            // Ask & Rules tabs need agent + LLM connection
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .then(if (!isAIReady) Modifier.blur(12.dp) else Modifier)
+                                    ) {
+                                    when (tab) {
+                                        0 -> PromptScreen()
+                                        1 -> DesktopAutomationScreen()
+                                    }
+                                }
+                                if (!isAIReady) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .clickable(
+                                                interactionSource = remember { MutableInteractionSource() },
+                                                indication = null,
+                                                onClick = {}
+                                            )
+                                            .pointerInput(Unit) {
+                                                awaitPointerEventScope {
+                                                    while (true) {
+                                                        awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
+                                                    }
+                                                }
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        ConnectionRequiredOverlay(
+                                            message = "Connect to a Desktop Agent to use Cross-Device Automation.",
+                                            steps = listOf(
+                                                "Go to the Devices tab and select a desktop.",
+                                                "The AI model is configured on the Desktop Agent.",
+                                                "Open Agent Settings → AI Settings to select a model."
+                                            ),
+                                            optionalChip = "Desktop Agent not connected"
+                                        )
+                                    }
+                                }
+                            }
+                        }
                         2 -> DeviceManagementScreen()
                     }
                 }
@@ -273,6 +335,8 @@ fun PromptScreen() {
     val inputQuery by viewModel.inputQuery.collectAsState()
     val messages by viewModel.messages.collectAsState()
     val isAutomationActive by viewModel.isAutomationActive.collectAsState()
+    val showHistory by viewModel.showHistory.collectAsState()
+    val chatHistorySessions by viewModel.chatHistorySessions.collectAsState()
     val listState = rememberLazyListState()
 
     LaunchedEffect(messages.size, messages.firstOrNull()?.text?.length) {
@@ -281,51 +345,100 @@ fun PromptScreen() {
         }
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        // ─── Messages ──────────────────────
-        if (messages.isEmpty()) {
-            // Empty State
-            Box(
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            // ─── Chat Header (New Chat + History) ────────────
+            Row(
                 modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                contentAlignment = Alignment.Center
-            ) {
-                EmptyChatState()
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .weight(1f)
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp),
-                state = listState,
-                reverseLayout = true,
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-                contentPadding = PaddingValues(vertical = 12.dp)
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                items(messages, key = { it.id }) { message ->
-                    ChatBubble(message)
+                TextButton(onClick = { viewModel.clearChat() }) {
+                    Icon(
+                        Icons.Default.Add,
+                        contentDescription = "New Chat",
+                        tint = Color.White.copy(alpha = 0.6f),
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text("New Chat", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
                 }
+                Spacer(Modifier.width(8.dp))
+                TextButton(onClick = { viewModel.toggleHistory() }) {
+                    Icon(
+                        Icons.Default.History,
+                        contentDescription = "History",
+                        tint = Color.White.copy(alpha = 0.6f),
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text("History", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
+                }
+            }
+
+            // ─── Messages ──────────────────────
+            if (messages.isEmpty()) {
+                // Empty State
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    EmptyChatState()
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp),
+                    state = listState,
+                    reverseLayout = true,
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    contentPadding = PaddingValues(vertical = 12.dp)
+                ) {
+                    items(messages, key = { it.id }) { message ->
+                        ChatBubble(message)
+                    }
+                }
+            }
+
+            // ─── Input Bar ──────────────────────
+            if (isAutomationActive) {
+                Button(
+                    onClick = { viewModel.stopAutomation() },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    Text("Stop Automation", color = Color.White)
+                }
+            } else {
+                ChatInputBar(
+                    value = inputQuery,
+                    onValueChange = viewModel::onQueryChanged,
+                    onSend = viewModel::sendPrompt
+                )
             }
         }
 
-        // ─── Input Bar ──────────────────────
-        if (isAutomationActive) {
-            Button(
-                onClick = { viewModel.stopAutomation() },
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-            ) {
-                Text("Stop Automation", color = Color.White)
-            }
-        } else {
-            ChatInputBar(
-                value = inputQuery,
-                onValueChange = viewModel::onQueryChanged,
-                onSend = viewModel::sendPrompt
+        // ─── History Panel Overlay ──────────────────
+        AnimatedVisibility(
+            visible = showHistory,
+            enter = fadeIn(tween(200)) + slideInHorizontally(tween(300)) { -it },
+            exit = fadeOut(tween(200)) + slideOutHorizontally(tween(250)) { -it }
+        ) {
+            ChatHistoryPanel(
+                sessions = chatHistorySessions,
+                onSessionClick = { session ->
+                    viewModel.loadChatSession(session.sessionId)
+                },
+                onDeleteSession = { viewModel.deleteSession(it.sessionId) },
+                onClose = { viewModel.toggleHistory() }
             )
         }
     }

@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -46,7 +47,7 @@ fun ExclusionListScreen(onBack: () -> Unit) {
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("Excluded Apps") },
+                    title = { Text("Excluded Apps", fontWeight = FontWeight.Bold) },
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -58,14 +59,29 @@ fun ExclusionListScreen(onBack: () -> Unit) {
                 )
             },
             floatingActionButton = {
-                FloatingActionButton(
+                ExtendedFloatingActionButton(
                     onClick = {
                         val intent = Intent(context, AppPickerActivity::class.java)
                         appPickerLauncher.launch(intent)
                     },
-                    containerColor = MaterialTheme.colorScheme.primary
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                    text = { Text("Exclude App") }
+                )
+            },
+            bottomBar = {
+                Surface(
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.82f),
+                    tonalElevation = 2.dp
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = "Add App")
+                    Text(
+                        text = "Use \"Exclude App\" to add apps that should pause automation for privacy and security.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 10.dp)
+                    )
                 }
             },
             containerColor = Color.Transparent
@@ -157,14 +173,62 @@ fun ExclusionListScreen(onBack: () -> Unit) {
                     }
                 }
 
+                // ─── Excluded Apps Section Header ──────────────────
+                item {
+                    Column(modifier = Modifier.padding(bottom = 4.dp)) {
+                        Text(
+                            text = "Excluded Apps List",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Apps listed here will pause Autonion's Accessibility Service when opened. Tap the button below to add an app.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
                 if (excludedPackages.isEmpty()) {
                     item {
-                        Text(
-                            "No apps excluded. Add banking apps here.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(16.dp)
-                        )
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+                            )
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Icon(
+                                    Icons.Default.Shield,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                    modifier = Modifier.size(48.dp)
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text(
+                                    "No apps excluded yet",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = FontWeight.Medium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    "Add banking or sensitive apps here to automatically pause automation when they're in use.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                )
+                            }
+                        }
                     }
                 } else {
                     items(excludedPackages.toList()) { packageName ->

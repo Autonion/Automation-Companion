@@ -69,7 +69,12 @@ fun DebuggerScreen(
             containerColor = Color.Transparent,
             topBar = {
                 TopAppBar(
-                    title = {},
+                    title = {
+                        Text(
+                            "Debugger",
+                            fontWeight = FontWeight.Bold
+                        )
+                    },
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(
@@ -149,22 +154,12 @@ private fun DebuggerHeader(totalCount: Int, onClearAll: () -> Unit) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.Top
     ) {
-        Column {
-            Text(
-                "Debugger",
-                style = MaterialTheme.typography.headlineMedium.copy(
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
+        Text(
+            "Execution logs & diagnostics",
+            style = MaterialTheme.typography.bodyMedium.copy(
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                "Execution logs & diagnostics",
-                style = MaterialTheme.typography.bodyMedium.copy(
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            )
-        }
+        )
 
         if (totalCount > 0) {
             IconButton(onClick = onClearAll) {
