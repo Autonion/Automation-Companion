@@ -353,26 +353,25 @@ private fun OmniChatSheet(viewModel: OmniChatbotViewModel) {
                         }
                         1 -> {
                             // ── Chat Tab ──
-                            Column(modifier = Modifier.fillMaxSize()) {
-                                // ── FAQ Chips ──
-                                AnimatedVisibility(visible = messages.isEmpty() && !showSettings) {
-                                    FAQChipRow(
-                                        chips = faqChips,
-                                        onChipClick = { viewModel.processPrompt(it.question) }
-                                    )
-                                }
-
-                                // ── Messages ──
-                                Box(
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                Column(
                                     modifier = Modifier
-                                        .weight(1f)
-                                        .fillMaxWidth(),
-                                    contentAlignment = Alignment.Center
+                                        .fillMaxSize()
+                                        .then(if (!isAIReady) Modifier.blur(12.dp) else Modifier)
                                 ) {
+                                    // ── FAQ Chips ──
+                                    AnimatedVisibility(visible = messages.isEmpty() && !showSettings) {
+                                        FAQChipRow(
+                                            chips = faqChips,
+                                            onChipClick = { viewModel.processPrompt(it.question) }
+                                        )
+                                    }
+
+                                    // ── Messages ──
                                     Box(
                                         modifier = Modifier
-                                            .fillMaxSize()
-                                            .then(if (!isAIReady) Modifier.blur(12.dp) else Modifier),
+                                            .weight(1f)
+                                            .fillMaxWidth(),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         if (messages.isEmpty() && !showSettings) {
@@ -398,43 +397,44 @@ private fun OmniChatSheet(viewModel: OmniChatbotViewModel) {
                                         }
                                     }
 
-                                    if (!isAIReady) {
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxSize()
-                                                .clickable(
-                                                    interactionSource = remember { MutableInteractionSource() },
-                                                    indication = null,
-                                                    onClick = {}
-                                                )
-                                                .pointerInput(Unit) {
-                                                    awaitPointerEventScope {
-                                                        while (true) {
-                                                            awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
-                                                        }
-                                                    }
-                                                },
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            com.autonion.automationcompanion.ui.components.ConnectionRequiredOverlay(
-                                                message = "To use Omni-Chat AI, connect a Server LLM, select a Cloud API, or use an On-Device SLM.",
-                                                steps = listOf(
-                                                    "Click the ⚙️ icon above.",
-                                                    "Choose 'Server LLM' and enter your Ollama IP.",
-                                                    "Or choose 'Cloud API' (configure in AI Engine Hub).",
-                                                    "Or choose 'On-Device SLM' to run locally."
-                                                )
-                                            )
-                                        }
-                                    }
+                                    // ── Input Bar ──
+                                    ChatInputBar(
+                                        value = inputText,
+                                        onValueChange = { viewModel.onInputChanged(it) },
+                                        onSend = { viewModel.processPrompt() }
+                                    )
                                 }
 
-                                // ── Input Bar ──
-                                ChatInputBar(
-                                    value = inputText,
-                                    onValueChange = { viewModel.onInputChanged(it) },
-                                    onSend = { viewModel.processPrompt() }
-                                )
+                                if (!isAIReady) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(Color.Black.copy(alpha = 0.18f))
+                                            .clickable(
+                                                interactionSource = remember { MutableInteractionSource() },
+                                                indication = null,
+                                                onClick = {}
+                                            )
+                                            .pointerInput(Unit) {
+                                                awaitPointerEventScope {
+                                                    while (true) {
+                                                        awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
+                                                    }
+                                                }
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        com.autonion.automationcompanion.ui.components.ConnectionRequiredOverlay(
+                                            message = "To use Omni-Chat AI, connect a Server LLM, select a Cloud API, or use an On-Device SLM.",
+                                            steps = listOf(
+                                                "Click the ⚙️ icon above.",
+                                                "Choose 'Server LLM' and enter your Ollama IP.",
+                                                "Or choose 'Cloud API' (configure in AI Engine Hub).",
+                                                "Or choose 'On-Device SLM' to run locally."
+                                            )
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

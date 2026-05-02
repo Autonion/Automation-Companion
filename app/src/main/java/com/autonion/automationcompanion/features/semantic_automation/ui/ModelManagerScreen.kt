@@ -983,7 +983,10 @@ private fun CloudApiSettingsCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Icon(
                         when (cloudConnectionStatus) {
                             CloudApiConnectionStatus.CONNECTED -> Icons.Default.CheckCircle
@@ -999,24 +1002,37 @@ private fun CloudApiSettingsCard(
                         modifier = Modifier.size(22.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Cloud API Configuration", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Text(
+                        "Cloud API Configuration",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
-                Text(
-                    when (cloudConnectionStatus) {
-                        CloudApiConnectionStatus.CONNECTED -> "Connected"
-                        CloudApiConnectionStatus.CONNECTING -> "Testing…"
-                        CloudApiConnectionStatus.ERROR -> "Error"
-                        CloudApiConnectionStatus.DISCONNECTED -> "Not Connected"
-                    },
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = when (cloudConnectionStatus) {
-                        CloudApiConnectionStatus.CONNECTED -> MaterialTheme.colorScheme.primary
-                        CloudApiConnectionStatus.ERROR -> MaterialTheme.colorScheme.error
-                        CloudApiConnectionStatus.CONNECTING -> MaterialTheme.colorScheme.tertiary
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
-                    }
-                )
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
+                ) {
+                    Text(
+                        text = when (cloudConnectionStatus) {
+                            CloudApiConnectionStatus.CONNECTED -> "Connected"
+                            CloudApiConnectionStatus.CONNECTING -> "Testing…"
+                            CloudApiConnectionStatus.ERROR -> "Error"
+                            CloudApiConnectionStatus.DISCONNECTED -> "Not Connected"
+                        },
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        color = when (cloudConnectionStatus) {
+                            CloudApiConnectionStatus.CONNECTED -> MaterialTheme.colorScheme.primary
+                            CloudApiConnectionStatus.ERROR -> MaterialTheme.colorScheme.error
+                            CloudApiConnectionStatus.CONNECTING -> MaterialTheme.colorScheme.tertiary
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                }
             }
 
             if (cloudConnectionStatus == CloudApiConnectionStatus.CONNECTING) {

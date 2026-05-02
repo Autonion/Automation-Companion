@@ -52,6 +52,7 @@ import kotlinx.coroutines.flow.stateIn
 import com.autonion.automationcompanion.features.system_context_automation.location.data.db.AppDatabase
 import com.autonion.automationcompanion.features.omni_chatbot.data.db.OmniChatSessionEntity
 import com.autonion.automationcompanion.features.omni_chatbot.data.db.OmniChatMessageEntity
+import com.autonion.automationcompanion.features.semantic_automation.ml.ModelStorageManager
 
 /**
  * ViewModel for the Omni-Chatbot.
@@ -75,6 +76,7 @@ class OmniChatbotViewModel(
     // ─── LLM Engines (exposed for in-chat settings) ──────────
     private val llmEngine = LocalServerLLMEngine.getInstance(context)
     private val cloudApiEngine = CloudApiLLMEngine.getInstance(context)
+    private val modelStorageManager = ModelStorageManager(context)
     // For reading/writing inference mode prefs (uses SharedPreferences — instance doesn't matter)
     private val inferencePrefsEngine = com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine(context)
 
@@ -109,7 +111,10 @@ class OmniChatbotViewModel(
                 serverStatus == ServerConnectionStatus.CONNECTED
             com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.CLOUD_API ->
                 cloudStatus == CloudApiConnectionStatus.CONNECTED
-            else -> true // SLM mode doesn't strictly depend on server connection
+            com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.LOCAL_SLM -> {
+                val activeModelPath = modelStorageManager.getActiveModelPath()
+                !activeModelPath.isNullOrBlank() && java.io.File(activeModelPath).exists()
+            }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
