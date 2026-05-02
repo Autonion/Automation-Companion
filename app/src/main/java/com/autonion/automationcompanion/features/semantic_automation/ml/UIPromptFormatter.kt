@@ -128,7 +128,14 @@ object UIPromptFormatter {
                     ?: fallbackText
                     ?: "no text"
                 val contentText = rawText.replace("\n", " ").trim().take(60)
-                append("\"$contentText\"\n")
+                append("\"$contentText\"")
+                if (!el.resourceId.isNullOrBlank()) append(" id=${el.resourceId.substringAfterLast('/')}")
+                if (!el.contentDescription.isNullOrBlank() && el.contentDescription != el.text) {
+                    append(" desc=\"${el.contentDescription.replace("\n", " ").take(50)}\"")
+                }
+                if (el.isFocused) append(" focused")
+                append(" bounds=${el.bounds.left.toInt()},${el.bounds.top.toInt()},${el.bounds.width().toInt()}x${el.bounds.height().toInt()}")
+                append("\n")
             }
         }
     }
@@ -253,6 +260,7 @@ object UIPromptFormatter {
                 "description" to "Text to enter for INPUT_TEXT actions, empty string otherwise"
             )
         ),
-        "required" to listOf("action", "element_index", "text_to_type")
+        "required" to listOf("action", "element_index", "text_to_type"),
+        "additionalProperties" to false
     )
 }

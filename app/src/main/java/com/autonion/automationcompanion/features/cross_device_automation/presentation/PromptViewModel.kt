@@ -2,8 +2,9 @@ package com.autonion.automationcompanion.features.cross_device_automation.presen
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.autonion.automationcompanion.features.agent_core.models.AgentRequest
+import com.autonion.automationcompanion.features.agent_core.models.AgentRequestContext
 import com.autonion.automationcompanion.features.cross_device_automation.CrossDeviceAutomationManager
-import com.autonion.automationcompanion.features.cross_device_automation.domain.AutomationPrompt
 import com.autonion.automationcompanion.features.cross_device_automation.domain.ResponseStatus
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -116,12 +117,21 @@ class PromptViewModel(
                 return@launch
             }
 
-            // ── 3. Full prompt → broadcast to Desktop Agent (LLM path) ──
-            val prompt = AutomationPrompt(
-                transactionId = UUID.randomUUID().toString(),
+            // Full prompt -> broadcast to Desktop Agent (LLM path).
+            // This keeps legacy prompt/transactionId fields while adding the
+            // agent_request envelope for newer Desktop Agents.
+            val transactionId = UUID.randomUUID().toString()
+            val contextSummary = chatMemory.buildContextSummary()
+            val prompt = AgentRequest(
+                transactionId = transactionId,
                 prompt = promptText,
                 timestamp = System.currentTimeMillis(),
-                context = chatMemory.buildContextSummary()
+                context = contextSummary,
+                agentContext = AgentRequestContext(
+                    conversationSummary = contextSummary,
+                    preferredModelMode = "desktop_default",
+                    origin = "cross_device_chat"
+                )
             )
 
             manager.networkingManager.broadcast(prompt)

@@ -83,7 +83,7 @@ fun PresetsScreen(
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("Automations") },
+                    title = { Text("Gesture Recording") },
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")

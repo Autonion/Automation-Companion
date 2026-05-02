@@ -178,11 +178,19 @@ class NetworkingManager(
                         return // Don't try to parse as RawEvent
                     }
 
-                    // 3. Handle Prompt Response (two-way communication from Desktop)
-                    if (type == "prompt_response") {
+                    // 3. Handle prompt/agent responses from Desktop.
+                    if (type == "prompt_response" || type == "agent_step_result") {
                         val transactionId = jsonObject.get("transactionId")?.asString ?: ""
-                        val status = jsonObject.get("status")?.asString ?: "unknown"
-                        val message = jsonObject.get("message")?.asString ?: ""
+                        val rawStatus = jsonObject.get("status")?.asString ?: "unknown"
+                        val status = when {
+                            type == "agent_step_result" && rawStatus.equals("success", ignoreCase = true) ->
+                                if (jsonObject.get("goalComplete")?.asBoolean == true) "completed" else "in_progress"
+                            type == "agent_step_result" && rawStatus.equals("failed", ignoreCase = true) -> "failed"
+                            else -> rawStatus
+                        }
+                        val message = jsonObject.get("message")?.asString
+                            ?: jsonObject.get("action")?.asString
+                            ?: ""
 
                         val responseStatus = try {
                             ResponseStatus.valueOf(status.uppercase())

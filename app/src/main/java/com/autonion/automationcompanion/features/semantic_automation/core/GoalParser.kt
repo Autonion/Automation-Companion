@@ -146,8 +146,14 @@ class GoalParser(private val context: Context) {
         Log.d(TAG, "Parsing with Cloud API engine: \"$command\"")
 
         if (cloudEngine.connectionStatus.value != CloudApiConnectionStatus.CONNECTED) {
-            Log.w(TAG, "Cloud API not connected — cannot parse goal")
-            return null
+            if (cloudEngine.isConfigured) {
+                Log.d(TAG, "Cloud API configured but not connected; initializing before goal parse")
+                cloudEngine.initialize()
+            }
+            if (cloudEngine.connectionStatus.value != CloudApiConnectionStatus.CONNECTED) {
+                Log.w(TAG, "Cloud API not connected — cannot parse goal")
+                return null
+            }
         }
 
         val userPrompt = buildString {

@@ -89,6 +89,14 @@ val CLOUD_API_PROVIDERS = listOf(
         description = "Aggregator — access any model with one key."
     ),
     CloudApiProvider(
+        id = "ollama",
+        displayName = "Ollama Cloud",
+        baseUrl = "https://api.ollama.com/v1/chat/completions",
+        defaultModel = "",
+        suggestedModels = emptyList(),
+        description = "Ollama Cloud — your personal cloud LLM. Models fetched automatically."
+    ),
+    CloudApiProvider(
         id = "custom",
         displayName = "Custom Endpoint",
         baseUrl = "",
@@ -248,6 +256,47 @@ class CloudApiLLMEngine private constructor(
             _connectionStatus.value = CloudApiConnectionStatus.ERROR
             _errorMessage.value = "Connection failed: ${e.message}"
             Log.e(TAG, "Connection test error", e)
+        }
+    }
+
+    /**
+     * Fetches available models from the /v1/models endpoint if the provider is Ollama Cloud.
+     */
+    suspend fun getAvailableModels(): List<String>? = withContext(Dispatchers.IO) {
+        if (!isConfigured) return@withContext null
+        if (!baseUrl.contains("ollama.com", ignoreCase = true)) return@withContext null
+
+        try {
+            val modelsUrl = baseUrl.replace("/chat/completions", "/models")
+            val request = Request.Builder()
+                .url(modelsUrl)
+                .addHeader("Authorization", "Bearer $apiKey")
+                .get()
+                .build()
+
+            val response = httpClient.newCall(request).execute()
+            val responseBody = response.body?.string() ?: ""
+
+            if (response.isSuccessful) {
+                val json = JSONObject(responseBody)
+                val data = json.optJSONArray("data") ?: return@withContext emptyList()
+                val models = mutableListOf<String>()
+                for (i in 0 until data.length()) {
+                    val modelObj = data.optJSONObject(i)
+                    val id = modelObj?.optString("id")
+                    if (!id.isNullOrBlank()) {
+                        models.add(id)
+                    }
+                }
+                Log.d(TAG, "Fetched ${models.size} models from Ollama Cloud")
+                return@withContext models
+            } else {
+                Log.e(TAG, "Failed to fetch models: HTTP ${response.code} $responseBody")
+                return@withContext null
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching models", e)
+            return@withContext null
         }
     }
 

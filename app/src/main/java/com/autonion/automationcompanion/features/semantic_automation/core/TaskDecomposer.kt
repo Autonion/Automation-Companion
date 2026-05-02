@@ -116,6 +116,7 @@ class TaskDecomposer {
     suspend fun decompose(
         rawCommand: String,
         llmEngine: LocalServerLLMEngine? = null,
+        llmJsonProvider: (suspend (systemPrompt: String, userPrompt: String) -> String?)? = null,
         conversationContext: String? = null
     ): List<SubGoal> {
         val command = rawCommand.trim()
@@ -160,8 +161,12 @@ class TaskDecomposer {
 
         // ── Tier 3: LLM fallback (only when multiple verbs but no clear split) ──
         Log.d(TAG, "Tier 3: $verbCount verbs but no clear split points, attempting LLM decomposition")
-        if (llmEngine != null && llmEngine.connectionStatus.value == ServerConnectionStatus.CONNECTED) {
-            val llmResult = decomposeWithLLM(command, llmEngine, conversationContext)
+        val provider: (suspend (String, String) -> String?)? = llmJsonProvider ?: llmEngine
+            ?.takeIf { it.connectionStatus.value == ServerConnectionStatus.CONNECTED }
+            ?.let { engine -> buildLocalJsonProvider(engine) }
+
+        if (provider != null) {
+            val llmResult = decomposeWithLLM(command, provider, conversationContext)
             if (llmResult != null && llmResult.size > 1) {
                 Log.d(TAG, "Tier 3 (LLM): Decomposed into ${llmResult.size} sub-goals")
                 llmResult.forEach { Log.d(TAG, "  Step ${it.stepNumber}: ${it.description}") }
@@ -241,7 +246,7 @@ class TaskDecomposer {
      */
     private suspend fun decomposeWithLLM(
         command: String,
-        llmEngine: LocalServerLLMEngine,
+        llmJsonProvider: suspend (systemPrompt: String, userPrompt: String) -> String?,
         conversationContext: String?
     ): List<SubGoal>? {
         val userPrompt = buildString {
@@ -251,10 +256,7 @@ class TaskDecomposer {
             append("COMMAND: $command")
         }
 
-        val responseJson = llmEngine.chatSimpleJson(
-            systemPrompt = DECOMPOSE_SYSTEM_PROMPT,
-            userPrompt = userPrompt
-        )
+        val responseJson = llmJsonProvider(DECOMPOSE_SYSTEM_PROMPT, userPrompt)
 
         if (responseJson == null) {
             Log.w(TAG, "LLM decomposition returned null")
@@ -267,6 +269,12 @@ class TaskDecomposer {
             Log.e(TAG, "Failed to parse LLM decomposition: $responseJson", e)
             null
         }
+    }
+
+    private fun buildLocalJsonProvider(
+        llmEngine: LocalServerLLMEngine
+    ): suspend (systemPrompt: String, userPrompt: String) -> String? = { systemPrompt, userPrompt ->
+        llmEngine.chatSimpleJson(systemPrompt = systemPrompt, userPrompt = userPrompt)
     }
 
     /**

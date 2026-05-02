@@ -189,22 +189,23 @@ class TaskPlanner {
     /**
      * Phase 3: Submit the search by pressing Enter via IME, or clicking a submit button.
      *
-     * The IME action is performed internally. If it succeeds, we return null
-     * to tell the engine "action was handled, just re-capture on next iteration."
-     * If IME fails, we look for a visible search/submit button to click.
+     * The IME action is performed internally. If it succeeds, return a WAIT
+     * marker so the engine records a SUBMIT step and advances the planner state.
+     * If IME fails, the LLM can look for a visible search/submit button.
      */
     private fun submitSearch(): ActionIntent? {
         val success = AccessibilityTreeReader.performImeAction()
         Log.d(TAG, "Submit search via IME: $success")
 
         if (success) {
-            // IME action was already performed internally — no need to return a gesture action.
-            // Return null so the engine advances to the next iteration naturally.
-            // The step history will record this via the engine's anti-loop/submit tracking.
-            return null
+            return ActionIntent(
+                type = ActionType.WAIT,
+                targetId = "planner_submit",
+                description = "TaskPlanner: Submitted search and waiting for results"
+            )
         }
 
-        // IME failed entirely — look for a visible search/submit/go button to click
+        // IME failed entirely - let the LLM handle finding a submit button.
         return null // Let LLM handle finding the submit button
     }
 

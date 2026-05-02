@@ -198,6 +198,29 @@ fun ModelManagerScreen(
     var showApiKey by remember { mutableStateOf(false) }
     var showProviderDropdown by remember { mutableStateOf(false) }
     var showCloudModelDropdown by remember { mutableStateOf(false) }
+    var fetchedCloudModels by remember { mutableStateOf<List<String>>(emptyList()) }
+    var isFetchingCloudModels by remember { mutableStateOf(false) }
+
+    LaunchedEffect(cloudConnectionStatus, selectedCloudProvider, customBaseUrlInput, apiKeyInput) {
+        val isOllamaProvider = selectedCloudProvider.id == "ollama"
+        val isOllamaCustom = selectedCloudProvider.id == "custom" && customBaseUrlInput.contains("ollama.com", ignoreCase = true)
+        val isOllamaUrl = selectedCloudProvider.baseUrl.contains("ollama.com", ignoreCase = true)
+
+        if ((isOllamaProvider || isOllamaCustom || isOllamaUrl) && apiKeyInput.isNotBlank()) {
+            // For Ollama Cloud, fetch models as soon as API key is present — don't require CONNECTED
+            isFetchingCloudModels = true
+            fetchedCloudModels = cloudApiEngine.getAvailableModels() ?: emptyList()
+            isFetchingCloudModels = false
+        } else if (cloudConnectionStatus == CloudApiConnectionStatus.CONNECTED &&
+            (isOllamaCustom || isOllamaUrl)
+        ) {
+            isFetchingCloudModels = true
+            fetchedCloudModels = cloudApiEngine.getAvailableModels() ?: emptyList()
+            isFetchingCloudModels = false
+        } else {
+            fetchedCloudModels = emptyList()
+        }
+    }
 
     // Consent dialog state
     var showConsentDialog by remember { mutableStateOf(false) }
@@ -342,7 +365,9 @@ fun ModelManagerScreen(
                             }
                             cloudApiEngine.setModelName(modelNameInput)
                             coroutineScope.launch { cloudApiEngine.initialize() }
-                        }
+                        },
+                        fetchedCloudModels = fetchedCloudModels,
+                        isFetchingCloudModels = isFetchingCloudModels
                     )
                 }
             } // End of CLOUD_API section
@@ -936,7 +961,9 @@ private fun CloudApiSettingsCard(
     showModelDropdown: Boolean,
     onToggleModelDropdown: () -> Unit,
     onModelSelected: (String) -> Unit,
-    onSaveAndConnect: () -> Unit
+    onSaveAndConnect: () -> Unit,
+    fetchedCloudModels: List<String> = emptyList(),
+    isFetchingCloudModels: Boolean = false
 ) {
     Card(
         colors = CardDefaults.cardColors(
@@ -1098,7 +1125,14 @@ private fun CloudApiSettingsCard(
             // ── Model Name ──
             Text("Model", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
             Spacer(modifier = Modifier.height(6.dp))
-            if (selectedProvider.suggestedModels.isNotEmpty()) {
+            if (isFetchingCloudModels) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Fetching models from cloud...", fontSize = 13.sp)
+                }
+            } else if (fetchedCloudModels.isNotEmpty() || selectedProvider.suggestedModels.isNotEmpty()) {
+                val modelsToShow = if (fetchedCloudModels.isNotEmpty()) fetchedCloudModels else selectedProvider.suggestedModels
                 Box(modifier = Modifier.fillMaxWidth()) {
                     OutlinedButton(
                         onClick = onToggleModelDropdown,
@@ -1116,7 +1150,7 @@ private fun CloudApiSettingsCard(
                         expanded = showModelDropdown,
                         onDismissRequest = onToggleModelDropdown
                     ) {
-                        selectedProvider.suggestedModels.forEach { model ->
+                        modelsToShow.forEach { model ->
                             DropdownMenuItem(
                                 text = { Text(model, fontSize = 13.sp) },
                                 onClick = { onModelSelected(model) },
