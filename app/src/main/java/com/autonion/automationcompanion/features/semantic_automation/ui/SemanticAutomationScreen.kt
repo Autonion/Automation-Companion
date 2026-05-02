@@ -203,7 +203,7 @@ fun SemanticAutomationScreen(
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("Semantic Automation", color = Color.White) },
+                    title = { Text("Semantic AI Agent", color = Color.White) },
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)

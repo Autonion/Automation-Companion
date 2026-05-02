@@ -53,6 +53,8 @@ import com.autonion.automationcompanion.features.omni_chatbot.OmniChatbotViewMod
 import com.autonion.automationcompanion.features.omni_chatbot.model.*
 import com.autonion.automationcompanion.features.semantic_automation.ml.ServerConnectionStatus
 import com.autonion.automationcompanion.features.semantic_automation.ml.CloudApiConnectionStatus
+import com.autonion.automationcompanion.features.semantic_automation.ml.CLOUD_API_PROVIDERS
+import com.autonion.automationcompanion.features.semantic_automation.ml.CloudApiProvider
 import com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode
 import com.autonion.automationcompanion.ui.components.ChatHistoryPanel
 import java.util.Date
@@ -662,6 +664,11 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
     val isCloud = inferenceMode == InferenceMode.CLOUD_API
 
     val cloudStatus by viewModel.cloudConnectionStatus.collectAsState()
+    val cloudSelectedProvider by viewModel.cloudSelectedProvider.collectAsState()
+    var cloudApiKeyInput by remember(viewModel.cloudApiKey) { mutableStateOf(viewModel.cloudApiKey) }
+    var cloudBaseUrlInput by remember(viewModel.cloudBaseUrl) { mutableStateOf(viewModel.cloudBaseUrl) }
+    var cloudModelInput by remember(viewModel.cloudModelName) { mutableStateOf(viewModel.cloudModelName) }
+    var showCloudProviderDropdown by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -1096,19 +1103,167 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                             if (cloudStatus == CloudApiConnectionStatus.CONNECTED)
                                 "Using your configured Cloud API provider."
                             else
-                                "Set up your API key in Settings → AI Engine Hub.",
+                                "Ready to connect to cloud models.",
                             color = Color.White.copy(alpha = 0.5f),
                             fontSize = 11.sp
                         )
                     }
                 }
 
-                Text(
-                    "\uD83D\uDCA1 Configure your Cloud API provider in Settings → AI Engine Hub → Cloud API tab. Supports OpenAI, Gemini, Groq, DeepSeek, and more.",
-                    color = Color.White.copy(alpha = 0.35f),
-                    fontSize = 11.sp,
-                    lineHeight = 15.sp
-                )
+                // Provider Dropdown
+                Box {
+                    Surface(
+                        onClick = { showCloudProviderDropdown = true },
+                        color = CardGlass,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.CloudQueue,
+                                contentDescription = null,
+                                tint = AccentBlue,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                text = cloudSelectedProvider.displayName,
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Icon(
+                                Icons.Default.KeyboardArrowDown,
+                                contentDescription = null,
+                                tint = Color.White.copy(alpha = 0.4f),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+
+                    DropdownMenu(
+                        expanded = showCloudProviderDropdown,
+                        onDismissRequest = { showCloudProviderDropdown = false },
+                        modifier = Modifier.background(CardGlass)
+                    ) {
+                        CLOUD_API_PROVIDERS.forEach { provider ->
+                            DropdownMenuItem(
+                                text = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        if (provider.id == cloudSelectedProvider.id) {
+                                            Icon(
+                                                Icons.Default.CheckCircle,
+                                                contentDescription = null,
+                                                tint = AccentGreen,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(Modifier.width(8.dp))
+                                        }
+                                        Text(
+                                            provider.displayName,
+                                            color = Color.White,
+                                            fontSize = 13.sp
+                                        )
+                                    }
+                                },
+                                onClick = {
+                                    viewModel.setCloudProvider(provider)
+                                    cloudBaseUrlInput = provider.baseUrl
+                                    cloudModelInput = provider.defaultModel
+                                    showCloudProviderDropdown = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                // Custom Base URL input (only if 'custom')
+                if (cloudSelectedProvider.id == "custom") {
+                    OutlinedTextField(
+                        value = cloudBaseUrlInput,
+                        onValueChange = { cloudBaseUrlInput = it },
+                        placeholder = { Text("Custom Base URL", color = Color.White.copy(alpha = 0.3f), fontSize = 13.sp) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = AccentBlue,
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.1f),
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        )
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // API Key Input
+                    var obscureKey by remember { mutableStateOf(true) }
+                    OutlinedTextField(
+                        value = cloudApiKeyInput,
+                        onValueChange = { cloudApiKeyInput = it },
+                        placeholder = { Text("API Key", color = Color.White.copy(alpha = 0.3f), fontSize = 13.sp) },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        visualTransformation = if (obscureKey) androidx.compose.ui.text.input.PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
+                        trailingIcon = {
+                            IconButton(onClick = { obscureKey = !obscureKey }) {
+                                Icon(
+                                    if (obscureKey) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                    contentDescription = null,
+                                    tint = Color.White.copy(alpha = 0.5f),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = AccentBlue,
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.1f),
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        )
+                    )
+
+                    // Model Name Input
+                    OutlinedTextField(
+                        value = cloudModelInput,
+                        onValueChange = { cloudModelInput = it },
+                        placeholder = { Text("Model", color = Color.White.copy(alpha = 0.3f), fontSize = 13.sp) },
+                        modifier = Modifier.weight(0.6f),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = AccentBlue,
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.1f),
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        )
+                    )
+                }
+
+                Button(
+                    onClick = { viewModel.saveAndConnectCloudApi(cloudApiKeyInput, cloudBaseUrlInput, cloudModelInput) },
+                    enabled = cloudApiKeyInput.isNotBlank() && cloudStatus != CloudApiConnectionStatus.CONNECTING,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = AccentBlue,
+                        disabledContainerColor = AccentBlue.copy(alpha = 0.3f)
+                    ),
+                    modifier = Modifier.fillMaxWidth().height(48.dp)
+                ) {
+                    Text(
+                        if (cloudStatus == CloudApiConnectionStatus.CONNECTED) "Save & Reconnect" else "Save & Connect",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
             }
         }
     }

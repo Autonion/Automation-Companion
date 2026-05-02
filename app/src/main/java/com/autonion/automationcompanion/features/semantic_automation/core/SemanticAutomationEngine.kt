@@ -124,9 +124,30 @@ class SemanticAutomationEngine(private val context: Context) {
      */
     suspend fun runLoop(rawCommand: String, screenshotProvider: suspend () -> Bitmap?) {
         // ── Step 0: Decompose command ──
+        val decompositionProvider: (suspend (String, String) -> String?)? = when (inferenceMode) {
+            InferenceMode.CLOUD_API ->
+                if (cloudApiEngine.isConfigured) {
+                    { systemPrompt, userPrompt ->
+                        cloudApiEngine.chatSimpleJson(systemPrompt, userPrompt)
+                    }
+                } else {
+                    null
+                }
+            InferenceMode.SERVER_LLM ->
+                if (localServerEngine.connectionStatus.value == ServerConnectionStatus.CONNECTED) {
+                    { systemPrompt, userPrompt ->
+                        localServerEngine.chatSimpleJson(systemPrompt, userPrompt)
+                    }
+                } else {
+                    null
+                }
+            InferenceMode.LOCAL_SLM -> null
+        }
+
         val subGoals = taskDecomposer.decompose(
             rawCommand,
-            llmEngine = if (inferenceMode == InferenceMode.CLOUD_API) null else localServerEngine,
+            llmEngine = if (inferenceMode == InferenceMode.SERVER_LLM) localServerEngine else null,
+            llmJsonProvider = decompositionProvider,
             conversationContext = chatMemory.buildContextSummary()
         )
 
@@ -513,10 +534,15 @@ class SemanticAutomationEngine(private val context: Context) {
             // 2g. Record step in history (success will be verified next iteration)
             val elementText = resolveElementText(action, uiState)
             val elementIndex = action.targetId?.removePrefix("slm_element_")?.toIntOrNull() ?: -1
+            val historyAction = if (action.targetId == "planner_submit") {
+                "SUBMIT"
+            } else {
+                action.type.name
+            }
             stepHistory.add(
                 StepRecord(
                     iteration = iteration,
-                    action = action.type.name,
+                    action = historyAction,
                     elementText = elementText,
                     elementIndex = elementIndex,
                     success = success, // Preliminary; updated next iteration via UI comparison

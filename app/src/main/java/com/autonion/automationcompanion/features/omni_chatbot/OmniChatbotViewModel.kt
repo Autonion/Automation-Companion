@@ -9,6 +9,8 @@ import com.autonion.automationcompanion.features.omni_chatbot.companion.Walkthro
 import com.autonion.automationcompanion.features.omni_chatbot.companion.WalkthroughScript
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.autonion.automationcompanion.features.agent_core.models.AgentRequest
+import com.autonion.automationcompanion.features.agent_core.models.AgentRequestContext
 import com.autonion.automationcompanion.features.cross_device_automation.CrossDeviceAutomationManager
 import com.autonion.automationcompanion.features.cross_device_automation.domain.PromptResponse
 import com.autonion.automationcompanion.features.cross_device_automation.domain.ResponseStatus
@@ -92,6 +94,10 @@ class OmniChatbotViewModel(
     val showHistory: StateFlow<Boolean> = _showHistory.asStateFlow()
 
     val cloudConnectionStatus = cloudApiEngine.connectionStatus
+    val cloudSelectedProvider = cloudApiEngine.selectedProvider
+    val cloudApiKey: String get() = cloudApiEngine.apiKey
+    val cloudBaseUrl: String get() = cloudApiEngine.baseUrl
+    val cloudModelName: String get() = cloudApiEngine.modelName
 
     val isAIReady: StateFlow<Boolean> = combine(
         llmConnectionStatus,
@@ -326,6 +332,27 @@ class OmniChatbotViewModel(
         _inferenceMode.value = mode
     }
 
+    // ─── Cloud API Configuration (from Omni-Chat) ───────────
+
+    /**
+     * Select a Cloud API provider.
+     */
+    fun setCloudProvider(provider: com.autonion.automationcompanion.features.semantic_automation.ml.CloudApiProvider) {
+        cloudApiEngine.setProvider(provider)
+    }
+
+    /**
+     * Save Cloud API configuration (key, URL, model) and test connection.
+     */
+    fun saveAndConnectCloudApi(apiKey: String, baseUrl: String, modelName: String) {
+        cloudApiEngine.setApiKey(apiKey)
+        cloudApiEngine.setBaseUrl(baseUrl)
+        cloudApiEngine.setModelName(modelName)
+        viewModelScope.launch {
+            cloudApiEngine.initialize()
+        }
+    }
+
     // ─── Main Entry Point ───────────────────────────────────
 
     fun processPrompt(text: String? = null) {
@@ -525,16 +552,38 @@ class OmniChatbotViewModel(
         ))
     }
 
-    private fun handleDeviceAutomation(result: IntentResult) {
-        if (llmEngine.connectionStatus.value != ServerConnectionStatus.CONNECTED) {
-            val setupMessage = buildString {
-                append("⚠️ It looks like Ollama isn't running.\n\n")
-                append("To use on-device AI automation, you need Ollama running on your desktop:\n\n")
-                append("1️⃣ Install Ollama from ollama.com (if not installed)\n")
-                append("2️⃣ Open a terminal and run: ollama serve\n")
-                append("3️⃣ Pull a model: ollama pull qwen3\n")
-                append("4️⃣ Tap ⚙️ above and enter your PC's IP address to connect\n\n")
-                append("💡 Make sure your phone and PC are on the same WiFi network.")
+    private suspend fun handleDeviceAutomation(result: IntentResult) {
+        val mode = _inferenceMode.value
+        val aiReady = when (mode) {
+            com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.SERVER_LLM ->
+                llmEngine.connectionStatus.value == ServerConnectionStatus.CONNECTED
+
+            com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.CLOUD_API -> {
+                if (cloudApiEngine.connectionStatus.value != CloudApiConnectionStatus.CONNECTED && cloudApiEngine.isConfigured) {
+                    addMessage(OmniChatMessage(
+                        text = "Checking cloud AI connection...",
+                        isUser = false,
+                        mode = ResponseMode.SYSTEM
+                    ))
+                    kotlinx.coroutines.withTimeoutOrNull(20_000L) {
+                        cloudApiEngine.initialize()
+                    }
+                }
+                cloudApiEngine.connectionStatus.value == CloudApiConnectionStatus.CONNECTED
+            }
+
+            com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.LOCAL_SLM ->
+                true
+        }
+
+        if (!aiReady) {
+            val setupMessage = when (mode) {
+                com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.CLOUD_API ->
+                    "Cloud AI is not connected. Open AI settings, verify your API key, endpoint, and model, then try again."
+                com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.SERVER_LLM ->
+                    "Ollama is not connected. Start Ollama on your desktop, verify the server URL in settings, then try again."
+                com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.LOCAL_SLM ->
+                    "On-device AI is not ready. Check that the local model is installed and try again."
             }
             addMessage(OmniChatMessage(
                 text = setupMessage,
@@ -1030,35 +1079,56 @@ class OmniChatbotViewModel(
         }
     }
 
-    private fun buildStructuredCommand(result: IntentResult): Map<String, Any?> {
+    private fun buildStructuredCommand(result: IntentResult): Any {
         val txnId = UUID.randomUUID().toString()
         sentTransactionIds.add(txnId) // Track so we persist responses for this transaction
         // Cap at 50 to prevent memory leak
         if (sentTransactionIds.size > 50) sentTransactionIds.remove(sentTransactionIds.first())
 
-        val command = mutableMapOf<String, Any?>(
-            "transactionId" to txnId,
-            "prompt" to result.rawPrompt,
-            "timestamp" to System.currentTimeMillis(),
-            "sourceDeviceId" to "android_controller"
-        )
-
         // Add structured intent data so Desktop can skip LLM for simple actions
         if (result.intent == IntentType.DIRECT_KEY_ACTION) {
-            command["type"] = "key_press"
-            command["keyName"] = result.entities.keyLabel
-            command["keyCode"] = result.entities.keyName
-        } else if (result.intent == IntentType.SCHEDULED_ACTION) {
-            command["type"] = "schedule"
-            command["action"] = mapOf(
+            return mapOf(
+                "type" to "key_press",
+                "transactionId" to txnId,
                 "keyName" to result.entities.keyLabel,
                 "keyCode" to result.entities.keyName
             )
-            command["intervalMs"] = result.entities.interval?.inWholeMilliseconds
-            command["repeatCount"] = result.entities.repeatCount
         }
 
-        return command
+        if (result.intent == IntentType.SCHEDULED_ACTION) {
+            return mapOf(
+                "type" to "schedule",
+                "transactionId" to txnId,
+                "action" to mapOf(
+                "keyName" to result.entities.keyLabel,
+                "keyCode" to result.entities.keyName
+                ),
+                "intervalMs" to result.entities.interval?.inWholeMilliseconds,
+                "repeatCount" to result.entities.repeatCount
+            )
+        }
+
+        val contextSummary = chatMemory.messages().takeLast(6).joinToString("\n") { msg ->
+            when (msg) {
+                is SystemMessage -> "system: ${msg.text().take(240)}"
+                is UserMessage -> "user: ${msg.singleText().take(240)}"
+                is AiMessage -> "assistant: ${msg.text().take(240)}"
+                else -> msg.toString().take(240)
+            }
+        }.ifBlank { null }
+
+        return AgentRequest(
+            transactionId = txnId,
+            prompt = result.rawPrompt,
+            timestamp = System.currentTimeMillis(),
+            target = result.entities.targetDevice ?: "desktop",
+            context = contextSummary,
+            agentContext = AgentRequestContext(
+                conversationSummary = contextSummary,
+                preferredModelMode = "desktop_default",
+                origin = "omni_chat"
+            )
+        )
     }
 
     // ═══════════════════════════════════════════════════════════
