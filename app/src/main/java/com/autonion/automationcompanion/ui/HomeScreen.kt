@@ -116,7 +116,7 @@ fun HomeScreen(onOpen: (String) -> Unit) {
                         horizontalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         GridCard(
-                            title = "Screen Context AI",
+                            title = "UI Recognition AI",
                             description = "Detect UI elements, OCR & contextualize screen content.",
                             icon = Icons.AutoMirrored.Filled.ViewQuilt,
                             iconColor = Color.White,

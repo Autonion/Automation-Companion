@@ -248,7 +248,7 @@ private fun PresetDashboardContent(
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("Agent Automations") },
+                    title = { Text("UI Recognition AI") },
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")

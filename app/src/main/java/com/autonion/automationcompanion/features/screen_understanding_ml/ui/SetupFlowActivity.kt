@@ -131,7 +131,7 @@ class SetupFlowActivity : ComponentActivity() {
         PermissionDisclosureDialog(
             showDialog = showAccessibilityDisclosure,
             title = "Accessibility Service Required",
-            description = "Autonion needs Accessibility Service to automate screen interactions and taps for Screen Context AI. Please enable it in the next screen.",
+            description = "Autonion needs Accessibility Service to automate screen interactions and taps for UI Recognition AI. Please enable it in the next screen.",
             icon = Icons.Default.Accessibility,
             onDismiss = {
                 showAccessibilityDisclosure = false
@@ -147,7 +147,7 @@ class SetupFlowActivity : ComponentActivity() {
         PermissionDisclosureDialog(
             showDialog = showOverlayDisclosure,
             title = "Display Over Other Apps Required",
-            description = "Autonion needs to display over other apps to capture the screen and show the Screen Context AI UI elements.",
+            description = "Autonion needs to display over other apps to capture the screen and show the UI Recognition AI UI elements.",
             icon = Icons.Default.Layers,
             onDismiss = {
                 showOverlayDisclosure = false
@@ -166,7 +166,7 @@ class SetupFlowActivity : ComponentActivity() {
         PermissionDisclosureDialog(
             showDialog = showMediaProjectionDisclosure,
             title = "Screen Capture Required",
-            description = "Autonion needs to capture your screen to analyze UI elements for Screen Context AI. The screen content is processed locally on your device and is not stored or shared.",
+            description = "Autonion needs to capture your screen to analyze UI elements for UI Recognition AI. The screen content is processed locally on your device and is not stored or shared.",
             icon = Icons.Default.Screenshot,
             onDismiss = {
                 showMediaProjectionDisclosure = false

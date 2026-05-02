@@ -15,7 +15,7 @@ Autonion has 8 core features. Here is a complete list:
 5. Flow Builder - Visual drag-and-drop automation workflow builder. Create flows with triggers, actions, conditions, and connections.
 6. System Context Automation - Automations that respond to system-level context changes including location (geofence), time schedules, battery percentage levels, WiFi connectivity changes, and app-specific automations that trigger when a specific app is opened or closed.
 7. Visual Trigger Automation - Screen-pattern-based automations that use image matching to detect specific visual elements on screen and trigger actions automatically. This is the feature for triggering automation based on images.
-8. Screen Context AI (Screen ML) - AI-powered screen understanding using YOLO object detection and OCR (Optical Character Recognition). Detects UI elements dynamically, handles UI changes, and can automate clicks and interactions based on recognized text and visual elements.
+8. UI Recognition AI (Screen ML) - AI-powered screen understanding using YOLO object detection and OCR (Optical Character Recognition). Detects UI elements dynamically, handles UI changes, and can automate clicks and interactions based on recognized text and visual elements.
 
 ## Core Architecture
 
@@ -228,7 +228,7 @@ Important notes:
 - Works with any app or screen on the device
 - Can be combined with other automations like Flow Builder for complex workflows
 
-### Screen Context AI (Screen ML)
+### UI Recognition AI (Screen ML)
 AI-powered screen understanding using machine learning models. This feature uses YOLO (You Only Look Once) object detection model and OCR (Optical Character Recognition) to understand and interact with screen content dynamically.
 
 Key capabilities:
@@ -237,7 +237,7 @@ Key capabilities:
 - Dynamic UI handling: Handles UI changes in real-time. Unlike coordinate-based approaches (gesture recording), Screen ML adapts to layout changes because it visually detects elements rather than relying on fixed positions.
 - Element detection: Identifies interactive elements visually, providing an alternative to the accessibility tree for element detection.
 
-How Screen Context AI helps with automation:
+How UI Recognition AI helps with automation:
 - Can automate clicks on elements identified by OCR text recognition
 - Provides visual element detection as a fallback when the accessibility tree does not expose certain elements
 - Handles dynamic and changing UIs because it re-detects elements each time rather than using stored coordinates
