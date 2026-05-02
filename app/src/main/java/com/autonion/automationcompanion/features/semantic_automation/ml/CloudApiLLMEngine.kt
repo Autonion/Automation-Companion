@@ -260,14 +260,13 @@ class CloudApiLLMEngine private constructor(
     }
 
     /**
-     * Fetches available models from the /v1/models endpoint if the provider is Ollama Cloud.
+     * Fetches available models dynamically using the standard OpenAI /v1/models endpoint.
      */
     suspend fun getAvailableModels(
         currentApiKey: String = this.apiKey,
         currentBaseUrl: String = this.baseUrl
     ): List<String>? = withContext(Dispatchers.IO) {
         if (currentBaseUrl.isBlank()) return@withContext null
-        if (!currentBaseUrl.contains("ollama.com", ignoreCase = true)) return@withContext null
 
         try {
             val modelsUrl = currentBaseUrl.replace("/chat/completions", "/models")
@@ -291,7 +290,7 @@ class CloudApiLLMEngine private constructor(
                         models.add(id)
                     }
                 }
-                Log.d(TAG, "Fetched ${models.size} models from Ollama Cloud")
+                Log.d(TAG, "Fetched ${models.size} models dynamically")
                 return@withContext models
             } else {
                 Log.e(TAG, "Failed to fetch models: HTTP ${response.code} $responseBody")

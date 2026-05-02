@@ -208,8 +208,12 @@ fun ModelManagerScreen(
         val isOllamaUrl = selectedCloudProvider.baseUrl.contains("ollama.com", ignoreCase = true)
 
         val effectiveUrl = if (selectedCloudProvider.id == "custom") customBaseUrlInput else selectedCloudProvider.baseUrl
-        if (isOllamaProvider || isOllamaCustom || isOllamaUrl) {
-            // For Ollama Cloud, fetch models as soon as URL is known — don't require CONNECTED
+        
+        // Fetch models if it's an Ollama endpoint (which may not need a key), OR if an API key is provided
+        val canFetchModels = isOllamaProvider || isOllamaCustom || isOllamaUrl || apiKeyInput.isNotBlank()
+        
+        if (canFetchModels) {
+            // Fetch models dynamically from the standard /v1/models endpoint
             isFetchingCloudModels = true
             fetchedCloudModels = cloudApiEngine.getAvailableModels(
                 currentApiKey = apiKeyInput,
