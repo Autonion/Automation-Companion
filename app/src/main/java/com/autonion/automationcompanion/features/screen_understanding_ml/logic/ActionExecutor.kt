@@ -119,14 +119,14 @@ object ActionExecutor : AccessibilityFeature {
              Log.d("ActionExecutor", "Set text on focused node: $success")
              if (success) {
                  DebugLogger.success(
-                     s.baseContext, LogCategory.SCREEN_CONTEXT_AI,
+                     s.baseContext, LogCategory.UI_RECOGNITION_AI,
                      "Text input success",
                      "Set text '$text' on focused input node",
                      "ActionExecutor"
                  )
              } else {
                  DebugLogger.warning(
-                     s.baseContext, LogCategory.SCREEN_CONTEXT_AI,
+                     s.baseContext, LogCategory.UI_RECOGNITION_AI,
                      "Text input failed",
                      "performAction(SET_TEXT) returned false for '$text'",
                      "ActionExecutor"
@@ -136,7 +136,7 @@ object ActionExecutor : AccessibilityFeature {
         } else {
              Log.w("ActionExecutor", "Could not find focused input node to set text")
              DebugLogger.warning(
-                 s.baseContext, LogCategory.SCREEN_CONTEXT_AI,
+                 s.baseContext, LogCategory.UI_RECOGNITION_AI,
                  "No focused input node",
                  "Cannot set text — no focused input node found after click",
                  "ActionExecutor"

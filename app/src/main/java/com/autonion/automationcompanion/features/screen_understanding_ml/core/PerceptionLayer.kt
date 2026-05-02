@@ -61,7 +61,7 @@ class PerceptionLayer(private val context: Context, modelFile: String? = null) {
             interpreter = Interpreter(model, gpuOptions)
             currentDelegate = "GPU"
             Log.i(TAG, "FP16 model loaded with GPU delegate (input: ${inputSize})")
-            DebugLogger.success(context, LogCategory.SCREEN_CONTEXT_AI, "ML model loaded",
+            DebugLogger.success(context, LogCategory.UI_RECOGNITION_AI, "ML model loaded",
                 "FP16 with GPU delegate (${inputSize}x${inputSize})", "PerceptionLayer")
         } catch (e: Exception) {
             Log.w(TAG, "GPU failed for FP16: ${e.message}, trying NNAPI")
@@ -70,7 +70,7 @@ class PerceptionLayer(private val context: Context, modelFile: String? = null) {
                 interpreter = Interpreter(loadModelFile(context, modelFilename), nnapiOpts)
                 currentDelegate = "NNAPI (FP16)"
                 Log.i(TAG, "FP16 model loaded with NNAPI")
-                DebugLogger.success(context, LogCategory.SCREEN_CONTEXT_AI, "ML model loaded",
+                DebugLogger.success(context, LogCategory.UI_RECOGNITION_AI, "ML model loaded",
                     "FP16 with NNAPI (${inputSize}x${inputSize})", "PerceptionLayer")
             } catch (e2: Exception) {
                 Log.w(TAG, "NNAPI failed for FP16, CPU fallback", e2)
@@ -78,11 +78,11 @@ class PerceptionLayer(private val context: Context, modelFile: String? = null) {
                     val cpuOpts = Interpreter.Options().apply { setNumThreads(4) }
                     interpreter = Interpreter(loadModelFile(context, modelFilename), cpuOpts)
                     currentDelegate = "CPU (FP16, 4t)"
-                    DebugLogger.success(context, LogCategory.SCREEN_CONTEXT_AI, "ML model loaded",
+                    DebugLogger.success(context, LogCategory.UI_RECOGNITION_AI, "ML model loaded",
                         "FP16 with CPU 4 threads (${inputSize}x${inputSize})", "PerceptionLayer")
                 } catch (e3: Exception) {
                     Log.e(TAG, "Failed to load FP16 model", e3)
-                    DebugLogger.error(context, LogCategory.SCREEN_CONTEXT_AI, "ML load failed", "${e3.message}", "PerceptionLayer")
+                    DebugLogger.error(context, LogCategory.UI_RECOGNITION_AI, "ML load failed", "${e3.message}", "PerceptionLayer")
                 }
             }
         }
@@ -94,7 +94,7 @@ class PerceptionLayer(private val context: Context, modelFile: String? = null) {
             interpreter = Interpreter(loadModelFile(context, modelFilename), nnapiOptions)
             currentDelegate = "NNAPI"
             Log.i(TAG, "INT8 model loaded with NNAPI (input: ${inputSize})")
-            DebugLogger.success(context, LogCategory.SCREEN_CONTEXT_AI, "ML model loaded",
+            DebugLogger.success(context, LogCategory.UI_RECOGNITION_AI, "ML model loaded",
                 "INT8 with NNAPI (${inputSize}x${inputSize})", "PerceptionLayer")
         } catch (e: Exception) {
             Log.w(TAG, "NNAPI failed, falling back to CPU", e)
@@ -102,11 +102,11 @@ class PerceptionLayer(private val context: Context, modelFile: String? = null) {
                 val cpuOptions = Interpreter.Options().apply { setNumThreads(4) }
                 interpreter = Interpreter(loadModelFile(context, modelFilename), cpuOptions)
                 currentDelegate = "CPU (4 threads)"
-                DebugLogger.success(context, LogCategory.SCREEN_CONTEXT_AI, "ML model loaded",
+                DebugLogger.success(context, LogCategory.UI_RECOGNITION_AI, "ML model loaded",
                     "INT8 with CPU 4 threads (${inputSize}x${inputSize})", "PerceptionLayer")
             } catch (e2: Exception) {
                 Log.e(TAG, "Failed to load model on CPU", e2)
-                DebugLogger.error(context, LogCategory.SCREEN_CONTEXT_AI, "ML load failed", "${e2.message}", "PerceptionLayer")
+                DebugLogger.error(context, LogCategory.UI_RECOGNITION_AI, "ML load failed", "${e2.message}", "PerceptionLayer")
             }
         }
     }

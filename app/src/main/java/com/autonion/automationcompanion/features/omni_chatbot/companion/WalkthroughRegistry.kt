@@ -18,7 +18,7 @@ object WalkthroughRegistry {
     private val aliases: Map<String, String> = mapOf(
         "screen_understanding"  to "screen_ml",
         "screen_context"        to "screen_ml",
-        "screen_context_ai"     to "screen_ml",
+        "UI_RECOGNITION_AI"     to "screen_ml",
         "image_checker"         to "visual_trigger",
         "vision_trigger"        to "visual_trigger",
         "cross_device_sync"     to "cross_device",

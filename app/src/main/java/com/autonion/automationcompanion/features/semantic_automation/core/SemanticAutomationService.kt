@@ -131,7 +131,7 @@ class SemanticAutomationService : Service() {
         }
 
         DebugLogger.info(
-            this, LogCategory.SCREEN_CONTEXT_AI,
+            this, LogCategory.UI_RECOGNITION_AI,
             "Semantic automation started",
             "Command: \"$command\"",
             TAG

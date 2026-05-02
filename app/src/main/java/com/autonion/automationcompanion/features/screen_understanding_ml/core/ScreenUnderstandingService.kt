@@ -140,7 +140,7 @@ class ScreenUnderstandingService : Service() {
         val count = perceptionLayer?.getInferenceCount() ?: 0
         if (count > 0) {
             DebugLogger.info(
-                this, LogCategory.SCREEN_CONTEXT_AI,
+                this, LogCategory.UI_RECOGNITION_AI,
                 "Session ended",
                 "Processed $count frames, avg inference: ${"%.1f".format(avgMs)}ms/frame",
                 TAG
@@ -283,7 +283,7 @@ class ScreenUnderstandingService : Service() {
             // MediaProjection was revoked by the OS (screen off, app closed, etc.)
             Log.w(TAG, "MediaProjection lost — stopping service")
             DebugLogger.warning(
-                this@ScreenUnderstandingService, LogCategory.SCREEN_CONTEXT_AI,
+                this@ScreenUnderstandingService, LogCategory.UI_RECOGNITION_AI,
                 "Screen capture lost",
                 "MediaProjection revoked by the system — restart required",
                 TAG
@@ -396,7 +396,7 @@ class ScreenUnderstandingService : Service() {
                 if (frameCount % 20 == 0L) {
                     val avgMs = perceptionLayer?.getAverageInferenceTimeMs() ?: 0f
                     DebugLogger.info(
-                        this@ScreenUnderstandingService, LogCategory.SCREEN_CONTEXT_AI,
+                        this@ScreenUnderstandingService, LogCategory.UI_RECOGNITION_AI,
                         "Detection stats",
                         "Frame #$frameCount: ${latestElements.size} elements, avg: ${"%.1f".format(avgMs)}ms/frame (skip every 2nd)",
                         TAG
@@ -409,7 +409,7 @@ class ScreenUnderstandingService : Service() {
     private fun captureSnapshot() {
         Log.d(TAG, "Snap clicked, latestBitmap=${latestBitmap != null}")
         DebugLogger.info(
-            this, LogCategory.SCREEN_CONTEXT_AI,
+            this, LogCategory.UI_RECOGNITION_AI,
             "Snap captured",
             "Screenshot taken for element selection",
             TAG
@@ -537,7 +537,7 @@ class ScreenUnderstandingService : Service() {
     overlay?.setPlaybackState(true)
     Toast.makeText(this, "Playing: ${preset.name}", Toast.LENGTH_SHORT).show()
     DebugLogger.info(
-        this, LogCategory.SCREEN_CONTEXT_AI,
+        this, LogCategory.UI_RECOGNITION_AI,
         "Preset started: ${preset.name}",
         "Playing ${preset.steps.size} steps (mode=${preset.executionMode})",
         "ScreenUnderstandingService"
@@ -586,7 +586,7 @@ class ScreenUnderstandingService : Service() {
                             if (success) {
                             Log.d(TAG, "Executed ${step.actionType} on ${step.label}")
                             DebugLogger.success(
-                                this@ScreenUnderstandingService, LogCategory.SCREEN_CONTEXT_AI,
+                                this@ScreenUnderstandingService, LogCategory.UI_RECOGNITION_AI,
                                 "Step ${step.orderIndex}: ${step.label}",
                                 "${step.actionType} executed successfully",
                                 "ScreenUnderstandingService"
@@ -594,7 +594,7 @@ class ScreenUnderstandingService : Service() {
                         } else {
                             Log.e(TAG, "Action ${step.actionType} failed for ${step.label}")
                             DebugLogger.error(
-                                this@ScreenUnderstandingService, LogCategory.SCREEN_CONTEXT_AI,
+                                this@ScreenUnderstandingService, LogCategory.UI_RECOGNITION_AI,
                                 "Step ${step.orderIndex} failed: ${step.label}",
                                 "${step.actionType} failed — check accessibility",
                                 "ScreenUnderstandingService"
@@ -623,7 +623,7 @@ class ScreenUnderstandingService : Service() {
             } catch (e: Exception) {
             Log.e(TAG, "Playback error", e)
             DebugLogger.error(
-                this@ScreenUnderstandingService, LogCategory.SCREEN_CONTEXT_AI,
+                this@ScreenUnderstandingService, LogCategory.UI_RECOGNITION_AI,
                 "Playback error: ${preset.name}",
                 "${e.javaClass.simpleName}: ${e.message}",
                 "ScreenUnderstandingService"
@@ -707,7 +707,7 @@ class ScreenUnderstandingService : Service() {
                         "ocr=${hybridResult.ocrScore}] " +
                         "via ${hybridResult.source}, rotated=$isRotated")
                 DebugLogger.info(
-                    this@ScreenUnderstandingService, LogCategory.SCREEN_CONTEXT_AI,
+                    this@ScreenUnderstandingService, LogCategory.UI_RECOGNITION_AI,
                     "Hybrid match: ${step.label}",
                     "conf=${"%.2f".format(hybridResult.hybridConfidence)} " +
                             "(acc=${"%.2f".format(hybridResult.accessibilityScore)}, " +
