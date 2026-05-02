@@ -723,11 +723,11 @@ private fun InferenceModeSelector(
                     onClick = { onModeChanged(SemanticAutomationEngine.InferenceMode.CLOUD_API) },
                     modifier = Modifier.weight(1f).fillMaxHeight(),
                     colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = if (cloudSelected) Color(0xFFFFF3E0) else Color.Transparent
+                        containerColor = if (cloudSelected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
                     ),
                     border = BorderStroke(
                         1.dp,
-                        if (cloudSelected) Color(0xFFF57C00) else MaterialTheme.colorScheme.outline
+                        if (cloudSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
                     ),
                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 12.dp)
                 ) {
@@ -735,7 +735,7 @@ private fun InferenceModeSelector(
                         Icons.Default.Cloud,
                         contentDescription = null,
                         modifier = Modifier.size(14.dp),
-                        tint = if (cloudSelected) Color(0xFFF57C00) else MaterialTheme.colorScheme.onSurface
+                        tint = if (cloudSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
@@ -968,7 +968,7 @@ private fun CloudApiSettingsCard(
     Card(
         colors = CardDefaults.cardColors(
             containerColor = when (cloudConnectionStatus) {
-                CloudApiConnectionStatus.CONNECTED -> Color(0xFFFFF3E0).copy(alpha = 0.6f)
+                CloudApiConnectionStatus.CONNECTED -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)
                 CloudApiConnectionStatus.CONNECTING -> MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.4f)
                 CloudApiConnectionStatus.ERROR -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f)
                 CloudApiConnectionStatus.DISCONNECTED -> MaterialTheme.colorScheme.surfaceVariant
@@ -992,7 +992,7 @@ private fun CloudApiSettingsCard(
                         },
                         contentDescription = null,
                         tint = when (cloudConnectionStatus) {
-                            CloudApiConnectionStatus.CONNECTED -> Color(0xFFF57C00)
+                            CloudApiConnectionStatus.CONNECTED -> MaterialTheme.colorScheme.primary
                             CloudApiConnectionStatus.ERROR -> MaterialTheme.colorScheme.error
                             else -> MaterialTheme.colorScheme.onSurfaceVariant
                         },
@@ -1011,7 +1011,7 @@ private fun CloudApiSettingsCard(
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
                     color = when (cloudConnectionStatus) {
-                        CloudApiConnectionStatus.CONNECTED -> Color(0xFFF57C00)
+                        CloudApiConnectionStatus.CONNECTED -> MaterialTheme.colorScheme.primary
                         CloudApiConnectionStatus.ERROR -> MaterialTheme.colorScheme.error
                         CloudApiConnectionStatus.CONNECTING -> MaterialTheme.colorScheme.tertiary
                         else -> MaterialTheme.colorScheme.onSurfaceVariant
@@ -1078,7 +1078,7 @@ private fun CloudApiSettingsCard(
                             onClick = { onProviderSelected(provider) },
                             leadingIcon = {
                                 if (provider.id == selectedProvider.id) {
-                                    Icon(Icons.Default.CheckCircle, null, tint = Color(0xFFF57C00), modifier = Modifier.size(18.dp))
+                                    Icon(Icons.Default.CheckCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
                                 }
                             }
                         )
@@ -1156,7 +1156,7 @@ private fun CloudApiSettingsCard(
                                 onClick = { onModelSelected(model) },
                                 leadingIcon = {
                                     if (model == modelNameInput) {
-                                        Icon(Icons.Default.CheckCircle, null, tint = Color(0xFFF57C00), modifier = Modifier.size(16.dp))
+                                        Icon(Icons.Default.CheckCircle, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
                                     }
                                 }
                             )
@@ -1199,7 +1199,7 @@ private fun CloudApiSettingsCard(
                         (selectedProvider.id != "custom" || customBaseUrlInput.isNotBlank()) &&
                         cloudConnectionStatus != CloudApiConnectionStatus.CONNECTING,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFF57C00)
+                    containerColor = MaterialTheme.colorScheme.primary
                 )
             ) {
                 Icon(
@@ -1220,7 +1220,7 @@ private fun CloudApiSettingsCard(
                 Text(
                     "✅ Connected to ${selectedProvider.displayName} — ${modelNameInput}",
                     fontSize = 12.sp,
-                    color = Color(0xFFF57C00),
+                    color = MaterialTheme.colorScheme.primary,
                     fontWeight = FontWeight.Medium
                 )
             }

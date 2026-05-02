@@ -53,7 +53,7 @@ fun CloudApiDisclaimerDialog(
                 Icon(
                     Icons.Filled.Warning,
                     contentDescription = null,
-                    tint = Color(0xFFF57C00),
+                    tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(28.dp)
                 )
                 Text(
@@ -73,7 +73,7 @@ fun CloudApiDisclaimerDialog(
                 // ── Warning Banner ──
                 Card(
                     colors = CardDefaults.cardColors(
-                        containerColor = Color(0xFFFFF3E0)
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
                     ),
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -85,19 +85,19 @@ fun CloudApiDisclaimerDialog(
                         Icon(
                             Icons.Filled.Security,
                             contentDescription = null,
-                            tint = Color(0xFFE65100),
+                            tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(20.dp)
                         )
                         Text(
                             buildAnnotatedString {
-                                withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = Color(0xFFE65100))) {
+                                withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)) {
                                     append("Important: ")
                                 }
                                 append("When using Cloud API, your data will be sent to third-party servers operated by the API provider you choose (e.g., OpenAI, Google, Groq).")
                             },
                             fontSize = 13.sp,
                             lineHeight = 18.sp,
-                            color = Color(0xFF4E342E)
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     }
                 }
@@ -164,7 +164,7 @@ fun CloudApiDisclaimerDialog(
             Button(
                 onClick = onAccept,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFE65100)
+                    containerColor = MaterialTheme.colorScheme.primary
                 )
             ) {
                 Text("I Understand & Accept", fontWeight = FontWeight.Bold)

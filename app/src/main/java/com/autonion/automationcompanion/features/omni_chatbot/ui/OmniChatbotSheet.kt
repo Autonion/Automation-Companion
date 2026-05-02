@@ -55,6 +55,7 @@ import com.autonion.automationcompanion.features.semantic_automation.ml.ServerCo
 import com.autonion.automationcompanion.features.semantic_automation.ml.CloudApiConnectionStatus
 import com.autonion.automationcompanion.features.semantic_automation.ml.CLOUD_API_PROVIDERS
 import com.autonion.automationcompanion.features.semantic_automation.ml.CloudApiProvider
+import com.autonion.automationcompanion.features.semantic_automation.ml.CloudApiLLMEngine
 import com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode
 import com.autonion.automationcompanion.ui.components.ChatHistoryPanel
 import java.util.Date
@@ -670,6 +671,32 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
     var cloudModelInput by remember(viewModel.cloudModelName) { mutableStateOf(viewModel.cloudModelName) }
     var showCloudProviderDropdown by remember { mutableStateOf(false) }
 
+    val context = LocalContext.current
+    val cloudApiEngine = remember { CloudApiLLMEngine.getInstance(context) }
+    var fetchedCloudModels by remember { mutableStateOf<List<String>>(emptyList()) }
+    var isFetchingCloudModels by remember { mutableStateOf(false) }
+    var showCloudModelDropdown by remember { mutableStateOf(false) }
+
+    LaunchedEffect(cloudStatus, cloudSelectedProvider, cloudBaseUrlInput, cloudApiKeyInput) {
+        val isOllamaProvider = cloudSelectedProvider.id == "ollama"
+        val isOllamaCustom = cloudSelectedProvider.id == "custom" && cloudBaseUrlInput.contains("ollama.com", ignoreCase = true)
+        val isOllamaUrl = cloudSelectedProvider.baseUrl.contains("ollama.com", ignoreCase = true)
+
+        if ((isOllamaProvider || isOllamaCustom || isOllamaUrl) && cloudApiKeyInput.isNotBlank()) {
+            isFetchingCloudModels = true
+            fetchedCloudModels = cloudApiEngine.getAvailableModels() ?: emptyList()
+            isFetchingCloudModels = false
+        } else if (cloudStatus == CloudApiConnectionStatus.CONNECTED &&
+            (isOllamaCustom || isOllamaUrl)
+        ) {
+            isFetchingCloudModels = true
+            fetchedCloudModels = cloudApiEngine.getAvailableModels() ?: emptyList()
+            isFetchingCloudModels = false
+        } else {
+            fetchedCloudModels = emptyList()
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1233,19 +1260,87 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                     )
 
                     // Model Name Input
-                    OutlinedTextField(
-                        value = cloudModelInput,
-                        onValueChange = { cloudModelInput = it },
-                        placeholder = { Text("Model", color = Color.White.copy(alpha = 0.3f), fontSize = 13.sp) },
-                        modifier = Modifier.weight(0.6f),
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = AccentBlue,
-                            unfocusedBorderColor = Color.White.copy(alpha = 0.1f),
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
+                    if (isFetchingCloudModels) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(0.6f)) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = AccentBlue)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Fetching models...", fontSize = 13.sp, color = Color.White.copy(alpha=0.7f))
+                        }
+                    } else if (fetchedCloudModels.isNotEmpty() || cloudSelectedProvider.suggestedModels.isNotEmpty()) {
+                        val modelsToShow = if (fetchedCloudModels.isNotEmpty()) fetchedCloudModels else cloudSelectedProvider.suggestedModels
+                        Box(modifier = Modifier.weight(0.6f)) {
+                            Surface(
+                                onClick = { showCloudModelDropdown = true },
+                                color = Color.Transparent,
+                                shape = RoundedCornerShape(4.dp),
+                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.5f)),
+                                modifier = Modifier.fillMaxWidth().height(56.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = cloudModelInput.ifBlank { "Model" },
+                                        color = if (cloudModelInput.isNotBlank()) Color.White else Color.White.copy(alpha = 0.3f),
+                                        fontSize = 13.sp,
+                                        modifier = Modifier.weight(1f),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Icon(
+                                        Icons.Default.KeyboardArrowDown,
+                                        contentDescription = null,
+                                        tint = Color.White.copy(alpha = 0.4f),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+
+                            DropdownMenu(
+                                expanded = showCloudModelDropdown,
+                                onDismissRequest = { showCloudModelDropdown = false },
+                                modifier = Modifier.background(CardGlass)
+                            ) {
+                                modelsToShow.forEach { model ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                if (model == cloudModelInput) {
+                                                    Icon(
+                                                        Icons.Default.CheckCircle,
+                                                        contentDescription = null,
+                                                        tint = AccentGreen,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                    Spacer(Modifier.width(8.dp))
+                                                }
+                                                Text(model, color = Color.White, fontSize = 13.sp)
+                                            }
+                                        },
+                                        onClick = {
+                                            cloudModelInput = model
+                                            showCloudModelDropdown = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        OutlinedTextField(
+                            value = cloudModelInput,
+                            onValueChange = { cloudModelInput = it },
+                            placeholder = { Text("Model", color = Color.White.copy(alpha = 0.3f), fontSize = 13.sp) },
+                            modifier = Modifier.weight(0.6f),
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = AccentBlue,
+                                unfocusedBorderColor = Color.White.copy(alpha = 0.1f),
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White
+                            )
                         )
-                    )
+                    }
                 }
 
                 Button(
