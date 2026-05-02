@@ -9,6 +9,8 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -185,7 +187,8 @@ fun FlowListScreen(
                                     exportingFlowName = flow.name
                                     exportLauncher.launch("${flow.name}.zip")
                                 },
-                                onDelete = { viewModel.deleteFlow(flow.id) }
+                                onDelete = { viewModel.deleteFlow(flow.id) },
+                                onRename = { newName -> viewModel.renameFlow(flow.id, newName) }
                             )
                         }
                     }
@@ -315,6 +318,7 @@ private fun EmptyFlowState(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun FlowCard(
     flow: FlowGraph,
@@ -322,9 +326,11 @@ private fun FlowCard(
     onEdit: () -> Unit,
     onRun: () -> Unit,
     onExport: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onRename: (String) -> Unit
 ) {
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    var showRenameDialog by remember { mutableStateOf(false) }
     val dateFormat = remember { SimpleDateFormat("MMM d, yyyy HH:mm", Locale.getDefault()) }
     val context = androidx.compose.ui.platform.LocalContext.current
 
@@ -337,7 +343,10 @@ private fun FlowCard(
         modifier = Modifier
             .fillMaxWidth()
             .animateContentSize()
-            .clickable(onClick = onEdit),
+            .combinedClickable(
+                onClick = onEdit,
+                onLongClick = { showRenameDialog = true }
+            ),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = cardBg),
         elevation = CardDefaults.cardElevation(4.dp)
@@ -468,6 +477,38 @@ private fun FlowCard(
                         Text("Delete", color = Color(0xFFEF5350), fontSize = 12.sp)
                     }
                 }
+            }
+
+            // Rename Dialog
+            if (showRenameDialog) {
+                var newName by remember { mutableStateOf(flow.name) }
+                AlertDialog(
+                    onDismissRequest = { showRenameDialog = false },
+                    title = { Text("Rename Flow") },
+                    text = {
+                        OutlinedTextField(
+                            value = newName,
+                            onValueChange = { newName = it },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            if (newName.isNotBlank()) {
+                                onRename(newName.trim())
+                            }
+                            showRenameDialog = false
+                        }) {
+                            Text("Save")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showRenameDialog = false }) {
+                            Text("Cancel")
+                        }
+                    }
+                )
             }
         }
     }

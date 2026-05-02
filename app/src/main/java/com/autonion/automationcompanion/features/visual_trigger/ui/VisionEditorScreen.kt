@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.autonion.automationcompanion.features.visual_trigger.models.VisionAction
 import com.autonion.automationcompanion.features.visual_trigger.models.ScrollDirection
+import com.autonion.automationcompanion.features.visual_trigger.models.ExecutionMode
 import kotlinx.coroutines.delay
 import kotlin.math.abs
 
@@ -90,6 +91,7 @@ fun VisionEditorScreen(
 
     val bitmap by viewModel.imageBitmap.collectAsState()
     val regions by viewModel.regions.collectAsState()
+    val executionMode by viewModel.executionMode.collectAsState()
     val capturePages by viewModel.capturePages.collectAsState()
     val currentPageIndex by viewModel.currentPageIndex.collectAsState()
     val isMultiPage = capturePages.size > 1
@@ -592,14 +594,63 @@ fun VisionEditorScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Left: Cancel
-            SmallFloatingActionButton(
-                onClick = onCancel,
-                containerColor = Color(0xE61A1A2E),
-                contentColor = Color.White,
-                shape = CircleShape
-            ) {
-                Icon(Icons.Default.Close, contentDescription = "Cancel", modifier = Modifier.size(20.dp))
+            // Left: Cancel and Execution Mode
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                SmallFloatingActionButton(
+                    onClick = onCancel,
+                    containerColor = Color(0xE61A1A2E),
+                    contentColor = Color.White,
+                    shape = CircleShape
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = "Cancel", modifier = Modifier.size(20.dp))
+                }
+
+                var showExecutionModeMenu by remember { mutableStateOf(false) }
+                Box {
+                    Button(
+                        onClick = { showExecutionModeMenu = true },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xE61A1A2E), contentColor = Color.White),
+                        shape = RoundedCornerShape(16.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                        modifier = Modifier.height(40.dp)
+                    ) {
+                        Text(
+                            text = when (executionMode) {
+                                ExecutionMode.MANDATORY_SEQUENTIAL -> "Mandatory Seq"
+                                ExecutionMode.OPTIONAL_SEQUENTIAL -> "Optional Seq"
+                                ExecutionMode.DETECT_ONLY -> "Detect Only"
+                            },
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = showExecutionModeMenu,
+                        onDismissRequest = { showExecutionModeMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Mandatory Sequential") },
+                            onClick = {
+                                viewModel.updateExecutionMode(ExecutionMode.MANDATORY_SEQUENTIAL)
+                                showExecutionModeMenu = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Optional Sequential") },
+                            onClick = {
+                                viewModel.updateExecutionMode(ExecutionMode.OPTIONAL_SEQUENTIAL)
+                                showExecutionModeMenu = false
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Detect Only") },
+                            onClick = {
+                                viewModel.updateExecutionMode(ExecutionMode.DETECT_ONLY)
+                                showExecutionModeMenu = false
+                            }
+                        )
+                    }
+                }
             }
 
             // Right: Recapture, Undo, Save — all grouped together

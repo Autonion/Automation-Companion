@@ -1,13 +1,19 @@
 package com.autonion.automationcompanion.features.flow_automation.ui.editor.panels
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -58,12 +64,18 @@ fun EdgeConditionOverlay(
         )
     }
 
+    val configuration = LocalConfiguration.current
+    val maxHeight = configuration.screenHeightDp.dp * 0.55f
+
     Card(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(max = maxHeight),
         shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
         colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1C1E))
     ) {
-        Column(modifier = Modifier.padding(20.dp)) {
+        Column(modifier = Modifier.padding(20.dp).verticalScroll(rememberScrollState())) {
+            val focusManager = LocalFocusManager.current
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
@@ -127,7 +139,9 @@ fun EdgeConditionOverlay(
                         },
                         label = { Text("Seconds") },
                         modifier = Modifier.fillMaxWidth(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                         colors = flowTextFieldColors()
                     )
                 }
@@ -142,6 +156,9 @@ fun EdgeConditionOverlay(
                         },
                         label = { Text("Context Key") },
                         modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                         colors = flowTextFieldColors()
                     )
                     Spacer(Modifier.height(8.dp))
@@ -153,6 +170,9 @@ fun EdgeConditionOverlay(
                         },
                         label = { Text("Contains Text") },
                         modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                         colors = flowTextFieldColors()
                     )
                 }
@@ -167,6 +187,9 @@ fun EdgeConditionOverlay(
                         },
                         label = { Text("Context Key") },
                         modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                         colors = flowTextFieldColors()
                     )
                     Spacer(Modifier.height(8.dp))
@@ -178,6 +201,9 @@ fun EdgeConditionOverlay(
                         },
                         label = { Text("Expected Value") },
                         modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                         colors = flowTextFieldColors()
                     )
                 }
@@ -191,6 +217,9 @@ fun EdgeConditionOverlay(
                         },
                         label = { Text("Context Key (from Image Match node)") },
                         modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                         colors = flowTextFieldColors()
                     )
                 }
@@ -205,6 +234,9 @@ fun EdgeConditionOverlay(
                         },
                         label = { Text("Context Key") },
                         modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                         colors = flowTextFieldColors()
                     )
                     Spacer(Modifier.height(8.dp))
@@ -216,6 +248,9 @@ fun EdgeConditionOverlay(
                         },
                         label = { Text("Does Not Contain Text") },
                         modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                         colors = flowTextFieldColors()
                     )
                 }
@@ -230,6 +265,9 @@ fun EdgeConditionOverlay(
                         },
                         label = { Text("Context Key") },
                         modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                         colors = flowTextFieldColors()
                     )
                     Spacer(Modifier.height(8.dp))
@@ -241,6 +279,9 @@ fun EdgeConditionOverlay(
                         },
                         label = { Text("Must Not Equal Value") },
                         modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                         colors = flowTextFieldColors()
                     )
                 }
@@ -254,6 +295,9 @@ fun EdgeConditionOverlay(
                         },
                         label = { Text("Context Key (from Image Match node)") },
                         modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                         colors = flowTextFieldColors()
                     )
                 }
@@ -269,7 +313,9 @@ fun EdgeConditionOverlay(
                         },
                         label = { Text("Max Attempts") },
                         modifier = Modifier.fillMaxWidth(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                         colors = flowTextFieldColors()
                     )
                     Spacer(Modifier.height(8.dp))
@@ -282,7 +328,9 @@ fun EdgeConditionOverlay(
                         },
                         label = { Text("Delay Between Retries (ms)") },
                         modifier = Modifier.fillMaxWidth(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                         colors = flowTextFieldColors()
                     )
                 }

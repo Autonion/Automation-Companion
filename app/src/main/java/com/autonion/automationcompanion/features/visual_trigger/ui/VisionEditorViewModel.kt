@@ -10,6 +10,7 @@ import com.autonion.automationcompanion.features.visual_trigger.data.VisionRepos
 import com.autonion.automationcompanion.features.visual_trigger.models.VisionAction
 import com.autonion.automationcompanion.features.visual_trigger.models.VisionPreset
 import com.autonion.automationcompanion.features.visual_trigger.models.VisionRegion
+import com.autonion.automationcompanion.features.visual_trigger.models.ExecutionMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -52,6 +53,9 @@ class VisionEditorViewModel(application: Application) : AndroidViewModel(applica
     private var editingPresetId: String? = null
     private var appendPresetId: String? = null
 
+    private val _executionMode = MutableStateFlow(ExecutionMode.MANDATORY_SEQUENTIAL)
+    val executionMode = _executionMode.asStateFlow()
+
     // All regions across all pages (for saving)
     private val allRegions = mutableListOf<TempRegion>()
 
@@ -63,6 +67,10 @@ class VisionEditorViewModel(application: Application) : AndroidViewModel(applica
             }
             _imageBitmap.value = bitmap
         }
+    }
+
+    fun updateExecutionMode(mode: ExecutionMode) {
+        _executionMode.value = mode
     }
 
     fun prepareForAppend(presetId: String) {
@@ -82,6 +90,7 @@ class VisionEditorViewModel(application: Application) : AndroidViewModel(applica
             }
 
             editingPresetId = presetId
+            _executionMode.value = preset.executionMode
 
             // Build list of all regions with their source info
             val tempRegions = preset.regions.map { region ->
@@ -373,6 +382,7 @@ class VisionEditorViewModel(application: Application) : AndroidViewModel(applica
                         name = name,
                         regions = visionRegions,
                         isActive = true,
+                        executionMode = _executionMode.value,
                         captureImagePath = pages.lastOrNull() ?: currentImagePath
                     )
                     repository.savePreset(preset)
@@ -415,6 +425,7 @@ class VisionEditorViewModel(application: Application) : AndroidViewModel(applica
                     name = name,
                     regions = visionRegions,
                     isActive = true,
+                    executionMode = _executionMode.value,
                     captureImagePath = captureFile.absolutePath
                 )
                 repository.savePreset(preset)

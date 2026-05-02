@@ -2,6 +2,8 @@ package com.autonion.automationcompanion.features.flow_automation.ui.editor
 
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -9,6 +11,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Undo
@@ -21,6 +24,9 @@ import android.content.Context
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
@@ -127,6 +133,7 @@ fun FlowEditorScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(editorColors.canvasBg)
+            .imePadding()
             .onSizeChanged { size ->
                 with(density) {
                     canvasSize = Size(size.width.toFloat(), size.height.toFloat())
@@ -181,26 +188,63 @@ fun FlowEditorScreen(
 
             // Editable flow title
             var titleText by remember(state.graph.id) { mutableStateOf(state.graph.name) }
-            BasicTextField(
-                value = titleText,
-                onValueChange = {
-                    titleText = it
-                    viewModel.renameFlow(it)
-                },
-                textStyle = TextStyle(
-                    color = editorColors.topBarText,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp
-                ),
-                singleLine = true,
-                modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
-                decorationBox = { innerTextField ->
-                    if (titleText.isEmpty()) {
-                        Text("Untitled Flow", color = editorColors.topBarDimText, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            val focusRequester = remember { FocusRequester() }
+            val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+            var isTitleFocused by remember { mutableStateOf(false) }
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 8.dp)
+                    .clickable { focusRequester.requestFocus() },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                BasicTextField(
+                    value = titleText,
+                    onValueChange = {
+                        titleText = it
+                        viewModel.renameFlow(it)
+                    },
+                    textStyle = TextStyle(
+                        color = editorColors.topBarText,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp
+                    ),
+                    singleLine = true,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
+                    keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { focusManager.clearFocus() }),
+                    modifier = Modifier
+                        .weight(1f, fill = false)
+                        .focusRequester(focusRequester)
+                        .onFocusChanged { isTitleFocused = it.isFocused },
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(Color(0xFF64FFDA)),
+                    decorationBox = { innerTextField ->
+                        Column {
+                            Box(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                                if (titleText.isEmpty()) {
+                                    Text("Untitled Flow", color = editorColors.topBarDimText, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                }
+                                innerTextField()
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(1.5.dp)
+                                    .background(
+                                        if (isTitleFocused) Color(0xFF64FFDA)
+                                        else editorColors.topBarDimText.copy(alpha = 0.3f)
+                                    )
+                            )
+                        }
                     }
-                    innerTextField()
-                }
-            )
+                )
+                Spacer(Modifier.width(6.dp))
+                Icon(
+                    Icons.Default.Edit,
+                    contentDescription = "Edit Flow Name",
+                    tint = if (isTitleFocused) Color(0xFF64FFDA) else editorColors.topBarDimText,
+                    modifier = Modifier.size(14.dp)
+                )
+            }
 
             // Undo / Redo
             IconButton(
@@ -339,7 +383,7 @@ fun FlowEditorScreen(
         }
 
         // Bottom panels
-        Column(modifier = Modifier.align(Alignment.BottomCenter)) {
+        Column(modifier = Modifier.align(Alignment.BottomCenter).imePadding()) {
             // Node palette
             AnimatedVisibility(
                 visible = state.showNodePalette,

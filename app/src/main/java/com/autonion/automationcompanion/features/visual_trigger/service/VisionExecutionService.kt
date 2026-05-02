@@ -317,26 +317,32 @@ class VisionExecutionService : Service() {
                 Log.d(TAG, "  Match ID=${match.id}: matched=${match.matched}, score=${match.score}, at=(${match.x},${match.y}), size=${match.width}x${match.height}")
             }
 
-            if (preset.executionMode == ExecutionMode.MANDATORY_SEQUENTIAL) {
-                handleSequentialExecution(preset, results)
-            } else {
-                val matches = results.filter { it.matched }
-                if (matches.isEmpty()) {
-                    Log.d(TAG, "  No matches above threshold (need score≥0.75)")
+            when (preset.executionMode) {
+                ExecutionMode.MANDATORY_SEQUENTIAL -> {
+                    handleSequentialExecution(preset, results, skipOnMiss = false)
                 }
-                matches.forEach { match ->
-                    val region = preset.regions.find { it.id == match.id }
-                    if (region != null) {
-                        val cx = match.x + match.width / 2
-                        val cy = match.y + match.height / 2
-                        Log.d(TAG, "  ▶ Executing ${region.action} at ($cx, $cy)")
-                        DebugLogger.info(applicationContext, LogCategory.VISUAL_TRIGGER, "Action Executing", "${region.action} at ($cx, $cy)", TAG)
-                        val success = executeAction(region, cx, cy)
-                        Log.d(TAG, "  Action result: $success")
-                        if (success) {
-                            DebugLogger.success(applicationContext, LogCategory.VISUAL_TRIGGER, "Action Succeeded", "${region.action} at ($cx, $cy)", TAG)
-                        } else {
-                            DebugLogger.warning(applicationContext, LogCategory.VISUAL_TRIGGER, "Action Failed", "${region.action} at ($cx, $cy) returned false", TAG)
+                ExecutionMode.OPTIONAL_SEQUENTIAL -> {
+                    handleSequentialExecution(preset, results, skipOnMiss = true)
+                }
+                ExecutionMode.DETECT_ONLY -> {
+                    val matches = results.filter { it.matched }
+                    if (matches.isEmpty()) {
+                        Log.d(TAG, "  No matches above threshold (need score≥0.75)")
+                    }
+                    matches.forEach { match ->
+                        val region = preset.regions.find { it.id == match.id }
+                        if (region != null) {
+                            val cx = match.x + match.width / 2
+                            val cy = match.y + match.height / 2
+                            Log.d(TAG, "  ▶ Executing ${region.action} at ($cx, $cy)")
+                            DebugLogger.info(applicationContext, LogCategory.VISUAL_TRIGGER, "Action Executing", "${region.action} at ($cx, $cy)", TAG)
+                            val success = executeAction(region, cx, cy)
+                            Log.d(TAG, "  Action result: $success")
+                            if (success) {
+                                DebugLogger.success(applicationContext, LogCategory.VISUAL_TRIGGER, "Action Succeeded", "${region.action} at ($cx, $cy)", TAG)
+                            } else {
+                                DebugLogger.warning(applicationContext, LogCategory.VISUAL_TRIGGER, "Action Failed", "${region.action} at ($cx, $cy) returned false", TAG)
+                            }
                         }
                     }
                 }
@@ -352,7 +358,8 @@ class VisionExecutionService : Service() {
 
     private suspend fun handleSequentialExecution(
         preset: VisionPreset,
-        results: Array<com.autonion.automationcompanion.core.vision.MatchResultNative>
+        results: Array<com.autonion.automationcompanion.core.vision.MatchResultNative>,
+        skipOnMiss: Boolean = false
     ) {
         if (System.currentTimeMillis() - lastActionTime < 2000) return
 
@@ -371,6 +378,10 @@ class VisionExecutionService : Service() {
                 currentStepIndex++
                 lastActionTime = System.currentTimeMillis()
             }
+        } else if (skipOnMiss) {
+            Log.d(TAG, "Sequential step $currentStepIndex not matched: ID ${targetRegion.id}, skipping (Optional Sequential)")
+            currentStepIndex++
+            lastActionTime = System.currentTimeMillis()
         }
     }
 
