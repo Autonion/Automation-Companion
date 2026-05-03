@@ -447,14 +447,16 @@ class VisionEditorViewModel(application: Application) : AndroidViewModel(applica
 
         viewModelScope.launch {
             val tempFilePath = withContext(Dispatchers.IO) {
-                // Save capture image
-                val captureFile = File(getApplication<Application>().cacheDir, "flow_viz_cap_${flowNodeId}.png")
+                val application = getApplication<Application>()
+                val assetDir = File(application.filesDir, "flow_assets").also { it.mkdirs() }
+
+                val captureFile = File(assetDir, "flow_viz_cap_${flowNodeId}.png")
                 FileOutputStream(captureFile).use { out ->
                     bitmap.compress(Bitmap.CompressFormat.PNG, 90, out)
                 }
 
                 val visionRegions = _regions.value.map { temp ->
-                    val templateFile = File(getApplication<Application>().cacheDir, "flow_viz_${flowNodeId}_${temp.id}.png")
+                    val templateFile = File(assetDir, "flow_viz_${flowNodeId}_${temp.id}.png")
                     val crop = Bitmap.createBitmap(
                         bitmap,
                         temp.rect.left.coerceAtLeast(0),
@@ -486,7 +488,7 @@ class VisionEditorViewModel(application: Application) : AndroidViewModel(applica
                 )
                 
                 val json = Json.encodeToString(preset)
-                val tempFile = File(getApplication<Application>().cacheDir, "flow_vision_${flowNodeId}.json")
+                val tempFile = File(application.cacheDir, "flow_vision_${flowNodeId}.json")
                 tempFile.writeText(json)
                 
                 tempFile.absolutePath
