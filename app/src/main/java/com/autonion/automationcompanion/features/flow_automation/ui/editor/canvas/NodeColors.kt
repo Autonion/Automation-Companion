@@ -114,6 +114,10 @@ object NodeColors {
     val LaunchAppTealBg = Color(0xFF0B1F1C)
     val RepeatOrange    = Color(0xFFFF8A65)
     val RepeatOrangeBg  = Color(0xFF1F150E)
+    val ClipboardBrown  = Color(0xFFA1887F)
+    val ClipboardBrownBg= Color(0xFF1F1A18)
+    val InputPink       = Color(0xFFF48FB1)
+    val InputPinkBg     = Color(0xFF1F1216)
 
     // ── Edge & port colors ──
     val EdgeDefault     = Color(0xFF94A3B8)

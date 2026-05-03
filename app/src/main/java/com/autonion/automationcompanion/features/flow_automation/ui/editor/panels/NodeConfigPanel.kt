@@ -102,6 +102,8 @@ fun NodeConfigPanel(
                 is DelayNode -> DelayNodeConfig(node, onUpdateNode)
                 is LaunchAppNode -> LaunchAppNodeConfig(node, onUpdateNode)
                 is RepeatNode -> RepeatNodeConfig(node, onUpdateNode)
+                is ClipboardNode -> ClipboardNodeConfig(node, onUpdateNode)
+                is InputNode -> InputNodeConfig(node, onUpdateNode)
             }
 
             Spacer(Modifier.height(20.dp))
@@ -324,6 +326,129 @@ private fun LaunchAppNodeConfig(node: LaunchAppNode, onUpdate: (FlowNode) -> Uni
         color = Color.White.copy(alpha = 0.4f),
         fontSize = 11.sp
     )
+}
+
+@Composable
+private fun ClipboardNodeConfig(node: ClipboardNode, onUpdate: (FlowNode) -> Unit) {
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    
+    // Operation Type
+    Text("Operation", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        ClipboardOperation.entries.forEach { op ->
+            FilterChip(
+                selected = node.operation == op,
+                onClick = { onUpdate(node.copy(operation = op)) },
+                label = { Text(op.name, fontSize = 12.sp) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = NodeColors.ClipboardBrown.copy(alpha = 0.3f),
+                    selectedLabelColor = NodeColors.ClipboardBrown
+                )
+            )
+        }
+    }
+    
+    Spacer(Modifier.height(12.dp))
+    
+    // Context Key
+    var contextKey by remember(node.id) { mutableStateOf(node.contextKey) }
+    OutlinedTextField(
+        value = contextKey,
+        onValueChange = {
+            contextKey = it
+            onUpdate(node.copy(contextKey = it))
+        },
+        label = { Text("Context Key") },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+        colors = flowTextFieldColors()
+    )
+    Text(
+        if (node.operation == ClipboardOperation.READ)
+            "Key to store clipboard content in context"
+        else
+            "Key to read from context and write to clipboard",
+        color = Color.White.copy(alpha = 0.4f),
+        fontSize = 11.sp
+    )
+}
+
+@Composable
+private fun InputNodeConfig(node: InputNode, onUpdate: (FlowNode) -> Unit) {
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    
+    // Source Type
+    Text("Input Source", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        val isStatic = node.inputSource is InputSource.Static
+        FilterChip(
+            selected = isStatic,
+            onClick = { onUpdate(node.copy(inputSource = InputSource.Static(""))) },
+            label = { Text("Static Text", fontSize = 12.sp) },
+            colors = FilterChipDefaults.filterChipColors(
+                selectedContainerColor = NodeColors.InputPink.copy(alpha = 0.3f),
+                selectedLabelColor = NodeColors.InputPink
+            )
+        )
+        FilterChip(
+            selected = !isStatic,
+            onClick = { onUpdate(node.copy(inputSource = InputSource.FromContext(""))) },
+            label = { Text("From Context", fontSize = 12.sp) },
+            colors = FilterChipDefaults.filterChipColors(
+                selectedContainerColor = NodeColors.InputPink.copy(alpha = 0.3f),
+                selectedLabelColor = NodeColors.InputPink
+            )
+        )
+    }
+    
+    Spacer(Modifier.height(12.dp))
+    
+    when (val source = node.inputSource) {
+        is InputSource.Static -> {
+            var text by remember(node.id) { mutableStateOf(source.text) }
+            OutlinedTextField(
+                value = text,
+                onValueChange = {
+                    text = it
+                    onUpdate(node.copy(inputSource = InputSource.Static(it)))
+                },
+                label = { Text("Text to Input") },
+                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                colors = flowTextFieldColors()
+            )
+        }
+        is InputSource.FromContext -> {
+            var key by remember(node.id) { mutableStateOf(source.key) }
+            OutlinedTextField(
+                value = key,
+                onValueChange = {
+                    key = it
+                    onUpdate(node.copy(inputSource = InputSource.FromContext(it)))
+                },
+                label = { Text("Context Key") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                colors = flowTextFieldColors()
+            )
+        }
+    }
+    
+    Spacer(Modifier.height(12.dp))
+    
+    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        Checkbox(
+            checked = node.submitAfterInput,
+            onCheckedChange = { onUpdate(node.copy(submitAfterInput = it)) },
+            colors = CheckboxDefaults.colors(checkedColor = NodeColors.InputPink)
+        )
+        Text("Submit after input (Press Enter/Done)", color = Color.White, fontSize = 14.sp)
+    }
 }
 
 @Composable
@@ -786,6 +911,8 @@ private fun nodeColors(node: FlowNode): Pair<Color, Color> {
         is DelayNode -> NodeColors.DelayGreyBg to NodeColors.DelayGrey
         is LaunchAppNode -> NodeColors.LaunchAppTealBg to NodeColors.LaunchAppTeal
         is RepeatNode -> NodeColors.RepeatOrangeBg to NodeColors.RepeatOrange
+        is ClipboardNode -> NodeColors.ClipboardBrownBg to NodeColors.ClipboardBrown
+        is InputNode -> NodeColors.InputPinkBg to NodeColors.InputPink
     }
 }
 
@@ -797,6 +924,8 @@ private fun nodeTypeEmoji(node: FlowNode): String = when (node) {
     is DelayNode -> "⏱"
     is LaunchAppNode -> "🚀"
     is RepeatNode -> "🔄"
+    is ClipboardNode -> "📋"
+    is InputNode -> "⌨️"
 }
 
 private fun updateNodeLabel(node: FlowNode, label: String): FlowNode = when (node) {
@@ -807,4 +936,6 @@ private fun updateNodeLabel(node: FlowNode, label: String): FlowNode = when (nod
     is DelayNode -> node.copy(label = label)
     is LaunchAppNode -> node.copy(label = label)
     is RepeatNode -> node.copy(label = label)
+    is ClipboardNode -> node.copy(label = label)
+    is InputNode -> node.copy(label = label)
 }

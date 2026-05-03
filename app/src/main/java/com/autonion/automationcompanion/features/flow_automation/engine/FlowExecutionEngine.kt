@@ -53,7 +53,9 @@ class FlowExecutionEngine(
         FlowNodeType.SCREEN_ML to ScreenMLNodeExecutor(appContext, screenCaptureProvider),
         FlowNodeType.DELAY to DelayNodeExecutor(),
         FlowNodeType.LAUNCH_APP to LaunchAppNodeExecutor(appContext),
-        FlowNodeType.REPEAT to RepeatNodeExecutor()
+        FlowNodeType.REPEAT to RepeatNodeExecutor(),
+        FlowNodeType.CLIPBOARD to ClipboardExecutor(appContext),
+        FlowNodeType.INPUT to InputExecutor()
     )
 
     /**

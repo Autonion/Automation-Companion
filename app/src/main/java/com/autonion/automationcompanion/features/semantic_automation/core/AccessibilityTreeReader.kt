@@ -253,6 +253,56 @@ object AccessibilityTreeReader : AccessibilityFeature {
         return result
     }
 
+    fun performSetTextOnFocused(text: String): Boolean {
+        val service = serviceRef?.get() ?: return false
+        val root = service.rootInActiveWindow ?: return false
+
+        val targetNode = findFocusedEditable(root)
+        val result = if (targetNode != null) {
+            // 1. Clear the field first
+            val clearArgs = Bundle().apply {
+                putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, "")
+            }
+            targetNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, clearArgs)
+
+            // 2. PRIMARY: Use ACTION_SET_TEXT
+            val setTextArgs = Bundle().apply {
+                putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text)
+            }
+            var success = targetNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, setTextArgs)
+            if (success) {
+                Log.d(TAG, "Used ACTION_SET_TEXT to set text on focused node")
+            }
+
+            // 3. FALLBACK: Try ACTION_PASTE if SET_TEXT failed
+            if (!success) {
+                Log.d(TAG, "ACTION_SET_TEXT failed, trying ACTION_PASTE fallback on focused node")
+                val clipboard = service.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                if (clipboard != null) {
+                    try {
+                        val clip = android.content.ClipData.newPlainText("automation", text)
+                        clipboard.setPrimaryClip(clip)
+                        success = targetNode.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+                        if (success) {
+                            Log.d(TAG, "Used ACTION_PASTE to set text on focused node")
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "ACTION_PASTE failed: ${e.message}")
+                    }
+                }
+            }
+
+            targetNode.recycle()
+            success
+        } else {
+            Log.w(TAG, "Could not find a focused editable node to set text")
+            false
+        }
+
+        root.recycle()
+        return result
+    }
+
     /**
      * Find a node and set text on it using ACTION_SET_TEXT.
      * This is more reliable than focusing + typing via InputConnection.

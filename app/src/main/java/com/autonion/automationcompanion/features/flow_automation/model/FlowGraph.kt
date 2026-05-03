@@ -96,5 +96,7 @@ data class FlowGraph(
         is DelayNode -> node.copy(onFailureEdgeId = null)
         is LaunchAppNode -> node.copy(onFailureEdgeId = null)
         is RepeatNode -> node.copy(onFailureEdgeId = null)
+        is ClipboardNode -> node.copy(onFailureEdgeId = null)
+        is InputNode -> node.copy(onFailureEdgeId = null)
     }
 }

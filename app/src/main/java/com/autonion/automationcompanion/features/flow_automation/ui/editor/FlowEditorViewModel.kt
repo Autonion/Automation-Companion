@@ -233,6 +233,8 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
             FlowNodeType.DELAY -> DelayNode(position = position)
             FlowNodeType.LAUNCH_APP -> LaunchAppNode(position = position)
             FlowNodeType.REPEAT -> RepeatNode(position = position)
+            FlowNodeType.CLIPBOARD -> ClipboardNode(position = position)
+            FlowNodeType.INPUT -> InputNode(position = position)
         }
         _state.update { state ->
             state.copy(
@@ -603,6 +605,8 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
             is DelayNode -> node.copy(position = pos)
             is LaunchAppNode -> node.copy(position = pos)
             is RepeatNode -> node.copy(position = pos)
+            is ClipboardNode -> node.copy(position = pos)
+            is InputNode -> node.copy(position = pos)
         }
     }
 }

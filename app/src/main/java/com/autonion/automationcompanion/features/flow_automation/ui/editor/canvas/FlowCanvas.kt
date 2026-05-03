@@ -404,6 +404,8 @@ private fun DrawScope.drawNode(
             node.appPackageName.substringAfterLast('.').uppercase()
         else "SELECT APP"
         is RepeatNode -> if (node.repeatCount == 0) "∞ INFINITE" else "×${node.repeatCount}"
+        is ClipboardNode -> node.operation.name.uppercase()
+        is InputNode -> "INJECT TEXT"
     }
     val subText = textMeasurer.measure(
         AnnotatedString(subtitle),
@@ -756,6 +758,8 @@ private fun nodeColors(node: FlowNode) = when (node) {
     is DelayNode -> NodeColors.DelayGreyBg to NodeColors.DelayGrey
     is LaunchAppNode -> NodeColors.LaunchAppTealBg to NodeColors.LaunchAppTeal
     is RepeatNode -> NodeColors.RepeatOrangeBg to NodeColors.RepeatOrange
+    is ClipboardNode -> NodeColors.ClipboardBrownBg to NodeColors.ClipboardBrown
+    is InputNode -> NodeColors.InputPinkBg to NodeColors.InputPink
 }
 
 private fun edgeConditionLabel(edge: FlowEdge): String? {
@@ -964,6 +968,54 @@ internal fun DrawScope.drawNodeIcon(
                     lineTo(cx + 5f, cy - r - 4f)
                 }
                 drawPath(arrowPath, iconColor, style = Stroke(3f, join = StrokeJoin.Round, cap = StrokeCap.Round))
+            }
+            FlowNodeType.CLIPBOARD -> {
+                // Clipboard icon
+                val cx = iconCenterX
+                val cy = iconCenterY
+                val bodyW = 16f
+                val bodyH = 20f
+                // Board
+                drawRoundRect(
+                    iconColor,
+                    topLeft = Offset(cx - bodyW / 2f, cy - bodyH / 2f + 2f),
+                    size = Size(bodyW, bodyH),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(2f),
+                    style = Stroke(2.5f)
+                )
+                // Clip
+                drawRoundRect(
+                    iconColor,
+                    topLeft = Offset(cx - 4f, cy - bodyH / 2f - 1f),
+                    size = Size(8f, 6f),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(2f)
+                )
+                // Lines
+                drawLine(iconColor, Offset(cx - 4f, cy + 2f), Offset(cx + 4f, cy + 2f), strokeWidth = 2f, cap = StrokeCap.Round)
+                drawLine(iconColor, Offset(cx - 4f, cy + 8f), Offset(cx + 4f, cy + 8f), strokeWidth = 2f, cap = StrokeCap.Round)
+            }
+            FlowNodeType.INPUT -> {
+                // Keyboard icon
+                val cx = iconCenterX
+                val cy = iconCenterY
+                val bodyW = 24f
+                val bodyH = 14f
+                // Outline
+                drawRoundRect(
+                    iconColor,
+                    topLeft = Offset(cx - bodyW / 2f, cy - bodyH / 2f),
+                    size = Size(bodyW, bodyH),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(3f),
+                    style = Stroke(2.5f)
+                )
+                // Keys
+                // Top row
+                drawCircle(iconColor, radius = 1f, center = Offset(cx - 6f, cy - 3f))
+                drawCircle(iconColor, radius = 1f, center = Offset(cx - 2f, cy - 3f))
+                drawCircle(iconColor, radius = 1f, center = Offset(cx + 2f, cy - 3f))
+                drawCircle(iconColor, radius = 1f, center = Offset(cx + 6f, cy - 3f))
+                // Spacebar
+                drawLine(iconColor, Offset(cx - 4f, cy + 3f), Offset(cx + 4f, cy + 3f), strokeWidth = 2f, cap = StrokeCap.Round)
             }
         }
     }

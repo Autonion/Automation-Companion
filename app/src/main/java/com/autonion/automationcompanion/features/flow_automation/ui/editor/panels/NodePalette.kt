@@ -39,7 +39,9 @@ fun NodePalette(
         NodeTypeItem(FlowNodeType.SCREEN_ML, "Screen ML", "🧠", NodeColors.ScreenMLAmber),
         NodeTypeItem(FlowNodeType.DELAY, "Delay", "⏱", NodeColors.DelayGrey),
         NodeTypeItem(FlowNodeType.LAUNCH_APP, "Launch App", "🚀", NodeColors.LaunchAppTeal),
-        NodeTypeItem(FlowNodeType.REPEAT, "Repeat", "🔄", NodeColors.RepeatOrange)
+        NodeTypeItem(FlowNodeType.REPEAT, "Repeat", "🔄", NodeColors.RepeatOrange),
+        NodeTypeItem(FlowNodeType.CLIPBOARD, "Clipboard", "📋", NodeColors.ClipboardBrown),
+        NodeTypeItem(FlowNodeType.INPUT, "Input", "⌨️", NodeColors.InputPink)
     )
 
     val editorColors = flowEditorColors()

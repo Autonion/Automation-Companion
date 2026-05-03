@@ -15,7 +15,9 @@ enum class FlowNodeType {
     @SerialName("screen_ml") SCREEN_ML,
     @SerialName("delay") DELAY,
     @SerialName("launch_app") LAUNCH_APP,
-    @SerialName("repeat") REPEAT
+    @SerialName("repeat") REPEAT,
+    @SerialName("clipboard") CLIPBOARD,
+    @SerialName("input") INPUT
 }
 
 /**
@@ -50,6 +52,29 @@ sealed class CoordinateSource {
 enum class ScreenMLMode {
     @SerialName("ocr") OCR,
     @SerialName("object_detection") OBJECT_DETECTION
+}
+
+/**
+ * Clipboard operations.
+ */
+@Serializable
+enum class ClipboardOperation {
+    @SerialName("read") READ,
+    @SerialName("write") WRITE
+}
+
+/**
+ * Text input source.
+ */
+@Serializable
+sealed class InputSource {
+    @Serializable
+    @SerialName("static")
+    data class Static(val text: String) : InputSource()
+
+    @Serializable
+    @SerialName("from_context")
+    data class FromContext(val key: String) : InputSource()
 }
 
 // ─── Node hierarchy ────────────────────────────────────────────────────────────
@@ -246,4 +271,45 @@ data class RepeatNode(
     val delayBetweenMs: Long = 0L
 ) : FlowNode() {
     override val nodeType: FlowNodeType = FlowNodeType.REPEAT
+}
+
+/**
+ * Reads from or writes to the system clipboard.
+ */
+@Serializable
+@SerialName("clipboard")
+data class ClipboardNode(
+    override val id: String = UUID.randomUUID().toString(),
+    override val position: NodePosition = NodePosition(),
+    override val label: String = "Clipboard",
+    override val outputEdgeIds: List<String> = emptyList(),
+    override val onFailureEdgeId: String? = null,
+    override val timeoutMs: Long = 5_000L,
+    val operation: ClipboardOperation = ClipboardOperation.READ,
+    val contextKey: String = "clipboard_text",
+    val inputSource: InputSource = InputSource.Static("") // Used for WRITE operation
+) : FlowNode() {
+    override val nodeType: FlowNodeType = FlowNodeType.CLIPBOARD
+}
+
+/**
+ * Injects text into a target field using Accessibility ACTION_SET_TEXT.
+ */
+@Serializable
+@SerialName("input")
+data class InputNode(
+    override val id: String = UUID.randomUUID().toString(),
+    override val position: NodePosition = NodePosition(),
+    override val label: String = "Text Input",
+    override val outputEdgeIds: List<String> = emptyList(),
+    override val onFailureEdgeId: String? = null,
+    override val timeoutMs: Long = 5_000L,
+    val inputSource: InputSource = InputSource.Static(""),
+    // If true, attempt to trigger IME search/enter after setting text
+    val submitAfterInput: Boolean = false,
+    // By default, it sets text on the currently focused editable.
+    // Future enhancements could allow specifying a target element ID.
+    val targetElementId: String? = null
+) : FlowNode() {
+    override val nodeType: FlowNodeType = FlowNodeType.INPUT
 }
