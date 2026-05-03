@@ -103,6 +103,11 @@ class FlowExecutionService : Service() {
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && hasMediaProjection) {
             startForeground(NOTIFICATION_ID, buildNotification("Loading flow..."), android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            // Explicitly use SPECIAL_USE type when no MediaProjection token is available.
+            // On SDK 34+ the system enforces the manifest-declared mediaProjection type
+            // even when the flag is omitted, causing a SecurityException.
+            startForeground(NOTIFICATION_ID, buildNotification("Loading flow..."), android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         } else {
             startForeground(NOTIFICATION_ID, buildNotification("Loading flow..."))
         }

@@ -168,7 +168,9 @@
             android:name=".features.flow_automation.engine.FlowExecutionService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="mediaProjection" />
+            android:foregroundServiceType="mediaProjection|specialUse">
+            <property android:name="android.app.property.FOREGROUND_SERVICE_TYPE" android:value="specialUse" />
+        </service>
 
         <receiver
             android:name=".features.system_context_automation.location.engine.location_receiver.SlotAlarmReceiver"
