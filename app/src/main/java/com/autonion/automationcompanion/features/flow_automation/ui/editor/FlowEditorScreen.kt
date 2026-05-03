@@ -86,7 +86,6 @@ fun FlowEditorScreen(
 
     // ── MediaProjection blocking dialog ──
     var showFullScreenDialog by remember { mutableStateOf(false) }
-    var pendingExecute by remember { mutableStateOf(false) }
 
     // ── Disclosure dialog states ──
     var showAccessibilityDisclosure by remember { mutableStateOf(false) }
@@ -571,8 +570,7 @@ fun FlowEditorScreen(
                 Button(
                     onClick = {
                         showFullScreenDialog = false
-                        val mpManager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as android.media.projection.MediaProjectionManager
-                        projectionLauncher.launch(mpManager.createScreenCaptureIntent())
+                        showMediaProjectionDisclosure = true
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
                 ) {
@@ -621,7 +619,11 @@ fun FlowEditorScreen(
     PermissionDisclosureDialog(
         showDialog = showMediaProjectionDisclosure,
         title = "Screen Capture Required",
-        description = "Autonion needs to capture your screen to detect visual elements during flow execution. The screen content is processed locally on your device and is not stored or shared.",
+        description = if (needsFullScreen) {
+            "Autonion needs to capture your screen to detect visual elements during flow execution. This flow switches apps, so select Entire screen in the Android permission dialog. The screen content is processed locally on your device and is not stored or shared."
+        } else {
+            "Autonion needs to capture your screen to detect visual elements during flow execution. The screen content is processed locally on your device and is not stored or shared."
+        },
         icon = Icons.Default.Screenshot,
         onDismiss = { showMediaProjectionDisclosure = false },
         onContinue = {
