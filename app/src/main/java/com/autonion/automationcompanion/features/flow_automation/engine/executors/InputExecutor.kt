@@ -22,12 +22,31 @@ class InputExecutor : NodeExecutor {
             return NodeResult.Failure("AccessibilityService is not connected")
         }
 
+        if (inputNode.inputSource is InputSource.Clipboard) {
+            Log.d(TAG, "Attempting to paste clipboard into focused field")
+            val pasteSuccess = AccessibilityTreeReader.performPasteOnFocused()
+            if (!pasteSuccess) {
+                return NodeResult.Failure("Could not find a focused editable element or failed to paste clipboard")
+            }
+
+            if (inputNode.submitAfterInput) {
+                delay(300)
+                val submitSuccess = AccessibilityTreeReader.performImeAction()
+                if (!submitSuccess) {
+                    Log.w(TAG, "Failed to submit IME action after clipboard paste")
+                }
+            }
+
+            return NodeResult.Success
+        }
+
         val textToInput = when (val source = inputNode.inputSource) {
             is InputSource.Static -> source.text
             is InputSource.FromContext -> context.get<Any>(source.key)?.toString() ?: ""
+            is InputSource.Clipboard -> ""
         }
 
-        Log.d(TAG, "Attempting to input text: '\$textToInput'")
+        Log.d(TAG, "Attempting to input text: '$textToInput'")
 
         // By default, try setting text on the currently focused field.
         val success = AccessibilityTreeReader.performSetTextOnFocused(textToInput)

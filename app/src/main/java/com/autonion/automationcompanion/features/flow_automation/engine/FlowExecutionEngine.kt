@@ -1,5 +1,6 @@
 package com.autonion.automationcompanion.features.flow_automation.engine
 
+import android.content.ClipboardManager
 import android.content.Context
 import android.util.Log
 import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
@@ -69,6 +70,7 @@ class FlowExecutionEngine(
         }
 
         flowContext.clear()
+        prefillClipboardReadNodes(graph)
         isPaused = false
 
         executionJob = scope.launch(Dispatchers.Default) {
@@ -83,6 +85,36 @@ class FlowExecutionEngine(
                 DebugLogger.error(appContext, DBG_CATEGORY, "Flow Error", "Execution error: ${e.message}", TAG)
                 _state.value = FlowExecutionState.Error(null, e.message ?: "Unknown error")
             }
+        }
+    }
+
+    private fun prefillClipboardReadNodes(graph: FlowGraph) {
+        val readNodes = graph.nodes
+            .filterIsInstance<ClipboardNode>()
+            .filter { it.operation == ClipboardOperation.READ }
+
+        if (readNodes.isEmpty()) return
+
+        try {
+            val clipboardManager = appContext.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+            if (clipboardManager == null) {
+                Log.w(TAG, "ClipboardManager not available for start-of-flow prefill")
+                return
+            }
+
+            val clipData = clipboardManager.primaryClip
+            val text = if (clipData != null && clipData.itemCount > 0) {
+                clipData.getItemAt(0).coerceToText(appContext)?.toString() ?: ""
+            } else {
+                ""
+            }
+
+            readNodes.forEach { node ->
+                flowContext.put(node.contextKey, text)
+            }
+            Log.d(TAG, "Prefilled clipboard context for ${readNodes.size} read node(s)")
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not prefill clipboard context before flow launch: ${e.message}")
         }
     }
 

@@ -140,51 +140,27 @@ object AccessibilityTreeReader : AccessibilityFeature {
                 return true
             }
 
-            // Fallback: click the focused node (often triggers IME search on some apps)
-            val clickResult = target.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            Log.d(TAG, "Fallback click on editable for IME submit: $clickResult")
+            Log.d(TAG, "ACTION_IME_ENTER failed or unavailable on target node")
             target.recycle()
-
-            // If click worked as an IME trigger, return
-            if (clickResult) {
-                root.recycle()
-                return true
-            }
         }
 
-        // Strategy 3: Global KEYCODE_ENTER via dispatchGesture/key event
-        // This sends Enter at the system level, reaching whatever is focused
-        Log.d(TAG, "Falling back to global KEYCODE_ENTER key event")
-        val enterResult = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            // API 33+: use soft keyboard action
-            service.performGlobalAction(AccessibilityService.GLOBAL_ACTION_KEYCODE_HEADSETHOOK)
-            // Not ideal — last resort: try sending Enter via instrumentation-like approach
-            false
+        // Strategy 3: Global DPAD_CENTER (API 33+)
+        // This simulates a hardware enter/center button press which often submits forms
+        Log.d(TAG, "Falling back to global DPAD_CENTER key event")
+        val enterResult = if (android.os.Build.VERSION.SDK_INT >= 33) {
+            // GLOBAL_ACTION_DPAD_CENTER is 20
+            service.performGlobalAction(20)
         } else {
             false
         }
 
-        // Strategy 4: Send KEYCODE_ENTER via InputConnection simulation
-        if (!enterResult) {
-            try {
-                val inst = android.app.Instrumentation()
-                Thread {
-                    try {
-                        inst.sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_ENTER)
-                        Log.d(TAG, "Sent KEYCODE_ENTER via Instrumentation")
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Instrumentation KEYCODE_ENTER failed: ${e.message}")
-                    }
-                }.start()
-                root.recycle()
-                Thread.sleep(500) // Wait for key event to be processed
-                return true
-            } catch (e: Exception) {
-                Log.w(TAG, "Could not dispatch KEYCODE_ENTER: ${e.message}")
-            }
+        root.recycle()
+
+        if (enterResult) {
+            Log.d(TAG, "DPAD_CENTER succeeded")
+            return true
         }
 
-        root.recycle()
         Log.w(TAG, "All IME submit strategies exhausted")
         return false
     }
@@ -303,6 +279,44 @@ object AccessibilityTreeReader : AccessibilityFeature {
         return result
     }
 
+    fun performPasteOnFocused(): Boolean {
+        val service = serviceRef?.get() ?: return false
+        val root = service.rootInActiveWindow ?: return false
+
+        var targetNode = findFocusedEditable(root)
+        if (targetNode == null) {
+            targetNode = findAnyEditable(root)
+            if (targetNode != null) {
+                targetNode.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+                targetNode.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                Thread.sleep(300)
+            }
+        }
+
+        val result = if (targetNode != null) {
+            var success = targetNode.performAction(AccessibilityNodeInfo.ACTION_PASTE)
+            if (success) {
+                Log.d(TAG, "Used ACTION_PASTE on focused node")
+            } else {
+                Log.d(TAG, "ACTION_PASTE failed, trying long-click Paste menu")
+                val longClicked = targetNode.performAction(AccessibilityNodeInfo.ACTION_LONG_CLICK)
+                if (longClicked) {
+                    Thread.sleep(400)
+                    success = clickPasteMenuItem(service)
+                    Log.d(TAG, "Clicked Paste menu item: $success")
+                }
+            }
+            targetNode.recycle()
+            success
+        } else {
+            Log.w(TAG, "Could not find a focused editable node to paste into")
+            false
+        }
+
+        root.recycle()
+        return result
+    }
+
     /**
      * Find a node and set text on it using ACTION_SET_TEXT.
      * This is more reliable than focusing + typing via InputConnection.
@@ -400,6 +414,53 @@ object AccessibilityTreeReader : AccessibilityFeature {
 
         // Last resort: try clicking anyway even if not marked clickable
         return node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+    }
+
+    private fun clickPasteMenuItem(service: AccessibilityService): Boolean {
+        val roots = mutableListOf<AccessibilityNodeInfo>()
+        try {
+            service.windows.forEach { window ->
+                window.root?.let { roots.add(it) }
+            }
+        } catch (e: Exception) {
+            Log.d(TAG, "Could not read accessibility windows for Paste menu: ${e.message}")
+        }
+
+        if (roots.isEmpty()) {
+            service.rootInActiveWindow?.let { roots.add(it) }
+        }
+
+        for (root in roots) {
+            val pasteNode = findPasteMenuNode(root)
+            if (pasteNode != null) {
+                val clicked = performClickWithFallback(pasteNode)
+                pasteNode.recycle()
+                roots.forEach { it.recycle() }
+                return clicked
+            }
+        }
+
+        roots.forEach { it.recycle() }
+        return false
+    }
+
+    private fun findPasteMenuNode(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        val text = node.text?.toString()?.trim()
+        val description = node.contentDescription?.toString()?.trim()
+        if (text?.contains("Paste", ignoreCase = true) == true ||
+            description?.contains("Paste", ignoreCase = true) == true
+        ) {
+            return AccessibilityNodeInfo.obtain(node)
+        }
+
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val found = findPasteMenuNode(child)
+            child.recycle()
+            if (found != null) return found
+        }
+
+        return null
     }
 
     /**

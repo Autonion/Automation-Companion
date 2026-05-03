@@ -75,6 +75,10 @@ sealed class InputSource {
     @Serializable
     @SerialName("from_context")
     data class FromContext(val key: String) : InputSource()
+
+    @Serializable
+    @SerialName("clipboard")
+    data object Clipboard : InputSource()
 }
 
 // ─── Node hierarchy ────────────────────────────────────────────────────────────
@@ -287,7 +291,7 @@ data class ClipboardNode(
     override val timeoutMs: Long = 5_000L,
     val operation: ClipboardOperation = ClipboardOperation.READ,
     val contextKey: String = "clipboard_text",
-    val inputSource: InputSource = InputSource.Static("") // Used for WRITE operation
+    val inputSource: InputSource = InputSource.FromContext("clipboard_text") // Used for WRITE operation
 ) : FlowNode() {
     override val nodeType: FlowNodeType = FlowNodeType.CLIPBOARD
 }

@@ -338,7 +338,32 @@ private fun ClipboardNodeConfig(node: ClipboardNode, onUpdate: (FlowNode) -> Uni
         ClipboardOperation.entries.forEach { op ->
             FilterChip(
                 selected = node.operation == op,
-                onClick = { onUpdate(node.copy(operation = op)) },
+                onClick = {
+                    val updatedNode = if (op == ClipboardOperation.WRITE) {
+                        val source = when (val currentSource = node.inputSource) {
+                            is InputSource.Static -> {
+                                if (currentSource.text.isEmpty()) {
+                                    InputSource.FromContext(node.contextKey.ifBlank { "clipboard_text" })
+                                } else {
+                                    currentSource
+                                }
+                            }
+                            is InputSource.FromContext -> {
+                                val key = node.contextKey.ifBlank {
+                                    currentSource.key.ifBlank { "clipboard_text" }
+                                }
+                                InputSource.FromContext(key)
+                            }
+                            is InputSource.Clipboard -> {
+                                InputSource.FromContext(node.contextKey.ifBlank { "clipboard_text" })
+                            }
+                        }
+                        node.copy(operation = op, inputSource = source)
+                    } else {
+                        node.copy(operation = op)
+                    }
+                    onUpdate(updatedNode)
+                },
                 label = { Text(op.name, fontSize = 12.sp) },
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = NodeColors.ClipboardBrown.copy(alpha = 0.3f),
@@ -349,30 +374,97 @@ private fun ClipboardNodeConfig(node: ClipboardNode, onUpdate: (FlowNode) -> Uni
     }
     
     Spacer(Modifier.height(12.dp))
-    
-    // Context Key
-    var contextKey by remember(node.id) { mutableStateOf(node.contextKey) }
-    OutlinedTextField(
-        value = contextKey,
-        onValueChange = {
-            contextKey = it
-            onUpdate(node.copy(contextKey = it))
-        },
-        label = { Text("Context Key") },
-        modifier = Modifier.fillMaxWidth(),
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-        colors = flowTextFieldColors()
-    )
-    Text(
-        if (node.operation == ClipboardOperation.READ)
-            "Key to store clipboard content in context"
-        else
-            "Key to read from context and write to clipboard",
-        color = Color.White.copy(alpha = 0.4f),
-        fontSize = 11.sp
-    )
+
+    if (node.operation == ClipboardOperation.READ) {
+        OutlinedTextField(
+            value = node.contextKey,
+            onValueChange = { onUpdate(node.copy(contextKey = it)) },
+            label = { Text("Context Key") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+            colors = flowTextFieldColors()
+        )
+        Text(
+            "Key to store clipboard content in context",
+            color = Color.White.copy(alpha = 0.4f),
+            fontSize = 11.sp
+        )
+    } else {
+        Text("Write Source", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            val isStatic = node.inputSource is InputSource.Static
+            val isFromContext = node.inputSource is InputSource.FromContext
+            FilterChip(
+                selected = isStatic,
+                onClick = { onUpdate(node.copy(inputSource = InputSource.Static(""))) },
+                label = { Text("Static Text", fontSize = 12.sp) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = NodeColors.ClipboardBrown.copy(alpha = 0.3f),
+                    selectedLabelColor = NodeColors.ClipboardBrown
+                )
+            )
+            FilterChip(
+                selected = isFromContext,
+                onClick = {
+                    val key = node.contextKey.ifBlank { "clipboard_text" }
+                    onUpdate(node.copy(inputSource = InputSource.FromContext(key), contextKey = key))
+                },
+                label = { Text("From Context", fontSize = 12.sp) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = NodeColors.ClipboardBrown.copy(alpha = 0.3f),
+                    selectedLabelColor = NodeColors.ClipboardBrown
+                )
+            )
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        when (val source = node.inputSource) {
+            is InputSource.Static -> {
+                OutlinedTextField(
+                    value = source.text,
+                    onValueChange = { onUpdate(node.copy(inputSource = InputSource.Static(it))) },
+                    label = { Text("Text to Copy") },
+                    modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                    colors = flowTextFieldColors()
+                )
+            }
+            is InputSource.FromContext -> {
+                val key = source.key.ifBlank { node.contextKey }
+                OutlinedTextField(
+                    value = key,
+                    onValueChange = {
+                        onUpdate(node.copy(inputSource = InputSource.FromContext(it), contextKey = it))
+                    },
+                    label = { Text("Context Key") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                    colors = flowTextFieldColors()
+                )
+            }
+            is InputSource.Clipboard -> {
+                val key = node.contextKey.ifBlank { "clipboard_text" }
+                OutlinedTextField(
+                    value = key,
+                    onValueChange = {
+                        onUpdate(node.copy(inputSource = InputSource.FromContext(it), contextKey = it))
+                    },
+                    label = { Text("Context Key") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                    colors = flowTextFieldColors()
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -381,8 +473,10 @@ private fun InputNodeConfig(node: InputNode, onUpdate: (FlowNode) -> Unit) {
     
     // Source Type
     Text("Input Source", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
+    val isStatic = node.inputSource is InputSource.Static
+    val isFromContext = node.inputSource is InputSource.FromContext
+    val isClipboard = node.inputSource is InputSource.Clipboard
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        val isStatic = node.inputSource is InputSource.Static
         FilterChip(
             selected = isStatic,
             onClick = { onUpdate(node.copy(inputSource = InputSource.Static(""))) },
@@ -393,9 +487,23 @@ private fun InputNodeConfig(node: InputNode, onUpdate: (FlowNode) -> Unit) {
             )
         )
         FilterChip(
-            selected = !isStatic,
+            selected = isFromContext,
             onClick = { onUpdate(node.copy(inputSource = InputSource.FromContext(""))) },
             label = { Text("From Context", fontSize = 12.sp) },
+            colors = FilterChipDefaults.filterChipColors(
+                selectedContainerColor = NodeColors.InputPink.copy(alpha = 0.3f),
+                selectedLabelColor = NodeColors.InputPink
+            )
+        )
+    }
+
+    Spacer(Modifier.height(8.dp))
+
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FilterChip(
+            selected = isClipboard,
+            onClick = { onUpdate(node.copy(inputSource = InputSource.Clipboard)) },
+            label = { Text("Paste Clipboard", fontSize = 12.sp) },
             colors = FilterChipDefaults.filterChipColors(
                 selectedContainerColor = NodeColors.InputPink.copy(alpha = 0.3f),
                 selectedLabelColor = NodeColors.InputPink
@@ -407,11 +515,9 @@ private fun InputNodeConfig(node: InputNode, onUpdate: (FlowNode) -> Unit) {
     
     when (val source = node.inputSource) {
         is InputSource.Static -> {
-            var text by remember(node.id) { mutableStateOf(source.text) }
             OutlinedTextField(
-                value = text,
+                value = source.text,
                 onValueChange = {
-                    text = it
                     onUpdate(node.copy(inputSource = InputSource.Static(it)))
                 },
                 label = { Text("Text to Input") },
@@ -422,11 +528,9 @@ private fun InputNodeConfig(node: InputNode, onUpdate: (FlowNode) -> Unit) {
             )
         }
         is InputSource.FromContext -> {
-            var key by remember(node.id) { mutableStateOf(source.key) }
             OutlinedTextField(
-                value = key,
+                value = source.key,
                 onValueChange = {
-                    key = it
                     onUpdate(node.copy(inputSource = InputSource.FromContext(it)))
                 },
                 label = { Text("Context Key") },
@@ -435,6 +539,13 @@ private fun InputNodeConfig(node: InputNode, onUpdate: (FlowNode) -> Unit) {
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                 colors = flowTextFieldColors()
+            )
+        }
+        is InputSource.Clipboard -> {
+            Text(
+                "Pastes clipboard into the focused field",
+                color = Color.White.copy(alpha = 0.4f),
+                fontSize = 11.sp
             )
         }
     }
