@@ -227,7 +227,7 @@ fun HomeScreen(onOpen: (String) -> Unit) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "v1.0.3",
+                        text = "v1.0.4",
                         style = MaterialTheme.typography.bodySmall.copy(
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                             fontSize = 12.sp
