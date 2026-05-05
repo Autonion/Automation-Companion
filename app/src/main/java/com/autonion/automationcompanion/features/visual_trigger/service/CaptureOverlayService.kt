@@ -61,6 +61,10 @@ class CaptureOverlayService : Service() {
     private var doneBtn: View? = null
     private var doneSpacer: View? = null
 
+    /** Continuously updated with the latest screen frame (like ScreenML's latestBitmap). */
+    @Volatile
+    private var latestBitmap: Bitmap? = null
+
     /** True when the service is being stopped intentionally, to avoid the "projection lost" toast. */
     @Volatile
     private var stoppedByUser = false
@@ -93,6 +97,8 @@ class CaptureOverlayService : Service() {
                 }
                 
                 startForegroundServiceNotification()
+                // Start projection immediately so frames start caching
+                startProjection()
                 showOverlay()
             }
             "ACTION_SHOW_OVERLAY" -> {
@@ -131,6 +137,97 @@ class CaptureOverlayService : Service() {
             startForeground(1001, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
         } else {
             startForeground(1001, notification)
+        }
+    }
+
+    /**
+     * Start the MediaProjection and VirtualDisplay with the surface always connected,
+     * continuously caching the latest frame into [latestBitmap].
+     * This matches the pattern used by ScreenUnderstandingService / MediaProjectionCore.
+     */
+    private fun startProjection() {
+        if (resultData == null || mediaProjection != null) return
+
+        try {
+            mediaProjection = mediaProjectionManager?.getMediaProjection(resultCode, resultData!!)
+            Log.d(TAG, "Created new MediaProjection")
+            DebugLogger.info(applicationContext, LogCategory.VISUAL_TRIGGER, "Projection Created", "New MediaProjection created for screen capture", TAG)
+
+            mediaProjection?.registerCallback(object : MediaProjection.Callback() {
+                override fun onStop() {
+                    Log.d(TAG, "MediaProjection onStop callback")
+                    cleanupProjection()
+                    // Only notify user if projection was revoked externally
+                    if (!stoppedByUser) {
+                        Log.w(TAG, "MediaProjection lost externally — stopping service")
+                        DebugLogger.warning(applicationContext, LogCategory.VISUAL_TRIGGER,
+                            "Screen capture lost",
+                            "MediaProjection revoked by the system — restart required", TAG)
+                        Handler(Looper.getMainLooper()).post {
+                            android.widget.Toast.makeText(this@CaptureOverlayService,
+                                "Screen capture lost — please restart", android.widget.Toast.LENGTH_LONG).show()
+                        }
+                        stopSelf()
+                    }
+                }
+            }, Handler(Looper.getMainLooper()))
+
+            val metrics = resources.displayMetrics
+            val width = metrics.widthPixels
+            val height = metrics.heightPixels
+            val density = metrics.densityDpi
+
+            imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
+
+            // Continuously cache the latest frame — same pattern as MediaProjectionCore
+            imageReader?.setOnImageAvailableListener({ reader ->
+                val image = try { reader.acquireLatestImage() } catch (e: Exception) { null }
+                if (image != null) {
+                    try {
+                        val planes = image.planes
+                        val buffer = planes[0].buffer
+                        val pixelStride = planes[0].pixelStride
+                        val rowStride = planes[0].rowStride
+                        val rowPadding = rowStride - pixelStride * width
+
+                        val bitmap = Bitmap.createBitmap(
+                            width + rowPadding / pixelStride,
+                            height,
+                            Bitmap.Config.ARGB_8888
+                        )
+                        bitmap.copyPixelsFromBuffer(buffer)
+
+                        val finalBitmap = if (rowPadding == 0) bitmap
+                        else Bitmap.createBitmap(bitmap, 0, 0, width, height)
+
+                        // Replace cached bitmap (recycle old one)
+                        val old = latestBitmap
+                        latestBitmap = finalBitmap
+                        old?.recycle()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error processing frame", e)
+                    } finally {
+                        image.close()
+                    }
+                }
+            }, Handler(Looper.getMainLooper()))
+
+            // Create VirtualDisplay with surface CONNECTED (not null) so frames flow immediately
+            virtualDisplay = mediaProjection?.createVirtualDisplay(
+                "ScreenCapture",
+                width,
+                height,
+                density,
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                imageReader?.surface,
+                null,
+                null
+            )
+            Log.d(TAG, "VirtualDisplay created with surface connected — frames will cache continuously")
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error starting projection", e)
+            DebugLogger.error(applicationContext, LogCategory.VISUAL_TRIGGER, "Projection Error", "Error starting projection: ${e.message}", TAG)
         }
     }
 
@@ -249,137 +346,26 @@ class CaptureOverlayService : Service() {
         }
     }
 
-    private var isCapturing = false
-
     private fun captureScreen() {
-        if (resultData == null) {
-            android.widget.Toast.makeText(this, "Error: Missing screen capture permission data", android.widget.Toast.LENGTH_SHORT).show()
-            Log.e(TAG, "resultData is null in captureScreen()")
-            return
-        }
-
-        // Hide overlay before capture
+        // Hide overlay before capture so it doesn't appear in the screenshot
         overlayView?.visibility = View.GONE
 
-        // Wait for UI to settle (500ms)
+        // Wait briefly for the overlay to fully disappear, then grab the cached frame
         Handler(Looper.getMainLooper()).postDelayed({
-            initProjectionAndCapture()
-        }, 500)
-    }
-
-    private fun initProjectionAndCapture() {
-        try {
-            if (mediaProjection == null) {
-                mediaProjection = mediaProjectionManager?.getMediaProjection(resultCode, resultData!!)
-                Log.d(TAG, "Created new MediaProjection")
-                DebugLogger.info(applicationContext, LogCategory.VISUAL_TRIGGER, "Projection Created", "New MediaProjection created for screen capture", TAG)
-                
-                mediaProjection?.registerCallback(object : MediaProjection.Callback() {
-                    override fun onStop() {
-                        Log.d(TAG, "MediaProjection onStop callback")
-                        cleanupProjection()
-                        // Only notify user if projection was revoked externally
-                        if (!stoppedByUser) {
-                            Log.w(TAG, "MediaProjection lost externally — stopping service")
-                            DebugLogger.warning(applicationContext, LogCategory.VISUAL_TRIGGER,
-                                "Screen capture lost",
-                                "MediaProjection revoked by the system — restart required", TAG)
-                            Handler(Looper.getMainLooper()).post {
-                                android.widget.Toast.makeText(this@CaptureOverlayService,
-                                    "Screen capture lost — please restart", android.widget.Toast.LENGTH_LONG).show()
-                            }
-                            stopSelf()
-                        }
-                    }
-                }, Handler(Looper.getMainLooper()))
-
-                val metrics = resources.displayMetrics
-                val width = metrics.widthPixels
-                val height = metrics.heightPixels
-                val density = metrics.densityDpi
-
-                // Create ImageReader
-                imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
-                
-                // Set listener to process frames or discard them
-                imageReader?.setOnImageAvailableListener({ reader ->
-                    val image = try { reader.acquireLatestImage() } catch (e: Exception) { null }
-                    if (image != null) {
-                        if (isCapturing) {
-                            isCapturing = false
-                            try {
-                                val planes = image.planes
-                                val buffer = planes[0].buffer
-                                val pixelStride = planes[0].pixelStride
-                                val rowStride = planes[0].rowStride
-                                val rowPadding = rowStride - pixelStride * width
-
-                                val bitmap = Bitmap.createBitmap(
-                                    width + rowPadding / pixelStride,
-                                    height,
-                                    Bitmap.Config.ARGB_8888
-                                )
-                                bitmap.copyPixelsFromBuffer(buffer)
-
-                                val finalBitmap = if (rowPadding == 0) bitmap
-                                else Bitmap.createBitmap(bitmap, 0, 0, width, height)
-
-                                // Stop rendering to save battery until next capture
-                                virtualDisplay?.surface = null
-
-                                saveAndOpenEditor(finalBitmap)
-                            } catch (e: Exception) {
-                                Log.e(TAG, "Error processing frame", e)
-                                overlayView?.post { overlayView?.visibility = View.VISIBLE }
-                            }
-                        }
-                        image.close()
-                    }
-                }, Handler(Looper.getMainLooper()))
-
-                // Create VirtualDisplay with NULL surface initially to prevent unnecessary rendering
-                virtualDisplay = mediaProjection?.createVirtualDisplay(
-                    "ScreenCapture",
-                    width,
-                    height,
-                    density,
-                    DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                    null,
-                    null,
-                    null
-                )
-            }
-
-            if (virtualDisplay == null) {
-                Log.e(TAG, "Failed to create virtual display")
-                overlayView?.visibility = View.VISIBLE
-                return
-            }
-
-            // Drain any stale buffered frames from previous captures
-            try {
-                var staleCount = 0
-                while (true) {
-                    val stale = imageReader?.acquireLatestImage()
-                    if (stale != null) { stale.close(); staleCount++ } else break
-                }
-                if (staleCount > 0) Log.d(TAG, "Drained $staleCount stale frame(s)")
-            } catch (_: Exception) {}
-
-            // Connect surface first, then wait a beat for a fresh frame to render
-            virtualDisplay?.surface = imageReader?.surface
-            Log.d(TAG, "Virtual display connected, waiting for fresh frame...")
-
-            // Delay slightly so the virtual display renders a FRESH frame (not stale buffer)
+            // The latestBitmap may still show the overlay since we just hid it.
+            // Wait one more frame cycle for a clean frame without the overlay.
             Handler(Looper.getMainLooper()).postDelayed({
-                isCapturing = true
-            }, 350)
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in initProjectionAndCapture", e)
-            DebugLogger.error(applicationContext, LogCategory.VISUAL_TRIGGER, "Projection Error", "Error starting projection: ${e.message}", TAG)
-            overlayView?.visibility = View.VISIBLE
-        }
+                val bitmap = latestBitmap
+                if (bitmap != null) {
+                    val copy = bitmap.copy(bitmap.config ?: Bitmap.Config.ARGB_8888, false)
+                    saveAndOpenEditor(copy)
+                } else {
+                    Log.w(TAG, "No cached frame available yet")
+                    android.widget.Toast.makeText(this, "No frame captured yet, try again...", android.widget.Toast.LENGTH_SHORT).show()
+                    overlayView?.visibility = View.VISIBLE
+                }
+            }, 300)
+        }, 200)
     }
 
     private fun saveAndOpenEditor(bitmap: Bitmap) {
@@ -419,6 +405,8 @@ class CaptureOverlayService : Service() {
         virtualDisplay = null
         mediaProjection = null
         imageReader = null
+        latestBitmap?.recycle()
+        latestBitmap = null
     }
 
     override fun onDestroy() {
