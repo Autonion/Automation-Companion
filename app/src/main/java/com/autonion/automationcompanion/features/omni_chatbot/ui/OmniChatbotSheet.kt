@@ -1410,27 +1410,26 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
 
 // ─── FAQ Chips ───────────────────────────────────────────
 
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun FAQChipRow(chips: List<FAQChip>, onChipClick: (FAQChip) -> Unit) {
+    val scrollState = rememberScrollState()
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp)
+            .padding(horizontal = 16.dp, vertical = 4.dp)
     ) {
         Text(
             "Suggested questions:",
             color = Color.White.copy(alpha = 0.4f),
             fontSize = 11.sp,
-            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 6.dp)
+            modifier = Modifier.padding(bottom = 6.dp)
         )
 
-        androidx.compose.foundation.layout.FlowRow(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+                .horizontalScroll(scrollState),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             chips.forEach { chip ->
                 SuggestionChip(
