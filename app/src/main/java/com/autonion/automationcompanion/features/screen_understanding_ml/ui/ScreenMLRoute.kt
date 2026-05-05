@@ -13,6 +13,9 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -44,6 +47,9 @@ import com.autonion.automationcompanion.features.screen_understanding_ml.model.A
 import com.autonion.automationcompanion.ui.components.AuroraBackground
 import androidx.compose.material.icons.outlined.Info
 import com.autonion.automationcompanion.features.omni_chatbot.ui.LocalStartWalkthrough
+import com.autonion.automationcompanion.ui.isTablet
+import com.autonion.automationcompanion.ui.rememberWindowWidthSize
+import com.autonion.automationcompanion.ui.WindowWidthSize
 import kotlinx.coroutines.launch
 
 /**
@@ -127,8 +133,16 @@ private fun ScreenMLDashboardContent(
 ) {
     val fabScale = remember { Animatable(0f) }
     val startWalkthrough = LocalStartWalkthrough.current
+    val tablet = isTablet()
+    val windowWidthSize = rememberWindowWidthSize()
     LaunchedEffect(Unit) {
         fabScale.animateTo(1f, tween(300, easing = FastOutSlowInEasing))
+    }
+
+    val horizontalPad = when (windowWidthSize) {
+        WindowWidthSize.Expanded -> 32.dp
+        WindowWidthSize.Medium -> 24.dp
+        else -> 16.dp
     }
 
     AuroraBackground {
@@ -169,6 +183,34 @@ private fun ScreenMLDashboardContent(
             Box(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
                 if (presets.isEmpty()) {
                     AgentEmptyState()
+                } else if (tablet) {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(2),
+                        contentPadding = PaddingValues(start = horizontalPad, top = 12.dp, end = horizontalPad, bottom = 88.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        gridItemsIndexed(
+                            presets,
+                            key = { _, preset -> preset.id }
+                        ) { index, preset ->
+                            var itemVisible by remember { mutableStateOf(false) }
+                            LaunchedEffect(Unit) {
+                                kotlinx.coroutines.delay(index * 50L)
+                                itemVisible = true
+                            }
+                            AnimatedVisibility(
+                                visible = itemVisible,
+                                enter = fadeIn(tween(300)) + slideInVertically(tween(300, easing = FastOutSlowInEasing)) { it / 4 }
+                            ) {
+                                AgentPresetItem(
+                                    preset = preset,
+                                    onDelete = { onDelete(preset) },
+                                    onPlay = { onPlay(preset) }
+                                )
+                            }
+                        }
+                    }
                 } else {
                     LazyColumn(
                         contentPadding = PaddingValues(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 88.dp),

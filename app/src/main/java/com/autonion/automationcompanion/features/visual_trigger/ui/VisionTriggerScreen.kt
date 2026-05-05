@@ -14,6 +14,9 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -44,6 +47,9 @@ import com.autonion.automationcompanion.features.visual_trigger.models.VisionPre
 import com.autonion.automationcompanion.ui.components.AuroraBackground
 import androidx.compose.material.icons.outlined.Info
 import com.autonion.automationcompanion.features.omni_chatbot.ui.LocalStartWalkthrough
+import com.autonion.automationcompanion.ui.isTablet
+import com.autonion.automationcompanion.ui.rememberWindowWidthSize
+import com.autonion.automationcompanion.ui.WindowWidthSize
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -61,6 +67,8 @@ fun VisionTriggerScreen(
     val isDark = isSystemInDarkTheme()
     val primary = MaterialTheme.colorScheme.primary
     val startWalkthrough = LocalStartWalkthrough.current
+    val tablet = isTablet()
+    val windowWidthSize = rememberWindowWidthSize()
 
     // Auto-refresh presets every time the screen resumes
     val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
@@ -144,38 +152,81 @@ fun VisionTriggerScreen(
                     GlowingEyeEmptyState(primary, isDark)
                 }
             } else {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    itemsIndexed(presets) { index, preset ->
-                        var visible by remember { mutableStateOf(false) }
-                        LaunchedEffect(Unit) {
-                            kotlinx.coroutines.delay(index * 50L)
-                            visible = true
-                        }
+                val horizontalPad = when (windowWidthSize) {
+                    WindowWidthSize.Expanded -> 32.dp
+                    WindowWidthSize.Medium -> 24.dp
+                    else -> 16.dp
+                }
 
-                        AnimatedVisibility(
-                            visible = visible,
-                            enter = fadeIn(tween(300)) +
-                                    slideInVertically(tween(300, easing = FastOutSlowInEasing)) { it / 4 }
-                        ) {
-                            VisionPresetCard(
-                                preset = preset,
-                                isDark = isDark,
-                                primary = primary,
-                                onClick = { detailPreset = preset },
-                                onRun = { onRunPreset(preset.id) },
-                                onDelete = { presetToDelete = preset },
-                                onToggleActive = { viewModel.togglePresetActive(preset.id) }
-                            )
+                if (tablet) {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(2),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(padding),
+                        contentPadding = PaddingValues(horizontal = horizontalPad, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        gridItemsIndexed(presets) { index, preset ->
+                            var visible by remember { mutableStateOf(false) }
+                            LaunchedEffect(Unit) {
+                                kotlinx.coroutines.delay(index * 50L)
+                                visible = true
+                            }
+
+                            AnimatedVisibility(
+                                visible = visible,
+                                enter = fadeIn(tween(300)) +
+                                        slideInVertically(tween(300, easing = FastOutSlowInEasing)) { it / 4 }
+                            ) {
+                                VisionPresetCard(
+                                    preset = preset,
+                                    isDark = isDark,
+                                    primary = primary,
+                                    onClick = { detailPreset = preset },
+                                    onRun = { onRunPreset(preset.id) },
+                                    onDelete = { presetToDelete = preset },
+                                    onToggleActive = { viewModel.togglePresetActive(preset.id) },
+                                    useVerticalLayout = true
+                                )
+                            }
                         }
                     }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(padding),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        itemsIndexed(presets) { index, preset ->
+                            var visible by remember { mutableStateOf(false) }
+                            LaunchedEffect(Unit) {
+                                kotlinx.coroutines.delay(index * 50L)
+                                visible = true
+                            }
 
-                    item { Spacer(modifier = Modifier.height(88.dp)) }
+                            AnimatedVisibility(
+                                visible = visible,
+                                enter = fadeIn(tween(300)) +
+                                        slideInVertically(tween(300, easing = FastOutSlowInEasing)) { it / 4 }
+                            ) {
+                                VisionPresetCard(
+                                    preset = preset,
+                                    isDark = isDark,
+                                    primary = primary,
+                                    onClick = { detailPreset = preset },
+                                    onRun = { onRunPreset(preset.id) },
+                                    onDelete = { presetToDelete = preset },
+                                    onToggleActive = { viewModel.togglePresetActive(preset.id) }
+                                )
+                            }
+                        }
+
+                        item { Spacer(modifier = Modifier.height(88.dp)) }
+                    }
                 }
             }
         }
@@ -361,7 +412,8 @@ fun VisionPresetCard(
     onClick: () -> Unit,
     onRun: () -> Unit,
     onDelete: () -> Unit,
-    onToggleActive: () -> Unit
+    onToggleActive: () -> Unit,
+    useVerticalLayout: Boolean = false
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
@@ -401,118 +453,231 @@ fun VisionPresetCard(
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         border = if (isDark) BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)) else null
     ) {
-        Row(modifier = Modifier.fillMaxWidth()) {
-            // ─── Thumbnail ──────────────────────────
-            Box(
-                modifier = Modifier
-                    .width(80.dp)
-                    .fillMaxHeight()
-                    .heightIn(min = 90.dp)
-                    .clip(RoundedCornerShape(topStart = 20.dp, bottomStart = 20.dp))
-                    .background(
-                        if (isDark) Color(0xFF15171C) else Color(0xFFE8E8EC)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                if (thumbnail != null) {
-                    Image(
-                        bitmap = thumbnail!!.asImageBitmap(),
-                        contentDescription = "Capture preview",
-                        modifier = Modifier.fillMaxSize(),
-                        contentScale = ContentScale.Crop
-                    )
-                } else if (thumbnailLoaded) {
-                    Icon(
-                        Icons.Default.BrokenImage,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f),
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-            }
-
-            // ─── Content ────────────────────────────
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 14.dp, vertical = 12.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+        if (useVerticalLayout) {
+            // ─── Vertical layout for tablet grid cells ──────────
+            Column(modifier = Modifier.fillMaxWidth()) {
+                // Thumbnail on top
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(120.dp)
+                        .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
+                        .background(
+                            if (isDark) Color(0xFF15171C) else Color(0xFFE8E8EC)
+                        ),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = preset.name,
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            ),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                    if (thumbnail != null) {
+                        Image(
+                            bitmap = thumbnail!!.asImageBitmap(),
+                            contentDescription = "Capture preview",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "${preset.regions.size} region${if (preset.regions.size != 1) "s" else ""} • ${preset.executionMode.name.replace("_", " ").lowercase().replaceFirstChar { it.uppercase() }}",
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontSize = 12.sp
+                    } else if (thumbnailLoaded) {
+                        Icon(
+                            Icons.Default.BrokenImage,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f),
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+                }
+
+                // Content below
+                Column(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = preset.name,
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                ),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "${preset.regions.size} region${if (preset.regions.size != 1) "s" else ""} • ${preset.executionMode.name.replace("_", " ").lowercase().replaceFirstChar { it.uppercase() }}",
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 12.sp
+                                )
+                            )
+                        }
+                        Switch(
+                            checked = preset.isActive,
+                            onCheckedChange = { onToggleActive() },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = primary,
+                                uncheckedThumbColor = Color.Gray,
+                                uncheckedTrackColor = Color.Gray.copy(alpha = 0.2f)
                             )
                         )
                     }
-                    Switch(
-                        checked = preset.isActive,
-                        onCheckedChange = { onToggleActive() },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = Color.White,
-                            checkedTrackColor = primary,
-                            uncheckedThumbColor = Color.Gray,
-                            uncheckedTrackColor = Color.Gray.copy(alpha = 0.2f)
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        FilledTonalButton(
+                            onClick = onRun,
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = primary.copy(alpha = 0.12f),
+                                contentColor = primary
+                            ),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.PlayArrow,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Run", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        IconButton(
+                            onClick = onDelete,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = "Delete",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        } else {
+            // ─── Horizontal layout for phones ──────────
+            Row(modifier = Modifier.fillMaxWidth()) {
+                // ─── Thumbnail ──────────────────────────
+                Box(
+                    modifier = Modifier
+                        .width(80.dp)
+                        .fillMaxHeight()
+                        .heightIn(min = 90.dp)
+                        .clip(RoundedCornerShape(topStart = 20.dp, bottomStart = 20.dp))
+                        .background(
+                            if (isDark) Color(0xFF15171C) else Color(0xFFE8E8EC)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (thumbnail != null) {
+                        Image(
+                            bitmap = thumbnail!!.asImageBitmap(),
+                            contentDescription = "Capture preview",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
                         )
-                    )
+                    } else if (thumbnailLoaded) {
+                        Icon(
+                            Icons.Default.BrokenImage,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f),
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Action buttons row
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
+                // ─── Content ────────────────────────────
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 14.dp, vertical = 12.dp)
                 ) {
-                    // Run button
-                    FilledTonalButton(
-                        onClick = onRun,
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = primary.copy(alpha = 0.12f),
-                            contentColor = primary
-                        ),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            Icons.Default.PlayArrow,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = preset.name,
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                ),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "${preset.regions.size} region${if (preset.regions.size != 1) "s" else ""} • ${preset.executionMode.name.replace("_", " ").lowercase().replaceFirstChar { it.uppercase() }}",
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 12.sp
+                                )
+                            )
+                        }
+                        Switch(
+                            checked = preset.isActive,
+                            onCheckedChange = { onToggleActive() },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = primary,
+                                uncheckedThumbColor = Color.Gray,
+                                uncheckedTrackColor = Color.Gray.copy(alpha = 0.2f)
+                            )
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Run", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                     }
 
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
 
-                    // Delete button
-                    IconButton(
-                        onClick = onDelete,
-                        modifier = Modifier.size(36.dp)
+                    // Action buttons row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            Icons.Default.Delete,
-                            contentDescription = "Delete",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                            modifier = Modifier.size(20.dp)
-                        )
+                        // Run button
+                        FilledTonalButton(
+                            onClick = onRun,
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = primary.copy(alpha = 0.12f),
+                                contentColor = primary
+                            ),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.PlayArrow,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Run", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        // Delete button
+                        IconButton(
+                            onClick = onDelete,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = "Delete",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
                 }
             }

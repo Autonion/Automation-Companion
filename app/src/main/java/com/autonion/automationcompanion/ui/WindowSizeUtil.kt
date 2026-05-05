@@ -43,6 +43,14 @@ fun rememberScreenWidthDp(): Dp {
     return configuration.screenWidthDp.dp
 }
 
+/**
+ * Convenience: returns `true` on tablet-class screens (Medium or Expanded).
+ */
+@Composable
+fun isTablet(): Boolean {
+    return rememberWindowWidthSize() != WindowWidthSize.Compact
+}
+
 private fun classifySize(widthDp: Int, heightDp: Int): WindowWidthSize {
     // If the height is very small (phone in landscape), force Compact layout
     // so we don't try to cram a 2-panel tablet UI into a short screen.

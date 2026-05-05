@@ -448,29 +448,34 @@ fun SemanticAutomationScreen(
                 }
 
                 // ─── Input Bar ──────────────────────
-                ChatInputBar(
-                    value = command,
-                    onValueChange = { if (!isActive) command = it },
-                    onSend = {
-                        if (command.isNotBlank() && !isActive) {
-                            messages.add(
-                                0,
-                                SemanticMessage(
-                                    id = UUID.randomUUID().toString(),
-                                    text = command,
-                                    isUser = true
-                                ).also { persistMessage(it) }
-                            )
-                            if (status == AutomationStatus.AWAITING_USER_INPUT) {
-                                engine?.resumeWithUserChoice(command.trim())
-                            } else {
-                                onStart(command)
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    ChatInputBar(
+                        value = command,
+                        onValueChange = { if (!isActive) command = it },
+                        onSend = {
+                            if (command.isNotBlank() && !isActive) {
+                                messages.add(
+                                    0,
+                                    SemanticMessage(
+                                        id = UUID.randomUUID().toString(),
+                                        text = command,
+                                        isUser = true
+                                    ).also { persistMessage(it) }
+                                )
+                                if (status == AutomationStatus.AWAITING_USER_INPUT) {
+                                    engine?.resumeWithUserChoice(command.trim())
+                                } else {
+                                    onStart(command)
+                                }
+                                command = ""
                             }
-                            command = ""
-                        }
-                    },
-                    isActive = isActive
-                )
+                        },
+                        isActive = isActive
+                    )
+                }
                 }
 
                 // ─── Connection Required Overlay ──────────

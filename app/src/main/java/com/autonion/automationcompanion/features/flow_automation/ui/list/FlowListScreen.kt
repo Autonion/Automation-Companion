@@ -14,6 +14,9 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -37,6 +40,9 @@ import com.autonion.automationcompanion.features.system_context_automation.share
 import com.autonion.automationcompanion.ui.components.AuroraBackground
 import androidx.compose.material.icons.outlined.Info
 import com.autonion.automationcompanion.features.omni_chatbot.ui.LocalStartWalkthrough
+import com.autonion.automationcompanion.ui.isTablet
+import com.autonion.automationcompanion.ui.rememberWindowWidthSize
+import com.autonion.automationcompanion.ui.WindowWidthSize
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -59,6 +65,8 @@ fun FlowListScreen(
     val context = androidx.compose.ui.platform.LocalContext.current
     val isDark = isSystemInDarkTheme()
     val startWalkthrough = LocalStartWalkthrough.current
+    val tablet = isTablet()
+    val windowWidthSize = rememberWindowWidthSize()
 
     // Disclosure dialog state
     var showAccessibilityDisclosure by remember { mutableStateOf(false) }
@@ -165,31 +173,69 @@ fun FlowListScreen(
                         onImport = { importLauncher.launch(arrayOf("application/json", "application/zip")) }
                     )
                 } else {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 88.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        items(flows, key = { it.id }) { flow ->
-                            FlowCard(
-                                flow = flow,
-                                isDark = isDark,
-                                onEdit = { onEditFlow(flow.id) },
-                                onRun = {
-                                    if (!com.autonion.automationcompanion.AccessibilityRouter.isServiceConnected()) {
-                                        showAccessibilityDisclosure = true
-                                    } else {
-                                        onRunFlow(flow.id)
-                                    }
-                                },
-                                onExport = {
-                                    exportingFlowId = flow.id
-                                    exportingFlowName = flow.name
-                                    exportLauncher.launch("${flow.name}.zip")
-                                },
-                                onDelete = { viewModel.deleteFlow(flow.id) },
-                                onRename = { newName -> viewModel.renameFlow(flow.id, newName) }
-                            )
+                    val horizontalPad = when (windowWidthSize) {
+                        WindowWidthSize.Expanded -> 32.dp
+                        WindowWidthSize.Medium -> 24.dp
+                        else -> 16.dp
+                    }
+
+                    if (tablet) {
+                        LazyVerticalGrid(
+                            columns = GridCells.Fixed(2),
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(start = horizontalPad, top = 12.dp, end = horizontalPad, bottom = 88.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            gridItems(flows, key = { it.id }) { flow ->
+                                FlowCard(
+                                    flow = flow,
+                                    isDark = isDark,
+                                    onEdit = { onEditFlow(flow.id) },
+                                    onRun = {
+                                        if (!com.autonion.automationcompanion.AccessibilityRouter.isServiceConnected()) {
+                                            showAccessibilityDisclosure = true
+                                        } else {
+                                            onRunFlow(flow.id)
+                                        }
+                                    },
+                                    onExport = {
+                                        exportingFlowId = flow.id
+                                        exportingFlowName = flow.name
+                                        exportLauncher.launch("${flow.name}.zip")
+                                    },
+                                    onDelete = { viewModel.deleteFlow(flow.id) },
+                                    onRename = { newName -> viewModel.renameFlow(flow.id, newName) }
+                                )
+                            }
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 88.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            items(flows, key = { it.id }) { flow ->
+                                FlowCard(
+                                    flow = flow,
+                                    isDark = isDark,
+                                    onEdit = { onEditFlow(flow.id) },
+                                    onRun = {
+                                        if (!com.autonion.automationcompanion.AccessibilityRouter.isServiceConnected()) {
+                                            showAccessibilityDisclosure = true
+                                        } else {
+                                            onRunFlow(flow.id)
+                                        }
+                                    },
+                                    onExport = {
+                                        exportingFlowId = flow.id
+                                        exportingFlowName = flow.name
+                                        exportLauncher.launch("${flow.name}.zip")
+                                    },
+                                    onDelete = { viewModel.deleteFlow(flow.id) },
+                                    onRename = { newName -> viewModel.renameFlow(flow.id, newName) }
+                                )
+                            }
                         }
                     }
                 }

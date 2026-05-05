@@ -47,6 +47,7 @@ import com.autonion.automationcompanion.features.semantic_automation.consent.Clo
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import kotlinx.coroutines.launch
+import com.autonion.automationcompanion.ui.isTablet
 import java.io.File
 
 // ─── Model Catalog ───────────────────────────────────────────
@@ -285,11 +286,18 @@ fun ModelManagerScreen(
             )
         }
     ) { padding ->
-        LazyColumn(
+        val tablet = isTablet()
+        Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 16.dp),
+                .padding(padding),
+            contentAlignment = Alignment.TopCenter
+        ) {
+        LazyColumn(
+            modifier = Modifier
+                .then(if (tablet) Modifier.widthIn(max = 720.dp) else Modifier.fillMaxWidth())
+                .fillMaxHeight()
+                .padding(horizontal = if (tablet) 24.dp else 16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
             contentPadding = PaddingValues(vertical = 16.dp)
         ) {
@@ -461,6 +469,7 @@ fun ModelManagerScreen(
             }
             } // End of ON_DEVICE_SLM section
         }
+        } // Box
     }
 }
 
