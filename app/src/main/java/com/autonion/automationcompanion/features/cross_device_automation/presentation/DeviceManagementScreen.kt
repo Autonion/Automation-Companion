@@ -57,13 +57,19 @@ fun DeviceManagementScreen() {
     val devices by viewModel.devices.collectAsState()
     val isEnabled by viewModel.isFeatureEnabled.collectAsState()
 
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(vertical = 12.dp)
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.TopCenter
     ) {
+        LazyColumn(
+            modifier = Modifier
+                .widthIn(max = 600.dp)
+                .fillMaxHeight()
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(vertical = 12.dp)
+        ) {
         // ─── Feature Toggle Card ─────────────────────
         item {
             GlassSettingsCard {
@@ -274,6 +280,7 @@ fun DeviceManagementScreen() {
         itemsIndexed(devices) { index, device ->
             StaggeredDeviceItem(device = device, index = index, onToggleSelection = { viewModel.toggleDeviceSelection(device.id) })
         }
+    }
     }
 }
 
