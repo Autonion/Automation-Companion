@@ -23,14 +23,14 @@ sealed class WindowWidthSize {
 }
 
 /**
- * Remember the current [WindowWidthSize] based on the screen width.
+ * Remember the current [WindowWidthSize] based on the screen width and height.
  * Re-composes automatically on configuration change (rotation, split-screen, etc.).
  */
 @Composable
 fun rememberWindowWidthSize(): WindowWidthSize {
     val configuration = LocalConfiguration.current
-    return remember(configuration.screenWidthDp) {
-        classifyWidth(configuration.screenWidthDp)
+    return remember(configuration.screenWidthDp, configuration.screenHeightDp) {
+        classifySize(configuration.screenWidthDp, configuration.screenHeightDp)
     }
 }
 
@@ -43,8 +43,16 @@ fun rememberScreenWidthDp(): Dp {
     return configuration.screenWidthDp.dp
 }
 
-private fun classifyWidth(widthDp: Int): WindowWidthSize = when {
-    widthDp < 600 -> WindowWidthSize.Compact
-    widthDp < 840 -> WindowWidthSize.Medium
-    else -> WindowWidthSize.Expanded
+private fun classifySize(widthDp: Int, heightDp: Int): WindowWidthSize {
+    // If the height is very small (phone in landscape), force Compact layout
+    // so we don't try to cram a 2-panel tablet UI into a short screen.
+    if (heightDp < 480) {
+        return WindowWidthSize.Compact
+    }
+    
+    return when {
+        widthDp < 600 -> WindowWidthSize.Compact
+        widthDp < 840 -> WindowWidthSize.Medium
+        else -> WindowWidthSize.Expanded
+    }
 }

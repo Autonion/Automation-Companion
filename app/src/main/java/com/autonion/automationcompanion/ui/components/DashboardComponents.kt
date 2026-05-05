@@ -558,26 +558,19 @@ fun TabletBrandingPanel(
         Column {
             // Settings row
             Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { showSettingsMenu = true }
+                    .padding(vertical = 8.dp, horizontal = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Box {
-                    val interactionSource = remember { MutableInteractionSource() }
-                    val isPressed by interactionSource.collectIsPressedAsState()
-                    val scale by animateFloatAsState(targetValue = if (isPressed) 0.85f else 1f, label = "scale")
-
                     Surface(
-                        onClick = { showSettingsMenu = true },
                         shape = CircleShape,
                         color = MaterialTheme.colorScheme.surface,
                         shadowElevation = 2.dp,
-                        modifier = Modifier
-                            .size(40.dp)
-                            .graphicsLayer {
-                                scaleX = scale
-                                scaleY = scale
-                            },
-                        interactionSource = interactionSource,
+                        modifier = Modifier.size(40.dp)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
