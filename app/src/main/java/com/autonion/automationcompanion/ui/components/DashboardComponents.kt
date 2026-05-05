@@ -257,7 +257,9 @@ fun GridCard(
     iconColor: Color,
     iconContainerColor: Color,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    titleFontSize: androidx.compose.ui.unit.TextUnit = 16.sp,
+    descFontSize: androidx.compose.ui.unit.TextUnit = 13.sp
 ) {
     val isDark = isSystemInDarkTheme()
     val interactionSource = remember { MutableInteractionSource() }
@@ -295,11 +297,11 @@ fun GridCard(
                 title, 
                 style = MaterialTheme.typography.titleMedium.copy(
                     fontWeight = FontWeight.Bold, 
-                    fontSize = 15.sp 
+                    fontSize = titleFontSize 
                 ), 
                 maxLines = 2, 
                 minLines = 2,
-                lineHeight = 20.sp,
+                lineHeight = if (titleFontSize > 16.sp) 24.sp else 20.sp,
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
             )
             Spacer(modifier = Modifier.height(4.dp))
@@ -307,8 +309,8 @@ fun GridCard(
                 description,
                 style = MaterialTheme.typography.bodySmall.copy(
                     color = MaterialTheme.colorScheme.onSurfaceVariant, 
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp
+                    fontSize = descFontSize,
+                    lineHeight = if (descFontSize > 13.sp) 20.sp else 16.sp
                 ),
                 maxLines = 3, // Reduced max lines to ensure it fits comfortably within the fixed structure
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
@@ -324,7 +326,9 @@ fun ListCard(
     icon: ImageVector,
     iconColor: Color,
     iconContainerColor: Color, // Gradient usually
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    titleFontSize: androidx.compose.ui.unit.TextUnit = 16.sp,
+    descFontSize: androidx.compose.ui.unit.TextUnit = 14.sp
 ) {
     val isDark = isSystemInDarkTheme()
     val interactionSource = remember { MutableInteractionSource() }
@@ -355,14 +359,14 @@ fun ListCard(
                     .background(iconContainerColor, RoundedCornerShape(12.dp)),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(icon, contentDescription = null, tint = iconColor)
+                Icon(icon, contentDescription = null, tint = iconColor, modifier = Modifier.size(28.dp))
             }
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
-                Text(description, style = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant))
+                Text(title, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = titleFontSize))
+                Text(description, style = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = descFontSize, lineHeight = if (descFontSize > 14.sp) 22.sp else 20.sp))
             }
-            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.Gray)
+            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(28.dp))
         }
     }
 }
@@ -557,15 +561,16 @@ fun TabletBrandingPanel(
         // Bottom section: Settings + Version
         Column {
             // Settings row
-            Row(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable { showSettingsMenu = true }
-                    .padding(vertical = 8.dp, horizontal = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box {
+            Box {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { showSettingsMenu = true }
+                        .padding(vertical = 8.dp, horizontal = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Surface(
                         shape = CircleShape,
                         color = MaterialTheme.colorScheme.surface,
@@ -582,39 +587,39 @@ fun TabletBrandingPanel(
                         }
                     }
 
-                    DropdownMenu(
-                        expanded = showSettingsMenu,
-                        onDismissRequest = { showSettingsMenu = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Excluded Apps") },
-                            onClick = {
-                                showSettingsMenu = false
-                                onExclusionClick()
-                            },
-                            leadingIcon = {
-                                Icon(Icons.Default.Security, contentDescription = null)
-                            }
+                    Text(
+                        text = "Settings",
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        DropdownMenuItem(
-                            text = { Text("Backup & Restore") },
-                            onClick = {
-                                showSettingsMenu = false
-                                onBackupClick()
-                            },
-                            leadingIcon = {
-                                Icon(Icons.Default.CloudUpload, contentDescription = null)
-                            }
-                        )
-                    }
+                    )
                 }
 
-                Text(
-                    text = "Settings",
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                DropdownMenu(
+                    expanded = showSettingsMenu,
+                    onDismissRequest = { showSettingsMenu = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Excluded Apps") },
+                        onClick = {
+                            showSettingsMenu = false
+                            onExclusionClick()
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Default.Security, contentDescription = null)
+                        }
                     )
-                )
+                    DropdownMenuItem(
+                        text = { Text("Backup & Restore") },
+                        onClick = {
+                            showSettingsMenu = false
+                            onBackupClick()
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Default.CloudUpload, contentDescription = null)
+                        }
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(16.dp))

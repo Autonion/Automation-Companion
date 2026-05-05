@@ -235,138 +235,157 @@ private fun MediumHomeLayout(
     onOpen: (String) -> Unit,
     innerPadding: PaddingValues
 ) {
-    Row(
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(2),
         modifier = Modifier
             .fillMaxSize()
-            .padding(innerPadding)
+            .padding(innerPadding),
+        contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 48.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Left Panel — Branding (35%)
-        TabletBrandingPanel(
-            onExclusionClick = { onOpen("settings/exclusion") },
-            onBackupClick = { onOpen("settings/backup_restore") },
-            modifier = Modifier
-                .fillMaxHeight()
-                .weight(0.35f)
-        )
+        // Branding Header (Full Width)
+        item(span = { GridItemSpan(2) }) {
+            DashboardHeader(
+                title = "Autonion",
+                subtitle = "AI-Powered Automation",
+                onExclusionClick = { onOpen("settings/exclusion") },
+                onBackupClick = { onOpen("settings/backup_restore") }
+            )
+        }
 
-        // Right Panel — Feature cards in single column (65%)
-        LazyColumn(
-            modifier = Modifier
-                .weight(0.65f)
-                .fillMaxHeight(),
-            contentPadding = PaddingValues(top = 48.dp, bottom = 32.dp, start = 8.dp, end = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            // Section Title
-            item {
-                Text(
-                    "Tools & Features",
-                    style = MaterialTheme.typography.titleLarge.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground
-                    ),
-                    modifier = Modifier.padding(bottom = 4.dp)
+        // Intro Text (Full Width)
+        item(span = { GridItemSpan(2) }) {
+            Text(
+                text = "Record gestures, build visual flows, and let AI agents automate tasks — all on-device with optional cloud power.",
+                style = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                modifier = Modifier.padding(bottom = 16.dp, start = 8.dp, end = 8.dp)
+            )
+        }
+
+        // Feature Cards (2 Columns)
+        item {
+            StaggeredEntry(index = 0) {
+                GridCard(
+                    title = "Gesture Recording",
+                    description = "Record gestures across apps and replay as macros seamlessly.",
+                    icon = Icons.Default.TouchApp,
+                    iconColor = Color.White,
+                    iconContainerColor = AccentBlue,
+                    onClick = { onOpen(AutomationRoutes.GESTURE) },
+                    modifier = Modifier.fillMaxSize(),
+                    titleFontSize = 20.sp,
+                    descFontSize = 15.sp
                 )
             }
+        }
+        item {
+            StaggeredEntry(index = 1) {
+                GridCard(
+                    title = "UI Recognition AI",
+                    description = "Detect UI elements, OCR & contextualize screen content.",
+                    icon = Icons.AutoMirrored.Filled.ViewQuilt,
+                    iconColor = Color.White,
+                    iconContainerColor = AccentBlue,
+                    onClick = { onOpen(AutomationRoutes.SCREEN_UNDERSTAND) },
+                    modifier = Modifier.fillMaxSize(),
+                    titleFontSize = 20.sp,
+                    descFontSize = 15.sp
+                )
+            }
+        }
+        item {
+            StaggeredEntry(index = 2) {
+                GridCard(
+                    title = "Visual Triggers",
+                    description = "Automate actions based on detected visual regions.",
+                    icon = Icons.Default.ChatBubble,
+                    iconColor = Color.White,
+                    iconContainerColor = AccentGreen,
+                    onClick = { onOpen(AutomationRoutes.VISUAL_TRIGGER) },
+                    modifier = Modifier.fillMaxSize(),
+                    titleFontSize = 20.sp,
+                    descFontSize = 15.sp
+                )
+            }
+        }
+        item {
+            StaggeredEntry(index = 3) {
+                GridCard(
+                    title = "Flow Builder",
+                    description = "Build visual automation flows with a node-based graph editor.",
+                    icon = Icons.Default.AccountTree,
+                    iconColor = Color.White,
+                    iconContainerColor = AccentPurple,
+                    onClick = { onOpen(AutomationRoutes.FLOW_BUILDER) },
+                    modifier = Modifier.fillMaxSize(),
+                    titleFontSize = 20.sp,
+                    descFontSize = 15.sp
+                )
+            }
+        }
+        item {
+            StaggeredEntry(index = 4) {
+                GridCard(
+                    title = "Semantic AI Agent",
+                    description = "Natural language automation — describe a task and let AI execute it.",
+                    icon = Icons.Default.AutoAwesome,
+                    iconColor = Color.White,
+                    iconContainerColor = AccentOrange,
+                    onClick = { onOpen(AutomationRoutes.SEMANTIC_AUTOMATION) },
+                    modifier = Modifier.fillMaxSize(),
+                    titleFontSize = 20.sp,
+                    descFontSize = 15.sp
+                )
+            }
+        }
+        item {
+            StaggeredEntry(index = 5) {
+                GridCard(
+                    title = "System Context",
+                    description = "Location, time, battery-based automation triggers.",
+                    icon = Icons.Default.SettingsSystemDaydream,
+                    iconColor = Color.White,
+                    iconContainerColor = AccentBlue,
+                    onClick = { onOpen(AutomationRoutes.SYSTEM_CONTEXT) },
+                    modifier = Modifier.fillMaxSize(),
+                    titleFontSize = 20.sp,
+                    descFontSize = 15.sp
+                )
+            }
+        }
+        item {
+            StaggeredEntry(index = 6) {
+                GridCard(
+                    title = "Debugger",
+                    description = "Step through and inspect automation runs.",
+                    icon = Icons.Default.BugReport,
+                    iconColor = Color.White,
+                    iconContainerColor = AccentGrey,
+                    onClick = { onOpen(AutomationRoutes.DEBUGGER) },
+                    modifier = Modifier.fillMaxSize(),
+                    titleFontSize = 20.sp,
+                    descFontSize = 15.sp
+                )
+            }
+        }
 
-            // All features as ListCards — clean, scannable on tablet
-            item {
-                StaggeredEntry(index = 0) {
-                    ListCard(
-                        title = "Gesture Recording",
-                        description = "Record gestures across apps and replay as macros seamlessly.",
-                        icon = Icons.Default.TouchApp,
-                        iconColor = Color.White,
-                        iconContainerColor = AccentBlue,
-                        onClick = { onOpen(AutomationRoutes.GESTURE) }
-                    )
-                }
+        // Banner
+        item(span = { GridItemSpan(2) }) {
+            Spacer(modifier = Modifier.height(8.dp))
+            StaggeredEntry(index = 7) {
+                BannerCard(
+                    title = "Cross-Device Sync",
+                    description = "Coordinate automations across ecosystem.",
+                    icon = Icons.Default.Devices,
+                    onClick = { onOpen(AutomationRoutes.CROSS_DEVICE) }
+                )
             }
-            item {
-                StaggeredEntry(index = 1) {
-                    ListCard(
-                        title = "UI Recognition AI",
-                        description = "Detect UI elements, OCR & contextualize screen content.",
-                        icon = Icons.AutoMirrored.Filled.ViewQuilt,
-                        iconColor = Color.White,
-                        iconContainerColor = AccentBlue,
-                        onClick = { onOpen(AutomationRoutes.SCREEN_UNDERSTAND) }
-                    )
-                }
-            }
-            item {
-                StaggeredEntry(index = 2) {
-                    ListCard(
-                        title = "Visual Triggers",
-                        description = "Automate actions based on detected visual regions.",
-                        icon = Icons.Default.ChatBubble,
-                        iconColor = Color.White,
-                        iconContainerColor = AccentGreen,
-                        onClick = { onOpen(AutomationRoutes.VISUAL_TRIGGER) }
-                    )
-                }
-            }
-            item {
-                StaggeredEntry(index = 3) {
-                    ListCard(
-                        title = "Flow Builder",
-                        description = "Build visual automation flows with a node-based graph editor.",
-                        icon = Icons.Default.AccountTree,
-                        iconColor = Color.White,
-                        iconContainerColor = AccentPurple,
-                        onClick = { onOpen(AutomationRoutes.FLOW_BUILDER) }
-                    )
-                }
-            }
-            item {
-                StaggeredEntry(index = 4) {
-                    ListCard(
-                        title = "Semantic AI Agent",
-                        description = "Natural language automation — describe a task and let AI execute it.",
-                        icon = Icons.Default.AutoAwesome,
-                        iconColor = Color.White,
-                        iconContainerColor = AccentOrange,
-                        onClick = { onOpen(AutomationRoutes.SEMANTIC_AUTOMATION) }
-                    )
-                }
-            }
-            item {
-                StaggeredEntry(index = 5) {
-                    ListCard(
-                        title = "System Context",
-                        description = "Location, time, battery-based automation triggers.",
-                        icon = Icons.Default.SettingsSystemDaydream,
-                        iconColor = Color.White,
-                        iconContainerColor = AccentBlue,
-                        onClick = { onOpen(AutomationRoutes.SYSTEM_CONTEXT) }
-                    )
-                }
-            }
-            item {
-                StaggeredEntry(index = 6) {
-                    ListCard(
-                        title = "Debugger",
-                        description = "Step through and inspect automation runs.",
-                        icon = Icons.Default.BugReport,
-                        iconColor = Color.White,
-                        iconContainerColor = AccentGrey,
-                        onClick = { onOpen(AutomationRoutes.DEBUGGER) }
-                    )
-                }
-            }
+        }
 
-            // Banner
-            item {
-                Spacer(modifier = Modifier.height(4.dp))
-                StaggeredEntry(index = 7) {
-                    BannerCard(
-                        title = "Cross-Device Sync",
-                        description = "Coordinate automations across ecosystem.",
-                        icon = Icons.Default.Devices,
-                        onClick = { onOpen(AutomationRoutes.CROSS_DEVICE) }
-                    )
-                }
-            }
+        // Footer
+        item(span = { GridItemSpan(2) }) {
+            HomeFooter()
         }
     }
 }
@@ -427,7 +446,9 @@ private fun ExpandedHomeLayout(
                         iconColor = Color.White,
                         iconContainerColor = AccentBlue,
                         onClick = { onOpen(AutomationRoutes.GESTURE) },
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
+                        titleFontSize = 20.sp,
+                        descFontSize = 15.sp
                     )
                 }
             }
@@ -440,7 +461,9 @@ private fun ExpandedHomeLayout(
                         iconColor = Color.White,
                         iconContainerColor = AccentBlue,
                         onClick = { onOpen(AutomationRoutes.SCREEN_UNDERSTAND) },
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
+                        titleFontSize = 20.sp,
+                        descFontSize = 15.sp
                     )
                 }
             }
@@ -453,7 +476,9 @@ private fun ExpandedHomeLayout(
                         iconColor = Color.White,
                         iconContainerColor = AccentGreen,
                         onClick = { onOpen(AutomationRoutes.VISUAL_TRIGGER) },
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
+                        titleFontSize = 20.sp,
+                        descFontSize = 15.sp
                     )
                 }
             }
@@ -466,7 +491,9 @@ private fun ExpandedHomeLayout(
                         iconColor = Color.White,
                         iconContainerColor = AccentPurple,
                         onClick = { onOpen(AutomationRoutes.FLOW_BUILDER) },
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
+                        titleFontSize = 20.sp,
+                        descFontSize = 15.sp
                     )
                 }
             }
@@ -479,7 +506,9 @@ private fun ExpandedHomeLayout(
                         iconColor = Color.White,
                         iconContainerColor = AccentOrange,
                         onClick = { onOpen(AutomationRoutes.SEMANTIC_AUTOMATION) },
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
+                        titleFontSize = 20.sp,
+                        descFontSize = 15.sp
                     )
                 }
             }
@@ -492,7 +521,9 @@ private fun ExpandedHomeLayout(
                         iconColor = Color.White,
                         iconContainerColor = AccentBlue,
                         onClick = { onOpen(AutomationRoutes.SYSTEM_CONTEXT) },
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
+                        titleFontSize = 20.sp,
+                        descFontSize = 15.sp
                     )
                 }
             }
@@ -505,7 +536,9 @@ private fun ExpandedHomeLayout(
                         iconColor = Color.White,
                         iconContainerColor = AccentGrey,
                         onClick = { onOpen(AutomationRoutes.DEBUGGER) },
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
+                        titleFontSize = 20.sp,
+                        descFontSize = 15.sp
                     )
                 }
             }
