@@ -50,6 +50,7 @@ import com.autonion.automationcompanion.features.omni_chatbot.ui.LocalStartWalkt
 import com.autonion.automationcompanion.features.cross_device_automation.engine.HardwareButtonMapper
 import com.autonion.automationcompanion.ui.components.ChatHistoryPanel
 import com.autonion.automationcompanion.ui.components.ConnectionRequiredOverlay
+import com.autonion.automationcompanion.ui.rememberScreenWidthDp
 import kotlinx.coroutines.launch
 import java.util.Date
 
@@ -486,6 +487,8 @@ private fun EmptyChatState() {
 @Composable
 private fun ChatBubble(message: ChatMessage) {
     val isUser = message.isUser
+    val screenWidth = rememberScreenWidthDp()
+    val bubbleMaxWidth = (screenWidth * 0.65f).coerceAtMost(480.dp)
 
     // Entrance animation
     var visible by remember { mutableStateOf(false) }
@@ -501,7 +504,7 @@ private fun ChatBubble(message: ChatMessage) {
         ) {
             Box(
                 modifier = Modifier
-                    .widthIn(max = 300.dp)
+                    .widthIn(max = bubbleMaxWidth)
                     .clip(
                         RoundedCornerShape(
                             topStart = 16.dp,
@@ -548,6 +551,7 @@ private fun ChatInputBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .widthIn(max = 680.dp)
             .padding(horizontal = 12.dp, vertical = 8.dp)
             .clip(RoundedCornerShape(28.dp))
             .background(InputBarBg)

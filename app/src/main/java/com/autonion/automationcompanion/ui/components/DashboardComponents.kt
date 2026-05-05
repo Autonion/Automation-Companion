@@ -1,4 +1,5 @@
 package com.autonion.automationcompanion.ui.components
+import androidx.compose.foundation.layout.heightIn
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -265,7 +266,7 @@ fun GridCard(
 
     Card(
         modifier = modifier
-            .height(190.dp) // Increased slightly
+            .height(190.dp) // Fixed height ensures uniform rows in grid layouts
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
@@ -501,11 +502,138 @@ fun StaggeredEntry(
 
     Box(
         modifier = Modifier
+            .fillMaxSize()
             .graphicsLayer {
                 this.alpha = animAlpha.value
                 this.translationY = slide.value
             }
     ) {
         content()
+    }
+}
+
+@Composable
+fun TabletBrandingPanel(
+    onExclusionClick: () -> Unit = {},
+    onBackupClick: () -> Unit = {},
+    modifier: Modifier = Modifier
+) {
+    val isDark = isSystemInDarkTheme()
+    var showSettingsMenu by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = modifier
+            .fillMaxHeight()
+            .padding(start = 32.dp, end = 24.dp, top = 48.dp, bottom = 32.dp),
+        verticalArrangement = Arrangement.SpaceBetween
+    ) {
+        // Top section: Branding
+        Column {
+            Text(
+                text = "Autonion",
+                style = MaterialTheme.typography.displaySmall.copy(
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "AI-Powered Automation",
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f)
+                )
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+            Text(
+                text = "Record gestures, build visual flows, and let AI agents automate tasks — all on-device with optional cloud power.",
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 24.sp
+                )
+            )
+        }
+
+        // Bottom section: Settings + Version
+        Column {
+            // Settings row
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box {
+                    val interactionSource = remember { MutableInteractionSource() }
+                    val isPressed by interactionSource.collectIsPressedAsState()
+                    val scale by animateFloatAsState(targetValue = if (isPressed) 0.85f else 1f, label = "scale")
+
+                    Surface(
+                        onClick = { showSettingsMenu = true },
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.surface,
+                        shadowElevation = 2.dp,
+                        modifier = Modifier
+                            .size(40.dp)
+                            .graphicsLayer {
+                                scaleX = scale
+                                scaleY = scale
+                            },
+                        interactionSource = interactionSource,
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Settings,
+                                contentDescription = "Settings",
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+
+                    DropdownMenu(
+                        expanded = showSettingsMenu,
+                        onDismissRequest = { showSettingsMenu = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Excluded Apps") },
+                            onClick = {
+                                showSettingsMenu = false
+                                onExclusionClick()
+                            },
+                            leadingIcon = {
+                                Icon(Icons.Default.Security, contentDescription = null)
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Backup & Restore") },
+                            onClick = {
+                                showSettingsMenu = false
+                                onBackupClick()
+                            },
+                            leadingIcon = {
+                                Icon(Icons.Default.CloudUpload, contentDescription = null)
+                            }
+                        )
+                    }
+                }
+
+                Text(
+                    text = "Settings",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Version + GitHub
+            Text(
+                text = "v1.0.4  ·  github.com/Autonion",
+                style = MaterialTheme.typography.bodySmall.copy(
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    fontSize = 12.sp
+                )
+            )
+        }
     }
 }
