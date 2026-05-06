@@ -37,6 +37,7 @@ import com.autonion.automationcompanion.automation.actions.builders.ActionBuilde
 import com.autonion.automationcompanion.automation.actions.models.ConfiguredAction
 import com.autonion.automationcompanion.automation.actions.ui.ActionPicker
 import com.autonion.automationcompanion.automation.actions.ui.AppPickerActivity
+import com.autonion.automationcompanion.features.system_context_automation.battery.engine.BatteryBroadcastReceiver
 import com.autonion.automationcompanion.features.system_context_automation.battery.engine.BatteryServiceManager
 import com.autonion.automationcompanion.features.system_context_automation.location.data.db.AppDatabase
 import com.autonion.automationcompanion.features.system_context_automation.location.data.models.Slot
@@ -491,14 +492,30 @@ private fun saveBatterySlot(
             )
 
             val dao = AppDatabase.get(context).slotDao()
+            val savedId: Long
             if (slotId != -1L) {
                 dao.update(slot)
+                savedId = slotId
             } else {
-                dao.insert(slot)
+                savedId = dao.insert(slot)
             }
 
             // Start battery monitoring service
             BatteryServiceManager.startMonitoringIfNeeded(context)
+
+            // Immediately evaluate the saved slot against the current battery level
+            // (don't wait for the next ACTION_BATTERY_CHANGED which may take minutes)
+            val currentLevel = BatteryBroadcastReceiver.getBatteryPercentage(context)
+            if (currentLevel >= 0) {
+                val shouldTrigger = when (thresholdType) {
+                    TriggerConfig.Battery.ThresholdType.REACHES_OR_BELOW -> currentLevel <= batteryPercentage
+                    TriggerConfig.Battery.ThresholdType.REACHES_OR_ABOVE -> currentLevel >= batteryPercentage
+                }
+                if (shouldTrigger) {
+                    android.util.Log.i("BatteryConfig", "Immediately triggering slot $savedId (battery=$currentLevel%, threshold=$batteryPercentage%)")
+                    com.autonion.automationcompanion.features.system_context_automation.shared.executor.SlotExecutor.execute(context, savedId)
+                }
+            }
 
             android.os.Handler(android.os.Looper.getMainLooper()).post {
                 Toast.makeText(context, "Battery automation saved", Toast.LENGTH_SHORT).show()
