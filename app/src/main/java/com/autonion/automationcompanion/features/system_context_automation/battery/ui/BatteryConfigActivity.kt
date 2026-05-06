@@ -50,22 +50,32 @@ import kotlinx.serialization.json.Json
 
 class BatteryConfigActivity : AppCompatActivity() {
 
-    private var contactPickerActionIndex: Int? = null
+    private var contactPickerActionIndex: Int = -1
     private var appPickerActionIndex = -1
 
-    private val pickContactLauncher = registerForActivityResult(ActivityResultContracts.PickContact()) { uri ->
-        if (uri != null && contactPickerActionIndex != null) {
-            val cursor = contentResolver.query(
-                uri,
-                arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER),
-                null,
-                null,
-                null
-            )
-            cursor?.use {
-                if (it.moveToFirst()) {
-                    val number = it.getString(0)
-                    // Update would go here
+    private val pickContactLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
+        if (res.resultCode == RESULT_OK && res.data != null) {
+            val uri: android.net.Uri? = res.data!!.data
+            uri?.let { u ->
+                val num = fetchPhoneNumberFromContact(u)
+                if (!num.isNullOrBlank()) {
+                    if (contactPickerActionIndex >= 0 && contactPickerActionIndex < configuredActionsState.size) {
+                        val smsAction = configuredActionsState.getOrNull(contactPickerActionIndex)
+                        if (smsAction is ConfiguredAction.SendSms) {
+                            val updatedContacts = if (smsAction.contactsCsv.isBlank())
+                                num else "${smsAction.contactsCsv};$num"
+                            configuredActionsState = configuredActionsState.mapIndexed { idx, action ->
+                                if (idx == contactPickerActionIndex) {
+                                    smsAction.copy(contactsCsv = updatedContacts)
+                                } else {
+                                    action
+                                }
+                            }
+                            contactPickerActionIndex = -1
+                        }
+                    }
+                } else {
+                    Toast.makeText(this, "No number in contact", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -106,6 +116,37 @@ class BatteryConfigActivity : AppCompatActivity() {
         appPickerLauncher.launch(intent)
     }
 
+    private val contactPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { _ -> }
+
+    private fun pickContact(actionIndex: Int) {
+        contactPickerActionIndex = actionIndex
+        if (androidx.core.content.ContextCompat.checkSelfPermission(
+                this,
+                android.Manifest.permission.READ_CONTACTS
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            contactPermissionLauncher.launch(android.Manifest.permission.READ_CONTACTS)
+            return
+        }
+        val pick = Intent(
+            Intent.ACTION_PICK,
+            ContactsContract.CommonDataKinds.Phone.CONTENT_URI
+        )
+        pickContactLauncher.launch(pick)
+    }
+
+    private fun fetchPhoneNumberFromContact(uri: android.net.Uri): String? {
+        var number: String? = null
+        val projection = arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER)
+        val cursor = contentResolver.query(uri, projection, null, null, null)
+        cursor?.use {
+            if (it.moveToFirst()) number = it.getString(0)
+        }
+        return number
+    }
+
     private var slotId: Long = -1L
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -123,6 +164,7 @@ class BatteryConfigActivity : AppCompatActivity() {
                     configuredActions = configuredActionsState,
                     onActionsChanged = { configuredActionsState = it },
                     onPickAppClicked = { actionIndex -> openAppPicker(actionIndex) },
+                    onPickContactClicked = { actionIndex -> pickContact(actionIndex) },
                     initialBatteryPercentage = loadedBatteryPercentage,
                     initialThresholdType = loadedThresholdType,
                     isEditing = slotId != -1L,
@@ -174,6 +216,7 @@ fun BatteryConfigScreen(
     configuredActions: List<ConfiguredAction>,
     onActionsChanged: (List<ConfiguredAction>) -> Unit,
     onPickAppClicked: (Int) -> Unit,
+    onPickContactClicked: (Int) -> Unit = { _ -> },
     initialBatteryPercentage: Int = 20,
     initialThresholdType: TriggerConfig.Battery.ThresholdType = TriggerConfig.Battery.ThresholdType.REACHES_OR_BELOW,
     isEditing: Boolean = false,
@@ -325,7 +368,7 @@ fun BatteryConfigScreen(
                             context = context,
                             configuredActions = configuredActions,
                             onActionsChanged = onActionsChanged,
-                            onPickContactClicked = { _ -> },
+                            onPickContactClicked = onPickContactClicked,
                             onPickAppClicked = onPickAppClicked
                         )
                     }

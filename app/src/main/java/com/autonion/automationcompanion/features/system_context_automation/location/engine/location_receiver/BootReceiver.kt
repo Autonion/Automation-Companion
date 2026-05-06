@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import com.autonion.automationcompanion.features.system_context_automation.battery.engine.BatteryServiceManager
 import com.autonion.automationcompanion.features.system_context_automation.wifi.engine.WiFiMonitorManager
 
 class BootReceiver : BroadcastReceiver() {
@@ -20,6 +21,9 @@ class BootReceiver : BroadcastReceiver() {
             
             // Initialize WiFi monitoring for Android 7+
             WiFiMonitorManager.initialize(context)
+
+            // Resume battery monitoring if any battery automations are active
+            BatteryServiceManager.startMonitoringIfNeeded(context)
         }
     }
 }

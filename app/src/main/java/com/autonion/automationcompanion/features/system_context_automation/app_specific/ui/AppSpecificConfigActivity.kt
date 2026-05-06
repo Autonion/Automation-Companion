@@ -3,6 +3,7 @@ package com.autonion.automationcompanion.features.system_context_automation.app_
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
+import android.provider.ContactsContract
 import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -73,6 +74,36 @@ class AppSpecificConfigActivity : AppCompatActivity() {
         }
     }
 
+    private var contactPickerActionIndex = -1
+
+    private val contactPickerLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
+        if (res.resultCode == RESULT_OK && res.data != null) {
+            val uri: android.net.Uri? = res.data!!.data
+            uri?.let { u ->
+                val num = fetchPhoneNumberFromContact(u)
+                if (!num.isNullOrBlank()) {
+                    if (contactPickerActionIndex >= 0 && contactPickerActionIndex < configuredActionsState.size) {
+                        val smsAction = configuredActionsState.getOrNull(contactPickerActionIndex)
+                        if (smsAction is ConfiguredAction.SendSms) {
+                            val updatedContacts = if (smsAction.contactsCsv.isBlank())
+                                num else "${smsAction.contactsCsv};$num"
+                            configuredActionsState = configuredActionsState.mapIndexed { idx, action ->
+                                if (idx == contactPickerActionIndex) {
+                                    smsAction.copy(contactsCsv = updatedContacts)
+                                } else {
+                                    action
+                                }
+                            }
+                            contactPickerActionIndex = -1
+                        }
+                    }
+                } else {
+                    Toast.makeText(this, "No number in contact", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
     private var configuredActionsState by mutableStateOf<List<ConfiguredAction>>(emptyList())
 
     private fun updateAppAction(packageName: String) {
@@ -100,6 +131,37 @@ class AppSpecificConfigActivity : AppCompatActivity() {
         appPickerLauncher.launch(intent)
     }
 
+    private val contactPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { _ -> }
+
+    private fun pickContact(actionIndex: Int) {
+        contactPickerActionIndex = actionIndex
+        if (androidx.core.content.ContextCompat.checkSelfPermission(
+                this,
+                android.Manifest.permission.READ_CONTACTS
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            contactPermissionLauncher.launch(android.Manifest.permission.READ_CONTACTS)
+            return
+        }
+        val pick = Intent(
+            Intent.ACTION_PICK,
+            ContactsContract.CommonDataKinds.Phone.CONTENT_URI
+        )
+        contactPickerLauncher.launch(pick)
+    }
+
+    private fun fetchPhoneNumberFromContact(uri: android.net.Uri): String? {
+        var number: String? = null
+        val projection = arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER)
+        val cursor = contentResolver.query(uri, projection, null, null, null)
+        cursor?.use {
+            if (it.moveToFirst()) number = it.getString(0)
+        }
+        return number
+    }
+
     private var slotId: Long = -1L
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -115,6 +177,7 @@ class AppSpecificConfigActivity : AppCompatActivity() {
                     configuredActions = configuredActionsState,
                     onActionsChanged = { configuredActionsState = it },
                     onPickAppClicked = { actionIndex -> openAppPicker(actionIndex) },
+                    onPickContactClicked = { actionIndex -> pickContact(actionIndex) },
                     onPickTriggerApp = { openTriggerAppPicker() },
                     selectedTriggerApp = selectedTriggerAppPackage,
                     onSave = {
@@ -154,6 +217,7 @@ fun AppSpecificConfigScreen(
     configuredActions: List<ConfiguredAction>,
     onActionsChanged: (List<ConfiguredAction>) -> Unit,
     onPickAppClicked: (Int) -> Unit,
+    onPickContactClicked: (Int) -> Unit = { _ -> },
     onPickTriggerApp: () -> Unit,
     selectedTriggerApp: String?,
     onSave: () -> Unit
@@ -276,7 +340,7 @@ fun AppSpecificConfigScreen(
                             context = context,
                             configuredActions = configuredActions,
                             onActionsChanged = handleActionsChanged,
-                            onPickContactClicked = { _ -> },
+                            onPickContactClicked = onPickContactClicked,
                             onPickAppClicked = onPickAppClicked
                         )
                     }

@@ -6,6 +6,7 @@ import com.autonion.automationcompanion.ui.AppNavHost
 import androidx.activity.compose.setContent
 import com.autonion.automationcompanion.ui.theme.AppTheme
 import com.autonion.automationcompanion.features.system_context_automation.wifi.engine.WiFiMonitorManager
+import com.autonion.automationcompanion.features.system_context_automation.battery.engine.BatteryServiceManager
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -16,6 +17,9 @@ class MainActivity : ComponentActivity() {
         
         // Initialize WiFi monitoring for Android 7+
         WiFiMonitorManager.initialize(this)
+
+        // Resume battery monitoring if any battery automations are active
+        BatteryServiceManager.startMonitoringIfNeeded(this)
         
         // Start ExtensionBridgeServer in background — no longer blocks first frame
         lifecycleScope.launch(Dispatchers.IO) {
