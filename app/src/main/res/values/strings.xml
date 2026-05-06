@@ -30,6 +30,8 @@
     <string name="set_loop_count">Set Loop Count</string>
     <string name="number_of_loops">Number of loops</string>
     <string name="infinite_loop">Infinite Loop (∞)</string>
+    <string name="minimize_overlay">Minimize overlay</string>
+    <string name="expand_overlay">Expand overlay</string>
     <string name="save">Save</string>
 
 </resources>

@@ -12,7 +12,9 @@ import android.os.Build
 import android.os.IBinder
 import android.view.Gravity
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.ViewTreeObserver
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
@@ -32,6 +34,7 @@ import com.autonion.automationcompanion.features.gesture_recording_playback.mana
 import com.autonion.automationcompanion.features.gesture_recording_playback.managers.SettingsManager
 import kotlinx.serialization.json.Json
 import java.io.File
+import kotlin.math.abs
 
 class OverlayService : Service() {
 
@@ -60,6 +63,7 @@ class OverlayService : Service() {
     private var currentLoopCount = 1
     private var isSetupMode = false
     private var isCompactMode = false
+    private var isOverlayMinimized = false
 
     private val playbackReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -282,6 +286,10 @@ class OverlayService : Service() {
         // We attach the listener to the PANEL so dragging the panel moves the whole window.
         // We update 'controlsParams' which applies to 'controlsView' (binding.root).
         binding.controlPanel.setOnTouchListener(OverlayTouchListener(windowManager, controlsView, controlsParams))
+        binding.btnMinimizeOverlay.setOnClickListener {
+            setOverlayMinimized(true)
+        }
+        setupMinimizedOverlayHandle()
 
         binding.btnAdd.setOnClickListener {
             binding.mainControls.visibility = View.GONE
@@ -405,6 +413,77 @@ class OverlayService : Service() {
         
         // Apply initial state
         updateCompactMode()
+    }
+
+    private fun setupMinimizedOverlayHandle() {
+        val touchSlop = ViewConfiguration.get(this).scaledTouchSlop
+        var startWindowX = 0
+        var startWindowY = 0
+        var downRawX = 0f
+        var downRawY = 0f
+        var isDragging = false
+
+        binding.btnMinimizedOverlay.setOnClickListener {
+            setOverlayMinimized(false)
+        }
+
+        binding.btnMinimizedOverlay.setOnTouchListener { view, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    startWindowX = controlsParams.x
+                    startWindowY = controlsParams.y
+                    downRawX = event.rawX
+                    downRawY = event.rawY
+                    isDragging = false
+                    view.isPressed = true
+                    true
+                }
+
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = event.rawX - downRawX
+                    val dy = event.rawY - downRawY
+                    if (!isDragging && (abs(dx) > touchSlop || abs(dy) > touchSlop)) {
+                        isDragging = true
+                    }
+                    if (isDragging) {
+                        controlsParams.x = startWindowX + dx.toInt()
+                        controlsParams.y = startWindowY + dy.toInt()
+                        updateControlLayout()
+                    }
+                    true
+                }
+
+                MotionEvent.ACTION_UP -> {
+                    view.isPressed = false
+                    if (!isDragging) {
+                        view.performClick()
+                    }
+                    true
+                }
+
+                MotionEvent.ACTION_CANCEL -> {
+                    view.isPressed = false
+                    true
+                }
+
+                else -> false
+            }
+        }
+    }
+
+    private fun setOverlayMinimized(minimized: Boolean) {
+        if (isOverlayMinimized == minimized) return
+        isOverlayMinimized = minimized
+
+        binding.controlPanel.visibility = if (minimized) View.GONE else View.VISIBLE
+        binding.btnMinimizedOverlay.visibility = if (minimized) View.VISIBLE else View.GONE
+        if (minimized) {
+            binding.ivSaveStatus.visibility = View.GONE
+        }
+
+        binding.root.post {
+            updateControlLayout()
+        }
     }
 
     private fun updateCompactMode() {

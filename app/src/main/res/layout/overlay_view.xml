@@ -12,23 +12,38 @@
         android:background="#E61A1A2E"
         android:elevation="16dp"
         android:layout_margin="8dp"
+        android:minWidth="72dp"
         android:padding="12dp">
 
         <ImageView
             android:id="@+id/ivDragHandle"
             android:layout_width="match_parent"
             android:layout_height="12dp"
-            android:layout_marginBottom="4dp"
-            android:src="@drawable/ic_drag_handle_rounded"
-            android:scaleType="center"
+            android:layout_marginBottom="2dp"
+            android:alpha="0.7"
             android:contentDescription="Drag Handle"
-            android:alpha="0.7" />
+            android:scaleType="center"
+            android:src="@drawable/ic_drag_handle_rounded" />
+
+        <ImageView
+            android:id="@+id/btnMinimizeOverlay"
+            android:layout_width="36dp"
+            android:layout_height="32dp"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginBottom="4dp"
+            android:background="@drawable/btn_overlay_transparent_ripple"
+            android:clickable="true"
+            android:contentDescription="@string/minimize_overlay"
+            android:focusable="true"
+            android:padding="6dp"
+            android:src="@drawable/ic_minimize_overlay" />
 
 
         <LinearLayout
             android:id="@+id/mainControls"
-            android:layout_width="match_parent"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
             android:orientation="vertical">
             <LinearLayout
                 android:id="@+id/btnToggleLayout"
@@ -526,6 +541,20 @@
             </LinearLayout>
         </LinearLayout>
     </LinearLayout>
+
+    <ImageView
+        android:id="@+id/btnMinimizedOverlay"
+        android:layout_width="56dp"
+        android:layout_height="56dp"
+        android:layout_margin="8dp"
+        android:background="@drawable/circle_button_bg"
+        android:clickable="true"
+        android:contentDescription="@string/expand_overlay"
+        android:elevation="16dp"
+        android:focusable="true"
+        android:padding="14dp"
+        android:src="@drawable/ic_expand_overlay"
+        android:visibility="gone" />
 
     <ImageView
         android:id="@+id/ivSaveStatus"
