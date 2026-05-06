@@ -2,11 +2,12 @@ package com.autonion.automationcompanion.features.gesture_recording_playback.vie
 
 import android.content.Context
 import android.graphics.*
+import android.os.Handler
+import android.os.Looper
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
-import androidx.core.content.ContextCompat
 import com.autonion.automationcompanion.R
 
 class ActionMarker @JvmOverloads constructor(
@@ -43,6 +44,27 @@ class ActionMarker @JvmOverloads constructor(
         }
 
     private var positionChangedListener: ((Float, Float) -> Unit)? = null
+    private var longPressListener: (() -> Unit)? = null
+
+    // Long-press detection state
+    private val LONG_PRESS_TIMEOUT = 400L // ms
+    private val LONG_PRESS_SLOP = 10f // px — movement tolerance
+    private var touchDownX = 0f
+    private var touchDownY = 0f
+    private var isDragging = false
+    private var longPressTriggered = false
+    private val longPressHandler = Handler(Looper.getMainLooper())
+    private val longPressRunnable = Runnable {
+        if (!isDragging) {
+            longPressTriggered = true
+            // Visual feedback — brief scale pulse
+            animate().scaleX(1.15f).scaleY(1.15f).setDuration(100).withEndAction {
+                animate().scaleX(1f).scaleY(1f).setDuration(100).start()
+            }.start()
+            longPressListener?.invoke()
+        }
+    }
+
     // Dynamic colors based on action type
     private val TYPE_CLICK_COLOR = Color.parseColor("#4CAF50") // Green
     private val TYPE_SWIPE_COLOR = Color.parseColor("#2196F3") // Blue
@@ -82,6 +104,10 @@ class ActionMarker @JvmOverloads constructor(
 
     fun setOnPositionChanged(listener: ((Float, Float) -> Unit)?) {
         positionChangedListener = listener
+    }
+
+    fun setOnLongPressListener(listener: (() -> Unit)?) {
+        longPressListener = listener
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -156,6 +182,13 @@ class ActionMarker @JvmOverloads constructor(
 
                 lastTouchX = event.rawX
                 lastTouchY = event.rawY
+                touchDownX = event.rawX
+                touchDownY = event.rawY
+                isDragging = false
+                longPressTriggered = false
+
+                // Schedule long-press detection
+                longPressHandler.postDelayed(longPressRunnable, LONG_PRESS_TIMEOUT)
 
                 // Bring this marker to front so it receives subsequent events when near others
                 originalElevation = elevation
@@ -177,6 +210,18 @@ class ActionMarker @JvmOverloads constructor(
             }
 
             MotionEvent.ACTION_MOVE -> {
+                // Check if movement exceeds long-press slop threshold
+                val movedX = event.rawX - touchDownX
+                val movedY = event.rawY - touchDownY
+                val movedDist = movedX * movedX + movedY * movedY
+                if (movedDist > LONG_PRESS_SLOP * LONG_PRESS_SLOP) {
+                    isDragging = true
+                    longPressHandler.removeCallbacks(longPressRunnable)
+                }
+
+                // If long press already triggered, ignore drag
+                if (longPressTriggered) return true
+
                 val deltaX = event.rawX - lastTouchX
                 val deltaY = event.rawY - lastTouchY
 
@@ -196,6 +241,8 @@ class ActionMarker @JvmOverloads constructor(
             }
 
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                longPressHandler.removeCallbacks(longPressRunnable)
+
                 // restore elevation / pressed state
                 elevation = originalElevation
                 isPressed = false
@@ -203,8 +250,10 @@ class ActionMarker @JvmOverloads constructor(
                 // allow parent to intercept future touches
                 (parent as? ViewGroup)?.requestDisallowInterceptTouchEvent(false)
 
-                // Treat up as a click if it wasn't a big drag.
-                performClick()
+                // Only fire click if not a drag and not a long-press
+                if (!isDragging && !longPressTriggered) {
+                    performClick()
+                }
                 return true
             }
         }
@@ -219,4 +268,4 @@ class ActionMarker @JvmOverloads constructor(
     fun removeFromParent() {
         (parent as? ViewGroup)?.removeView(this)
     }
-}
+}

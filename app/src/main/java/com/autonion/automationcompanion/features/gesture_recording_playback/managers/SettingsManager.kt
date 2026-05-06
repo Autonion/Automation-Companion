@@ -30,4 +30,15 @@ object SettingsManager {
         // Default to false (Full Mode) as per current behavior
         return getPrefs(context).getBoolean(KEY_COMPACT_MODE, false)
     }
+
+    private const val KEY_SHOW_PREVIOUS_GESTURES = "show_previous_gestures"
+
+    fun saveShowPreviousGestures(context: Context, show: Boolean) {
+        getPrefs(context).edit().putBoolean(KEY_SHOW_PREVIOUS_GESTURES, show).apply()
+    }
+
+    fun isShowPreviousGestures(context: Context): Boolean {
+        // Default to false — only show current gesture being edited
+        return getPrefs(context).getBoolean(KEY_SHOW_PREVIOUS_GESTURES, false)
+    }
 }

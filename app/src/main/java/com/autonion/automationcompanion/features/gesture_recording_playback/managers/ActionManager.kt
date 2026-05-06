@@ -40,6 +40,7 @@ object ActionManager {
     private val actionVisuals = mutableListOf<ActionVisuals>()
 
     private var isSetupMode = false
+    private var showPreviousGestures = false
 
     // For step-by-step creation
     private var pendingAction: Action? = null
@@ -57,11 +58,25 @@ object ActionManager {
         actionCountListener = listener
     }
 
+    fun setShowPreviousGestures(show: Boolean) {
+        showPreviousGestures = show
+        if (isSetupMode) {
+            // Refresh visibility of committed visuals based on the new setting
+            actionVisuals.forEach { visual ->
+                visual.markers.forEach { it.isVisible = show }
+                visual.line?.visibility = if (show) View.VISIBLE else View.GONE
+            }
+        }
+    }
+
+    fun isShowingPreviousGestures(): Boolean = showPreviousGestures
+
     fun startSetupMode() {
         isSetupMode = true
+        // Only show committed visuals if showPreviousGestures is enabled
         actionVisuals.forEach { visual ->
-            visual.markers.forEach { it.isVisible = true }
-            visual.line?.visibility = View.VISIBLE
+            visual.markers.forEach { it.isVisible = showPreviousGestures }
+            visual.line?.visibility = if (showPreviousGestures) View.VISIBLE else View.GONE
         }
     }
 
@@ -109,7 +124,6 @@ object ActionManager {
     }
 
     private fun startCreationStep(container: ViewGroup, type: ActionType) {
-        focusListener?.onFocusRequired()
         isSetupMode = true
         cancelPending(container)
 
@@ -149,9 +163,8 @@ object ActionManager {
         })
 
         if (type == ActionType.CLICK || type == ActionType.LONG_CLICK) {
-            showConfirmation(container, pendingAction) {
-                finishCreation(container)
-            }
+            // Auto-commit with default delay — user can edit via long-press later
+            finishCreation(container)
         } else {
             proceedToStep2(container, type, startMarker)
         }
@@ -223,7 +236,17 @@ object ActionManager {
             refreshLine()
         }
 
-        showConfirmation(container, pendingAction) { finishCreation(container) }
+        // Auto-commit swipe with default delay — user can edit via long-press later
+        // Use a short delay to allow the end marker's layout listener to fire first
+        endMarker.viewTreeObserver.addOnGlobalLayoutListener(object : ViewTreeObserver.OnGlobalLayoutListener {
+            private var called = false
+            override fun onGlobalLayout() {
+                if (called) return
+                called = true
+                endMarker.viewTreeObserver.removeOnGlobalLayoutListener(this)
+                finishCreation(container)
+            }
+        })
     }
 
     private fun startEditingStep(container: ViewGroup, actionId: Int, clickedMarker: ActionMarker) {
@@ -286,6 +309,12 @@ object ActionManager {
                 }
                 marker.setOnPositionChanged { screenX, screenY ->
                     updateActionPoint(finalAction.id, index, screenX, screenY)
+                }
+                // Long-press opens delay/duration editor
+                marker.setOnLongPressListener {
+                    if (pendingAction == null) {
+                        showDelayEditor(container, finalAction.id)
+                    }
                 }
             }
 
@@ -604,10 +633,15 @@ object ActionManager {
                                 centerScreenY
                             )
                         }
+                        // Long-press opens delay/duration editor
+                        marker.setOnLongPressListener {
+                            if (pendingAction == null) {
+                                showDelayEditor(container, action.id)
+                            }
+                        }
 
-
-                        // ** FIX: Set visibility based on current mode, not blindly true.
-                        marker.isVisible = isSetupMode
+                        // ** FIX: Set visibility based on current mode and showPreviousGestures.
+                        marker.isVisible = isSetupMode && showPreviousGestures
                         markers.add(marker)
                     }
 
@@ -668,5 +702,28 @@ object ActionManager {
 
     fun isConfirmationShowing(container: ViewGroup): Boolean {
         return container.findViewWithTag<View>(CONFIRMATION_VIEW_TAG) != null
+    }
+
+    /**
+     * Shows the delay/duration editor for a committed action.
+     * Triggered by long-pressing on a gesture marker.
+     */
+    private fun showDelayEditor(container: ViewGroup, actionId: Int) {
+        val action = actions.find { it.id == actionId } ?: return
+        if (isConfirmationShowing(container)) return
+
+        focusListener?.onFocusRequired()
+        pendingAction = action
+
+        showConfirmation(container, action) {
+            // Save the updated delay/duration back to the committed action
+            val index = actions.indexOfFirst { it.id == actionId }
+            if (index != -1 && pendingAction != null) {
+                actions[index] = pendingAction!!
+            }
+            removeConfirmation(container)
+            focusListener?.onFocusReleased()
+            pendingAction = null
+        }
     }
 }

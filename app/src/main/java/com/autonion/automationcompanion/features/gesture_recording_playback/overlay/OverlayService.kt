@@ -133,6 +133,8 @@ class OverlayService : Service() {
         // Load settings
         currentLoopCount = SettingsManager.getLoopCount(this)
         isCompactMode = SettingsManager.isCompactMode(this)
+        val showPrevGestures = SettingsManager.isShowPreviousGestures(this)
+        ActionManager.setShowPreviousGestures(showPrevGestures)
         
         setupOverlay()
 //        startForeground(1, NotificationHelper.createNotification(this))
@@ -392,6 +394,14 @@ class OverlayService : Service() {
             SettingsManager.saveCompactMode(this, isCompactMode)
             updateCompactMode()
         }
+
+        binding.btnToggleGestures.setOnClickListener {
+            val newVal = !ActionManager.isShowingPreviousGestures()
+            ActionManager.setShowPreviousGestures(newVal)
+            SettingsManager.saveShowPreviousGestures(this, newVal)
+            updateGestureToggleState(newVal)
+        }
+        updateGestureToggleState(ActionManager.isShowingPreviousGestures())
         
         // Apply initial state
         updateCompactMode()
@@ -432,7 +442,7 @@ class OverlayService : Service() {
             binding.btnToggleInput, binding.btnAdd, binding.btnSave, 
             binding.btnClear, binding.btnClose,
             binding.btnAddClick, binding.btnAddLongClick, binding.btnAddSwipe, 
-            binding.btnBack, binding.btnToggleLayout
+            binding.btnBack, binding.btnToggleLayout, binding.btnToggleGestures
         )
         
         val marginCompact = dpToPx(2) // Tight vertical spacing
@@ -643,6 +653,16 @@ class OverlayService : Service() {
         } else {
             binding.tvToggleLabel.setText(R.string.mode_edit)
             binding.ivToggleIcon.setImageResource(R.drawable.ic_edit)
+        }
+    }
+
+    private fun updateGestureToggleState(showAll: Boolean) {
+        if (showAll) {
+            binding.ivToggleGestures.setImageResource(R.drawable.ic_visibility)
+            binding.tvToggleGestures.text = "Hide All"
+        } else {
+            binding.ivToggleGestures.setImageResource(R.drawable.ic_visibility_off)
+            binding.tvToggleGestures.text = "Show All"
         }
     }
 

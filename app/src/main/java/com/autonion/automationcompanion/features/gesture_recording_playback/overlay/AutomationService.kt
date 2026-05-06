@@ -282,7 +282,7 @@ class AutomationService : AccessibilityService() {
         Log.d("AutomationService", "Performing Click at ${point.x}, ${point.y} with duration $duration")
         val clickPath = Path().apply {
             moveTo(point.x, point.y)
-            lineTo(point.x + 1, point.y + 1)
+            lineTo(point.x, point.y) // Zero-length = stationary tap, no drift
         }
 
         // Use at least 50ms or the action duration if larger
@@ -297,24 +297,10 @@ class AutomationService : AccessibilityService() {
     private suspend fun performSwipe(start: PointF, end: PointF, duration: Long) {
         Log.d("AutomationService", "Performing Swipe from ${start.x},${start.y} to ${end.x},${end.y} with duration $duration")
 
-        // Use a smooth cubic Bézier path instead of a hard lineTo.
-        // This produces more natural, human-like touch motion that the
-        // system gesture dispatcher renders as a fluid swipe.
-        val midX = (start.x + end.x) / 2f
-        val midY = (start.y + end.y) / 2f
-        // Slight perpendicular offset for natural arc
-        val dx = end.x - start.x
-        val dy = end.y - start.y
-        val perpX = -dy * 0.05f  // 5% arc offset
-        val perpY = dx * 0.05f
-
+        // Straight line from start to end — exactly follows the user's set path
         val swipePath = Path().apply {
             moveTo(start.x, start.y)
-            cubicTo(
-                start.x + dx * 0.25f + perpX, start.y + dy * 0.25f + perpY,  // CP1
-                start.x + dx * 0.75f + perpX, start.y + dy * 0.75f + perpY,  // CP2
-                end.x, end.y                                                  // End
-            )
+            lineTo(end.x, end.y)
         }
 
         // Enforce a minimum swipe duration for smooth rendering
@@ -330,7 +316,7 @@ class AutomationService : AccessibilityService() {
         Log.d("AutomationService", "Performing Long Click at ${point.x}, ${point.y} with duration $duration")
         val clickPath = Path().apply {
             moveTo(point.x, point.y)
-            lineTo(point.x + 1, point.y + 1)
+            lineTo(point.x, point.y) // Zero-length = stationary hold, no drift
         }
 
         // Use the action duration for long click (minimum 100ms)
