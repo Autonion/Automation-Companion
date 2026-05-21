@@ -216,6 +216,7 @@ fun HeroCard(
                 scaleX = scale
                 scaleY = scale
             }
+            .clip(RoundedCornerShape(24.dp))
             .clickable(interactionSource = interactionSource, indication = LocalIndication.current) { onClick() },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(24.dp),
@@ -273,6 +274,7 @@ fun GridCard(
                 scaleX = scale
                 scaleY = scale
             }
+            .clip(RoundedCornerShape(24.dp))
             .clickable(interactionSource = interactionSource, indication = LocalIndication.current) { onClick() },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(24.dp),
@@ -343,6 +345,7 @@ fun ListCard(
                 scaleX = scale
                 scaleY = scale
             }
+            .clip(RoundedCornerShape(20.dp))
             .clickable(interactionSource = interactionSource, indication = LocalIndication.current) { onClick() },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(20.dp),
@@ -395,6 +398,7 @@ fun StatusCard(
                 scaleX = scale
                 scaleY = scale
             }
+            .clip(RoundedCornerShape(20.dp))
             .clickable(interactionSource = interactionSource, indication = LocalIndication.current) { onClick() },
         colors = CardDefaults.cardColors(containerColor = backgroundColor),
         shape = RoundedCornerShape(20.dp),
@@ -457,6 +461,7 @@ fun BannerCard(
                 scaleX = scale
                 scaleY = scale
             }
+            .clip(RoundedCornerShape(24.dp))
             .clickable(interactionSource = interactionSource, indication = LocalIndication.current) { onClick() },
         colors = CardDefaults.cardColors(containerColor = bannerBg),
         shape = RoundedCornerShape(24.dp),

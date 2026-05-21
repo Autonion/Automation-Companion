@@ -200,7 +200,8 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
                     label = "TabContent"
                 ) { tab ->
                     when (tab) {
-                        0, 1 -> {
+                        0 -> DeviceManagementScreen()
+                        1, 2 -> {
                             // Ask & Rules tabs need agent + LLM connection
                             Box(modifier = Modifier.fillMaxSize()) {
                                     Box(
@@ -209,8 +210,8 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
                                             .then(if (!isAIReady) Modifier.blur(12.dp) else Modifier)
                                     ) {
                                     when (tab) {
-                                        0 -> PromptScreen()
                                         1 -> DesktopAutomationScreen()
+                                        2 -> PromptScreen()
                                     }
                                 }
                                 if (!isAIReady) {
@@ -244,7 +245,6 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
                                 }
                             }
                         }
-                        2 -> DeviceManagementScreen()
                     }
                 }
             }
@@ -263,9 +263,9 @@ private data class TabItem(val title: String, val icon: ImageVector)
 @Composable
 private fun StyledTabRow(selectedTab: Int, onTabSelected: (Int) -> Unit) {
     val tabs = listOf(
-        TabItem("Ask", Icons.Default.SmartToy),
+        TabItem("Devices", Icons.Default.Devices),
         TabItem("Rules", Icons.AutoMirrored.Filled.Rule),
-        TabItem("Devices", Icons.Default.Devices)
+        TabItem("Ask", Icons.Default.SmartToy)
     )
 
     Row(
