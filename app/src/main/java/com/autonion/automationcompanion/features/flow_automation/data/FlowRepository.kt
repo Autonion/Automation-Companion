@@ -114,13 +114,24 @@ class FlowRepository(private val context: Context) {
             Log.d(TAG, "Export: found ${imagePaths.size} image assets to bundle")
 
             // 2. Build a map of absolute path → relative archive name
-            //    e.g. "/data/.../viz_capture_abc.png" → "assets/viz_capture_abc.png"
+            //    Use counter prefix to prevent collisions when different paths
+            //    share the same basename (e.g. dirA/capture.png vs dirB/capture.png)
             val pathToArchiveName = mutableMapOf<String, String>()
+            val usedArchiveNames = mutableSetOf<String>()
             for (path in imagePaths) {
                 val file = File(path)
                 if (file.exists()) {
-                    val archiveName = "$ASSETS_DIR_PREFIX${file.name}"
-                    pathToArchiveName[path] = archiveName
+                    var candidate = "$ASSETS_DIR_PREFIX${file.name}"
+                    if (candidate in usedArchiveNames) {
+                        // Collision — add incrementing counter prefix
+                        var counter = 1
+                        do {
+                            candidate = "${ASSETS_DIR_PREFIX}${counter}_${file.name}"
+                            counter++
+                        } while (candidate in usedArchiveNames)
+                    }
+                    usedArchiveNames.add(candidate)
+                    pathToArchiveName[path] = candidate
                 } else {
                     Log.w(TAG, "Export: image file missing, skipping: $path")
                 }
@@ -235,9 +246,23 @@ class FlowRepository(private val context: Context) {
         }
 
         val imported = json.decodeFromString<FlowGraph>(flowJsonText!!)
+        Log.d(TAG, "Import: deserialized flow '${imported.name}' with ${imported.nodes.size} nodes, ${imported.edges.size} edges")
+
+        // Log edge conditions for diagnostics
+        imported.edges.forEach { edge ->
+            if (edge.condition != null) {
+                Log.d(TAG, "Import: edge ${edge.id.take(8)} has condition: ${edge.condition::class.simpleName}")
+            }
+            if (edge.isFailurePath) {
+                Log.d(TAG, "Import: edge ${edge.id.take(8)} is a failure path")
+            }
+        }
 
         // Remap the relative archive paths back to the extracted local paths
         val remapped = remapImagePaths(imported, extractedAssets)
+
+        // Validate that all referenced image files actually exist on disk
+        validateImagePaths(remapped)
 
         // Regenerate IDs to avoid collisions (same logic as before)
         return finalizeImport(remapped)
@@ -292,6 +317,19 @@ class FlowRepository(private val context: Context) {
             edges = remappedEdges,
             updatedAt = System.currentTimeMillis()
         )
+
+        // Diagnostic: log summary of the finalized graph
+        Log.d(TAG, "Import finalized: '${newGraph.name}' → id=${newGraph.id.take(8)}, " +
+                "${remappedNodes.size} nodes, ${remappedEdges.size} edges")
+        val conditionCounts = remappedEdges.groupBy { it.condition?.let { c -> c::class.simpleName } ?: "none" }
+        conditionCounts.forEach { (type, edges) ->
+            Log.d(TAG, "  Edge conditions: $type × ${edges.size}")
+        }
+        val failureEdgeCount = remappedEdges.count { it.isFailurePath }
+        if (failureEdgeCount > 0) {
+            Log.d(TAG, "  Failure edges: $failureEdgeCount")
+        }
+
         save(newGraph)
         Log.d(TAG, "Imported flow '${newGraph.name}' → id=${newGraph.id}")
         return newGraph
@@ -324,6 +362,8 @@ class FlowRepository(private val context: Context) {
                                 if (region.templatePath.isNotBlank()) {
                                     paths.add(region.templatePath)
                                 }
+                                // Also collect sourceCapturePath
+                                region.sourceCapturePath?.let { if (it.isNotBlank()) paths.add(it) }
                             }
                         } catch (e: Exception) {
                             Log.w(TAG, "Failed to parse visionPresetJson for image paths", e)
@@ -365,7 +405,11 @@ class FlowRepository(private val context: Context) {
                             val newCapturePath = preset.captureImagePath?.let { pathMap[it] ?: it }
                             val newRegions = preset.regions.map { region ->
                                 val newRegionPath = pathMap[region.templatePath] ?: region.templatePath
-                                region.copy(templatePath = newRegionPath)
+                                val newSourceCapture = region.sourceCapturePath?.let { pathMap[it] ?: it }
+                                region.copy(
+                                    templatePath = newRegionPath,
+                                    sourceCapturePath = newSourceCapture
+                                )
                             }
                             val newPreset = preset.copy(
                                 captureImagePath = newCapturePath,
@@ -391,6 +435,33 @@ class FlowRepository(private val context: Context) {
         }
 
         return graph.copy(nodes = remappedNodes)
+    }
+
+    /**
+     * Validate that all image paths referenced in the graph point to files
+     * that actually exist on disk. Logs warnings for any missing assets
+     * to aid in diagnosing import issues.
+     */
+    private fun validateImagePaths(graph: FlowGraph) {
+        val allPaths = collectImagePaths(graph)
+        var missingCount = 0
+        for (path in allPaths) {
+            // Skip relative archive paths (those starting with "assets/") —
+            // they haven't been remapped yet or are intentionally relative.
+            if (path.startsWith(ASSETS_DIR_PREFIX)) continue
+            val file = File(path)
+            if (!file.exists()) {
+                Log.w(TAG, "Import validation: referenced image file MISSING: $path")
+                missingCount++
+            } else {
+                Log.d(TAG, "Import validation: image OK: $path (${file.length()} bytes)")
+            }
+        }
+        if (missingCount > 0) {
+            Log.w(TAG, "Import validation: $missingCount image file(s) missing out of ${allPaths.size}")
+        } else {
+            Log.d(TAG, "Import validation: all ${allPaths.size} image files present ✓")
+        }
     }
 
     // ─── Utility ─────────────────────────────────────────────────────────
