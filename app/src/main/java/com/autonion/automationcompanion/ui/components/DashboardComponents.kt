@@ -209,19 +209,19 @@ fun HeroCard(
     val scale by animateFloatAsState(targetValue = if (isPressed) 0.95f else 1f, label = "scale")
 
     Card(
+        onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 24.dp)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
-            }
-            .clip(RoundedCornerShape(24.dp))
-            .clickable(interactionSource = interactionSource, indication = LocalIndication.current) { onClick() },
+            },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(24.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        border = if (isDark) BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)) else null
+        border = if (isDark) BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)) else null,
+        interactionSource = interactionSource
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
             Row(
@@ -268,18 +268,18 @@ fun GridCard(
     val scale by animateFloatAsState(targetValue = if (isPressed) 0.95f else 1f, label = "scale")
 
     Card(
+        onClick = onClick,
         modifier = modifier
             .height(190.dp) // Fixed height ensures uniform rows in grid layouts
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
-            }
-            .clip(RoundedCornerShape(24.dp))
-            .clickable(interactionSource = interactionSource, indication = LocalIndication.current) { onClick() },
+            },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(24.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        border = if (isDark) BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)) else null
+        border = if (isDark) BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)) else null,
+        interactionSource = interactionSource
     ) {
         Column(
             modifier = Modifier.padding(16.dp)
@@ -338,19 +338,19 @@ fun ListCard(
     val scale by animateFloatAsState(targetValue = if (isPressed) 0.95f else 1f, label = "scale")
 
     Card(
+        onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 24.dp, vertical = 6.dp)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
-            }
-            .clip(RoundedCornerShape(20.dp))
-            .clickable(interactionSource = interactionSource, indication = LocalIndication.current) { onClick() },
+            },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(20.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        border = if (isDark) BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)) else null
+        border = if (isDark) BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)) else null,
+        interactionSource = interactionSource
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -392,17 +392,17 @@ fun StatusCard(
     val resolvedTitleColor = titleColor ?: MaterialTheme.colorScheme.onSurface
 
     Card(
+        onClick = onClick,
         modifier = modifier
             .height(110.dp)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
-            }
-            .clip(RoundedCornerShape(20.dp))
-            .clickable(interactionSource = interactionSource, indication = LocalIndication.current) { onClick() },
+            },
         colors = CardDefaults.cardColors(containerColor = backgroundColor),
         shape = RoundedCornerShape(20.dp),
-        border = if (isSystemInDarkTheme()) BorderStroke(1.dp, iconContainerColor.copy(alpha = 0.3f)) else BorderStroke(1.dp, iconContainerColor.copy(alpha = 0.1f))
+        border = if (isSystemInDarkTheme()) BorderStroke(1.dp, iconContainerColor.copy(alpha = 0.3f)) else BorderStroke(1.dp, iconContainerColor.copy(alpha = 0.1f)),
+        interactionSource = interactionSource
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -454,18 +454,18 @@ fun BannerCard(
     val scale by animateFloatAsState(targetValue = if (isPressed) 0.95f else 1f, label = "scale")
 
     Card(
+        onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 24.dp)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
-            }
-            .clip(RoundedCornerShape(24.dp))
-            .clickable(interactionSource = interactionSource, indication = LocalIndication.current) { onClick() },
+            },
         colors = CardDefaults.cardColors(containerColor = bannerBg),
         shape = RoundedCornerShape(24.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        interactionSource = interactionSource
     ) {
         Row(
             modifier = Modifier.padding(20.dp),
