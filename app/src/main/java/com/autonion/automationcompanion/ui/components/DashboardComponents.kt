@@ -27,6 +27,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.autonion.automationcompanion.ui.theme.DarkBannerBackground
@@ -209,18 +210,19 @@ fun HeroCard(
     val scale by animateFloatAsState(targetValue = if (isPressed) 0.95f else 1f, label = "scale")
 
     Card(
+        onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 24.dp)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
-            }
-            .clickable(interactionSource = interactionSource, indication = LocalIndication.current) { onClick() },
+            },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(24.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        border = if (isDark) BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)) else null
+        border = if (isDark) BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)) else null,
+        interactionSource = interactionSource
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
             Row(
@@ -267,17 +269,18 @@ fun GridCard(
     val scale by animateFloatAsState(targetValue = if (isPressed) 0.95f else 1f, label = "scale")
 
     Card(
+        onClick = onClick,
         modifier = modifier
             .height(190.dp) // Fixed height ensures uniform rows in grid layouts
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
-            }
-            .clickable(interactionSource = interactionSource, indication = LocalIndication.current) { onClick() },
+            },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(24.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        border = if (isDark) BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)) else null
+        border = if (isDark) BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)) else null,
+        interactionSource = interactionSource
     ) {
         Column(
             modifier = Modifier.padding(16.dp)
@@ -336,18 +339,19 @@ fun ListCard(
     val scale by animateFloatAsState(targetValue = if (isPressed) 0.95f else 1f, label = "scale")
 
     Card(
+        onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 24.dp, vertical = 6.dp)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
-            }
-            .clickable(interactionSource = interactionSource, indication = LocalIndication.current) { onClick() },
+            },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(20.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        border = if (isDark) BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)) else null
+        border = if (isDark) BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)) else null,
+        interactionSource = interactionSource
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -389,16 +393,17 @@ fun StatusCard(
     val resolvedTitleColor = titleColor ?: MaterialTheme.colorScheme.onSurface
 
     Card(
+        onClick = onClick,
         modifier = modifier
             .height(110.dp)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
-            }
-            .clickable(interactionSource = interactionSource, indication = LocalIndication.current) { onClick() },
+            },
         colors = CardDefaults.cardColors(containerColor = backgroundColor),
         shape = RoundedCornerShape(20.dp),
-        border = if (isSystemInDarkTheme()) BorderStroke(1.dp, iconContainerColor.copy(alpha = 0.3f)) else BorderStroke(1.dp, iconContainerColor.copy(alpha = 0.1f))
+        border = if (isSystemInDarkTheme()) BorderStroke(1.dp, iconContainerColor.copy(alpha = 0.3f)) else BorderStroke(1.dp, iconContainerColor.copy(alpha = 0.1f)),
+        interactionSource = interactionSource
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -450,17 +455,18 @@ fun BannerCard(
     val scale by animateFloatAsState(targetValue = if (isPressed) 0.95f else 1f, label = "scale")
 
     Card(
+        onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 24.dp)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
-            }
-            .clickable(interactionSource = interactionSource, indication = LocalIndication.current) { onClick() },
+            },
         colors = CardDefaults.cardColors(containerColor = bannerBg),
         shape = RoundedCornerShape(24.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        interactionSource = interactionSource
     ) {
         Row(
             modifier = Modifier.padding(20.dp),
@@ -624,14 +630,42 @@ fun TabletBrandingPanel(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Version + GitHub
-            Text(
-                text = "v1.0.4  ·  github.com/Autonion",
-                style = MaterialTheme.typography.bodySmall.copy(
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                    fontSize = 12.sp
+            // Version + GitHub + Privacy Policy
+            val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "v1.0.6  ·  ",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        fontSize = 12.sp
+                    )
                 )
-            )
+                Text(
+                    text = "GitHub",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                        fontSize = 12.sp,
+                        textDecoration = TextDecoration.Underline
+                    ),
+                    modifier = Modifier.clickable { uriHandler.openUri("https://github.com/Autonion") }
+                )
+                Text(
+                    text = "  ·  ",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        fontSize = 12.sp
+                    )
+                )
+                Text(
+                    text = "Privacy Policy",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                        fontSize = 12.sp,
+                        textDecoration = TextDecoration.Underline
+                    ),
+                    modifier = Modifier.clickable { uriHandler.openUri("https://autonion.github.io/autonion-policies/") }
+                )
+            }
         }
     }
 }

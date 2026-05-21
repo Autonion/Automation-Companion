@@ -572,7 +572,7 @@ private fun HomeFooter() {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = "v1.0.6",
+            text = "v1.0.7",
             style = MaterialTheme.typography.bodySmall.copy(
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 fontSize = 12.sp
@@ -594,6 +594,24 @@ private fun HomeFooter() {
             ),
             modifier = Modifier.clickable {
                 uriHandler.openUri("https://github.com/Autonion")
+            }
+        )
+        Text(
+            text = "  ·  ",
+            style = MaterialTheme.typography.bodySmall.copy(
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                fontSize = 12.sp
+            )
+        )
+        Text(
+            text = "Privacy Policy",
+            style = MaterialTheme.typography.bodySmall.copy(
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                fontSize = 12.sp,
+                textDecoration = TextDecoration.Underline
+            ),
+            modifier = Modifier.clickable {
+                uriHandler.openUri("https://autonion.github.io/autonion-policies/")
             }
         )
     }

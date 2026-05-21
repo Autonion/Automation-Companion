@@ -52,6 +52,7 @@ internal fun ActionRow(
     Surface(
         shape = RoundedCornerShape(14.dp),
         color = cardColor,
+        contentColor = LocalContentColor.current,
         tonalElevation = if (checked) 2.dp else 0.dp,
         modifier = Modifier
             .fillMaxWidth()
@@ -92,7 +93,7 @@ internal fun ActionRow(
                     Text(
                         text = subtitle,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        color = LocalContentColor.current.copy(alpha = 0.6f)
                     )
                 }
             }
@@ -160,6 +161,7 @@ internal fun AnimatedConfigSection(
         Surface(
             shape = RoundedCornerShape(12.dp),
             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+            contentColor = LocalContentColor.current,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(start = 8.dp, top = 6.dp, bottom = 2.dp)
@@ -220,7 +222,7 @@ internal fun BrightnessActionConfig(
             "Brightness: ${action.level}",
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurface
+            color = LocalContentColor.current
         )
         Spacer(modifier = Modifier.height(4.dp))
         Slider(
@@ -314,7 +316,7 @@ internal fun AutoRotateActionConfig(
             if (action.enabled) "Auto-rotate: ON" else "Auto-rotate: OFF",
             Modifier.weight(1f),
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface
+            color = LocalContentColor.current
         )
         Switch(action.enabled, onCheckedChange = { newValue ->
             onActionChanged(action.copy(enabled = newValue))
@@ -333,7 +335,7 @@ internal fun ScreenTimeoutActionConfig(
     onActionChanged: (ConfiguredAction.ScreenTimeout) -> Unit
 ) {
     Column {
-        Text("Screen Timeout", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+        Text("Screen Timeout", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium, color = LocalContentColor.current)
         Spacer(modifier = Modifier.height(4.dp))
         val options = listOf(
             15_000 to "15 seconds",
@@ -352,7 +354,7 @@ internal fun ScreenTimeoutActionConfig(
                     selected = action.durationMs == value,
                     onClick = { onActionChanged(action.copy(durationMs = value)) }
                 )
-                Text(label, Modifier.padding(start = 8.dp), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                Text(label, Modifier.padding(start = 8.dp), style = MaterialTheme.typography.bodyMedium, color = LocalContentColor.current)
             }
         }
     }
@@ -378,7 +380,7 @@ internal fun KeepScreenAwakeActionConfig(
                 if (action.enabled) "Keep Screen Awake: ON" else "Keep Screen Awake: OFF",
                 Modifier.weight(1f),
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface
+                color = LocalContentColor.current
             )
             Switch(action.enabled, onCheckedChange = { newValue ->
                 onActionChanged(action.copy(enabled = newValue))

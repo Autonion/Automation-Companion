@@ -654,9 +654,8 @@ class OverlayService : Service() {
     private fun startPlaying() {
         isPlaying = true
 
-        // Show Playback controls
+        // Show only the Stop button during playback
         binding.btnStop.visibility = View.VISIBLE
-        binding.btnRestart.visibility = View.VISIBLE
 
         // Hide Setup/Main controls
         binding.btnPlay.visibility = View.GONE
@@ -665,6 +664,12 @@ class OverlayService : Service() {
         binding.btnAdd.visibility = View.GONE
         binding.btnClear.visibility = View.GONE
         binding.btnClose.visibility = View.GONE
+        binding.btnRestart.visibility = View.GONE
+
+        // Hide non-essential toggles to minimize overlay footprint
+        binding.btnToggleLayout.visibility = View.GONE
+        binding.btnToggleGestures.visibility = View.GONE
+        binding.btnMinimizeOverlay.visibility = View.GONE
 
         // Hide Info/Stats
         binding.tvActionCount.visibility = View.GONE
@@ -702,15 +707,15 @@ class OverlayService : Service() {
             binding.btnClear.visibility = View.VISIBLE
             binding.btnClose.visibility = View.VISIBLE
 
+            // Restore toggle buttons
+            binding.btnToggleLayout.visibility = View.VISIBLE
+            binding.btnToggleGestures.visibility = View.VISIBLE
+            binding.btnMinimizeOverlay.visibility = View.VISIBLE
+
             // Restore Info/Stats
             binding.tvActionCount.visibility = View.VISIBLE
             binding.layoutLoopCount.visibility = View.VISIBLE
             updateControlLayout()
-
-            // Re-enable in case they were disabled (legacy code cleanup)
-//            binding.btnAdd.isEnabled = true
-//            binding.btnClear.isEnabled = true
-//            binding.btnToggleInput.isEnabled = true
         }
     }
 

@@ -158,13 +158,6 @@ fun PresetsScreen(
                                     onPlay = { onPlay(presetName) },
                                     onDelete = {
                                         onDelete(presetName)
-                                        scope.launch {
-                                            snackbarHostState.showSnackbar(
-                                                "Deleted \"$presetName\"",
-                                                actionLabel = "UNDO",
-                                                duration = SnackbarDuration.Short
-                                            )
-                                        }
                                     }
                                 )
                             }
@@ -194,13 +187,6 @@ fun PresetsScreen(
                                     onPlay = { onPlay(presetName) },
                                     onDelete = {
                                         onDelete(presetName)
-                                        scope.launch {
-                                            snackbarHostState.showSnackbar(
-                                                "Deleted \"$presetName\"",
-                                                actionLabel = "UNDO",
-                                                duration = SnackbarDuration.Short
-                                            )
-                                        }
                                     }
                                 )
                             }

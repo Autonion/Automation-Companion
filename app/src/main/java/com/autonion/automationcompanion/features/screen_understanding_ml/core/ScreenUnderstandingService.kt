@@ -87,7 +87,8 @@ class ScreenUnderstandingService : Service() {
     private var isPlaying = false
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-    private var currentPresetId: String? = null
+    var currentPresetId: String? = null
+        private set
     
     // Flow mode state
     private var isFlowMode = false

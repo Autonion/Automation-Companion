@@ -62,6 +62,7 @@ fun FeatureCard(
         modifier = modifier
             .fillMaxWidth()
             .graphicsLayer { scaleX = scale; scaleY = scale }
+            .clip(RoundedCornerShape(16.dp))
             .clickable(interactionSource = interactionSource, indication = null, onClick = onClick),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
