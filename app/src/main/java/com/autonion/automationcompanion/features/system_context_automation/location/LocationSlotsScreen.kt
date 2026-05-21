@@ -415,6 +415,7 @@ private fun SlotCard(
         modifier = Modifier
             .fillMaxWidth()
             .scale(animScale)
+            .clip(RoundedCornerShape(22.dp))
             .clickable(
                 interactionSource = interactionSource,
                 indication = null

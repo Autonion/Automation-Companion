@@ -444,6 +444,7 @@ fun VisionPresetCard(
                 scaleX = scale
                 scaleY = scale
             }
+            .clip(RoundedCornerShape(20.dp))
             .clickable(
                 interactionSource = interactionSource,
                 indication = androidx.compose.foundation.LocalIndication.current

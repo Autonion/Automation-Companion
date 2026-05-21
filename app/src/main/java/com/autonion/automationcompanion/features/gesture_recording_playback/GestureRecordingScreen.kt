@@ -114,6 +114,8 @@ fun GestureRecordingScreen(onBack: () -> Unit = {}) {
             presetName = presetName,
             onConfirm = {
                 PresetManager.deletePreset(context, presetName)
+                // Stop the overlay service if it's running for this preset
+                context.stopService(AndroidIntent(context, OverlayService::class.java))
                 coroutineScope.launch { loadPresets(context, presetsState) }
                 confirmDeleteFor = null
             },

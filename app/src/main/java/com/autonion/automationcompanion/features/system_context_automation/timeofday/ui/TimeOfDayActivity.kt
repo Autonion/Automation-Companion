@@ -334,6 +334,7 @@ private fun TimeOfDaySlotCard(
         modifier = Modifier
             .fillMaxWidth()
             .scale(animScale)
+            .clip(RoundedCornerShape(22.dp))
             .clickable(interactionSource = interactionSource, indication = null) { onEdit() },
         shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(
