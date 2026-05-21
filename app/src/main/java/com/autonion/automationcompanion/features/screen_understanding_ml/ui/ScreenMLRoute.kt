@@ -43,6 +43,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.autonion.automationcompanion.features.screen_understanding_ml.core.ScreenUnderstandingService
 import com.autonion.automationcompanion.features.screen_understanding_ml.logic.PresetRepository
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.AutomationPreset
 import com.autonion.automationcompanion.ui.components.AuroraBackground
@@ -69,6 +70,7 @@ fun ScreenMLRoute(onBack: () -> Unit) {
 
     val presets = remember { mutableStateListOf<AutomationPreset>() }
     var showDialog by remember { mutableStateOf(false) }
+    var confirmDeleteFor by remember { mutableStateOf<AutomationPreset?>(null) }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -94,14 +96,28 @@ fun ScreenMLRoute(onBack: () -> Unit) {
         )
     }
 
+    // Confirm delete dialog for Screen ML presets
+    confirmDeleteFor?.let { preset ->
+        ConfirmDeletePresetDialog(
+            presetName = preset.name,
+            onConfirm = {
+                repository.deletePreset(preset.id)
+                presets.remove(preset)
+                // Stop the overlay service if it's running for this preset
+                if (ScreenUnderstandingService.instance?.currentPresetId == preset.id) {
+                    context.stopService(Intent(context, ScreenUnderstandingService::class.java))
+                }
+                confirmDeleteFor = null
+            },
+            onCancel = { confirmDeleteFor = null }
+        )
+    }
+
     ScreenMLDashboardContent(
         presets = presets,
         onBack = onBack,
         onAddClick = { showDialog = true },
-        onDelete = { preset ->
-            repository.deletePreset(preset.id)
-            presets.remove(preset)
-        },
+        onDelete = { preset -> confirmDeleteFor = preset },
         onPlay = { preset ->
             val intent = Intent(context, SetupFlowActivity::class.java).apply {
                 putExtra("ACTION_REQUEST_PERMISSION_PLAY_PRESET", preset.id)
@@ -463,6 +479,84 @@ private fun NewAutomationDialog(
                         enabled = name.isNotBlank()
                     ) {
                         Text("Create")
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ─── Confirm Delete Dialog ──────────────────────────────
+
+@Composable
+private fun ConfirmDeletePresetDialog(
+    presetName: String,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit
+) {
+    val scale = remember { Animatable(0.9f) }
+    val alpha = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) {
+        scale.animateTo(1f, tween(220, easing = FastOutSlowInEasing))
+        alpha.animateTo(1f, tween(220))
+    }
+
+    fun dismissThen(callback: () -> Unit) {
+        scope.launch {
+            scale.animateTo(0.95f, tween(120))
+            alpha.animateTo(0f, tween(120))
+            callback()
+        }
+    }
+
+    Dialog(
+        onDismissRequest = onCancel,
+        properties = DialogProperties(
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true,
+            usePlatformDefaultWidth = false
+        )
+    ) {
+        Surface(
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            tonalElevation = 6.dp,
+            modifier = Modifier
+                .fillMaxWidth(0.9f)
+                .graphicsLayer {
+                    scaleX = scale.value
+                    scaleY = scale.value
+                    this.alpha = alpha.value
+                }
+        ) {
+            Column(modifier = Modifier.padding(24.dp)) {
+                Text(
+                    text = "Delete Preset",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "Are you sure you want to delete '$presetName'?",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 12.dp)
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 24.dp),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = { dismissThen(onCancel) }) {
+                        Text("Cancel")
+                    }
+                    Button(
+                        onClick = { dismissThen(onConfirm) },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        Text("Delete")
                     }
                 }
             }

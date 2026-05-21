@@ -1,5 +1,6 @@
 package com.autonion.automationcompanion.features.visual_trigger.ui
 
+import android.content.Intent as AndroidIntent
 import android.graphics.BitmapFactory
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.*
@@ -44,6 +45,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.autonion.automationcompanion.features.visual_trigger.models.VisionPreset
+import com.autonion.automationcompanion.features.visual_trigger.service.CaptureOverlayService
+import com.autonion.automationcompanion.features.visual_trigger.service.VisionExecutionService
 import com.autonion.automationcompanion.ui.components.AuroraBackground
 import androidx.compose.material.icons.outlined.Info
 import com.autonion.automationcompanion.features.omni_chatbot.ui.LocalStartWalkthrough
@@ -253,7 +256,12 @@ fun VisionTriggerScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        viewModel.deletePreset(presetToDelete!!.id)
+                        val preset = presetToDelete!!
+                        viewModel.deletePreset(preset.id)
+                        // Stop overlay services if they are running
+                        val appCtx = viewModel.getApplication<android.app.Application>()
+                        appCtx.stopService(AndroidIntent(appCtx, CaptureOverlayService::class.java))
+                        appCtx.stopService(AndroidIntent(appCtx, VisionExecutionService::class.java))
                         presetToDelete = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF1744)),
