@@ -27,6 +27,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.autonion.automationcompanion.ui.theme.DarkBannerBackground
@@ -629,14 +630,42 @@ fun TabletBrandingPanel(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Version + GitHub
-            Text(
-                text = "v1.0.4  ·  github.com/Autonion",
-                style = MaterialTheme.typography.bodySmall.copy(
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                    fontSize = 12.sp
+            // Version + GitHub + Privacy Policy
+            val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "v1.0.6  ·  ",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        fontSize = 12.sp
+                    )
                 )
-            )
+                Text(
+                    text = "GitHub",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                        fontSize = 12.sp,
+                        textDecoration = TextDecoration.Underline
+                    ),
+                    modifier = Modifier.clickable { uriHandler.openUri("https://github.com/Autonion") }
+                )
+                Text(
+                    text = "  ·  ",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        fontSize = 12.sp
+                    )
+                )
+                Text(
+                    text = "Privacy Policy",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                        fontSize = 12.sp,
+                        textDecoration = TextDecoration.Underline
+                    ),
+                    modifier = Modifier.clickable { uriHandler.openUri("https://autonion.github.io/autonion-policies/") }
+                )
+            }
         }
     }
 }
