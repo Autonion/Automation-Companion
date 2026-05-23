@@ -93,37 +93,42 @@ private fun CompactHomeLayout(
         // Section Title
         item {
             StaggeredEntry(index = 1) {
-                // ── Getting Started Checklist ──
-                val context = LocalContext.current
-                val onboardingPrefs = remember { OnboardingPreferences.getInstance(context) }
-                var isDismissed by remember { mutableStateOf(onboardingPrefs.isGettingStartedDismissed) }
-                val isAccessibilityEnabled = AccessibilityRouter.isServiceConnected()
-                val isAIConnected = onboardingPrefs.hasConnectedAI
-                val hasCreatedAutomation = onboardingPrefs.hasCreatedFirstAutomation
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    // ── Getting Started Checklist ──
+                    val context = LocalContext.current
+                    val onboardingPrefs = remember { OnboardingPreferences.getInstance(context) }
+                    var isDismissed by remember { mutableStateOf(onboardingPrefs.isGettingStartedDismissed) }
+                    val isAccessibilityEnabled = AccessibilityRouter.isServiceConnected()
+                    val isAIConnected = onboardingPrefs.hasConnectedAI
+                    val hasCreatedAutomation = onboardingPrefs.hasCreatedFirstAutomation
 
-                if (!isDismissed) {
-                    GettingStartedCard(
-                        isAccessibilityEnabled = isAccessibilityEnabled,
-                        isAIConnected = isAIConnected,
-                        hasCreatedAutomation = hasCreatedAutomation,
-                        onConnectAI = { /* The Omni-Chat FAB is the entry point */ },
-                        onCreateAutomation = { onOpen(AutomationRoutes.GESTURE) },
-                        onDismiss = {
-                            onboardingPrefs.isGettingStartedDismissed = true
-                            isDismissed = true
-                        }
+                    if (!isDismissed) {
+                        GettingStartedCard(
+                            isAccessibilityEnabled = isAccessibilityEnabled,
+                            isAIConnected = isAIConnected,
+                            hasCreatedAutomation = hasCreatedAutomation,
+                            onConnectAI = { /* The Omni-Chat FAB is the entry point */ },
+                            onCreateAutomation = { onOpen(AutomationRoutes.GESTURE) },
+                            onDismiss = {
+                                onboardingPrefs.isGettingStartedDismissed = true
+                                isDismissed = true
+                            }
+                        )
+                    }
+
+                    Text(
+                        "Tools & Features",
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onBackground
+                        ),
+                        modifier = Modifier.padding(
+                            start = 24.dp,
+                            top = if (isDismissed) 24.dp else 12.dp,
+                            bottom = 16.dp
+                        )
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
                 }
-
-                Text(
-                    "Tools & Features",
-                    style = MaterialTheme.typography.titleLarge.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground
-                    ),
-                    modifier = Modifier.padding(start = 24.dp, top = 24.dp, bottom = 16.dp)
-                )
             }
         }
 
