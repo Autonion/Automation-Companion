@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sensors
+import androidx.compose.material.icons.filled.Accessibility
 import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -50,7 +51,9 @@ private val OfflineRed = Color(0xFFEF5350)
 private val UnknownGray = Color(0xFF9E9E9E)
 
 @Composable
-fun DeviceManagementScreen() {
+fun DeviceManagementScreen(
+    onAccessibilityNeeded: () -> Unit = {}
+) {
     val context = LocalContext.current
     val manager = CrossDeviceAutomationManager.getInstance(context)
     val viewModel = viewModel { DeviceManagementViewModel(manager) }
@@ -132,45 +135,105 @@ fun DeviceManagementScreen() {
             // Clipboard Sync
             item {
                 val isClipboardSyncEnabled by viewModel.isClipboardSyncEnabled.collectAsState()
+                var pendingClipboardEnable by remember { mutableStateOf(false) }
+                val isAccessibilityConnected by com.autonion.automationcompanion.AccessibilityRouter.isConnected.collectAsState()
+
+                // Auto-enable clipboard sync when user returns from granting accessibility
+                LaunchedEffect(isAccessibilityConnected) {
+                    if (pendingClipboardEnable && isAccessibilityConnected) {
+                        viewModel.toggleClipboardSync(true)
+                        pendingClipboardEnable = false
+                    }
+                }
 
                 GlassSettingsCard {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            Icons.Default.ContentCopy,
-                            contentDescription = null,
-                            tint = AccentBlue.copy(alpha = 0.7f),
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                "Sync Clipboard",
-                                color = Color.White,
-                                fontWeight = FontWeight.Medium,
-                                fontSize = 14.sp
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.ContentCopy,
+                                contentDescription = null,
+                                tint = AccentBlue.copy(alpha = 0.7f),
+                                modifier = Modifier.size(20.dp)
                             )
-                            Text(
-                                "Automatically share copied text",
-                                color = Color.White.copy(alpha = 0.4f),
-                                fontSize = 12.sp
+                            Spacer(Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "Sync Clipboard",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Medium,
+                                    fontSize = 14.sp
+                                )
+                                Text(
+                                    if (isClipboardSyncEnabled && !isAccessibilityConnected)
+                                        "Requires Accessibility Service"
+                                    else
+                                        "Automatically share copied text",
+                                    color = if (isClipboardSyncEnabled && !isAccessibilityConnected)
+                                        Color(0xFFFF6B6B).copy(alpha = 0.8f)
+                                    else
+                                        Color.White.copy(alpha = 0.4f),
+                                    fontSize = 12.sp
+                                )
+                            }
+
+                            Switch(
+                                checked = isClipboardSyncEnabled,
+                                onCheckedChange = { enabled ->
+                                    if (enabled && !isAccessibilityConnected) {
+                                        // Remember the user's intent, then show disclosure
+                                        pendingClipboardEnable = true
+                                        onAccessibilityNeeded()
+                                    } else {
+                                        viewModel.toggleClipboardSync(enabled)
+                                    }
+                                },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color.White,
+                                    checkedTrackColor = if (isClipboardSyncEnabled && !isAccessibilityConnected)
+                                        Color(0xFFFF6B6B).copy(alpha = 0.6f)
+                                    else
+                                        AccentBlue,
+                                    uncheckedThumbColor = Color.White.copy(alpha = 0.6f),
+                                    uncheckedTrackColor = Color.White.copy(alpha = 0.1f)
+                                )
                             )
                         }
 
-                        Switch(
-                            checked = isClipboardSyncEnabled,
-                            onCheckedChange = viewModel::toggleClipboardSync,
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color.White,
-                                checkedTrackColor = AccentBlue,
-                                uncheckedThumbColor = Color.White.copy(alpha = 0.6f),
-                                uncheckedTrackColor = Color.White.copy(alpha = 0.1f)
-                            )
-                        )
+                        // Warning when clipboard sync is enabled but accessibility is off
+                        if (isClipboardSyncEnabled && !isAccessibilityConnected) {
+                            Spacer(Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color(0xFFFF6B6B).copy(alpha = 0.1f))
+                                    .clickable {
+                                        pendingClipboardEnable = true
+                                        onAccessibilityNeeded()
+                                    }
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.Accessibility,
+                                    contentDescription = null,
+                                    tint = Color(0xFFFF6B6B),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    "Tap to enable Accessibility Service for clipboard sync",
+                                    color = Color(0xFFFF6B6B).copy(alpha = 0.9f),
+                                    fontSize = 11.sp,
+                                    lineHeight = 14.sp
+                                )
+                            }
+                        }
                     }
                 }
             }

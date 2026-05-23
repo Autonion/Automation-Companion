@@ -76,14 +76,7 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
 
     val context = LocalContext.current
     var showPermissionDialog by remember { mutableStateOf(false) }
-    var dialogAlreadyShown by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
-        if (!dialogAlreadyShown && !com.autonion.automationcompanion.AccessibilityRouter.isServiceConnected()) {
-            showPermissionDialog = true
-            dialogAlreadyShown = true
-        }
-    }
 
     val scope = rememberCoroutineScope()
     val startWalkthrough = LocalStartWalkthrough.current
@@ -222,7 +215,9 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
                     label = "TabContent"
                 ) { tab ->
                     when (tab) {
-                        0 -> DeviceManagementScreen()
+                        0 -> DeviceManagementScreen(
+                            onAccessibilityNeeded = { showPermissionDialog = true }
+                        )
                         1, 2 -> {
                             // Ask & Rules tabs need agent + LLM connection
                             Box(modifier = Modifier.fillMaxSize()) {
