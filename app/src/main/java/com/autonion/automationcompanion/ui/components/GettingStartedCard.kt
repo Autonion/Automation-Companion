@@ -47,7 +47,6 @@ private val CardBg = Color(0xFF1A1D2E)
  */
 @Composable
 fun GettingStartedCard(
-    isAccessibilityEnabled: Boolean,
     isAIConnected: Boolean,
     hasCreatedAutomation: Boolean,
     onConnectAI: () -> Unit,
@@ -57,7 +56,6 @@ fun GettingStartedCard(
     // Calculate completion
     val steps = listOf(
         ChecklistStep("Install app", Icons.Default.Download, true),
-        ChecklistStep("Grant accessibility", Icons.Default.Accessibility, isAccessibilityEnabled),
         ChecklistStep("Connect AI", Icons.Default.SmartToy, isAIConnected),
         ChecklistStep("Create your first automation", Icons.Default.AutoFixHigh, hasCreatedAutomation)
     )
@@ -152,19 +150,11 @@ fun GettingStartedCard(
             Spacer(Modifier.height(16.dp))
 
             // Checklist items
-            val context = LocalContext.current
             steps.forEachIndexed { index, step ->
                 ChecklistRow(
                     step = step,
                     onClick = when {
                         step.isComplete -> null
-                        step.label == "Grant accessibility" -> {
-                            {
-                                context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
-                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                })
-                            }
-                        }
                         step.label == "Connect AI" -> onConnectAI
                         step.label == "Create your first automation" -> onCreateAutomation
                         else -> null

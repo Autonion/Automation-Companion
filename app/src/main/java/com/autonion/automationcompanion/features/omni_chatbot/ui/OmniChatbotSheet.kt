@@ -404,11 +404,12 @@ private fun OmniChatSheet(viewModel: OmniChatbotViewModel) {
                                     }
                                 }
 
-                                // ── Input Bar (always accessible) ──
+                                // ── Input Bar ──
                                 ChatInputBar(
                                     value = inputText,
                                     onValueChange = { viewModel.onInputChanged(it) },
-                                    onSend = { viewModel.processPrompt() }
+                                    onSend = { viewModel.processPrompt() },
+                                    enabled = isAIReady
                                 )
                             }
                         }
@@ -1883,7 +1884,8 @@ private fun ChatBubble(
 private fun ChatInputBar(
     value: String,
     onValueChange: (String) -> Unit,
-    onSend: () -> Unit
+    onSend: () -> Unit,
+    enabled: Boolean = true
 ) {
     val focusManager = LocalFocusManager.current
     Column(
@@ -1892,7 +1894,7 @@ private fun ChatInputBar(
             .imePadding()
     ) {
         androidx.compose.animation.AnimatedVisibility(
-            visible = value.startsWith("/") && value.length < 8,
+            visible = enabled && value.startsWith("/") && value.length < 8,
             enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandVertically(),
             exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkVertically()
         ) {
@@ -1924,17 +1926,26 @@ private fun ChatInputBar(
                 .fillMaxWidth()
                 .padding(horizontal = 12.dp, vertical = 8.dp)
                 .clip(RoundedCornerShape(28.dp))
-                .background(InputBarBg)
+                .background(if (enabled) InputBarBg else InputBarBg.copy(alpha = 0.35f))
+                .then(
+                    if (enabled) Modifier
+                    else Modifier.border(
+                        1.dp,
+                        Color.White.copy(alpha = 0.05f),
+                        RoundedCornerShape(28.dp)
+                    )
+                )
                 .padding(horizontal = 6.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             TextField(
                 value = value,
                 onValueChange = onValueChange,
+                enabled = enabled,
                 modifier = Modifier.weight(1f),
                 placeholder = {
                     Text(
-                        "Ask anything...",
+                        if (enabled) "Ask anything..." else "Connect AI to start chatting...",
                         color = Color.White.copy(alpha = 0.3f)
                     )
                 },
@@ -1945,7 +1956,10 @@ private fun ChatInputBar(
                     unfocusedIndicatorColor = Color.Transparent,
                     cursorColor = AccentPurple,
                     focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White
+                    unfocusedTextColor = Color.White,
+                    disabledTextColor = Color.White.copy(alpha = 0.4f),
+                    disabledContainerColor = Color.Transparent,
+                    disabledIndicatorColor = Color.Transparent
                 ),
                 maxLines = 3,
                 textStyle = LocalTextStyle.current.copy(fontSize = 14.sp)
@@ -1954,7 +1968,7 @@ private fun ChatInputBar(
         // Send button with pulse animation
         val hasText = value.isNotBlank()
         val sendScale by animateFloatAsState(
-            targetValue = if (hasText) 1f else 0.7f,
+            targetValue = if (enabled && hasText) 1f else 0.7f,
             animationSpec = spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMedium),
             label = "sendScale"
         )
@@ -1964,20 +1978,20 @@ private fun ChatInputBar(
                 focusManager.clearFocus()
                 onSend()
             },
-            enabled = hasText,
+            enabled = enabled && hasText,
             modifier = Modifier
                 .scale(sendScale)
                 .size(40.dp)
                 .clip(CircleShape)
                 .background(
-                    if (hasText) Brush.horizontalGradient(UserBubbleGrad)
+                    if (enabled && hasText) Brush.horizontalGradient(UserBubbleGrad)
                     else Brush.horizontalGradient(listOf(Color.Transparent, Color.Transparent))
                 )
         ) {
             Icon(
                 Icons.AutoMirrored.Filled.Send,
                 contentDescription = "Send",
-                tint = Color.White.copy(alpha = if (hasText) 1f else 0.3f),
+                tint = Color.White.copy(alpha = if (enabled && hasText) 1f else 0.15f),
                 modifier = Modifier.size(18.dp)
             )
         }

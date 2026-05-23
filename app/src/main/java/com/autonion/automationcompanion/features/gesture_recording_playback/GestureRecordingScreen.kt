@@ -92,6 +92,7 @@ fun GestureRecordingScreen(onBack: () -> Unit = {}) {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(ctx: Context?, intent: Intent?) {
                 if (intent?.action == OverlayService.ACTION_PRESET_SAVED) {
+                    onboardingPrefs.hasCreatedFirstAutomation = true
                     // reload presets
                     coroutineScope.launch { loadPresets(context, presetsState) }
                 }
@@ -123,6 +124,7 @@ fun GestureRecordingScreen(onBack: () -> Unit = {}) {
                 val nameTrim = newName.trim()
                 if (nameTrim.isNotEmpty()) {
                     PresetManager.savePreset(context, nameTrim, emptyList())
+                    onboardingPrefs.hasCreatedFirstAutomation = true
                     coroutineScope.launch { loadPresets(context, presetsState) }
                     startOverlayIfAllowed(nameTrim)
                 }

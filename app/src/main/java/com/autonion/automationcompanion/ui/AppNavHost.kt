@@ -188,7 +188,13 @@ fun AppNavHost() {
             }
 
             composable(ROUTE_HOME) {
-                HomeScreen(onOpen = { route -> navController.navigate(route) })
+                HomeScreen(
+                    onOpen = { route -> navController.navigate(route) },
+                    onConnectAI = {
+                        omniViewModel.expand()
+                        omniViewModel.openSettingsWithMode(com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.CLOUD_API)
+                    }
+                )
             }
 
         composable(AutomationRoutes.GESTURE) {

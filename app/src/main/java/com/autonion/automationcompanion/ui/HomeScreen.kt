@@ -35,7 +35,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 
 @Composable
-fun HomeScreen(onOpen: (String) -> Unit) {
+fun HomeScreen(
+    onOpen: (String) -> Unit,
+    onConnectAI: () -> Unit
+) {
     val windowWidthSize = rememberWindowWidthSize()
 
     AuroraBackground {
@@ -45,6 +48,7 @@ fun HomeScreen(onOpen: (String) -> Unit) {
             when (windowWidthSize) {
                 WindowWidthSize.Compact -> CompactHomeLayout(
                     onOpen = onOpen,
+                    onConnectAI = onConnectAI,
                     innerPadding = innerPadding
                 )
                 WindowWidthSize.Medium -> MediumHomeLayout(
@@ -67,6 +71,7 @@ fun HomeScreen(onOpen: (String) -> Unit) {
 @Composable
 private fun CompactHomeLayout(
     onOpen: (String) -> Unit,
+    onConnectAI: () -> Unit,
     innerPadding: PaddingValues
 ) {
     val isDark = isSystemInDarkTheme()
@@ -98,16 +103,14 @@ private fun CompactHomeLayout(
                     val context = LocalContext.current
                     val onboardingPrefs = remember { OnboardingPreferences.getInstance(context) }
                     var isDismissed by remember { mutableStateOf(onboardingPrefs.isGettingStartedDismissed) }
-                    val isAccessibilityEnabled = AccessibilityRouter.isServiceConnected()
                     val isAIConnected = onboardingPrefs.hasConnectedAI
                     val hasCreatedAutomation = onboardingPrefs.hasCreatedFirstAutomation
 
                     if (!isDismissed) {
                         GettingStartedCard(
-                            isAccessibilityEnabled = isAccessibilityEnabled,
                             isAIConnected = isAIConnected,
                             hasCreatedAutomation = hasCreatedAutomation,
-                            onConnectAI = { /* The Omni-Chat FAB is the entry point */ },
+                            onConnectAI = onConnectAI,
                             onCreateAutomation = { onOpen(AutomationRoutes.GESTURE) },
                             onDismiss = {
                                 onboardingPrefs.isGettingStartedDismissed = true
@@ -655,5 +658,5 @@ private fun HomeFooter() {
 @Preview
 @Composable
 fun HomeScreenPreview() {
-    HomeScreen(onOpen = {})
+    HomeScreen(onOpen = {}, onConnectAI = {})
 }
