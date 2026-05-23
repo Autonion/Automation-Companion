@@ -30,12 +30,19 @@ object OnboardingPreferences {
 
     private lateinit var prefs: SharedPreferences
 
+    // Compose State backed properties for real-time reactivity
+    private val _hasConnectedAI = androidx.compose.runtime.mutableStateOf(false)
+    private val _hasCreatedFirstAutomation = androidx.compose.runtime.mutableStateOf(false)
+
     fun getInstance(context: Context): OnboardingPreferences {
         if (!::prefs.isInitialized) {
             synchronized(this) {
                 if (!::prefs.isInitialized) {
                     prefs = context.applicationContext
                         .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                    // Sync initial values from SharedPreferences
+                    _hasConnectedAI.value = prefs.getBoolean(KEY_HAS_CONNECTED_AI, false)
+                    _hasCreatedFirstAutomation.value = prefs.getBoolean(KEY_HAS_CREATED_AUTOMATION, false)
                 }
             }
         }
@@ -55,12 +62,18 @@ object OnboardingPreferences {
         set(value) = prefs.edit().putBoolean(KEY_CHECKLIST_DISMISSED, value).apply()
 
     var hasConnectedAI: Boolean
-        get() = prefs.getBoolean(KEY_HAS_CONNECTED_AI, false)
-        set(value) = prefs.edit().putBoolean(KEY_HAS_CONNECTED_AI, value).apply()
+        get() = _hasConnectedAI.value
+        set(value) {
+            prefs.edit().putBoolean(KEY_HAS_CONNECTED_AI, value).apply()
+            _hasConnectedAI.value = value
+        }
 
     var hasCreatedFirstAutomation: Boolean
-        get() = prefs.getBoolean(KEY_HAS_CREATED_AUTOMATION, false)
-        set(value) = prefs.edit().putBoolean(KEY_HAS_CREATED_AUTOMATION, value).apply()
+        get() = _hasCreatedFirstAutomation.value
+        set(value) {
+            prefs.edit().putBoolean(KEY_HAS_CREATED_AUTOMATION, value).apply()
+            _hasCreatedFirstAutomation.value = value
+        }
 
     /**
      * Returns true if all Getting Started checklist items are complete.
@@ -105,5 +118,7 @@ object OnboardingPreferences {
      */
     fun resetAll() {
         prefs.edit().clear().apply()
+        _hasConnectedAI.value = false
+        _hasCreatedFirstAutomation.value = false
     }
 }

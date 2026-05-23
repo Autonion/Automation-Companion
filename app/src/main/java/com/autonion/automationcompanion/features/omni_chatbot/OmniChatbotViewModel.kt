@@ -229,6 +229,18 @@ class OmniChatbotViewModel(
                 Log.e(TAG, "Error collecting desktop responses", e)
             }
         }
+
+        // Track successful connection of any AI engine to complete onboarding checklist row
+        viewModelScope.launch {
+            isAIReady.collect { ready ->
+                if (ready) {
+                    Log.d(TAG, "AI connection status verified as ready. Updating onboarding preferences.")
+                    com.autonion.automationcompanion.core.onboarding.OnboardingPreferences
+                        .getInstance(context)
+                        .hasConnectedAI = true
+                }
+            }
+        }
     }
 
     // ─── Input Handling ─────────────────────────────────────
