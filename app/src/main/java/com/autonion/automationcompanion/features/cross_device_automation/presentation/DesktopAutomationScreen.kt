@@ -540,83 +540,90 @@ fun CreateDesktopRuleDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
+        val isDark = isSystemInDarkTheme()
+        val dialogBg = if (isDark) Color(0xFF1A1D2E) else Color(0xFFFFFFFF)
+        val dialogBorder = if (isDark) CardBorder else Color.Black.copy(alpha = 0.08f)
+        val textColor = if (isDark) Color.White else Color(0xFF1A1C1E)
+        val secondaryTextColor = if (isDark) Color.White.copy(alpha = 0.5f) else Color.Black.copy(alpha = 0.5f)
+        val unfocusedLabelColor = if (isDark) Color.White.copy(alpha = 0.4f) else Color.Black.copy(alpha = 0.45f)
+
         Box(
             modifier = Modifier
                 .fillMaxWidth(0.92f)
                 .height(600.dp)
                 .clip(RoundedCornerShape(24.dp))
-                .background(Color(0xFF1A1D2E)) // Solid opaque background
-                .background(CardBorder, RoundedCornerShape(24.dp))
+                .background(dialogBg)
+                .border(1.dp, dialogBorder, RoundedCornerShape(24.dp))
                 .padding(20.dp)
         ) {
-            AppTheme(darkTheme = true) { // Force dark theme for this dialog to match the custom colors
-                CompositionLocalProvider(LocalContentColor provides Color.White) {
+            AppTheme(darkTheme = isDark) {
+                CompositionLocalProvider(LocalContentColor provides textColor) {
                     Column(modifier = Modifier.fillMaxSize()) {
                         // Header
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column {
-                        Text(
-                            text = "New Sync Rule",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 18.sp
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = if (step == 1) "Define trigger condition" else "Choose actions to trigger",
-                            color = Color.White.copy(alpha = 0.5f),
-                            fontSize = 12.sp
-                        )
-                    }
-                    
-                    IconButton(onClick = onDismiss) {
-                        Icon(
-                            Icons.Rounded.Close,
-                            contentDescription = "Close",
-                            tint = Color.White.copy(alpha = 0.5f),
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
-                
-                Spacer(modifier = Modifier.height(10.dp))
-                
-                // Progress indicator
-                StepIndicator(step = step)
-                
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                // Form content area
-                Box(modifier = Modifier.weight(1f)) {
-                    if (step == 1) {
-                        Column(modifier = Modifier.fillMaxSize()) {
-                            OutlinedTextField(
-                                value = name,
-                                onValueChange = { name = it },
-                                label = { Text("Rule Name") },
-                                placeholder = { Text("e.g. DND Meeting Mode") },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp),
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = AccentPurple,
-                                    unfocusedBorderColor = CardBorder,
-                                    focusedLabelColor = AccentPurple,
-                                    unfocusedLabelColor = Color.White.copy(alpha = 0.4f),
-                                    focusedTextColor = Color.White,
-                                    unfocusedTextColor = Color.White,
-                                    cursorColor = AccentPurple
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text(
+                                    text = "New Sync Rule",
+                                    color = textColor,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 18.sp
                                 )
-                            )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = if (step == 1) "Define trigger condition" else "Choose actions to trigger",
+                                    color = secondaryTextColor,
+                                    fontSize = 12.sp
+                                )
+                            }
+                            
+                            IconButton(onClick = onDismiss) {
+                                Icon(
+                                    Icons.Rounded.Close,
+                                    contentDescription = "Close",
+                                    tint = textColor.copy(alpha = 0.5f),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                        
+                        Spacer(modifier = Modifier.height(10.dp))
+                        
+                        // Progress indicator
+                        StepIndicator(step = step)
+                        
+                        Spacer(modifier = Modifier.height(16.dp))
+                        
+                        // Form content area
+                        Box(modifier = Modifier.weight(1f)) {
+                            if (step == 1) {
+                                Column(modifier = Modifier.fillMaxSize()) {
+                                    OutlinedTextField(
+                                        value = name,
+                                        onValueChange = { name = it },
+                                        label = { Text("Rule Name") },
+                                        placeholder = { Text("e.g. DND Meeting Mode") },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedBorderColor = AccentPurple,
+                                            unfocusedBorderColor = dialogBorder,
+                                            focusedLabelColor = AccentPurple,
+                                            unfocusedLabelColor = unfocusedLabelColor,
+                                            focusedTextColor = textColor,
+                                            unfocusedTextColor = textColor,
+                                            cursorColor = AccentPurple
+                                        )
+                                    )
                             
                             Spacer(modifier = Modifier.height(16.dp))
                             
                             Text(
                                 "Trigger Condition",
-                                color = Color.White.copy(alpha = 0.8f),
+                                color = textColor.copy(alpha = 0.85f),
                                 fontSize = 13.sp,
                                 fontWeight = FontWeight.SemiBold
                             )
@@ -682,11 +689,11 @@ fun CreateDesktopRuleDialog(
                                     shape = RoundedCornerShape(12.dp),
                                     colors = OutlinedTextFieldDefaults.colors(
                                         focusedBorderColor = AccentPurple,
-                                        unfocusedBorderColor = CardBorder,
+                                        unfocusedBorderColor = dialogBorder,
                                         focusedLabelColor = AccentPurple,
-                                        unfocusedLabelColor = Color.White.copy(alpha = 0.4f),
-                                        focusedTextColor = Color.White,
-                                        unfocusedTextColor = Color.White,
+                                        unfocusedLabelColor = unfocusedLabelColor,
+                                        focusedTextColor = textColor,
+                                        unfocusedTextColor = textColor,
                                         cursorColor = AccentPurple
                                     )
                                 )
@@ -726,7 +733,7 @@ fun CreateDesktopRuleDialog(
                     if (step == 1) {
                         TextButton(
                             onClick = onDismiss,
-                            colors = ButtonDefaults.textButtonColors(contentColor = Color.White.copy(alpha = 0.6f))
+                            colors = ButtonDefaults.textButtonColors(contentColor = textColor.copy(alpha = 0.6f))
                         ) {
                             Text("Cancel")
                         }
@@ -758,7 +765,7 @@ fun CreateDesktopRuleDialog(
                     } else {
                         TextButton(
                             onClick = { step = 1 },
-                            colors = ButtonDefaults.textButtonColors(contentColor = Color.White.copy(alpha = 0.6f))
+                            colors = ButtonDefaults.textButtonColors(contentColor = textColor.copy(alpha = 0.6f))
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -810,13 +817,14 @@ fun CreateDesktopRuleDialog(
 
 @Composable
 private fun StepIndicator(step: Int) {
+    val isDark = isSystemInDarkTheme()
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         val activeColor = AccentPurple
-        val inactiveColor = Color.White.copy(alpha = 0.1f)
+        val inactiveColor = if (isDark) Color.White.copy(alpha = 0.1f) else Color.Black.copy(alpha = 0.08f)
         
         Box(
             modifier = Modifier
@@ -846,9 +854,14 @@ private fun CategoryCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val isDark = isSystemInDarkTheme()
+    val textLabelColor = if (isDark) Color.White else Color(0xFF1A1C1E)
+    val cardGlass = if (isDark) CardGlass else Color.White.copy(alpha = 0.7f)
+    val dialogBorder = if (isDark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.08f)
+
     val borderWidth = if (isSelected) 1.5.dp else 1.dp
-    val borderColor = if (isSelected) color else Color.White.copy(alpha = 0.08f)
-    val bgColor = if (isSelected) color.copy(alpha = 0.15f) else CardGlass
+    val borderColor = if (isSelected) color else dialogBorder
+    val bgColor = if (isSelected) color.copy(alpha = if (isDark) 0.15f else 0.08f) else cardGlass
     
     Box(
         modifier = modifier
@@ -867,7 +880,7 @@ private fun CategoryCard(
                     modifier = Modifier
                         .size(32.dp)
                         .clip(RoundedCornerShape(8.dp))
-                        .background(color.copy(alpha = 0.2f)),
+                        .background(color.copy(alpha = if (isDark) 0.2f else 0.12f)),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
@@ -880,7 +893,7 @@ private fun CategoryCard(
                 
                 Text(
                     text = label,
-                    color = Color.White,
+                    color = textLabelColor,
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp
                 )
@@ -888,7 +901,7 @@ private fun CategoryCard(
             
             Text(
                 text = description,
-                color = Color.White.copy(alpha = 0.6f),
+                color = textLabelColor.copy(alpha = 0.6f),
                 fontSize = 10.sp,
                 lineHeight = 13.sp,
                 maxLines = 2,
