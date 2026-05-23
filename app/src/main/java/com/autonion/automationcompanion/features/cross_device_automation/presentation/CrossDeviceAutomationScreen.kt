@@ -103,7 +103,7 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
                 "**Clipboard sync** is automatic once connected!"
             ),
             icon = androidx.compose.material.icons.Icons.Default.Devices,
-            iconColor = Color(0xFF448AFF),
+            iconColor = Color(0xFF7C4DFF),
             youtubeLink = null,
             onDismiss = { onboardingPrefs.markTipSeen("cross_device"); showTip = false },
             onShowWalkthrough = { showTip = false; startWalkthrough("cross_device") }

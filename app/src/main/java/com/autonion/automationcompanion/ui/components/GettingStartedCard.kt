@@ -18,6 +18,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import android.content.Intent
+import android.provider.Settings
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -150,11 +152,19 @@ fun GettingStartedCard(
             Spacer(Modifier.height(16.dp))
 
             // Checklist items
+            val context = LocalContext.current
             steps.forEachIndexed { index, step ->
                 ChecklistRow(
                     step = step,
                     onClick = when {
                         step.isComplete -> null
+                        step.label == "Grant accessibility" -> {
+                            {
+                                context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                })
+                            }
+                        }
                         step.label == "Connect AI" -> onConnectAI
                         step.label == "Create your first automation" -> onCreateAutomation
                         else -> null

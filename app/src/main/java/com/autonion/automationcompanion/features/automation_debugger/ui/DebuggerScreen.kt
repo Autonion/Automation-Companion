@@ -63,7 +63,7 @@ fun DebuggerScreen(
                 "Use **Clear All** to reset logs when troubleshooting"
             ),
             icon = androidx.compose.material.icons.Icons.Default.BugReport,
-            iconColor = androidx.compose.ui.graphics.Color(0xFFFF5252),
+            iconColor = androidx.compose.ui.graphics.Color(0xFF757575),
             youtubeLink = null,
             onDismiss = { onboardingPrefs.markTipSeen("debugger"); showTip = false }
         )

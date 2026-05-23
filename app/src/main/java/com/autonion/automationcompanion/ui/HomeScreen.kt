@@ -168,7 +168,7 @@ private fun CompactHomeLayout(
                     GridCard(
                         title = "Visual Triggers",
                         description = "Automate actions based on detected visual regions.",
-                        icon = Icons.Default.ChatBubble,
+                        icon = Icons.Default.Screenshot,
                         iconColor = Color.White,
                         iconContainerColor = AccentGreen,
                         onClick = { onOpen(AutomationRoutes.VISUAL_TRIGGER) },
@@ -334,7 +334,7 @@ private fun MediumHomeLayout(
                 GridCard(
                     title = "Visual Triggers",
                     description = "Automate actions based on detected visual regions.",
-                    icon = Icons.Default.ChatBubble,
+                    icon = Icons.Default.Screenshot,
                     iconColor = Color.White,
                     iconContainerColor = AccentGreen,
                     onClick = { onOpen(AutomationRoutes.VISUAL_TRIGGER) },
@@ -507,7 +507,7 @@ private fun ExpandedHomeLayout(
                     GridCard(
                         title = "Visual Triggers",
                         description = "Automate actions based on detected visual regions.",
-                        icon = Icons.Default.ChatBubble,
+                        icon = Icons.Default.Screenshot,
                         iconColor = Color.White,
                         iconContainerColor = AccentGreen,
                         onClick = { onOpen(AutomationRoutes.VISUAL_TRIGGER) },

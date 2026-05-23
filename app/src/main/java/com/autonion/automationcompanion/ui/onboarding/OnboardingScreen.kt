@@ -60,7 +60,7 @@ fun OnboardingScreen(
     onComplete: () -> Unit,
     onNavigateToRoute: (String) -> Unit
 ) {
-    val pagerState = rememberPagerState(pageCount = { 4 })
+    val pagerState = rememberPagerState(pageCount = { 3 })
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val onboardingPrefs = remember { OnboardingPreferences.getInstance(context) }
@@ -83,7 +83,7 @@ fun OnboardingScreen(
                     .padding(top = 48.dp, bottom = 8.dp),
                 horizontalArrangement = Arrangement.Center
             ) {
-                repeat(4) { index ->
+                repeat(3) { index ->
                     val isActive = pagerState.currentPage == index
                     val width by animateDpAsState(
                         targetValue = if (isActive) 24.dp else 8.dp,
@@ -112,8 +112,7 @@ fun OnboardingScreen(
                 when (page) {
                     0 -> WelcomePage()
                     1 -> AISetupPage()
-                    2 -> PermissionsPage()
-                    3 -> QuickStartPage(
+                    2 -> QuickStartPage(
                         onPickFeature = { route -> finishOnboarding(route) },
                         onGoHome = { finishOnboarding() }
                     )
@@ -129,7 +128,7 @@ fun OnboardingScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // Skip
-                if (pagerState.currentPage < 3) {
+                if (pagerState.currentPage < 2) {
                     TextButton(onClick = { finishOnboarding() }) {
                         Text(
                             "Skip",
@@ -142,7 +141,7 @@ fun OnboardingScreen(
                 }
 
                 // Next / Get Started
-                if (pagerState.currentPage < 3) {
+                if (pagerState.currentPage < 2) {
                     Button(
                         onClick = {
                             scope.launch {
@@ -339,26 +338,23 @@ private fun AISetupPage() {
 
         Spacer(Modifier.height(32.dp))
 
-        // AI option cards
+        // AI option cards (now neutral glassmorphic to avoid selected-state confusion)
         AIOptionCard(
             emoji = "☁️",
             title = "Cloud API",
-            subtitle = "OpenAI, Groq, or any compatible service",
-            color = AccentBlue
+            subtitle = "OpenAI, Groq, or any compatible service"
         )
         Spacer(Modifier.height(12.dp))
         AIOptionCard(
             emoji = "🖥️",
             title = "Ollama Server",
-            subtitle = "Run models on your PC",
-            color = AccentGreen
+            subtitle = "Run models on your PC"
         )
         Spacer(Modifier.height(12.dp))
         AIOptionCard(
             emoji = "📱",
             title = "On-Device SLM",
-            subtitle = "Run a small model directly on your phone",
-            color = AccentPurple
+            subtitle = "Run a small model directly on your phone"
         )
 
         Spacer(Modifier.height(24.dp))
@@ -376,13 +372,12 @@ private fun AISetupPage() {
 private fun AIOptionCard(
     emoji: String,
     title: String,
-    subtitle: String,
-    color: Color
+    subtitle: String
 ) {
     Surface(
-        color = color.copy(alpha = 0.08f),
+        color = CardGlass,
         shape = RoundedCornerShape(14.dp),
-        border = BorderStroke(1.dp, color.copy(alpha = 0.15f)),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
@@ -403,155 +398,6 @@ private fun AIOptionCard(
                     subtitle,
                     color = Color.White.copy(alpha = 0.5f),
                     fontSize = 12.sp
-                )
-            }
-        }
-    }
-}
-
-// ═════════════════════════════════════════════════════════════
-//  PAGE 3: PERMISSIONS
-// ═════════════════════════════════════════════════════════════
-
-@Composable
-private fun PermissionsPage() {
-    val context = LocalContext.current
-
-    // Check accessibility status
-    var isAccessibilityEnabled by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        isAccessibilityEnabled = isAccessibilityServiceEnabled(context)
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Icon(
-            Icons.Default.Security,
-            contentDescription = null,
-            tint = AccentGreen,
-            modifier = Modifier.size(56.dp)
-        )
-
-        Spacer(Modifier.height(24.dp))
-
-        Text(
-            "Enable Superpowers",
-            color = Color.White,
-            fontSize = 24.sp,
-            fontWeight = FontWeight.Bold,
-            textAlign = TextAlign.Center
-        )
-
-        Spacer(Modifier.height(8.dp))
-
-        Text(
-            "These permissions let Autonion interact with your screen.\nYou can enable them later too.",
-            color = Color.White.copy(alpha = 0.5f),
-            fontSize = 14.sp,
-            textAlign = TextAlign.Center,
-            lineHeight = 20.sp
-        )
-
-        Spacer(Modifier.height(32.dp))
-
-        // Accessibility Service
-        PermissionCard(
-            icon = Icons.Default.Accessibility,
-            title = "Accessibility Service",
-            description = "Required for gesture playback, UI automation, and screen interaction",
-            isEnabled = isAccessibilityEnabled,
-            onClick = {
-                context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                })
-            }
-        )
-
-        Spacer(Modifier.height(12.dp))
-
-        // Display Over Other Apps
-        var canDrawOverlays by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
-        PermissionCard(
-            icon = Icons.Default.Layers,
-            title = "Display Over Other Apps",
-            description = "Required for floating controls, gesture recording overlay, and visual triggers",
-            isEnabled = canDrawOverlays,
-            onClick = {
-                context.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                })
-            }
-        )
-    }
-}
-
-@Composable
-private fun PermissionCard(
-    icon: ImageVector,
-    title: String,
-    description: String,
-    isEnabled: Boolean,
-    onClick: () -> Unit
-) {
-    Surface(
-        onClick = if (!isEnabled) onClick else ({}),
-        color = if (isEnabled) AccentGreen.copy(alpha = 0.1f) else CardGlass,
-        shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(
-            1.dp,
-            if (isEnabled) AccentGreen.copy(alpha = 0.3f) else Color.White.copy(alpha = 0.08f)
-        ),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(
-                        if (isEnabled) AccentGreen.copy(alpha = 0.2f)
-                        else Color.White.copy(alpha = 0.08f)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    if (isEnabled) Icons.Default.CheckCircle else icon,
-                    contentDescription = null,
-                    tint = if (isEnabled) AccentGreen else Color.White.copy(alpha = 0.7f),
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-            Spacer(Modifier.width(14.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    title,
-                    color = Color.White,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    description,
-                    color = Color.White.copy(alpha = 0.5f),
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp
-                )
-            }
-            if (!isEnabled) {
-                Spacer(Modifier.width(8.dp))
-                Icon(
-                    Icons.Default.ChevronRight,
-                    contentDescription = null,
-                    tint = Color.White.copy(alpha = 0.3f),
-                    modifier = Modifier.size(20.dp)
                 )
             }
         }

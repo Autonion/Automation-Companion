@@ -54,7 +54,7 @@ fun VisualTriggerRoute(
                 "Requires **Accessibility** and **Screen Capture** permissions"
             ),
             icon = Icons.Default.Screenshot,
-            iconColor = androidx.compose.ui.graphics.Color(0xFFFF9800),
+            iconColor = androidx.compose.ui.graphics.Color(0xFF00E676),
             youtubeLink = null,
             onDismiss = { onboardingPrefs.markTipSeen("visual_trigger"); showTip = false }
         )

@@ -44,7 +44,7 @@ fun GestureRecordingScreen(onBack: () -> Unit = {}) {
                 "Use the **play button** to replay a recorded gesture preset"
             ),
             icon = Icons.Default.TouchApp,
-            iconColor = Color(0xFF7C4DFF),
+            iconColor = Color(0xFF448AFF),
             youtubeLink = null,
             onDismiss = { onboardingPrefs.markTipSeen("gesture_recording"); showTip = false }
         )

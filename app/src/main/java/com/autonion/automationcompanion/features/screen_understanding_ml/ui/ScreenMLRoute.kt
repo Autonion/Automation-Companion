@@ -87,7 +87,7 @@ fun ScreenMLRoute(onBack: () -> Unit) {
                 "Create **multi-step presets** that run automatic UI interactions"
             ),
             icon = androidx.compose.material.icons.Icons.AutoMirrored.Filled.ViewQuilt,
-            iconColor = androidx.compose.ui.graphics.Color(0xFF00BCD4),
+            iconColor = androidx.compose.ui.graphics.Color(0xFF448AFF),
             youtubeLink = null,
             onDismiss = { onboardingPrefs.markTipSeen("screen_ml"); showTip = false }
         )

@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.BatteryStd
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.SettingsSystemDaydream
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -85,8 +86,8 @@ fun SystemContextMainScreen(onBack: () -> Unit) {
                 "Rules run **automatically** in the background when conditions are met",
                 "Combine triggers like **location + time** for powerful automations"
             ),
-            icon = androidx.compose.material.icons.Icons.Default.Schedule,
-            iconColor = androidx.compose.ui.graphics.Color(0xFFF9AB00),
+            icon = androidx.compose.material.icons.Icons.Default.SettingsSystemDaydream,
+            iconColor = androidx.compose.ui.graphics.Color(0xFF448AFF),
             youtubeLink = null,
             onDismiss = { onboardingPrefs.markTipSeen("system_context"); showTip = false },
             onShowWalkthrough = { showTip = false; startWalkthrough("system_context") }

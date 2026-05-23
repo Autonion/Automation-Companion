@@ -49,7 +49,7 @@ fun FlowBuilderMainScreen(
                 "**Long-press** a node for options like duplicate, delete, or configure"
             ),
             icon = Icons.Default.AccountTree,
-            iconColor = Color(0xFF448AFF),
+            iconColor = Color(0xFF7C4DFF),
             youtubeLink = null,
             onDismiss = { onboardingPrefs.markTipSeen("flow_builder"); showTip = false }
         )

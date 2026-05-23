@@ -98,8 +98,8 @@ fun SemanticAutomationScreen(
                 "Type a natural language command like **'open YouTube and play music'**",
                 "The AI agent will **take control** of your screen to execute the task"
             ),
-            icon = Icons.Default.SmartToy,
-            iconColor = Color(0xFF7C4DFF),
+            icon = Icons.Default.AutoAwesome,
+            iconColor = Color(0xFFFF9800),
             youtubeLink = null,
             onDismiss = { onboardingPrefs.markTipSeen("semantic_automation"); showTip = false },
             onShowWalkthrough = { showTip = false; startWalkthrough("semantic_automation") }
