@@ -6,6 +6,7 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -29,6 +30,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.foundation.border
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -59,6 +62,11 @@ fun DeviceManagementScreen(
     val viewModel = viewModel { DeviceManagementViewModel(manager) }
     val devices by viewModel.devices.collectAsState()
     val isEnabled by viewModel.isFeatureEnabled.collectAsState()
+
+    val isDark = isSystemInDarkTheme()
+    val textColor = if (isDark) Color.White else Color(0xFF1A1C1E)
+    val secondaryTextColor = if (isDark) Color.White.copy(alpha = 0.6f) else Color(0xFF1A1C1E).copy(alpha = 0.6f)
+    val disabledColor = if (isDark) Color.White.copy(alpha = 0.4f) else Color(0xFF1A1C1E).copy(alpha = 0.4f)
 
     Box(
         modifier = Modifier.fillMaxSize(),
@@ -105,13 +113,13 @@ fun DeviceManagementScreen(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             "Cross-Device Automation",
-                            color = Color.White,
+                            color = textColor,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 15.sp
                         )
                         Text(
                             if (isEnabled) "Running in background" else "Disabled",
-                            color = if (isEnabled) OnlineGreen.copy(alpha = 0.8f) else Color.White.copy(alpha = 0.4f),
+                            color = if (isEnabled) OnlineGreen.copy(alpha = 0.8f) else disabledColor,
                             fontSize = 12.sp
                         )
                     }
@@ -122,8 +130,8 @@ fun DeviceManagementScreen(
                         colors = SwitchDefaults.colors(
                             checkedThumbColor = Color.White,
                             checkedTrackColor = AccentPurple,
-                            uncheckedThumbColor = Color.White.copy(alpha = 0.6f),
-                            uncheckedTrackColor = Color.White.copy(alpha = 0.1f)
+                            uncheckedThumbColor = if (isDark) Color.White.copy(alpha = 0.6f) else Color.Black.copy(alpha = 0.4f),
+                            uncheckedTrackColor = if (isDark) Color.White.copy(alpha = 0.1f) else Color.Black.copy(alpha = 0.1f)
                         )
                     )
                 }
@@ -164,7 +172,7 @@ fun DeviceManagementScreen(
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     "Sync Clipboard",
-                                    color = Color.White,
+                                    color = textColor,
                                     fontWeight = FontWeight.Medium,
                                     fontSize = 14.sp
                                 )
@@ -176,7 +184,7 @@ fun DeviceManagementScreen(
                                     color = if (isClipboardSyncEnabled && !isAccessibilityConnected)
                                         Color(0xFFFF6B6B).copy(alpha = 0.8f)
                                     else
-                                        Color.White.copy(alpha = 0.4f),
+                                        disabledColor,
                                     fontSize = 12.sp
                                 )
                             }
@@ -198,8 +206,8 @@ fun DeviceManagementScreen(
                                         Color(0xFFFF6B6B).copy(alpha = 0.6f)
                                     else
                                         AccentBlue,
-                                    uncheckedThumbColor = Color.White.copy(alpha = 0.6f),
-                                    uncheckedTrackColor = Color.White.copy(alpha = 0.1f)
+                                    uncheckedThumbColor = if (isDark) Color.White.copy(alpha = 0.6f) else Color.Black.copy(alpha = 0.4f),
+                                    uncheckedTrackColor = if (isDark) Color.White.copy(alpha = 0.1f) else Color.Black.copy(alpha = 0.1f)
                                 )
                             )
                         }
@@ -249,13 +257,13 @@ fun DeviceManagementScreen(
                             Icon(
                                 Icons.Default.Settings,
                                 contentDescription = null,
-                                tint = Color.White.copy(alpha = 0.5f),
+                                tint = textColor.copy(alpha = 0.5f),
                                 modifier = Modifier.size(20.dp)
                             )
                             Spacer(Modifier.width(12.dp))
                             Text(
                                 "Background Settings",
-                                color = Color.White,
+                                color = textColor,
                                 fontWeight = FontWeight.Medium,
                                 fontSize = 14.sp
                             )
@@ -292,7 +300,10 @@ fun DeviceManagementScreen(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = Color.White.copy(alpha = 0.7f)
+                                contentColor = textColor.copy(alpha = 0.7f)
+                            ),
+                            border = ButtonDefaults.outlinedButtonBorder.copy(
+                                brush = SolidColor(textColor.copy(alpha = 0.15f))
                             )
                         ) {
                             Text(
@@ -305,7 +316,7 @@ fun DeviceManagementScreen(
                             Spacer(Modifier.height(6.dp))
                             Text(
                                 "Battery optimization disabled. If disconnection persists, check 'App Settings > Battery'.",
-                                color = Color.White.copy(alpha = 0.3f),
+                                color = secondaryTextColor.copy(alpha = 0.5f),
                                 fontSize = 11.sp,
                                 lineHeight = 15.sp
                             )
@@ -320,7 +331,7 @@ fun DeviceManagementScreen(
             Spacer(Modifier.height(4.dp))
             Text(
                 "Discovered Devices",
-                color = Color.White.copy(alpha = 0.6f),
+                color = textColor.copy(alpha = 0.6f),
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 13.sp,
                 letterSpacing = 1.sp,
@@ -331,11 +342,11 @@ fun DeviceManagementScreen(
         // ─── Empty + Scanning ───────────────────────
         if (devices.isEmpty()) {
             item {
-                ScanningState()
+                ScanningState(isDark, textColor)
             }
             // ── Setup Guide (LLM-independent) ──
             item {
-                SetupGuideCard()
+                SetupGuideCard(isDark, textColor)
             }
         }
 
@@ -353,16 +364,24 @@ fun DeviceManagementScreen(
 
 @Composable
 private fun GlassSettingsCard(content: @Composable ColumnScope.() -> Unit) {
+    val isDark = isSystemInDarkTheme()
+    val cardGlass = if (isDark) CardGlass else Color.White.copy(alpha = 0.65f)
+    val cardBorder = if (isDark) CardBorder else Color.Black.copy(alpha = 0.05f)
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
+            .then(
+                if (!isDark) Modifier.border(1.dp, Color.Black.copy(alpha = 0.06f), RoundedCornerShape(16.dp))
+                else Modifier
+            )
             .background(
                 Brush.verticalGradient(
-                    listOf(CardGlass, CardGlass.copy(alpha = 0.35f))
+                    listOf(cardGlass, cardGlass.copy(alpha = 0.35f))
                 )
             )
-            .background(CardBorder, RoundedCornerShape(16.dp))
+            .background(cardBorder, RoundedCornerShape(16.dp))
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -376,7 +395,7 @@ private fun GlassSettingsCard(content: @Composable ColumnScope.() -> Unit) {
 // ═══════════════════════════════════════════════════════════════
 
 @Composable
-private fun ScanningState() {
+private fun ScanningState(isDark: Boolean, textColor: Color) {
     val infiniteTransition = rememberInfiniteTransition(label = "scan")
     val pulseAlpha by infiniteTransition.animateFloat(
         initialValue = 0.3f,
@@ -424,13 +443,13 @@ private fun ScanningState() {
             Spacer(Modifier.height(16.dp))
             Text(
                 "Scanning for devices...",
-                color = Color.White.copy(alpha = 0.5f),
+                color = textColor.copy(alpha = 0.5f),
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium
             )
             Text(
                 "Make sure devices are on the same network",
-                color = Color.White.copy(alpha = 0.3f),
+                color = textColor.copy(alpha = 0.3f),
                 fontSize = 12.sp,
                 textAlign = TextAlign.Center
             )
@@ -443,24 +462,30 @@ private fun ScanningState() {
 // ═══════════════════════════════════════════════════════════════
 
 @Composable
-private fun SetupGuideCard() {
+private fun SetupGuideCard(isDark: Boolean, textColor: Color) {
     val context = LocalContext.current
     val agentUrl = "https://github.com/Autonion/Autonion-Agent/releases"
     val extensionUrl = "https://github.com/Autonion/Autonion-Extension/releases"
+
+    val cardBorder = if (isDark) CardBorder else Color.Black.copy(alpha = 0.05f)
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
+            .then(
+                if (!isDark) Modifier.border(1.dp, Color.Black.copy(alpha = 0.06f), RoundedCornerShape(16.dp))
+                else Modifier
+            )
             .background(
                 Brush.verticalGradient(
                     listOf(
-                        AccentPurple.copy(alpha = 0.10f),
-                        AccentBlue.copy(alpha = 0.08f)
+                        AccentPurple.copy(alpha = if (isDark) 0.10f else 0.15f),
+                        AccentBlue.copy(alpha = if (isDark) 0.08f else 0.12f)
                     )
                 )
             )
-            .background(CardBorder, RoundedCornerShape(16.dp))
+            .background(cardBorder, RoundedCornerShape(16.dp))
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -477,17 +502,17 @@ private fun SetupGuideCard() {
                 Spacer(Modifier.width(8.dp))
                 Text(
                     "Getting Started",
-                    color = Color.White,
+                    color = textColor,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 15.sp
                 )
             }
 
             // Steps
-            SetupStep("1", "Download & install the Autonion Desktop Agent on your PC")
-            SetupStep("2", "Run the Desktop Agent and ensure both devices are on the same WiFi")
-            SetupStep("3", "Your desktop will appear above automatically via mDNS discovery")
-            SetupStep("4", "For browser tasks, also install the Autonion Extension in Chrome")
+            SetupStep("1", "Download & install the Autonion Desktop Agent on your PC", textColor)
+            SetupStep("2", "Run the Desktop Agent and ensure both devices are on the same WiFi", textColor)
+            SetupStep("3", "Your desktop will appear above automatically via mDNS discovery", textColor)
+            SetupStep("4", "For browser tasks, also install the Autonion Extension in Chrome", textColor)
 
             Spacer(Modifier.height(4.dp))
 
@@ -547,7 +572,7 @@ private fun SetupGuideCard() {
 }
 
 @Composable
-private fun SetupStep(number: String, text: String) {
+private fun SetupStep(number: String, text: String, textColor: Color) {
     Row(
         verticalAlignment = Alignment.Top,
         modifier = Modifier.padding(start = 4.dp)
@@ -569,7 +594,7 @@ private fun SetupStep(number: String, text: String) {
         Spacer(Modifier.width(10.dp))
         Text(
             text,
-            color = Color.White.copy(alpha = 0.6f),
+            color = textColor.copy(alpha = 0.6f),
             fontSize = 13.sp,
             lineHeight = 18.sp
         )
@@ -598,6 +623,11 @@ private fun StaggeredDeviceItem(device: Device, index: Int, onToggleSelection: (
 
 @Composable
 private fun DeviceGlassCard(device: Device, onToggleSelection: () -> Unit) {
+    val isDark = isSystemInDarkTheme()
+    val cardGlass = if (isDark) CardGlass else Color.White.copy(alpha = 0.65f)
+    val cardBorder = if (isDark) CardBorder else Color.Black.copy(alpha = 0.05f)
+    val textColor = if (isDark) Color.White else Color(0xFF1A1C1E)
+
     val statusColor = when (device.status) {
         DeviceStatus.ONLINE -> OnlineGreen
         DeviceStatus.OFFLINE -> OfflineRed
@@ -622,13 +652,17 @@ private fun DeviceGlassCard(device: Device, onToggleSelection: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
+            .then(
+                if (!isDark) Modifier.border(1.dp, Color.Black.copy(alpha = 0.06f), RoundedCornerShape(16.dp))
+                else Modifier
+            )
             .background(
                 Brush.verticalGradient(
-                    listOf(CardGlass, CardGlass.copy(alpha = 0.35f))
+                    listOf(cardGlass, cardGlass.copy(alpha = 0.35f))
                 )
             )
             .background(
-                if (device.isSelected) AccentPurple.copy(alpha = 0.08f) else CardBorder,
+                if (device.isSelected) AccentPurple.copy(alpha = 0.08f) else cardBorder,
                 RoundedCornerShape(16.dp)
             )
             .clickable { onToggleSelection() }
@@ -660,14 +694,14 @@ private fun DeviceGlassCard(device: Device, onToggleSelection: () -> Unit) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     device.name,
-                    color = Color.White,
+                    color = textColor,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 15.sp
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
                     device.ipAddress,
-                    color = Color.White.copy(alpha = 0.4f),
+                    color = textColor.copy(alpha = 0.4f),
                     fontSize = 12.sp
                 )
             }
@@ -715,7 +749,7 @@ private fun DeviceGlassCard(device: Device, onToggleSelection: () -> Unit) {
             Icon(
                 imageVector = if (device.isSelected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
                 contentDescription = if (device.isSelected) "Connected" else "Tap to connect",
-                tint = if (device.isSelected) AccentPurple else Color.White.copy(alpha = 0.3f),
+                tint = if (device.isSelected) AccentPurple else textColor.copy(alpha = 0.3f),
                 modifier = Modifier.size(24.dp)
             )
         }

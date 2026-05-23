@@ -18,6 +18,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material3.*
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,9 +47,15 @@ fun ChatHistoryPanel(
     onDeleteSession: (OmniChatSessionEntity) -> Unit,
     onClose: () -> Unit
 ) {
+    val isDark = isSystemInDarkTheme()
+    val sheetBg = if (isDark) SheetBg else Color(0xFFF3F6FD)
+    val textColor = if (isDark) Color.White else Color(0xFF1A1C1E)
+    val secondaryTextColor = if (isDark) Color.White.copy(alpha = 0.4f) else Color(0xFF1A1C1E).copy(alpha = 0.5f)
+    val iconCloseTint = if (isDark) Color.White.copy(alpha = 0.6f) else Color(0xFF1A1C1E).copy(alpha = 0.6f)
+
     Surface(
         modifier = Modifier.fillMaxSize(),
-        color = SheetBg.copy(alpha = 0.97f)
+        color = sheetBg.copy(alpha = 0.97f)
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             // Header
@@ -67,13 +74,13 @@ fun ChatHistoryPanel(
                 Spacer(Modifier.width(8.dp))
                 Text(
                     "Chat History",
-                    color = Color.White,
+                    color = textColor,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
                     modifier = Modifier.weight(1f)
                 )
                 IconButton(onClick = onClose) {
-                    Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White.copy(alpha = 0.6f))
+                    Icon(Icons.Default.Close, contentDescription = "Close", tint = iconCloseTint)
                 }
             }
 
@@ -86,13 +93,13 @@ fun ChatHistoryPanel(
                         Icon(
                             Icons.Default.ChatBubbleOutline,
                             contentDescription = null,
-                            tint = Color.White.copy(alpha = 0.2f),
+                            tint = textColor.copy(alpha = 0.2f),
                             modifier = Modifier.size(48.dp)
                         )
                         Spacer(Modifier.height(8.dp))
                         Text(
                             "No saved conversations",
-                            color = Color.White.copy(alpha = 0.4f),
+                            color = secondaryTextColor,
                             fontSize = 14.sp
                         )
                     }
@@ -122,6 +129,13 @@ private fun HistorySessionCard(
     onClick: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val isDark = isSystemInDarkTheme()
+    val cardGlass = if (isDark) CardGlass else Color.White.copy(alpha = 0.75f)
+    val cardBorderColor = if (isDark) Color.White.copy(alpha = 0.06f) else Color.Black.copy(alpha = 0.08f)
+    val textColor = if (isDark) Color.White else Color(0xFF1A1C1E)
+    val secondaryTextColor = if (isDark) Color.White.copy(alpha = 0.4f) else Color(0xFF1A1C1E).copy(alpha = 0.5f)
+    val iconDeleteTint = if (isDark) Color.White.copy(alpha = 0.35f) else Color(0xFF1A1C1E).copy(alpha = 0.45f)
+
     val context = LocalContext.current
     val dateStr = DateFormat.getDateFormat(context).format(Date(session.timestamp))
     val timeStr = DateFormat.getTimeFormat(context).format(Date(session.timestamp))
@@ -131,8 +145,8 @@ private fun HistorySessionCard(
             .fillMaxWidth()
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
-        color = CardGlass,
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.06f))
+        color = cardGlass,
+        border = BorderStroke(1.dp, cardBorderColor)
     ) {
         Row(
             modifier = Modifier.padding(12.dp),
@@ -141,7 +155,7 @@ private fun HistorySessionCard(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     session.previewText.take(60).ifBlank { "Untitled chat" },
-                    color = Color.White,
+                    color = textColor,
                     fontWeight = FontWeight.Medium,
                     fontSize = 14.sp,
                     maxLines = 1,
@@ -150,7 +164,7 @@ private fun HistorySessionCard(
                 Spacer(Modifier.height(4.dp))
                 Text(
                     "$dateStr • $timeStr",
-                    color = Color.White.copy(alpha = 0.4f),
+                    color = secondaryTextColor,
                     fontSize = 11.sp
                 )
             }
@@ -158,7 +172,7 @@ private fun HistorySessionCard(
                 Icon(
                     Icons.Default.Delete,
                     contentDescription = "Delete",
-                    tint = Color.White.copy(alpha = 0.35f),
+                    tint = iconDeleteTint,
                     modifier = Modifier.size(18.dp)
                 )
             }

@@ -4,6 +4,7 @@ package com.autonion.automationcompanion.ui.components
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -53,6 +54,11 @@ fun GettingStartedCard(
     onCreateAutomation: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val isDark = isSystemInDarkTheme()
+    val cardBg = if (isDark) CardBg else MaterialTheme.colorScheme.surface
+    val textColor = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface
+    val secondaryTextColor = if (isDark) Color.White.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+
     // Calculate completion
     val steps = listOf(
         ChecklistStep("Install app", Icons.Default.Download, true),
@@ -75,14 +81,14 @@ fun GettingStartedCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 24.dp, vertical = 8.dp),
-        color = CardBg,
+        color = cardBg,
         shape = RoundedCornerShape(20.dp),
         border = androidx.compose.foundation.BorderStroke(
             1.dp,
             Brush.horizontalGradient(
                 listOf(
-                    AccentPurple.copy(alpha = 0.3f),
-                    AccentBlue.copy(alpha = 0.3f)
+                    AccentPurple.copy(alpha = if (isDark) 0.3f else 0.4f),
+                    AccentBlue.copy(alpha = if (isDark) 0.3f else 0.4f)
                 )
             )
         ),
@@ -105,7 +111,7 @@ fun GettingStartedCard(
                 Spacer(Modifier.width(8.dp))
                 Text(
                     "Getting Started",
-                    color = Color.White,
+                    color = textColor,
                     fontSize = 17.sp,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.weight(1f)
@@ -117,7 +123,7 @@ fun GettingStartedCard(
                     Icon(
                         Icons.Default.Close,
                         contentDescription = "Dismiss",
-                        tint = Color.White.copy(alpha = 0.4f),
+                        tint = textColor.copy(alpha = 0.4f),
                         modifier = Modifier.size(18.dp)
                     )
                 }
@@ -136,12 +142,12 @@ fun GettingStartedCard(
                         .height(6.dp)
                         .clip(RoundedCornerShape(3.dp)),
                     color = AccentPurple,
-                    trackColor = Color.White.copy(alpha = 0.1f)
+                    trackColor = if (isDark) Color.White.copy(alpha = 0.1f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
                 )
                 Spacer(Modifier.width(12.dp))
                 Text(
                     "$completedCount/$totalCount",
-                    color = Color.White.copy(alpha = 0.5f),
+                    color = secondaryTextColor,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -153,6 +159,8 @@ fun GettingStartedCard(
             steps.forEachIndexed { index, step ->
                 ChecklistRow(
                     step = step,
+                    isDark = isDark,
+                    baseTextColor = textColor,
                     onClick = when {
                         step.isComplete -> null
                         step.label == "Connect AI" -> onConnectAI
@@ -177,10 +185,12 @@ private data class ChecklistStep(
 @Composable
 private fun ChecklistRow(
     step: ChecklistStep,
+    isDark: Boolean,
+    baseTextColor: Color,
     onClick: (() -> Unit)?
 ) {
     val textColor by animateColorAsState(
-        targetValue = if (step.isComplete) Color.White.copy(alpha = 0.4f) else Color.White.copy(alpha = 0.85f),
+        targetValue = if (step.isComplete) baseTextColor.copy(alpha = if (isDark) 0.4f else 0.45f) else baseTextColor.copy(alpha = if (isDark) 0.85f else 0.9f),
         animationSpec = tween(300),
         label = "textColor"
     )
@@ -192,7 +202,7 @@ private fun ChecklistRow(
                 if (onClick != null) Modifier
                     .clip(RoundedCornerShape(10.dp))
                     .clickable(onClick = onClick)
-                    .background(Color.White.copy(alpha = 0.03f))
+                    .background(if (isDark) Color.White.copy(alpha = 0.03f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.04f))
                     .padding(horizontal = 10.dp, vertical = 8.dp)
                 else Modifier.padding(horizontal = 10.dp, vertical = 8.dp)
             ),
@@ -218,7 +228,7 @@ private fun ChecklistRow(
             Box(
                 modifier = Modifier
                     .size(22.dp)
-                    .border(1.5.dp, Color.White.copy(alpha = 0.2f), CircleShape)
+                    .border(1.5.dp, if (isDark) Color.White.copy(alpha = 0.2f) else baseTextColor.copy(alpha = 0.25f), CircleShape)
             )
         }
 
@@ -236,7 +246,7 @@ private fun ChecklistRow(
             Icon(
                 Icons.Default.ChevronRight,
                 contentDescription = null,
-                tint = Color.White.copy(alpha = 0.3f),
+                tint = if (isDark) Color.White.copy(alpha = 0.3f) else baseTextColor.copy(alpha = 0.35f),
                 modifier = Modifier.size(18.dp)
             )
         }

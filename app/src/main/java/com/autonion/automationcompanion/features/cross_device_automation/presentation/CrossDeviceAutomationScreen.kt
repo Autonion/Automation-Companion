@@ -41,6 +41,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.border
+import androidx.compose.foundation.isSystemInDarkTheme
 import com.autonion.automationcompanion.features.cross_device_automation.CrossDeviceAutomationManager
 import com.autonion.automationcompanion.features.system_context_automation.shared.ui.PermissionDisclosureDialog
 import com.autonion.automationcompanion.ui.components.AuroraBackground
@@ -77,6 +79,9 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     var showPermissionDialog by remember { mutableStateOf(false) }
 
+    val isDark = isSystemInDarkTheme()
+    val headerTextColor = if (isDark) Color.White else Color(0xFF1A1C1E)
+    val headerSubTextColor = if (isDark) Color.White.copy(alpha = 0.6f) else Color(0xFF1A1C1E).copy(alpha = 0.65f)
 
     val scope = rememberCoroutineScope()
     val startWalkthrough = LocalStartWalkthrough.current
@@ -131,26 +136,27 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
                         Text(
                             "Cross-Device",
                             fontWeight = FontWeight.Bold,
-                            fontSize = 22.sp
+                            fontSize = 22.sp,
+                            color = headerTextColor
                         )
                     },
                     navigationIcon = {
                         IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = headerTextColor)
                         }
                     },
                     actions = {
                         IconButton(onClick = { showHardwareRemoteSheet = true }) {
-                            Icon(Icons.Default.SettingsRemote, contentDescription = "Hardware Remote", tint = if (isHardwareRemoteActive) AccentPurple else Color.White)
+                            Icon(Icons.Default.SettingsRemote, contentDescription = "Hardware Remote", tint = if (isHardwareRemoteActive) AccentPurple else headerTextColor)
                         }
                         IconButton(onClick = { startWalkthrough("cross_device") }) {
-                            Icon(Icons.Outlined.Info, contentDescription = "Take a Walkthrough", tint = Color.White)
+                            Icon(Icons.Outlined.Info, contentDescription = "Take a Walkthrough", tint = headerTextColor)
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = Color.Transparent,
-                        titleContentColor = Color.White,
-                        navigationIconContentColor = Color.White
+                        titleContentColor = headerTextColor,
+                        navigationIconContentColor = headerTextColor
                     )
                 )
             }
@@ -184,7 +190,7 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
                     ) {
                         Text(
                             text = "Desktop Remote Active",
-                            color = Color.White,
+                            color = headerTextColor,
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp
                         )
@@ -200,6 +206,8 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
                 // ─── Tab Row ────────────────────
                 StyledTabRow(
                     selectedTab = selectedTab,
+                    isDark = isDark,
+                    headerTextColor = headerTextColor,
                     onTabSelected = { selectedTab = it }
                 )
 
@@ -278,27 +286,30 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
 private data class TabItem(val title: String, val icon: ImageVector)
 
 @Composable
-private fun StyledTabRow(selectedTab: Int, onTabSelected: (Int) -> Unit) {
+private fun StyledTabRow(selectedTab: Int, isDark: Boolean, headerTextColor: Color, onTabSelected: (Int) -> Unit) {
     val tabs = listOf(
         TabItem("Devices", Icons.Default.Devices),
         TabItem("Rules", Icons.AutoMirrored.Filled.Rule),
         TabItem("Ask", Icons.Default.SmartToy)
     )
 
+    val glassBgColor = if (isDark) GlassBg else Color.White.copy(alpha = 0.7f)
+    val unselectedColor = if (isDark) Color.White.copy(alpha = 0.5f) else Color.Black.copy(alpha = 0.5f)
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp)
             .clip(RoundedCornerShape(16.dp))
-            .background(GlassBg),
+            .then(
+                if (!isDark) Modifier.border(1.dp, Color.Black.copy(alpha = 0.06f), RoundedCornerShape(16.dp))
+                else Modifier
+            )
+            .background(glassBgColor),
         horizontalArrangement = Arrangement.SpaceEvenly
     ) {
         tabs.forEachIndexed { index, tab ->
             val isSelected = selectedTab == index
-            val animatedAlpha by animateFloatAsState(
-                targetValue = if (isSelected) 1f else 0f,
-                animationSpec = tween(200), label = "tabAlpha"
-            )
 
             Box(
                 modifier = Modifier
@@ -307,13 +318,8 @@ private fun StyledTabRow(selectedTab: Int, onTabSelected: (Int) -> Unit) {
                     .clip(RoundedCornerShape(12.dp))
                     .background(
                         if (isSelected) Brush.horizontalGradient(
-                            listOf(AccentPurple.copy(alpha = 0.4f), AccentBlue.copy(alpha = 0.3f))
+                            listOf(AccentPurple.copy(alpha = if (isDark) 0.4f else 0.85f), AccentBlue.copy(alpha = if (isDark) 0.3f else 0.75f))
                         ) else Brush.horizontalGradient(listOf(Color.Transparent, Color.Transparent))
-                    )
-                    .then(
-                        if (!isSelected) Modifier.background(Color.Transparent)
-                            .clip(RoundedCornerShape(12.dp))
-                        else Modifier
                     ),
                 contentAlignment = Alignment.Center
             ) {
@@ -325,12 +331,12 @@ private fun StyledTabRow(selectedTab: Int, onTabSelected: (Int) -> Unit) {
                         tab.icon,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp),
-                        tint = if (isSelected) Color.White else Color.White.copy(alpha = 0.5f)
+                        tint = if (isSelected) Color.White else unselectedColor
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
                         tab.title,
-                        color = if (isSelected) Color.White else Color.White.copy(alpha = 0.5f),
+                        color = if (isSelected) Color.White else unselectedColor,
                         fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
                         fontSize = 14.sp
                     )
@@ -357,6 +363,10 @@ fun PromptScreen() {
     val chatHistorySessions by viewModel.chatHistorySessions.collectAsState()
     val listState = rememberLazyListState()
 
+    val isDark = isSystemInDarkTheme()
+    val headerTextColor = if (isDark) Color.White else Color(0xFF1A1C1E)
+    val headerSubTextColor = if (isDark) Color.White.copy(alpha = 0.6f) else Color(0xFF1A1C1E).copy(alpha = 0.65f)
+
     LaunchedEffect(messages.size, messages.firstOrNull()?.text?.length) {
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(0)
@@ -377,22 +387,22 @@ fun PromptScreen() {
                     Icon(
                         Icons.Default.Add,
                         contentDescription = "New Chat",
-                        tint = Color.White.copy(alpha = 0.6f),
+                        tint = headerTextColor.copy(alpha = 0.6f),
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(Modifier.width(4.dp))
-                    Text("New Chat", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
+                    Text("New Chat", color = headerTextColor.copy(alpha = 0.6f), fontSize = 12.sp)
                 }
                 Spacer(Modifier.width(8.dp))
                 TextButton(onClick = { viewModel.toggleHistory() }) {
                     Icon(
                         Icons.Default.History,
                         contentDescription = "History",
-                        tint = Color.White.copy(alpha = 0.6f),
+                        tint = headerTextColor.copy(alpha = 0.6f),
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(Modifier.width(4.dp))
-                    Text("History", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
+                    Text("History", color = headerTextColor.copy(alpha = 0.6f), fontSize = 12.sp)
                 }
             }
 
@@ -405,7 +415,7 @@ fun PromptScreen() {
                         .fillMaxWidth(),
                     contentAlignment = Alignment.Center
                 ) {
-                    EmptyChatState()
+                    EmptyChatState(isDark, headerTextColor, headerSubTextColor)
                 }
             } else {
                 LazyColumn(
@@ -419,7 +429,7 @@ fun PromptScreen() {
                     contentPadding = PaddingValues(vertical = 12.dp)
                 ) {
                     items(messages, key = { it.id }) { message ->
-                        ChatBubble(message)
+                        ChatBubble(message, isDark)
                     }
                 }
             }
@@ -439,7 +449,8 @@ fun PromptScreen() {
                 ChatInputBar(
                     value = inputQuery,
                     onValueChange = viewModel::onQueryChanged,
-                    onSend = viewModel::sendPrompt
+                    onSend = viewModel::sendPrompt,
+                    isDark = isDark
                 )
             }
         }
@@ -463,7 +474,7 @@ fun PromptScreen() {
 }
 
 @Composable
-private fun EmptyChatState() {
+private fun EmptyChatState(isDark: Boolean, headerTextColor: Color, headerSubTextColor: Color) {
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     val pulseScale by infiniteTransition.animateFloat(
         initialValue = 0.92f,
@@ -487,14 +498,14 @@ private fun EmptyChatState() {
         Spacer(Modifier.height(16.dp))
         Text(
             "Start a conversation",
-            color = Color.White.copy(alpha = 0.6f),
+            color = headerTextColor.copy(alpha = 0.6f),
             fontSize = 16.sp,
             fontWeight = FontWeight.Medium
         )
         Spacer(Modifier.height(4.dp))
         Text(
             "Send commands to your connected devices",
-            color = Color.White.copy(alpha = 0.35f),
+            color = headerSubTextColor,
             fontSize = 13.sp,
             textAlign = TextAlign.Center
         )
@@ -502,10 +513,13 @@ private fun EmptyChatState() {
 }
 
 @Composable
-private fun ChatBubble(message: ChatMessage) {
+private fun ChatBubble(message: ChatMessage, isDark: Boolean) {
     val isUser = message.isUser
     val screenWidth = rememberScreenWidthDp()
     val bubbleMaxWidth = (screenWidth * 0.65f).coerceAtMost(480.dp)
+
+    val systemBubbleBg = if (isDark) SystemBubbleBg else Color(0xFFE8ECF5)
+    val systemBubbleText = if (isDark) Color.White else Color(0xFF1A1C1E)
 
     // Entrance animation
     var visible by remember { mutableStateOf(false) }
@@ -534,14 +548,14 @@ private fun ChatBubble(message: ChatMessage) {
                         if (isUser) Brush.horizontalGradient(
                             listOf(AccentPurple, AccentBlue)
                         ) else Brush.horizontalGradient(
-                            listOf(SystemBubbleBg, SystemBubbleBg)
+                            listOf(systemBubbleBg, systemBubbleBg)
                         )
                     )
                     .padding(horizontal = 14.dp, vertical = 10.dp)
             ) {
                 Text(
                     text = message.text,
-                    color = Color.White,
+                    color = if (isUser) Color.White else systemBubbleText,
                     fontSize = 14.sp,
                     lineHeight = 20.sp
                 )
@@ -550,7 +564,7 @@ private fun ChatBubble(message: ChatMessage) {
             // Timestamp
             Text(
                 text = formatTime(message.timestamp),
-                color = Color.White.copy(alpha = 0.3f),
+                color = if (isDark) Color.White.copy(alpha = 0.3f) else Color.Black.copy(alpha = 0.35f),
                 fontSize = 11.sp,
                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
             )
@@ -562,7 +576,8 @@ private fun ChatBubble(message: ChatMessage) {
 private fun ChatInputBar(
     value: String,
     onValueChange: (String) -> Unit,
-    onSend: () -> Unit
+    onSend: () -> Unit,
+    isDark: Boolean
 ) {
     val focusManager = LocalFocusManager.current
     Row(
@@ -571,7 +586,11 @@ private fun ChatInputBar(
             .widthIn(max = 680.dp)
             .padding(horizontal = 12.dp, vertical = 8.dp)
             .clip(RoundedCornerShape(28.dp))
-            .background(InputBarBg)
+            .then(
+                if (!isDark) Modifier.border(1.dp, Color.Black.copy(alpha = 0.06f), RoundedCornerShape(28.dp))
+                else Modifier
+            )
+            .background(if (isDark) InputBarBg else Color.White.copy(alpha = 0.85f))
             .padding(horizontal = 6.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -582,7 +601,7 @@ private fun ChatInputBar(
             placeholder = {
                 Text(
                     "Ask something...",
-                    color = Color.White.copy(alpha = 0.35f)
+                    color = if (isDark) Color.White.copy(alpha = 0.35f) else Color(0xFF1A1C1E).copy(alpha = 0.45f)
                 )
             },
             colors = TextFieldDefaults.colors(
@@ -591,8 +610,8 @@ private fun ChatInputBar(
                 focusedIndicatorColor = Color.Transparent,
                 unfocusedIndicatorColor = Color.Transparent,
                 cursorColor = AccentPurple,
-                focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White
+                focusedTextColor = if (isDark) Color.White else Color(0xFF1A1C1E),
+                unfocusedTextColor = if (isDark) Color.White else Color(0xFF1A1C1E)
             ),
             maxLines = 3,
             textStyle = LocalTextStyle.current.copy(fontSize = 15.sp)
@@ -628,7 +647,7 @@ private fun ChatInputBar(
             Icon(
                 Icons.AutoMirrored.Filled.Send,
                 contentDescription = "Send",
-                tint = Color.White.copy(alpha = sendAlpha),
+                tint = if (hasText) Color.White else (if (isDark) Color.White.copy(alpha = sendAlpha) else Color.Black.copy(alpha = sendAlpha)),
                 modifier = Modifier.size(20.dp)
             )
         }
