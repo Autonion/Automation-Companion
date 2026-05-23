@@ -50,6 +50,8 @@ import com.autonion.automationcompanion.features.omni_chatbot.ui.LocalStartWalkt
 import com.autonion.automationcompanion.features.cross_device_automation.engine.HardwareButtonMapper
 import com.autonion.automationcompanion.ui.components.ChatHistoryPanel
 import com.autonion.automationcompanion.ui.components.ConnectionRequiredOverlay
+import com.autonion.automationcompanion.core.onboarding.OnboardingPreferences
+import com.autonion.automationcompanion.ui.components.FeatureTipSheet
 import com.autonion.automationcompanion.ui.rememberScreenWidthDp
 import kotlinx.coroutines.launch
 import java.util.Date
@@ -87,6 +89,26 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
     val startWalkthrough = LocalStartWalkthrough.current
     var showHardwareRemoteSheet by remember { mutableStateOf(false) }
     val isHardwareRemoteActive by HardwareButtonMapper.isActive.collectAsState()
+
+    // ── First-visit Feature Tip ──
+    val onboardingPrefs = remember { OnboardingPreferences.getInstance(context) }
+    var showTip by remember { mutableStateOf(!onboardingPrefs.hasTipBeenSeen("cross_device")) }
+
+    if (showTip) {
+        FeatureTipSheet(
+            title = "Cross-Device Automation",
+            tips = listOf(
+                "Install the **Desktop Agent** on your PC first",
+                "Both devices must be on the **same WiFi network**",
+                "**Clipboard sync** is automatic once connected!"
+            ),
+            icon = androidx.compose.material.icons.Icons.Default.Devices,
+            iconColor = Color(0xFF448AFF),
+            youtubeLink = null,
+            onDismiss = { onboardingPrefs.markTipSeen("cross_device"); showTip = false },
+            onShowWalkthrough = { showTip = false; startWalkthrough("cross_device") }
+        )
+    }
 
     // NOTE: Clipboard sync lifecycle observer has been moved to AppNavHost
     // so it runs globally across all screens, not just this one.

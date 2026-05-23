@@ -305,6 +305,16 @@ class OmniChatbotViewModel(
         if (_showSettings.value) _showFAQBrowser.value = false
     }
 
+    /**
+     * Opens the settings panel pre-set to a specific inference mode.
+     * Used by the smart welcome message in OmniChatbotSheet.
+     */
+    fun openSettingsWithMode(mode: com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode) {
+        setInferenceMode(mode)
+        _showSettings.value = true
+        _showFAQBrowser.value = false
+    }
+
     fun toggleFAQBrowser() {
         _showFAQBrowser.value = !_showFAQBrowser.value
         if (_showFAQBrowser.value) _showSettings.value = false

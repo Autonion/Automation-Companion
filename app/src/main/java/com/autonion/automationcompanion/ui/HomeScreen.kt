@@ -14,6 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -26,6 +27,12 @@ import androidx.compose.material.icons.automirrored.filled.ViewQuilt
 import com.autonion.automationcompanion.ui.components.*
 import com.autonion.automationcompanion.ui.components.AuroraBackground
 import com.autonion.automationcompanion.ui.theme.*
+import com.autonion.automationcompanion.core.onboarding.OnboardingPreferences
+import com.autonion.automationcompanion.AccessibilityRouter
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 
 @Composable
 fun HomeScreen(onOpen: (String) -> Unit) {
@@ -86,6 +93,29 @@ private fun CompactHomeLayout(
         // Section Title
         item {
             StaggeredEntry(index = 1) {
+                // ── Getting Started Checklist ──
+                val context = LocalContext.current
+                val onboardingPrefs = remember { OnboardingPreferences.getInstance(context) }
+                var isDismissed by remember { mutableStateOf(onboardingPrefs.isGettingStartedDismissed) }
+                val isAccessibilityEnabled = AccessibilityRouter.isServiceConnected()
+                val isAIConnected = onboardingPrefs.hasConnectedAI
+                val hasCreatedAutomation = onboardingPrefs.hasCreatedFirstAutomation
+
+                if (!isDismissed) {
+                    GettingStartedCard(
+                        isAccessibilityEnabled = isAccessibilityEnabled,
+                        isAIConnected = isAIConnected,
+                        hasCreatedAutomation = hasCreatedAutomation,
+                        onConnectAI = { /* The Omni-Chat FAB is the entry point */ },
+                        onCreateAutomation = { onOpen(AutomationRoutes.GESTURE) },
+                        onDismiss = {
+                            onboardingPrefs.isGettingStartedDismissed = true
+                            isDismissed = true
+                        }
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
                 Text(
                     "Tools & Features",
                     style = MaterialTheme.typography.titleLarge.copy(

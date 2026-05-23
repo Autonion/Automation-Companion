@@ -4,15 +4,19 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.runtime.*
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
+import com.autonion.automationcompanion.core.onboarding.OnboardingPreferences
 import com.autonion.automationcompanion.features.gesture_recording_playback.managers.PresetManager
 import com.autonion.automationcompanion.features.gesture_recording_playback.overlay.OverlayService
 import com.autonion.automationcompanion.features.gesture_recording_playback.ui.components.ConfirmDeleteDialog
 import com.autonion.automationcompanion.features.gesture_recording_playback.ui.components.NewPresetDialog
 import com.autonion.automationcompanion.features.gesture_recording_playback.ui.presets.PresetsScreen
 import com.autonion.automationcompanion.features.gesture_recording_playback.utils.PermissionHelper
+import com.autonion.automationcompanion.ui.components.FeatureTipSheet
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
@@ -26,6 +30,25 @@ import android.content.Intent as AndroidIntent
 fun GestureRecordingScreen(onBack: () -> Unit = {}) {
     val context = LocalContext.current
     val permissionHelper = remember { PermissionHelper(context) }
+
+    // ── First-visit Feature Tip ──
+    val onboardingPrefs = remember { OnboardingPreferences.getInstance(context) }
+    var showTip by remember { mutableStateOf(!onboardingPrefs.hasTipBeenSeen("gesture_recording")) }
+
+    if (showTip) {
+        FeatureTipSheet(
+            title = "Gesture Recording",
+            tips = listOf(
+                "Tap **+ New Preset** to start recording a new gesture sequence",
+                "**Long-press** any action marker to edit its delay, duration, or type",
+                "Use the **play button** to replay a recorded gesture preset"
+            ),
+            icon = Icons.Default.TouchApp,
+            iconColor = Color(0xFF7C4DFF),
+            youtubeLink = null,
+            onDismiss = { onboardingPrefs.markTipSeen("gesture_recording"); showTip = false }
+        )
+    }
 
     // Compose-observed preset list
     val presetsState = remember { mutableStateListOf<String>() }

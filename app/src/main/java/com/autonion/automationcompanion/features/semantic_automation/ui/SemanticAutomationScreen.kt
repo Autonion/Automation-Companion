@@ -46,6 +46,8 @@ import androidx.compose.material.icons.outlined.Info
 import com.autonion.automationcompanion.features.omni_chatbot.ui.LocalStartWalkthrough
 import com.autonion.automationcompanion.ui.theme.*
 import com.autonion.automationcompanion.ui.rememberScreenWidthDp
+import com.autonion.automationcompanion.core.onboarding.OnboardingPreferences
+import com.autonion.automationcompanion.ui.components.FeatureTipSheet
 import kotlinx.coroutines.launch
 import java.util.*
 
@@ -83,6 +85,26 @@ fun SemanticAutomationScreen(
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+
+    // ── First-visit Feature Tip ──
+    val onboardingPrefs = remember { OnboardingPreferences.getInstance(context) }
+    var showTip by remember { mutableStateOf(!onboardingPrefs.hasTipBeenSeen("semantic_automation")) }
+
+    if (showTip) {
+        FeatureTipSheet(
+            title = "Semantic AI Agent",
+            tips = listOf(
+                "Connect an **AI model** first via ⚙ Settings in the top bar",
+                "Type a natural language command like **'open YouTube and play music'**",
+                "The AI agent will **take control** of your screen to execute the task"
+            ),
+            icon = Icons.Default.SmartToy,
+            iconColor = Color(0xFF7C4DFF),
+            youtubeLink = null,
+            onDismiss = { onboardingPrefs.markTipSeen("semantic_automation"); showTip = false },
+            onShowWalkthrough = { showTip = false; startWalkthrough("semantic_automation") }
+        )
+    }
 
     // ─── Chat History Persistence ─────────────────────────────
     val chatDao = remember { AppDatabase.get(context).omniChatDao() }

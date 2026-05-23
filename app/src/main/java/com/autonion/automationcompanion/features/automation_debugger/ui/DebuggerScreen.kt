@@ -32,6 +32,8 @@ import com.autonion.automationcompanion.features.automation_debugger.DebuggerVie
 import com.autonion.automationcompanion.ui.components.AuroraBackground
 import androidx.compose.material.icons.outlined.Info
 import com.autonion.automationcompanion.features.omni_chatbot.ui.LocalStartWalkthrough
+import com.autonion.automationcompanion.core.onboarding.OnboardingPreferences
+import com.autonion.automationcompanion.ui.components.FeatureTipSheet
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -46,6 +48,26 @@ fun DebuggerScreen(
     val isDark = isSystemInDarkTheme()
     var showClearDialog by remember { mutableStateOf(false) }
     val startWalkthrough = LocalStartWalkthrough.current
+
+    // ── First-visit Feature Tip ──
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val onboardingPrefs = remember { OnboardingPreferences.getInstance(context) }
+    var showTip by remember { mutableStateOf(!onboardingPrefs.hasTipBeenSeen("debugger")) }
+
+    if (showTip) {
+        FeatureTipSheet(
+            title = "Automation Debugger",
+            tips = listOf(
+                "Tap a **category card** to see detailed execution logs",
+                "Errors are highlighted in **red**, warnings in **orange**",
+                "Use **Clear All** to reset logs when troubleshooting"
+            ),
+            icon = androidx.compose.material.icons.Icons.Default.BugReport,
+            iconColor = androidx.compose.ui.graphics.Color(0xFFFF5252),
+            youtubeLink = null,
+            onDismiss = { onboardingPrefs.markTipSeen("debugger"); showTip = false }
+        )
+    }
 
     if (showClearDialog) {
         AlertDialog(

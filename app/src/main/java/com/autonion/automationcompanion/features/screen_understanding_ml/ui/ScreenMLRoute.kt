@@ -52,6 +52,8 @@ import com.autonion.automationcompanion.features.omni_chatbot.ui.LocalStartWalkt
 import com.autonion.automationcompanion.ui.isTablet
 import com.autonion.automationcompanion.ui.rememberWindowWidthSize
 import com.autonion.automationcompanion.ui.WindowWidthSize
+import com.autonion.automationcompanion.core.onboarding.OnboardingPreferences
+import com.autonion.automationcompanion.ui.components.FeatureTipSheet
 import kotlinx.coroutines.launch
 
 /**
@@ -71,6 +73,25 @@ fun ScreenMLRoute(onBack: () -> Unit) {
     val presets = remember { mutableStateListOf<AutomationPreset>() }
     var showDialog by remember { mutableStateOf(false) }
     var confirmDeleteFor by remember { mutableStateOf<AutomationPreset?>(null) }
+
+    // ── First-visit Feature Tip ──
+    val onboardingPrefs = remember { OnboardingPreferences.getInstance(context) }
+    var showTip by remember { mutableStateOf(!onboardingPrefs.hasTipBeenSeen("screen_ml")) }
+
+    if (showTip) {
+        FeatureTipSheet(
+            title = "UI Recognition AI",
+            tips = listOf(
+                "Tap **+ Add** to capture and analyze your current screen",
+                "The AI identifies **clickable elements** and their coordinates",
+                "Create **multi-step presets** that run automatic UI interactions"
+            ),
+            icon = androidx.compose.material.icons.Icons.AutoMirrored.Filled.ViewQuilt,
+            iconColor = androidx.compose.ui.graphics.Color(0xFF00BCD4),
+            youtubeLink = null,
+            onDismiss = { onboardingPrefs.markTipSeen("screen_ml"); showTip = false }
+        )
+    }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {

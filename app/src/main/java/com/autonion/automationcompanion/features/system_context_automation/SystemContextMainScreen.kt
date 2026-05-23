@@ -61,6 +61,8 @@ import com.autonion.automationcompanion.features.omni_chatbot.ui.LocalStartWalkt
 import com.autonion.automationcompanion.ui.isTablet
 import com.autonion.automationcompanion.ui.rememberWindowWidthSize
 import com.autonion.automationcompanion.ui.WindowWidthSize
+import com.autonion.automationcompanion.core.onboarding.OnboardingPreferences
+import com.autonion.automationcompanion.ui.components.FeatureTipSheet
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -70,6 +72,26 @@ fun SystemContextMainScreen(onBack: () -> Unit) {
     val startWalkthrough = LocalStartWalkthrough.current
     val tablet = isTablet()
     val windowWidthSize = rememberWindowWidthSize()
+
+    // ── First-visit Feature Tip ──
+    val onboardingPrefs = remember { OnboardingPreferences.getInstance(context) }
+    var showTip by remember { mutableStateOf(!onboardingPrefs.hasTipBeenSeen("system_context")) }
+
+    if (showTip) {
+        FeatureTipSheet(
+            title = "System Context Automation",
+            tips = listOf(
+                "Tap a **category card** to set up automation rules",
+                "Rules run **automatically** in the background when conditions are met",
+                "Combine triggers like **location + time** for powerful automations"
+            ),
+            icon = androidx.compose.material.icons.Icons.Default.Schedule,
+            iconColor = androidx.compose.ui.graphics.Color(0xFFF9AB00),
+            youtubeLink = null,
+            onDismiss = { onboardingPrefs.markTipSeen("system_context"); showTip = false },
+            onShowWalkthrough = { showTip = false; startWalkthrough("system_context") }
+        )
+    }
 
     AuroraBackground {
         Scaffold(

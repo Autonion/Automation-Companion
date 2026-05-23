@@ -355,88 +355,60 @@ private fun OmniChatSheet(viewModel: OmniChatbotViewModel) {
                         }
                         1 -> {
                             // ── Chat Tab ──
-                            Box(modifier = Modifier.fillMaxSize()) {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .then(if (!isAIReady) Modifier.blur(12.dp) else Modifier)
-                                ) {
-                                    // ── FAQ Chips ──
-                                    AnimatedVisibility(visible = messages.isEmpty() && !showSettings) {
-                                        FAQChipRow(
-                                            chips = faqChips,
-                                            onChipClick = { viewModel.processPrompt(it.question) }
-                                        )
-                                    }
-
-                                    // ── Messages ──
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .fillMaxWidth(),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        if (messages.isEmpty() && !showSettings) {
-                                            EmptyChatState()
-                                        } else {
-                                            LazyColumn(
-                                                modifier = Modifier
-                                                    .fillMaxSize()
-                                                    .padding(horizontal = 12.dp),
-                                                state = listState,
-                                                reverseLayout = true,
-                                                verticalArrangement = Arrangement.spacedBy(6.dp),
-                                                contentPadding = PaddingValues(vertical = 8.dp)
-                                            ) {
-                                                items(messages, key = { it.id }) { message ->
-                                                    ChatBubble(
-                                                        message = message,
-                                                        onStopTask = { taskId -> viewModel.stopScheduledTask(taskId) },
-                                                        onStartWalkthrough = { featureId -> viewModel.startWalkthrough(featureId, fromOmniChat = true) }
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    // ── Input Bar ──
-                                    ChatInputBar(
-                                        value = inputText,
-                                        onValueChange = { viewModel.onInputChanged(it) },
-                                        onSend = { viewModel.processPrompt() }
+                            Column(modifier = Modifier.fillMaxSize()) {
+                                // ── FAQ Chips ──
+                                AnimatedVisibility(visible = messages.isEmpty() && !showSettings && isAIReady) {
+                                    FAQChipRow(
+                                        chips = faqChips,
+                                        onChipClick = { viewModel.processPrompt(it.question) }
                                     )
                                 }
 
-                                if (!isAIReady) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .background(Color.Black.copy(alpha = 0.18f))
-                                            .clickable(
-                                                interactionSource = remember { MutableInteractionSource() },
-                                                indication = null,
-                                                onClick = {}
-                                            )
-                                            .pointerInput(Unit) {
-                                                awaitPointerEventScope {
-                                                    while (true) {
-                                                        awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
-                                                    }
-                                                }
-                                            },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        com.autonion.automationcompanion.ui.components.ConnectionRequiredOverlay(
-                                            message = "To use Omni-Chat AI, connect a Server LLM, select a Cloud API, or use an On-Device SLM.",
-                                            steps = listOf(
-                                                "Click the ⚙️ icon above.",
-                                                "Choose 'Server LLM' and enter your Ollama IP.",
-                                                "Or choose 'Cloud API' (configure in AI Engine Hub).",
-                                                "Or choose 'On-Device SLM' to run locally."
-                                            )
+                                // ── Messages ──
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxWidth(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (messages.isEmpty() && !showSettings) {
+                                        SmartWelcomeState(
+                                            isAIReady = isAIReady,
+                                            onOpenCloudApi = { viewModel.openSettingsWithMode(InferenceMode.CLOUD_API) },
+                                            onOpenServer = { viewModel.openSettingsWithMode(InferenceMode.SERVER_LLM) },
+                                            onOpenSLM = { viewModel.openSettingsWithMode(InferenceMode.LOCAL_SLM) },
+                                            onBrowseFAQs = { selectedTab = 0 },
+                                            onShowMeAround = {
+                                                viewModel.processPrompt("Show me around the app")
+                                            }
                                         )
+                                    } else {
+                                        LazyColumn(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .padding(horizontal = 12.dp),
+                                            state = listState,
+                                            reverseLayout = true,
+                                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                                            contentPadding = PaddingValues(vertical = 8.dp)
+                                        ) {
+                                            items(messages, key = { it.id }) { message ->
+                                                ChatBubble(
+                                                    message = message,
+                                                    onStopTask = { taskId -> viewModel.stopScheduledTask(taskId) },
+                                                    onStartWalkthrough = { featureId -> viewModel.startWalkthrough(featureId, fromOmniChat = true) }
+                                                )
+                                            }
+                                        }
                                     }
                                 }
+
+                                // ── Input Bar (always accessible) ──
+                                ChatInputBar(
+                                    value = inputText,
+                                    onValueChange = { viewModel.onInputChanged(it) },
+                                    onSend = { viewModel.processPrompt() }
+                                )
                             }
                         }
                     }
@@ -1459,9 +1431,21 @@ private fun FAQChipRow(chips: List<FAQChip>, onChipClick: (FAQChip) -> Unit) {
 
 // ─── Empty State ────────────────────────────────────────
 
+/**
+ * Smart welcome state shown when chat is empty.
+ * When AI is connected: shows the standard "Ask me anything" prompt.
+ * When AI is NOT connected: shows setup quick-action chips (non-blocking).
+ */
 @Composable
-private fun EmptyChatState() {
-    val infiniteTransition = rememberInfiniteTransition(label = "empty")
+private fun SmartWelcomeState(
+    isAIReady: Boolean,
+    onOpenCloudApi: () -> Unit,
+    onOpenServer: () -> Unit,
+    onOpenSLM: () -> Unit,
+    onBrowseFAQs: () -> Unit,
+    onShowMeAround: () -> Unit
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "welcome")
     val pulseScale by infiniteTransition.animateFloat(
         initialValue = 0.92f,
         targetValue = 1.08f,
@@ -1472,29 +1456,184 @@ private fun EmptyChatState() {
         label = "scale"
     )
 
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
         Icon(
             Icons.Default.AutoAwesome,
             contentDescription = null,
             modifier = Modifier
                 .size(48.dp)
                 .scale(pulseScale),
-            tint = AccentPurple.copy(alpha = 0.5f)
+            tint = AccentPurple.copy(alpha = 0.6f)
         )
         Spacer(Modifier.height(12.dp))
-        Text(
-            "Ask me anything",
-            color = Color.White.copy(alpha = 0.6f),
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Medium
-        )
-        Spacer(Modifier.height(4.dp))
-        Text(
-            "Automate tasks, get answers, or send commands",
-            color = Color.White.copy(alpha = 0.3f),
-            fontSize = 12.sp,
-            textAlign = TextAlign.Center
-        )
+
+        if (isAIReady) {
+            // ── AI Connected: Standard prompt ──
+            Text(
+                "Ask me anything",
+                color = Color.White.copy(alpha = 0.6f),
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Automate tasks, get answers, or send commands",
+                color = Color.White.copy(alpha = 0.3f),
+                fontSize = 12.sp,
+                textAlign = TextAlign.Center
+            )
+        } else {
+            // ── AI Not Connected: Smart Welcome ──
+            Text(
+                "\uD83D\uDC4B Welcome to Omni-Chat!",
+                color = Color.White,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "I can answer questions, guide you through features, and run automations.",
+                color = Color.White.copy(alpha = 0.5f),
+                fontSize = 13.sp,
+                textAlign = TextAlign.Center,
+                lineHeight = 18.sp
+            )
+
+            Spacer(Modifier.height(20.dp))
+
+            // ── AI Setup Section ──
+            Surface(
+                color = CardGlass,
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        "⚡ Connect AI for full power",
+                        color = Color.White.copy(alpha = 0.8f),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+
+                    WelcomeSetupChip(
+                        emoji = "☁️",
+                        label = "Cloud API",
+                        hint = "OpenAI, Groq, etc.",
+                        color = AccentBlue,
+                        onClick = onOpenCloudApi
+                    )
+                    WelcomeSetupChip(
+                        emoji = "\uD83D\uDDA5️",
+                        label = "Ollama Server",
+                        hint = "Run on your PC",
+                        color = AccentGreen,
+                        onClick = onOpenServer
+                    )
+                    WelcomeSetupChip(
+                        emoji = "\uD83D\uDCF1",
+                        label = "On-Device SLM",
+                        hint = "Runs locally",
+                        color = AccentPurple,
+                        onClick = onOpenSLM
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(14.dp))
+
+            Text(
+                "Even without AI, you can browse FAQs and explore features!",
+                color = Color.White.copy(alpha = 0.35f),
+                fontSize = 11.sp,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(Modifier.height(10.dp))
+
+            // ── Quick Action Chips ──
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Surface(
+                    onClick = onShowMeAround,
+                    color = AccentPurple.copy(alpha = 0.15f),
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, AccentPurple.copy(alpha = 0.3f))
+                ) {
+                    Text(
+                        "\uD83D\uDCD6 Show me around",
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                        color = Color.White.copy(alpha = 0.8f),
+                        fontSize = 12.sp
+                    )
+                }
+                Surface(
+                    onClick = onBrowseFAQs,
+                    color = AccentBlue.copy(alpha = 0.15f),
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, AccentBlue.copy(alpha = 0.3f))
+                ) {
+                    Text(
+                        "❓ Browse FAQs",
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                        color = Color.White.copy(alpha = 0.8f),
+                        fontSize = 12.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Individual setup option chip used in the smart welcome state. */
+@Composable
+private fun WelcomeSetupChip(
+    emoji: String,
+    label: String,
+    hint: String,
+    color: Color,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        color = color.copy(alpha = 0.1f),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(emoji, fontSize = 16.sp)
+            Spacer(Modifier.width(10.dp))
+            Text(
+                label,
+                color = Color.White,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                hint,
+                color = Color.White.copy(alpha = 0.4f),
+                fontSize = 11.sp
+            )
+            Spacer(Modifier.width(6.dp))
+            Icon(
+                Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = Color.White.copy(alpha = 0.3f),
+                modifier = Modifier.size(16.dp)
+            )
+        }
     }
 }
 
