@@ -5,6 +5,7 @@ import android.util.Log
 import com.autonion.automationcompanion.features.semantic_automation.ml.LocalServerLLMEngine
 import com.autonion.automationcompanion.features.semantic_automation.ml.CloudApiLLMEngine
 import com.autonion.automationcompanion.features.semantic_automation.ml.CloudApiConnectionStatus
+import com.autonion.automationcompanion.features.semantic_automation.ml.OnDeviceSLMEngine
 import com.autonion.automationcompanion.features.semantic_automation.ml.ServerConnectionStatus
 import com.autonion.automationcompanion.features.semantic_automation.model.SemanticGoal
 import org.json.JSONObject
@@ -177,7 +178,56 @@ class GoalParser(private val context: Context) {
     }
 
     /**
-     * Shared JSON → SemanticGoal parsing logic used by both engine overloads.
+     * Parse a raw user command into a [SemanticGoal] using the On-Device SLM engine.
+     *
+     * Uses a **compact prompt** optimized for on-device SLMs which are much slower
+     * at prompt processing than server/cloud models. The full SYSTEM_PROMPT tokenizes
+     * to 500+ tokens which takes ~60s on mobile CPUs; this compact version is ~100 tokens.
+     *
+     * @param rawCommand The user's natural language command
+     * @param slmEngine The initialized On-Device SLM engine (MediaPipe or GGUF)
+     * @param conversationContext Optional context from previous goals for better parsing
+     * @return Parsed [SemanticGoal], or null if engine is not initialized or parsing failed
+     */
+    suspend fun parse(rawCommand: String, slmEngine: OnDeviceSLMEngine, conversationContext: String? = null): SemanticGoal? {
+        val command = rawCommand.trim()
+        Log.d(TAG, "Parsing with On-Device SLM engine: \"$command\"")
+
+        // Compact prompt optimized for on-device SLMs — keeps token count low
+        val compactPrompt = buildString {
+            append("Parse this Android command into JSON.\n")
+            append("Fields: task (search/open/play/send_message/call/enable/disable/navigate/unknown), ")
+            append("app_name (lowercase, null if none), ")
+            append("search_query (null if none), ")
+            append("confidence (0.0-1.0).\n")
+            append("Reply with ONLY a JSON object.\n\n")
+            if (!conversationContext.isNullOrBlank()) {
+                // Only include a very short context snippet for SLMs
+                val shortContext = conversationContext.take(100)
+                append("Context: $shortContext\n")
+            }
+            append("Command: $command")
+        }
+
+        Log.d(TAG, "SLM compact prompt: ${compactPrompt.length} chars")
+
+        val responseJson = try {
+            slmEngine.generateChatResponse(compactPrompt)
+        } catch (e: Exception) {
+            Log.e(TAG, "On-Device SLM goal parsing failed", e)
+            null
+        }
+
+        if (responseJson == null) {
+            Log.w(TAG, "On-Device SLM returned null response for goal parsing")
+            return null
+        }
+
+        return parseGoalFromJson(command, responseJson)
+    }
+
+    /**
+     * Shared JSON → SemanticGoal parsing logic used by all engine overloads.
      */
     private fun parseGoalFromJson(rawCommand: String, responseJson: String): SemanticGoal? {
         return try {

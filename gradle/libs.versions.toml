@@ -39,7 +39,7 @@ mediapipeGenai = "0.10.14"
 retrofit = "2.11.0"
 javaWebsocket = "1.5.3"
 securityCrypto = "1.1.0-alpha06"
-llamaKotlinAndroid = "0.1.0"
+llamaKotlinAndroid = "0.1.1"
 
 [libraries]
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activity" }

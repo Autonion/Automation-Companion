@@ -36,6 +36,20 @@ class GGUFInferenceEngine(
         withContext(Dispatchers.IO) {
             Log.d(TAG, "Initializing llama.cpp with model: $modelPath")
 
+            // Validate the model file exists and is non-trivially sized
+            val modelFile = java.io.File(modelPath)
+            if (!modelFile.exists()) {
+                throw IllegalStateException("GGUF model file not found: $modelPath")
+            }
+            val fileSizeMB = modelFile.length() / (1024 * 1024)
+            Log.d(TAG, "Model file size: ${fileSizeMB}MB")
+            if (fileSizeMB < 10) {
+                throw IllegalStateException(
+                    "GGUF model file appears truncated or corrupted (${fileSizeMB}MB). " +
+                    "Expected at least several hundred MB. Please re-download and re-import the model."
+                )
+            }
+
             val startTime = System.currentTimeMillis()
             try {
                 llamaModel = LlamaModel.load(modelPath) {
@@ -47,6 +61,18 @@ class GGUFInferenceEngine(
                 Log.d(TAG, "llama.cpp model loaded in ${elapsed}ms")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to load GGUF model via llama.cpp", e)
+                // Provide a more helpful error message
+                val message = e.message ?: "Unknown error"
+                if (message.contains("Failed to load model")) {
+                    throw IllegalStateException(
+                        "llama.cpp could not load this model. This usually means:\n" +
+                        "• The model's architecture is not supported by this llama.cpp version\n" +
+                        "• The .gguf file is corrupted or incompletely downloaded\n" +
+                        "Try a different model (e.g., Phi-3.5, Llama 3.2, Qwen 2.5) or re-download this one.\n" +
+                        "Original error: $message",
+                        e
+                    )
+                }
                 throw e
             }
         }
@@ -197,7 +223,7 @@ class GGUFInferenceEngine(
 
             val actionStr = json.optString("action", "CLICK").uppercase().trim()
             val elementIndex = json.optInt("element_index", -1)
-            val textToType = json.optString("text_to_type", null)
+            val textToType = json.optString("text_to_type", "").ifBlank { null }
 
             val actionType = when (actionStr) {
                 "CLICK" -> ActionType.CLICK
