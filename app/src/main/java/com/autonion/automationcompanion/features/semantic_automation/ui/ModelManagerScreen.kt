@@ -14,11 +14,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material.icons.rounded.Delete
@@ -70,37 +72,23 @@ data class SLMModelInfo(
 
 private val MODEL_CATALOG = listOf(
     SLMModelInfo(
-        name = "Gemma 4 E2B",
-        parameterCount = "E2B",
-        sizeGb = 1.5,
+        name = "Qwen 2.5 3B",
+        parameterCount = "3B",
+        sizeGb = 1.93,
         minRamGb = 4.0,
-        recommendedRamGb = 6.0,
+        recommendedRamGb = 8.0,
         quantization = "Q4_K_M",
         runtime = "CPU",
         format = ModelFormat.GGUF,
-        downloadUrl = "https://huggingface.co/bartowski/google_gemma-4-E2B-it-GGUF/resolve/main/google_gemma-4-E2B-it-Q4_K_M.gguf",
-        browseUrl = "https://huggingface.co/bartowski/google_gemma-4-E2B-it-GGUF",
+        downloadUrl = "https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf",
+        browseUrl = "https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF",
         source = "HuggingFace",
-        description = "Google's latest. Multimodal, 128K context. Best for edge devices."
-    ),
-    SLMModelInfo(
-        name = "Gemma 3n E2B",
-        parameterCount = "E2B",
-        sizeGb = 2.8,
-        minRamGb = 4.0,
-        recommendedRamGb = 6.0,
-        quantization = "Q4_K_M",
-        runtime = "CPU",
-        format = ModelFormat.GGUF,
-        downloadUrl = "https://huggingface.co/bartowski/google_gemma-3n-E2B-it-GGUF/resolve/main/google_gemma-3n-E2B-it-Q4_K_M.gguf",
-        browseUrl = "https://huggingface.co/bartowski/google_gemma-3n-E2B-it-GGUF",
-        source = "HuggingFace",
-        description = "Optimized for edge devices. Excellent reasoning at compact size."
+        description = "Alibaba's efficient model. Excels at structured output & coding."
     ),
     SLMModelInfo(
         name = "Phi-3.5 Mini",
         parameterCount = "3.8B",
-        sizeGb = 2.4,
+        sizeGb = 2.39,
         minRamGb = 4.0,
         recommendedRamGb = 8.0,
         quantization = "Q4_K_M",
@@ -114,7 +102,7 @@ private val MODEL_CATALOG = listOf(
     SLMModelInfo(
         name = "Llama 3.2 3B",
         parameterCount = "3B",
-        sizeGb = 2.0,
+        sizeGb = 2.02,
         minRamGb = 4.0,
         recommendedRamGb = 8.0,
         quantization = "Q4_K_M",
@@ -124,20 +112,6 @@ private val MODEL_CATALOG = listOf(
         browseUrl = "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF",
         source = "HuggingFace",
         description = "Meta's compact LLM. Strong instruction following & multilingual."
-    ),
-    SLMModelInfo(
-        name = "Qwen 2.5 3B",
-        parameterCount = "3B",
-        sizeGb = 1.9,
-        minRamGb = 4.0,
-        recommendedRamGb = 8.0,
-        quantization = "Q4_K_M",
-        runtime = "CPU",
-        format = ModelFormat.GGUF,
-        downloadUrl = "https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf",
-        browseUrl = "https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF",
-        source = "HuggingFace",
-        description = "Alibaba's efficient model. Excels at structured output & coding."
     )
 )
 
@@ -411,21 +385,17 @@ fun ModelManagerScreen(
 
             // ── Import Section ──
             item {
+                Spacer(modifier = Modifier.height(12.dp))
+                Text("Installed Models", fontWeight = FontWeight.Bold, fontSize = 20.sp)
                 Spacer(modifier = Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                Button(
+                    onClick = { filePickerLauncher.launch(arrayOf("*/*")) },
+                    enabled = !isImporting,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Installed Models", fontWeight = FontWeight.Bold, fontSize = 20.sp)
-                    Button(
-                        onClick = { filePickerLauncher.launch(arrayOf("*/*")) },
-                        enabled = !isImporting
-                    ) {
-                        Icon(Icons.Rounded.FileOpen, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Import .gguf / .bin")
-                    }
+                    Icon(Icons.Rounded.FileOpen, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Import .gguf / .bin")
                 }
 
                 if (isImporting) {
@@ -468,6 +438,34 @@ fun ModelManagerScreen(
                     )
                 }
             }
+
+            // ── Supported Models Info Button ──
+            item {
+                var showSupportedModelsDialog by remember { mutableStateOf(false) }
+
+                Spacer(modifier = Modifier.height(4.dp))
+                OutlinedButton(
+                    onClick = { showSupportedModelsDialog = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.primary
+                    )
+                ) {
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("View Supported Model Architectures")
+                }
+
+                if (showSupportedModelsDialog) {
+                    SupportedModelsDialog(
+                        onDismiss = { showSupportedModelsDialog = false }
+                    )
+                }
+            }
             } // End of ON_DEVICE_SLM section
         }
         } // Box
@@ -493,8 +491,8 @@ private fun HardwareCard(totalRamGb: Double) {
 
             Spacer(modifier = Modifier.height(4.dp))
             val bestModel = when {
-                totalRamGb >= 8.0 -> "All catalog models (E2B–3.8B)"
-                totalRamGb >= 4.0 -> "E2B models (Gemma 4, Gemma 3n)"
+                totalRamGb >= 8.0 -> "All catalog models (Qwen 2.5, Phi-3.5, Llama 3.2)"
+                totalRamGb >= 4.0 -> "Compact models (Qwen 2.5, Llama 3.2)"
                 else -> "None recommended"
             }
             val bestColor = if (totalRamGb >= 4.0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
@@ -513,6 +511,28 @@ private fun HardwareCard(totalRamGb: Double) {
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ModelBadge(
+    text: String,
+    containerColor: Color = MaterialTheme.colorScheme.surfaceVariant,
+    contentColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    fontWeight: FontWeight = FontWeight.Normal
+) {
+    Surface(
+        color = containerColor,
+        contentColor = contentColor,
+        shape = RoundedCornerShape(4.dp)
+    ) {
+        Text(
+            text = text,
+            fontSize = 10.sp,
+            fontWeight = fontWeight,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+            maxLines = 1
+        )
     }
 }
 
@@ -539,35 +559,41 @@ private fun ModelCatalogCard(model: SLMModelInfo, totalRamGb: Double, context: C
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(model.name, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    SuggestionChip(
-                        onClick = {},
-                        label = { Text(model.parameterCount, fontSize = 11.sp) },
-                        modifier = Modifier.height(24.dp)
+                Text(
+                    text = model.name,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    modifier = Modifier.weight(1f, fill = false),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    ModelBadge(
+                        text = model.parameterCount,
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
                     )
-                    SuggestionChip(
-                        onClick = {},
-                        label = { Text(model.quantization, fontSize = 11.sp) },
-                        modifier = Modifier.height(24.dp)
+                    ModelBadge(
+                        text = model.quantization,
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f),
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
                     )
                     // Format badge: GGUF or TFLite
-                    SuggestionChip(
-                        onClick = {},
-                        label = {
-                            Text(
-                                if (model.format == ModelFormat.GGUF) "GGUF" else "TFLite",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        },
-                        modifier = Modifier.height(24.dp),
-                        colors = SuggestionChipDefaults.suggestionChipColors(
-                            containerColor = if (model.format == ModelFormat.GGUF)
-                                Color(0xFF7C4DFF).copy(alpha = 0.15f)
-                            else
-                                MaterialTheme.colorScheme.secondaryContainer
-                        )
+                    ModelBadge(
+                        text = if (model.format == ModelFormat.GGUF) "GGUF" else "TFLite",
+                        containerColor = if (model.format == ModelFormat.GGUF)
+                            Color(0xFF7C4DFF)
+                        else
+                            MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = if (model.format == ModelFormat.GGUF)
+                            Color.White
+                        else
+                            MaterialTheme.colorScheme.onPrimaryContainer,
+                        fontWeight = FontWeight.Bold
                     )
                 }
             }
@@ -1298,4 +1324,148 @@ private fun CloudApiSettingsCard(
             }
         }
     }
+}
+
+// --- Supported Models Dialog ---
+
+private data class SupportedModelEntry(
+    val family: String,
+    val architectures: String,
+    val supported: Boolean,
+    val note: String = ""
+)
+
+private val SUPPORTED_MODELS_LIST = listOf(
+    SupportedModelEntry("Qwen 2.5", "qwen2", supported = true),
+    SupportedModelEntry("Phi-3 / Phi-3.5", "phi3", supported = true),
+    SupportedModelEntry("Llama 3 / 3.1 / 3.2", "llama", supported = true),
+    SupportedModelEntry("Mistral / Mixtral", "llama (mistral)", supported = true),
+    SupportedModelEntry("TinyLlama", "llama", supported = true),
+    SupportedModelEntry("StableLM", "stablelm", supported = true),
+    SupportedModelEntry("RWKV v5/v6", "rwkv", supported = true),
+    SupportedModelEntry("GPT-2 / GPT-NeoX", "gpt2 / gptneox", supported = true),
+    SupportedModelEntry("Gemma 2", "gemma2", supported = true),
+    SupportedModelEntry("Gemma 4", "gemma3 (v4)", supported = false, note = "Coming Soon"),
+    SupportedModelEntry("Gemma 3n", "gemma3n", supported = false, note = "Coming Soon"),
+    SupportedModelEntry("DeepSeek V3", "deepseek3", supported = false, note = "Coming Soon"),
+    SupportedModelEntry("Qwen 3", "qwen3 / qwen3moe", supported = false, note = "Coming Soon")
+)
+
+@Composable
+private fun SupportedModelsDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                Icons.Default.Info,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(28.dp)
+            )
+        },
+        title = {
+            Text(
+                "Supported Model Architectures",
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp
+            )
+        },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    "The on-device GGUF engine currently supports these model families. " +
+                    "Any GGUF file using a supported architecture should work.",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+
+                Text(
+                    "\u2705 Supported",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    color = Color(0xFF4CAF50),
+                    modifier = Modifier.padding(bottom = 6.dp)
+                )
+                SUPPORTED_MODELS_LIST.filter { it.supported }.forEach { entry ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 3.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = Color(0xFF4CAF50),
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            entry.family,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            entry.architectures,
+                            fontSize = 11.sp,
+                            color = Color.Gray
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    "\uD83D\uDD1C Not Yet Supported",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    color = Color(0xFFB0BEC5),
+                    modifier = Modifier.padding(bottom = 6.dp)
+                )
+                SUPPORTED_MODELS_LIST.filter { !it.supported }.forEach { entry ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 3.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Block,
+                            contentDescription = null,
+                            tint = Color(0xFFB0BEC5),
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            entry.family,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Text(
+                            entry.note,
+                            fontSize = 11.sp,
+                            color = Color(0xFFFFA000),
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    "Tip: You can always use unsupported models via Local Server (Ollama) or Cloud API mode.",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.Normal
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Got it")
+            }
+        }
+    )
 }
