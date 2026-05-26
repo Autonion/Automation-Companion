@@ -7,6 +7,9 @@ import android.util.Log
  * Global cache to hold heavy ML objects (MLActionPredictor, OnDeviceSLMEngine)
  * so they survive SemanticAutomationService teardown and don't need
  * to be reloaded from disk on every task.
+ *
+ * Handles model format switching: if the user switches between a MediaPipe (.bin)
+ * and a GGUF (.gguf) model, the cache invalidates and reinitializes automatically.
  */
 object PredictorCache {
     private const val TAG = "PredictorCache"
@@ -34,6 +37,16 @@ object PredictorCache {
     }
 
     suspend fun getSLMEngine(context: Context, storageManager: ModelStorageManager): OnDeviceSLMEngine? {
+        // Check if the active model changed (user switched models in the UI)
+        val existingEngine = slmEngine
+        if (existingEngine != null && existingEngine.needsReinitialization()) {
+            Log.d(TAG, "Active model changed, reinitializing SLM engine")
+            synchronized(this) {
+                slmEngine?.close()
+                slmEngine = null
+            }
+        }
+
         if (slmEngine == null) {
             synchronized(this) {
                 if (slmEngine == null) {
@@ -47,7 +60,7 @@ object PredictorCache {
             if (slmEngine != null) {
                 try {
                     slmEngine?.initialize()
-                    Log.d(TAG, "Initialized global OnDeviceSLMEngine")
+                    Log.d(TAG, "Initialized global OnDeviceSLMEngine (format: ${slmEngine?.getActiveFormat()})")
                 } catch (e: Exception) {
                     Log.e(TAG, "Failed to initialize OnDeviceSLMEngine", e)
                     slmEngine = null

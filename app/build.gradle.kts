@@ -15,8 +15,8 @@ android {
         applicationId = "com.autonion.automationcompanion"
         minSdk = 24
         targetSdk = 36
-        versionCode = 6
-        versionName = "1.0.7"
+        versionCode = 7
+        versionName = "1.0.8"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -58,7 +58,7 @@ android {
     }
 
     androidResources {
-        noCompress += listOf("tflite", "onnx")
+        noCompress += listOf("tflite", "onnx", "gguf")
     }
 }
 
@@ -153,4 +153,7 @@ dependencies {
 
     // Security — Encrypted SharedPreferences for API key storage
     implementation(libs.androidx.security.crypto)
+
+    // llama.cpp Kotlin wrapper (for GGUF on-device SLM inference)
+    implementation(libs.llama.kotlin.android)
 }

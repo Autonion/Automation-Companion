@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.sp
 import com.autonion.automationcompanion.features.cross_device_automation.CrossDeviceAutomationManager
 import com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine
 import com.autonion.automationcompanion.features.semantic_automation.ml.LocalServerLLMEngine
+import com.autonion.automationcompanion.features.semantic_automation.ml.ModelFormat
 import com.autonion.automationcompanion.features.semantic_automation.ml.ModelStorageManager
 import com.autonion.automationcompanion.features.semantic_automation.ml.ServerConnectionStatus
 import com.autonion.automationcompanion.features.semantic_automation.ml.CloudApiLLMEngine
@@ -54,89 +55,89 @@ import java.io.File
 
 data class SLMModelInfo(
     val name: String,
-    val parameterCount: String,      // e.g. "2B", "7B"
+    val parameterCount: String,      // e.g. "2B", "3B"
     val sizeGb: Double,              // Download size in GB
     val minRamGb: Double,            // Minimum RAM to run
     val recommendedRamGb: Double,    // Recommended RAM for smooth performance
-    val quantization: String,        // e.g. "INT4", "INT8", "FP16"
+    val quantization: String,        // e.g. "Q4_K_M", "INT4"
     val runtime: String,             // e.g. "CPU", "GPU"
-    val downloadUrl: String,
-    val source: String,              // e.g. "Kaggle", "HuggingFace"
+    val format: ModelFormat,         // MEDIAPIPE (.bin/.task) or GGUF (.gguf)
+    val downloadUrl: String,         // Direct download link (HuggingFace file URL)
+    val browseUrl: String,           // Model page URL for the user to browse
+    val source: String,              // e.g. "HuggingFace"
     val description: String
 )
 
 private val MODEL_CATALOG = listOf(
     SLMModelInfo(
-        name = "Gemma 2B IT",
-        parameterCount = "2B",
-        sizeGb = 1.35,
+        name = "Gemma 4 E2B",
+        parameterCount = "E2B",
+        sizeGb = 1.5,
         minRamGb = 4.0,
         recommendedRamGb = 6.0,
-        quantization = "INT4",
+        quantization = "Q4_K_M",
         runtime = "CPU",
-        downloadUrl = "https://www.kaggle.com/models/google/gemma/tfLite/gemma-2b-it-cpu-int4",
-        source = "Kaggle",
-        description = "Lightweight, fast. Best for devices with limited RAM."
-    ),
-    SLMModelInfo(
-        name = "Gemma 2B IT (GPU)",
-        parameterCount = "2B",
-        sizeGb = 1.35,
-        minRamGb = 4.0,
-        recommendedRamGb = 6.0,
-        quantization = "INT4",
-        runtime = "GPU",
-        downloadUrl = "https://www.kaggle.com/models/google/gemma/tfLite/gemma-2b-it-gpu-int4",
-        source = "Kaggle",
-        description = "Same as CPU variant but accelerated on GPU. Faster inference."
-    ),
-    SLMModelInfo(
-        name = "Gemma 7B IT",
-        parameterCount = "7B",
-        sizeGb = 3.8,
-        minRamGb = 8.0,
-        recommendedRamGb = 12.0,
-        quantization = "INT4",
-        runtime = "CPU",
-        downloadUrl = "https://www.kaggle.com/models/google/gemma/tfLite/gemma-7b-it-cpu-int4",
-        source = "Kaggle",
-        description = "Significantly smarter reasoning. Needs 8GB+ RAM."
-    ),
-    SLMModelInfo(
-        name = "Gemma 7B IT (GPU)",
-        parameterCount = "7B",
-        sizeGb = 3.8,
-        minRamGb = 8.0,
-        recommendedRamGb = 12.0,
-        quantization = "INT4",
-        runtime = "GPU",
-        downloadUrl = "https://www.kaggle.com/models/google/gemma/tfLite/gemma-7b-it-gpu-int4",
-        source = "Kaggle",
-        description = "Best quality + GPU acceleration. For flagship devices."
-    ),
-    SLMModelInfo(
-        name = "Gemma 2 2B IT",
-        parameterCount = "2B",
-        sizeGb = 1.4,
-        minRamGb = 4.0,
-        recommendedRamGb = 6.0,
-        quantization = "INT4",
-        runtime = "CPU",
-        downloadUrl = "https://www.kaggle.com/models/google/gemma-2/tfLite/gemma2-2b-it-cpu-int4",
-        source = "Kaggle",
-        description = "Next-gen Gemma 2. Better reasoning than Gemma 1 at same size."
-    ),
-    SLMModelInfo(
-        name = "Phi-2",
-        parameterCount = "2.7B",
-        sizeGb = 1.6,
-        minRamGb = 4.0,
-        recommendedRamGb = 6.0,
-        quantization = "INT4",
-        runtime = "CPU",
-        downloadUrl = "https://huggingface.co/microsoft/phi-2",
+        format = ModelFormat.GGUF,
+        downloadUrl = "https://huggingface.co/bartowski/google_gemma-4-E2B-it-GGUF/resolve/main/google_gemma-4-E2B-it-Q4_K_M.gguf",
+        browseUrl = "https://huggingface.co/bartowski/google_gemma-4-E2B-it-GGUF",
         source = "HuggingFace",
-        description = "Microsoft's compact model. Strong code & reasoning skills."
+        description = "Google's latest. Multimodal, 128K context. Best for edge devices."
+    ),
+    SLMModelInfo(
+        name = "Gemma 3n E2B",
+        parameterCount = "E2B",
+        sizeGb = 2.8,
+        minRamGb = 4.0,
+        recommendedRamGb = 6.0,
+        quantization = "Q4_K_M",
+        runtime = "CPU",
+        format = ModelFormat.GGUF,
+        downloadUrl = "https://huggingface.co/bartowski/google_gemma-3n-E2B-it-GGUF/resolve/main/google_gemma-3n-E2B-it-Q4_K_M.gguf",
+        browseUrl = "https://huggingface.co/bartowski/google_gemma-3n-E2B-it-GGUF",
+        source = "HuggingFace",
+        description = "Optimized for edge devices. Excellent reasoning at compact size."
+    ),
+    SLMModelInfo(
+        name = "Phi-3.5 Mini",
+        parameterCount = "3.8B",
+        sizeGb = 2.4,
+        minRamGb = 4.0,
+        recommendedRamGb = 8.0,
+        quantization = "Q4_K_M",
+        runtime = "CPU",
+        format = ModelFormat.GGUF,
+        downloadUrl = "https://huggingface.co/bartowski/Phi-3.5-mini-instruct-GGUF/resolve/main/Phi-3.5-mini-instruct-Q4_K_M.gguf",
+        browseUrl = "https://huggingface.co/bartowski/Phi-3.5-mini-instruct-GGUF",
+        source = "HuggingFace",
+        description = "Microsoft's strong code & reasoning model. Great overall quality."
+    ),
+    SLMModelInfo(
+        name = "Llama 3.2 3B",
+        parameterCount = "3B",
+        sizeGb = 2.0,
+        minRamGb = 4.0,
+        recommendedRamGb = 8.0,
+        quantization = "Q4_K_M",
+        runtime = "CPU",
+        format = ModelFormat.GGUF,
+        downloadUrl = "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf",
+        browseUrl = "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF",
+        source = "HuggingFace",
+        description = "Meta's compact LLM. Strong instruction following & multilingual."
+    ),
+    SLMModelInfo(
+        name = "Qwen 2.5 3B",
+        parameterCount = "3B",
+        sizeGb = 1.9,
+        minRamGb = 4.0,
+        recommendedRamGb = 8.0,
+        quantization = "Q4_K_M",
+        runtime = "CPU",
+        format = ModelFormat.GGUF,
+        downloadUrl = "https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF/resolve/main/qwen2.5-3b-instruct-q4_k_m.gguf",
+        browseUrl = "https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF",
+        source = "HuggingFace",
+        description = "Alibaba's efficient model. Excels at structured output & coding."
     )
 )
 
@@ -394,7 +395,7 @@ fun ModelManagerScreen(
             item {
                 Text("On-Device SLM Catalog", fontWeight = FontWeight.Bold, fontSize = 20.sp)
                 Text(
-                    "Models compatible with your device are highlighted. Tap to download.",
+                    "GGUF models compatible with your device. Download directly or browse on HuggingFace.",
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -423,7 +424,7 @@ fun ModelManagerScreen(
                     ) {
                         Icon(Icons.Rounded.FileOpen, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Import .bin/.task")
+                        Text("Import .gguf / .bin")
                     }
                 }
 
@@ -492,9 +493,8 @@ private fun HardwareCard(totalRamGb: Double) {
 
             Spacer(modifier = Modifier.height(4.dp))
             val bestModel = when {
-                totalRamGb >= 12.0 -> "7B models (CPU & GPU)"
-                totalRamGb >= 8.0 -> "7B models (CPU)"
-                totalRamGb >= 4.0 -> "2B models"
+                totalRamGb >= 8.0 -> "All catalog models (E2B–3.8B)"
+                totalRamGb >= 4.0 -> "E2B models (Gemma 4, Gemma 3n)"
                 else -> "None recommended"
             }
             val bestColor = if (totalRamGb >= 4.0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
@@ -551,10 +551,23 @@ private fun ModelCatalogCard(model: SLMModelInfo, totalRamGb: Double, context: C
                         label = { Text(model.quantization, fontSize = 11.sp) },
                         modifier = Modifier.height(24.dp)
                     )
+                    // Format badge: GGUF or TFLite
                     SuggestionChip(
                         onClick = {},
-                        label = { Text(model.runtime, fontSize = 11.sp) },
-                        modifier = Modifier.height(24.dp)
+                        label = {
+                            Text(
+                                if (model.format == ModelFormat.GGUF) "GGUF" else "TFLite",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        },
+                        modifier = Modifier.height(24.dp),
+                        colors = SuggestionChipDefaults.suggestionChipColors(
+                            containerColor = if (model.format == ModelFormat.GGUF)
+                                Color(0xFF7C4DFF).copy(alpha = 0.15f)
+                            else
+                                MaterialTheme.colorScheme.secondaryContainer
+                        )
                     )
                 }
             }
@@ -566,6 +579,7 @@ private fun ModelCatalogCard(model: SLMModelInfo, totalRamGb: Double, context: C
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text("Size: ${String.format("%.1f", model.sizeGb)} GB", fontSize = 12.sp, color = Color.Gray)
                 Text("Min RAM: ${model.minRamGb.toInt()} GB", fontSize = 12.sp, color = Color.Gray)
+                Text(model.runtime, fontSize = 12.sp, color = Color.Gray)
             }
 
             // Compatibility badge
@@ -586,19 +600,38 @@ private fun ModelCatalogCard(model: SLMModelInfo, totalRamGb: Double, context: C
                 }
             }
 
-            // Download button
+            // Download + Browse buttons (dual action)
             Spacer(modifier = Modifier.height(10.dp))
-            Button(
-                onClick = {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(model.downloadUrl))
-                    context.startActivity(intent)
-                },
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                enabled = isCompatible
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Icon(Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Download from ${model.source}")
+                // Direct download button
+                Button(
+                    onClick = {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(model.downloadUrl))
+                        context.startActivity(intent)
+                    },
+                    modifier = Modifier.weight(1f),
+                    enabled = isCompatible
+                ) {
+                    Icon(Icons.Rounded.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Download")
+                }
+                // Browse model page button
+                OutlinedButton(
+                    onClick = {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(model.browseUrl))
+                        context.startActivity(intent)
+                    },
+                    modifier = Modifier.weight(1f),
+                    enabled = isCompatible
+                ) {
+                    Icon(Icons.Rounded.FileOpen, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Browse")
+                }
             }
         }
     }
@@ -629,11 +662,20 @@ private fun InstalledModelCard(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(file.name, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(
-                    "${String.format("%.2f", file.length() / (1024.0 * 1024.0 * 1024.0))} GB",
-                    fontSize = 12.sp,
-                    color = Color.Gray
-                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "${String.format("%.2f", file.length() / (1024.0 * 1024.0 * 1024.0))} GB",
+                        fontSize = 12.sp,
+                        color = Color.Gray
+                    )
+                    val formatLabel = if (file.name.endsWith(".gguf")) "GGUF" else "MediaPipe"
+                    Text(
+                        formatLabel,
+                        fontSize = 12.sp,
+                        color = if (file.name.endsWith(".gguf")) Color(0xFF7C4DFF) else Color.Gray,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
                 if (isActive) {
                     Text("ACTIVE", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                 }

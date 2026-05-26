@@ -59,6 +59,7 @@ import com.autonion.automationcompanion.features.semantic_automation.ml.CloudApi
 import com.autonion.automationcompanion.features.semantic_automation.ml.CLOUD_API_PROVIDERS
 import com.autonion.automationcompanion.features.semantic_automation.ml.CloudApiProvider
 import com.autonion.automationcompanion.features.semantic_automation.ml.CloudApiLLMEngine
+import com.autonion.automationcompanion.features.semantic_automation.ml.ModelStorageManager
 import com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode
 import com.autonion.automationcompanion.features.semantic_automation.consent.CloudApiConsentManager
 import com.autonion.automationcompanion.features.semantic_automation.ui.CloudApiDisclaimerDialog
@@ -892,11 +893,22 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                     )
                     Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
+                        val modelManager = remember { ModelStorageManager(context) }
+                        val activeModelName = remember(viewModel.inferenceMode) {
+                            val path = modelManager.getActiveModelPath()
+                            if (path != null) {
+                                val fileName = java.io.File(path).nameWithoutExtension
+                                fileName.replace("_", " ").replace("-", " ")
+                                    .replaceFirstChar { it.uppercase() }
+                            } else "Not Installed"
+                        }
                         Text(
-                            "On-Device AI (Gemma 2B)",
+                            "On-Device AI ($activeModelName)",
                             color = textColor,
                             fontWeight = FontWeight.SemiBold,
-                            fontSize = 14.sp
+                            fontSize = 14.sp,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )
                         Text(
                             "Runs locally on your phone. No server needed.",
@@ -906,7 +918,7 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                     }
                 }
                 Text(
-                    "💡 Import a .bin model from the SLM Hub in Settings → AI Model Manager to enable on-device inference.",
+                    "💡 Import a .gguf model from the SLM Hub in Settings → AI Model Manager to enable on-device inference.",
                     color = textColor.copy(alpha = 0.45f),
                     fontSize = 11.sp,
                     lineHeight = 15.sp

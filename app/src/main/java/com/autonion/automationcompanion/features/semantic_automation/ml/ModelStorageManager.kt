@@ -11,6 +11,16 @@ import java.io.FileOutputStream
 import java.io.InputStream
 import java.io.OutputStream
 
+/**
+ * Supported on-device SLM model formats.
+ * MEDIAPIPE: .bin / .task files loaded via MediaPipe LlmInference
+ * GGUF:     .gguf files loaded via llama.cpp
+ */
+enum class ModelFormat {
+    MEDIAPIPE,
+    GGUF
+}
+
 class ModelStorageManager(private val context: Context) {
     private val TAG = "ModelStorageManager"
     private val prefs = context.getSharedPreferences("AutonionModelSettings", Context.MODE_PRIVATE)
@@ -52,7 +62,24 @@ class ModelStorageManager(private val context: Context) {
     }
 
     fun getImportedModels(): List<File> {
-        return modelsDir.listFiles { _, name -> name.endsWith(".bin") }?.toList() ?: emptyList()
+        return modelsDir.listFiles { _, name ->
+            name.endsWith(".bin") || name.endsWith(".task") || name.endsWith(".gguf")
+        }?.toList() ?: emptyList()
+    }
+
+    /**
+     * Determines the model format from a file's extension.
+     */
+    fun getModelFormat(file: File): ModelFormat {
+        return if (file.name.endsWith(".gguf")) ModelFormat.GGUF else ModelFormat.MEDIAPIPE
+    }
+
+    /**
+     * Returns the format of the currently active model, or null if none is set.
+     */
+    fun getActiveModelFormat(): ModelFormat? {
+        val path = getActiveModelPath() ?: return null
+        return getModelFormat(File(path))
     }
 
     fun getActiveModelPath(): String? {
