@@ -302,7 +302,9 @@
             android:name=".features.semantic_automation.core.SemanticAutomationService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="mediaProjection" />
+            android:foregroundServiceType="specialUse">
+            <property android:name="android.app.property.FOREGROUND_SERVICE_TYPE" android:value="specialUse" />
+        </service>
 
     </application>
 
