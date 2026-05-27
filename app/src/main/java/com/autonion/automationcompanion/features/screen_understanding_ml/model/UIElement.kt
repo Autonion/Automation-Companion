@@ -15,7 +15,8 @@ data class UIElement(
     val bounds: RectF, // Bounding box relative to screen
     val text: String? = null, // OCR text if available
     val visualFingerprint: String? = null, // Hash or embedding of visual appearance
-    val lastSeenTimestamp: Long = System.currentTimeMillis()
+    val lastSeenTimestamp: Long = System.currentTimeMillis(),
+    val source: String = "yolo" // "yolo" or "accessibility" — indicates detection origin
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true

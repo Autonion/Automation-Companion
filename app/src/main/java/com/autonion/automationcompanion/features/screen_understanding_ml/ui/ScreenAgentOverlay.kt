@@ -23,6 +23,7 @@ data class DebugMetrics(
     val inferenceMs: Float = 0f,
     val avgInferenceMs: Float = 0f,
     val elementCount: Int = 0,
+    val a11yElementCount: Int = 0, // Elements from accessibility augmentation
     val temperature: Float = -1f,  // -1 = unavailable
     val delegate: String = "Unknown",
     val modelName: String = "Unknown",
@@ -555,6 +556,19 @@ class ScreenAgentOverlay(
             pathEffect = android.graphics.DashPathEffect(floatArrayOf(20f, 20f), 0f)
         }
 
+        // Accessibility gap-fill element styles (distinct from YOLO)
+        private val paintBoxA11y = Paint().apply {
+            color = Color.CYAN
+            style = Paint.Style.STROKE
+            strokeWidth = 4f
+            pathEffect = android.graphics.DashPathEffect(floatArrayOf(15f, 10f), 0f)
+        }
+        private val paintTextA11y = Paint().apply {
+            color = Color.CYAN
+            textSize = 28f
+            style = Paint.Style.FILL
+        }
+
         // Wrapper to store selection state
         // NOTE: data class must be declared properly
         // We cannot use 'SelectionState' inside 'OverlayView' if we try to access it outside easily 
@@ -750,10 +764,17 @@ class ScreenAgentOverlay(
             // In debug mode, always draw bounding boxes (even without validation mode)
             if (debugMode) {
                 for (element in elements) {
-                    canvas.drawRect(element.bounds, paintBox)
-                    // Draw label + confidence
-                    val label = "${element.label} ${"%.0f".format(element.confidence * 100)}%"
-                    canvas.drawText(label, element.bounds.left, element.bounds.top - 5f, paintText)
+                    if (element.source == "accessibility") {
+                        // Accessibility gap-fill: cyan dashed box with [A11y] tag
+                        canvas.drawRect(element.bounds, paintBoxA11y)
+                        val label = "${element.label} [A11y]"
+                        canvas.drawText(label, element.bounds.left, element.bounds.top - 5f, paintTextA11y)
+                    } else {
+                        // YOLO detection: green solid box with confidence %
+                        canvas.drawRect(element.bounds, paintBox)
+                        val label = "${element.label} ${"%.0f".format(element.confidence * 100)}%"
+                        canvas.drawText(label, element.bounds.left, element.bounds.top - 5f, paintText)
+                    }
                 }
                 return
             }
@@ -817,7 +838,8 @@ class ScreenAgentOverlay(
             lines.add("FPS" to "%.1f".format(metrics.fps))
             lines.add("INFERENCE" to "%.0fms".format(metrics.inferenceMs))
             lines.add("AVG INFERENCE" to "%.1fms".format(metrics.avgInferenceMs))
-            lines.add("ELEMENTS" to "${metrics.elementCount}")
+            val yoloCount = metrics.elementCount - metrics.a11yElementCount
+            lines.add("ELEMENTS" to "${metrics.elementCount} (YOLO: $yoloCount, A11y: ${metrics.a11yElementCount})")
             lines.add("FRAMES" to "${metrics.frameCount} (inferred: ${metrics.inferenceCount})")
             if (metrics.temperature >= 0) {
                 val tempColor = when {

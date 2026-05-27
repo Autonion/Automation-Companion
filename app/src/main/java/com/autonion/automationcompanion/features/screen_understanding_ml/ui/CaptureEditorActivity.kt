@@ -280,7 +280,13 @@ class CaptureEditorActivity : ComponentActivity() {
         val flowMlJson = intent.getStringExtra("EXTRA_FLOW_ML_JSON")
         Toast.makeText(this, "Detecting UI elements...", Toast.LENGTH_SHORT).show()
         lifecycleScope.launch(Dispatchers.Default) {
-             val detectedElements = perceptionLayer?.detectWithOcr(sourceBitmap!!) ?: emptyList()
+             // Run YOLO + accessibility augmentation first, then enrich with OCR
+             val augmentedElements = perceptionLayer?.detectWithAccessibilityAugmentation(sourceBitmap!!) ?: emptyList()
+             val detectedElements = if (augmentedElements.isNotEmpty()) {
+                 perceptionLayer?.enrichWithOcr(augmentedElements, sourceBitmap!!) ?: augmentedElements
+             } else {
+                 emptyList()
+             }
              withContext(Dispatchers.Main) {
                  val finalElements = detectedElements.toMutableList()
                  var loadedStates: List<SelectionState>? = null
@@ -550,6 +556,20 @@ class CaptureEditorActivity : ComponentActivity() {
             pathEffect = DashPathEffect(floatArrayOf(20f, 20f), 0f)
         }
 
+        // Accessibility gap-fill element styles (distinct from YOLO)
+        private val paintBoxA11y = Paint().apply {
+            color = android.graphics.Color.CYAN
+            style = Paint.Style.STROKE
+            strokeWidth = 4f
+            pathEffect = DashPathEffect(floatArrayOf(15f, 10f), 0f)
+        }
+        private val paintLabelA11y = Paint().apply {
+            color = android.graphics.Color.CYAN
+            textSize = 26f
+            style = Paint.Style.FILL
+            isAntiAlias = true
+        }
+
         // ── Text/OCR mode paints ──
         private val paintOcrBox = Paint().apply {
             color = 0xFF00BCD4.toInt() // Cyan
@@ -740,8 +760,11 @@ class CaptureEditorActivity : ComponentActivity() {
             canvas.restore()
         }
 
-        /** Draw TFLite-detected UI element bounding boxes (green/blue) */
+        /** Draw TFLite-detected UI element bounding boxes (green/blue) and a11y gap-fills (cyan dashed) */
         private fun drawElementOverlays(canvas: Canvas) {
+            val invScale = 1f / scaleFactor
+            paintLabelA11y.textSize = 26f * invScale
+
             for (element in elements) {
                 val state = selectionStates.find { it.element.id == element.id }
                 val index = selectionStates.indexOf(state)
@@ -751,6 +774,11 @@ class CaptureEditorActivity : ComponentActivity() {
                     val paint = if (state.isOptional) paintDashed else paintSelected
                     canvas.drawRect(element.bounds, paint)
                     drawSelectionBadge(canvas, element, state, index)
+                } else if (element.source == "accessibility") {
+                    // Accessibility gap-fill: cyan dashed box with [A11y] tag
+                    canvas.drawRect(element.bounds, paintBoxA11y)
+                    val label = "${element.label} [A11y]"
+                    canvas.drawText(label, element.bounds.left, element.bounds.top - 5f * invScale, paintLabelA11y)
                 } else {
                     canvas.drawRect(element.bounds, paintBox)
                 }

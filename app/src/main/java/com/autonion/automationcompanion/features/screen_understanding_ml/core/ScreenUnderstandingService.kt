@@ -366,7 +366,7 @@ class ScreenUnderstandingService : Service() {
                 // Frame skipping: run detection every 2nd frame in normal mode, every frame in debug mode
                 val shouldDetect = if (isDebugMode) true else (frameCount % 2 == 1L)
                 if (shouldDetect) {
-                    val detections = perceptionLayer?.detect(bitmap) ?: emptyList()
+                    val detections = perceptionLayer?.detectWithAccessibilityAugmentation(bitmap) ?: emptyList()
                     val tracked = temporalTracker?.update(detections) ?: emptyList()
                     latestElements = tracked
 
@@ -382,6 +382,7 @@ class ScreenUnderstandingService : Service() {
                         inferenceMs = perceptionLayer?.getLastInferenceTimeMs() ?: 0f,
                         avgInferenceMs = perceptionLayer?.getAverageInferenceTimeMs() ?: 0f,
                         elementCount = latestElements.size,
+                        a11yElementCount = latestElements.count { it.source == "accessibility" },
                         temperature = readDeviceTemperature(),
                         delegate = perceptionLayer?.getDelegate() ?: "Unknown",
                         modelName = perceptionLayer?.getModelName() ?: "Unknown",
