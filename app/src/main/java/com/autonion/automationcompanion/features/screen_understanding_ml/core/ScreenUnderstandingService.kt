@@ -433,7 +433,7 @@ class ScreenUnderstandingService : Service() {
                 bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
             }
 
-            // Pre-capture accessibility text WHILE the target app is still in the foreground.
+            // Pre-capture accessibility data WHILE the target app is still in the foreground.
             // Once the Editor opens, rootInActiveWindow will point to the Editor, not the target.
             val accTextNodes = captureAccessibilityTextNodes()
             val accTextJson = if (accTextNodes.isNotEmpty()) {
@@ -446,6 +446,18 @@ class ScreenUnderstandingService : Service() {
             } else null
             Log.d(TAG, "Pre-captured ${accTextNodes.size} accessibility text nodes for editor")
 
+            // Pre-capture interactive accessibility elements for augmenting YOLO in the editor
+            val accInteractiveElements = AccessibilityAugmenter.captureAllInteractiveElements()
+            val accElementsJson = if (accInteractiveElements.isNotEmpty()) {
+                try {
+                    Json.encodeToString(accInteractiveElements)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to serialize acc interactive elements", e)
+                    null
+                }
+            } else null
+            Log.d(TAG, "Pre-captured ${accInteractiveElements.size} interactive accessibility elements for editor")
+
             withContext(Dispatchers.Main) {
                 // Don't stopSelf — service stays alive for multi-snap
                 val intent = Intent(this@ScreenUnderstandingService, CaptureEditorActivity::class.java).apply {
@@ -457,6 +469,7 @@ class ScreenUnderstandingService : Service() {
                     flowMlJson?.let { putExtra("EXTRA_FLOW_ML_JSON", it) }
                     if (clearOnStart) putExtra("EXTRA_CLEAR_ON_START", true)
                     accTextJson?.let { putExtra("ACC_TEXT_DATA", it) }
+                    accElementsJson?.let { putExtra("ACC_ELEMENTS_DATA", it) }
                 }
                 startActivity(intent)
             }

@@ -42,6 +42,18 @@ object AccessibilityAugmenter {
      * @return List of gap-fill [UIElement]s with `source = "accessibility"`.
      */
     fun getUndetectedElements(yoloElements: List<UIElement>): List<UIElement> {
+        val accessibilityElements = captureAllInteractiveElements()
+        return filterUndetected(accessibilityElements, yoloElements)
+    }
+
+    /**
+     * Capture all interactive elements from the current accessibility tree.
+     * Call this WHILE the target app is in the foreground — once another activity
+     * opens, rootInActiveWindow will point to the new activity's UI.
+     *
+     * @return List of interactive [UIElement]s with `source = "accessibility"`.
+     */
+    fun captureAllInteractiveElements(): List<UIElement> {
         val service = AccessibilityRouter.getService() ?: run {
             Log.d(TAG, "Accessibility service not connected")
             return emptyList()
@@ -53,19 +65,28 @@ object AccessibilityAugmenter {
             null
         } ?: return emptyList()
 
-        val accessibilityElements = mutableListOf<UIElement>()
+        val elements = mutableListOf<UIElement>()
         try {
-            traverseForInteractive(root, accessibilityElements, depth = 0)
+            traverseForInteractive(root, elements, depth = 0)
         } finally {
             try { root.recycle() } catch (_: Exception) {}
         }
 
-        if (accessibilityElements.isEmpty()) {
-            Log.d(TAG, "No interactive accessibility elements found")
-            return emptyList()
-        }
+        Log.d(TAG, "Captured ${elements.size} interactive accessibility elements")
+        return elements
+    }
 
-        // Filter out elements that overlap with existing YOLO detections
+    /**
+     * Filter pre-captured accessibility elements to only those NOT covered by YOLO detections.
+     * Use this when accessibility elements were captured earlier (e.g. pre-captured in the service)
+     * and need to be merged with a new YOLO detection run.
+     */
+    fun filterUndetected(
+        accessibilityElements: List<UIElement>,
+        yoloElements: List<UIElement>
+    ): List<UIElement> {
+        if (accessibilityElements.isEmpty()) return emptyList()
+
         val gapFills = accessibilityElements.filter { accElement ->
             val overlaps = yoloElements.any { yoloElement ->
                 calculateIoU(accElement.bounds, yoloElement.bounds) > OVERLAP_THRESHOLD

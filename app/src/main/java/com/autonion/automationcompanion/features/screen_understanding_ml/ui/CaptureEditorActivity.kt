@@ -68,6 +68,10 @@ class CaptureEditorActivity : ComponentActivity() {
     // Captured by the service BEFORE opening this editor (while target app was visible)
     private var preCapturedTextNodes: List<CapturedTextNode> = emptyList()
     
+    // Pre-captured interactive accessibility elements from the target app
+    // Used to augment YOLO detections without reading the editor's own UI tree
+    private var preCapturedA11yElements: List<UIElement> = emptyList()
+    
     // Flow mode state
     private var isFlowMode = false
     private var flowNodeId: String? = null
@@ -90,6 +94,17 @@ class CaptureEditorActivity : ComponentActivity() {
                 android.util.Log.d("CaptureEditor", "Loaded ${preCapturedTextNodes.size} pre-captured accessibility text nodes")
             } catch (e: Exception) {
                 android.util.Log.w("CaptureEditor", "Failed to parse pre-captured acc text: ${e.message}")
+            }
+        }
+        
+        // Parse pre-captured interactive accessibility elements from service
+        val accElementsJson = intent.getStringExtra("ACC_ELEMENTS_DATA")
+        if (!accElementsJson.isNullOrEmpty()) {
+            try {
+                preCapturedA11yElements = Json.decodeFromString<List<UIElement>>(accElementsJson)
+                android.util.Log.d("CaptureEditor", "Loaded ${preCapturedA11yElements.size} pre-captured interactive a11y elements")
+            } catch (e: Exception) {
+                android.util.Log.w("CaptureEditor", "Failed to parse pre-captured a11y elements: ${e.message}")
             }
         }
         
@@ -280,8 +295,21 @@ class CaptureEditorActivity : ComponentActivity() {
         val flowMlJson = intent.getStringExtra("EXTRA_FLOW_ML_JSON")
         Toast.makeText(this, "Detecting UI elements...", Toast.LENGTH_SHORT).show()
         lifecycleScope.launch(Dispatchers.Default) {
-             // Run YOLO + accessibility augmentation first, then enrich with OCR
-             val augmentedElements = perceptionLayer?.detectWithAccessibilityAugmentation(sourceBitmap!!) ?: emptyList()
+             // 1. Run YOLO detection on the screenshot
+             val yoloElements = perceptionLayer?.detect(sourceBitmap!!) ?: emptyList()
+
+             // 2. Use pre-captured accessibility elements (from the service, captured while
+             //    target app was in foreground) to fill gaps in YOLO detections
+             val gapFills = if (preCapturedA11yElements.isNotEmpty()) {
+                 com.autonion.automationcompanion.features.screen_understanding_ml.core.AccessibilityAugmenter
+                     .filterUndetected(preCapturedA11yElements, yoloElements)
+             } else {
+                 emptyList()
+             }
+             val augmentedElements = yoloElements + gapFills
+             android.util.Log.d("CaptureEditor", "Detection: ${yoloElements.size} YOLO + ${gapFills.size} a11y = ${augmentedElements.size} total")
+
+             // 3. Enrich with OCR text
              val detectedElements = if (augmentedElements.isNotEmpty()) {
                  perceptionLayer?.enrichWithOcr(augmentedElements, sourceBitmap!!) ?: augmentedElements
              } else {
