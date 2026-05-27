@@ -13,6 +13,7 @@ import android.graphics.Typeface
 import android.os.Bundle
 import android.view.GestureDetector
 import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import android.view.View
 import android.widget.EditText
 import android.widget.Toast
@@ -626,9 +627,28 @@ class CaptureEditorActivity : ComponentActivity() {
         private var ocrTextElements: List<UIElement> = emptyList()
         private val selectionStates: MutableList<SelectionState> = mutableListOf()
 
-        private var scaleFactor = 1f
-        private var offsetX = 0f
-        private var offsetY = 0f
+        // Base fit-to-view transform (computed in onMeasure)
+        private var baseScale = 1f
+        private var baseOffsetX = 0f
+        private var baseOffsetY = 0f
+
+        // User zoom/pan on top of the base transform
+        private var userZoom = 1f
+        private var userPanX = 0f
+        private var userPanY = 0f
+        private val minZoom = 1f
+        private val maxZoom = 5f
+
+        // Drag tracking
+        private var lastTouchX = 0f
+        private var lastTouchY = 0f
+        private var isDragging = false
+        private var activePointerId = MotionEvent.INVALID_POINTER_ID
+
+        // Computed combined transform values
+        private val scaleFactor: Float get() = baseScale * userZoom
+        private val offsetX: Float get() = baseOffsetX * userZoom + userPanX
+        private val offsetY: Float get() = baseOffsetY * userZoom + userPanY
 
         /** Currently active elements based on display mode */
         private val activeElements: List<UIElement>
@@ -663,15 +683,16 @@ class CaptureEditorActivity : ComponentActivity() {
         fun getSelectionActionTypes() = selectionStates.map { it.actionType }
         fun getSelectionInputTexts() = selectionStates.map { it.inputText }
 
+        /** Convert screen touch coordinates to bitmap coordinates */
+        private fun screenToBitmapX(sx: Float): Float = (sx - offsetX) / scaleFactor
+        private fun screenToBitmapY(sy: Float): Float = (sy - offsetY) / scaleFactor
+
         private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
-            override fun onDown(e: MotionEvent): Boolean {
-                return true
-            }
+            override fun onDown(e: MotionEvent): Boolean = true
 
             override fun onSingleTapUp(e: MotionEvent): Boolean {
-                val touchX = (e.x - offsetX) / scaleFactor
-                val touchY = (e.y - offsetY) / scaleFactor
-
+                val touchX = screenToBitmapX(e.x)
+                val touchY = screenToBitmapY(e.y)
                 val clicked = activeElements.find { it.bounds.contains(touchX, touchY) }
                 if (clicked != null) {
                     toggleSelection(clicked)
@@ -680,9 +701,8 @@ class CaptureEditorActivity : ComponentActivity() {
             }
 
             override fun onLongPress(e: MotionEvent) {
-                val touchX = (e.x - offsetX) / scaleFactor
-                val touchY = (e.y - offsetY) / scaleFactor
-
+                val touchX = screenToBitmapX(e.x)
+                val touchY = screenToBitmapY(e.y)
                 val clicked = activeElements.find { it.bounds.contains(touchX, touchY) }
                 if (clicked != null) {
                     val state = selectionStates.find { it.element.id == clicked.id }
@@ -691,10 +711,92 @@ class CaptureEditorActivity : ComponentActivity() {
                     }
                 }
             }
+
+            override fun onDoubleTap(e: MotionEvent): Boolean {
+                // Double-tap to reset zoom
+                userZoom = 1f
+                userPanX = 0f
+                userPanY = 0f
+                invalidate()
+                return true
+            }
+        })
+
+        private val scaleGestureDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            override fun onScale(detector: ScaleGestureDetector): Boolean {
+                val prevZoom = userZoom
+                userZoom = (userZoom * detector.scaleFactor).coerceIn(minZoom, maxZoom)
+                val zoomDelta = userZoom / prevZoom
+
+                // Zoom around the focal point
+                userPanX = detector.focusX - zoomDelta * (detector.focusX - userPanX)
+                userPanY = detector.focusY - zoomDelta * (detector.focusY - userPanY)
+                clampPan()
+                invalidate()
+                return true
+            }
         })
 
         override fun onTouchEvent(event: MotionEvent): Boolean {
-            return gestureDetector.onTouchEvent(event)
+            scaleGestureDetector.onTouchEvent(event)
+            gestureDetector.onTouchEvent(event)
+
+            // Handle drag/pan (only when not scaling)
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    activePointerId = event.getPointerId(0)
+                    lastTouchX = event.x
+                    lastTouchY = event.y
+                    isDragging = false
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    if (!scaleGestureDetector.isInProgress && event.pointerCount == 1) {
+                        val pIdx = event.findPointerIndex(activePointerId)
+                        if (pIdx >= 0) {
+                            val dx = event.getX(pIdx) - lastTouchX
+                            val dy = event.getY(pIdx) - lastTouchY
+                            if (!isDragging && (dx * dx + dy * dy) > 64) {
+                                isDragging = true
+                            }
+                            if (isDragging && userZoom > 1f) {
+                                userPanX += dx
+                                userPanY += dy
+                                clampPan()
+                                invalidate()
+                            }
+                            lastTouchX = event.getX(pIdx)
+                            lastTouchY = event.getY(pIdx)
+                        }
+                    }
+                }
+                MotionEvent.ACTION_POINTER_UP -> {
+                    val pointerIndex = event.actionIndex
+                    val pointerId = event.getPointerId(pointerIndex)
+                    if (pointerId == activePointerId) {
+                        val newIndex = if (pointerIndex == 0) 1 else 0
+                        if (newIndex < event.pointerCount) {
+                            activePointerId = event.getPointerId(newIndex)
+                            lastTouchX = event.getX(newIndex)
+                            lastTouchY = event.getY(newIndex)
+                        }
+                    }
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    activePointerId = MotionEvent.INVALID_POINTER_ID
+                    isDragging = false
+                }
+            }
+            return true
+        }
+
+        /** Keep the pan within reasonable bounds so the bitmap stays partially visible */
+        private fun clampPan() {
+            val bitmapW = bitmap.width * baseScale * userZoom
+            val bitmapH = bitmap.height * baseScale * userZoom
+            val maxPanX = (bitmapW - width) / 2f + width * 0.3f
+            val maxPanY = (bitmapH - height) / 2f + height * 0.3f
+            userPanX = userPanX.coerceIn(-maxPanX.coerceAtLeast(0f), maxPanX.coerceAtLeast(0f))
+            userPanY = userPanY.coerceIn(-maxPanY.coerceAtLeast(0f), maxPanY.coerceAtLeast(0f))
         }
 
         private fun showActionPicker(state: SelectionState) {
@@ -759,14 +861,14 @@ class CaptureEditorActivity : ComponentActivity() {
             val srcRatio = bitmap.width.toFloat() / bitmap.height.toFloat()
             val dstRatio = width.toFloat() / height.toFloat()
 
-            if (srcRatio > dstRatio) {
-                scaleFactor = width.toFloat() / bitmap.width.toFloat()
+            baseScale = if (srcRatio > dstRatio) {
+                width.toFloat() / bitmap.width.toFloat()
             } else {
-                scaleFactor = height.toFloat() / bitmap.height.toFloat()
+                height.toFloat() / bitmap.height.toFloat()
             }
 
-            offsetX = (width - bitmap.width * scaleFactor) / 2
-            offsetY = (height - bitmap.height * scaleFactor) / 2
+            baseOffsetX = (width - bitmap.width * baseScale) / 2
+            baseOffsetY = (height - bitmap.height * baseScale) / 2
 
             setMeasuredDimension(width, height)
         }
