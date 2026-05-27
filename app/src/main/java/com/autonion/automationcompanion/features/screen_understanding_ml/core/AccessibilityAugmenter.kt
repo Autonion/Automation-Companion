@@ -220,11 +220,15 @@ object AccessibilityAugmenter {
             // Clickable images → icon
             cn.contains("imageview") && node.isClickable -> "icon"
             cn.contains("imagebutton") -> "icon"
-            // Generic clickable views → button (many apps use custom View subclasses)
-            node.isClickable && !cn.contains("layout") && !cn.contains("scroll")
-                    && !cn.contains("recycler") && !cn.contains("viewgroup")
+            // Generic clickable views → button
+            // Exclude only known structural/scrolling containers, NOT layout wrappers like
+            // FrameLayout which are commonly used as clickable items (e.g. bottom nav tabs)
+            node.isClickable
+                    && !cn.contains("scrollview") && !cn.contains("recyclerview")
                     && !cn.contains("viewpager") && !cn.contains("drawerlayout")
-                    && !cn.contains("toolbar") && !cn.contains("appbar") -> "button"
+                    && !cn.contains("coordinatorlayout") && !cn.contains("navigationbarview")
+                    && !cn.contains("toolbar") && !cn.contains("appbar")
+                    && !cn.contains("viewgroup") -> "button"
             // Everything else → not a detectable element type
             else -> null
         }
