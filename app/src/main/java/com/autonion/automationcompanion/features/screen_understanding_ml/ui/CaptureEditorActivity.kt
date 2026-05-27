@@ -687,13 +687,20 @@ class CaptureEditorActivity : ComponentActivity() {
         private fun screenToBitmapX(sx: Float): Float = (sx - offsetX) / scaleFactor
         private fun screenToBitmapY(sy: Float): Float = (sy - offsetY) / scaleFactor
 
+        /** Find the smallest (innermost) element at the given bitmap coordinates */
+        private fun findSmallestElementAt(x: Float, y: Float): UIElement? {
+            return activeElements
+                .filter { it.bounds.contains(x, y) }
+                .minByOrNull { it.bounds.width() * it.bounds.height() }
+        }
+
         private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
             override fun onDown(e: MotionEvent): Boolean = true
 
             override fun onSingleTapUp(e: MotionEvent): Boolean {
                 val touchX = screenToBitmapX(e.x)
                 val touchY = screenToBitmapY(e.y)
-                val clicked = activeElements.find { it.bounds.contains(touchX, touchY) }
+                val clicked = findSmallestElementAt(touchX, touchY)
                 if (clicked != null) {
                     toggleSelection(clicked)
                 }
@@ -703,7 +710,7 @@ class CaptureEditorActivity : ComponentActivity() {
             override fun onLongPress(e: MotionEvent) {
                 val touchX = screenToBitmapX(e.x)
                 val touchY = screenToBitmapY(e.y)
-                val clicked = activeElements.find { it.bounds.contains(touchX, touchY) }
+                val clicked = findSmallestElementAt(touchX, touchY)
                 if (clicked != null) {
                     val state = selectionStates.find { it.element.id == clicked.id }
                     if (state != null) {
