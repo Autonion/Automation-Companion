@@ -805,11 +805,34 @@ private fun VisualTriggerNodeConfig(node: VisualTriggerNode, onUpdate: (FlowNode
 @Composable
 private fun ScreenMLNodeConfig(node: ScreenMLNode, onUpdate: (FlowNode) -> Unit, onLaunchOverlay: (FlowNode) -> Unit) {
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+
+    // ── Status indicator ──
     if (node.automationStepsJson.isNotEmpty()) {
-        Text("✓ Screen ML actions available.", color = Color(0xFF64FFDA), fontSize = 12.sp)
+        Row(
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text("✓ Screen ML actions configured", color = Color(0xFF64FFDA), fontSize = 12.sp)
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = NodeColors.ScreenMLAmber.copy(alpha = 0.2f)
+            ) {
+                Text(
+                    when (node.mode) {
+                        ScreenMLMode.OCR -> "OCR"
+                        ScreenMLMode.OBJECT_DETECTION -> "ELEMENTS"
+                    },
+                    color = NodeColors.ScreenMLAmber,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                )
+            }
+        }
         Spacer(Modifier.height(8.dp))
     }
 
+    // ── Capture / configure button (always available) ──
     Button(
         onClick = { onLaunchOverlay(node) },
         modifier = Modifier.fillMaxWidth(),
@@ -818,6 +841,12 @@ private fun ScreenMLNodeConfig(node: ScreenMLNode, onUpdate: (FlowNode) -> Unit,
     ) {
         Text(if (node.automationStepsJson.isEmpty()) "Capture & Detect Screen" else "Re-capture Screen", color = Color.Black)
     }
+    Spacer(Modifier.height(4.dp))
+    Text(
+        "Use the Elements or Text tab in the editor to choose detection mode",
+        color = Color.White.copy(alpha = 0.35f),
+        fontSize = 11.sp
+    )
 
     Spacer(Modifier.height(12.dp))
 
@@ -856,26 +885,29 @@ private fun ScreenMLNodeConfig(node: ScreenMLNode, onUpdate: (FlowNode) -> Unit,
         exit = shrinkVertically()
     ) {
         Column {
+            var targetLabel by remember(node.id) { mutableStateOf(node.targetLabel ?: "") }
+            OutlinedTextField(
+                value = targetLabel,
+                onValueChange = {
+                    targetLabel = it
+                    onUpdate(node.copy(targetLabel = it.ifBlank { null }))
+                },
+                label = { Text("Target Label (optional)") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                colors = flowTextFieldColors()
+            )
+            Spacer(Modifier.height(4.dp))
             Text(
-                "Fallback Mode — used when no captured steps are available",
+                when (node.mode) {
+                    ScreenMLMode.OCR -> "If set, the node will search for this text and report found/not-found"
+                    ScreenMLMode.OBJECT_DETECTION -> "If set (without steps), the node will look for this element type"
+                },
                 color = Color.White.copy(alpha = 0.35f),
                 fontSize = 11.sp
             )
-            Spacer(Modifier.height(8.dp))
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ScreenMLMode.entries.forEach { mode ->
-                    FilterChip(
-                        selected = node.mode == mode,
-                        onClick = { onUpdate(node.copy(mode = mode)) },
-                        label = { Text(mode.name, fontSize = 11.sp) },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = NodeColors.ScreenMLAmber.copy(alpha = 0.3f),
-                            selectedLabelColor = NodeColors.ScreenMLAmber
-                        )
-                    )
-                }
-            }
         }
     }
 }

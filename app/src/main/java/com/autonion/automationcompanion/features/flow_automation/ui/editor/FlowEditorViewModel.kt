@@ -531,7 +531,14 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
                 }
                 com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.ACTION_FLOW_ML_DONE -> {
                     val imgPath = intent.getStringExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_RESULT_IMAGE_PATH) ?: ""
-                    (node as? ScreenMLNode)?.copy(automationStepsJson = json, captureImagePath = imgPath) ?: node
+                    // Read which tab (Elements/Text) was active in the Screen ML editor
+                    val editorMode = intent.getStringExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_RESULT_ML_MODE)
+                    val mlMode = if (editorMode == "TEXT") ScreenMLMode.OCR else ScreenMLMode.OBJECT_DETECTION
+                    (node as? ScreenMLNode)?.copy(
+                        automationStepsJson = json,
+                        captureImagePath = imgPath,
+                        mode = mlMode
+                    ) ?: node
                 }
                 else -> node
             }

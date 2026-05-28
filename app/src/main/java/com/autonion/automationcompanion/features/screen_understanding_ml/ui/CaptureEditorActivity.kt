@@ -77,6 +77,9 @@ class CaptureEditorActivity : ComponentActivity() {
     private var isFlowMode = false
     private var flowNodeId: String? = null
     private var currentImagePath: String? = null
+    
+    // Track which tab the user is on (Elements = Object Detection, Text = OCR)
+    private var currentDisplayMode: EditorDisplayMode = EditorDisplayMode.ELEMENTS
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -181,6 +184,7 @@ class CaptureEditorActivity : ComponentActivity() {
                         selected = displayMode == EditorDisplayMode.ELEMENTS,
                         onClick = {
                             displayMode = EditorDisplayMode.ELEMENTS
+                            currentDisplayMode = EditorDisplayMode.ELEMENTS
                             editorViewInput?.setDisplayMode(EditorDisplayMode.ELEMENTS)
                         },
                         label = { Text("🔲 Elements", fontSize = 13.sp) },
@@ -195,6 +199,7 @@ class CaptureEditorActivity : ComponentActivity() {
                         selected = displayMode == EditorDisplayMode.TEXT,
                         onClick = {
                             displayMode = EditorDisplayMode.TEXT
+                            currentDisplayMode = EditorDisplayMode.TEXT
                             editorViewInput?.setDisplayMode(EditorDisplayMode.TEXT)
                             // Run OCR on first switch (cached after that)
                             if (ocrElements == null && !ocrLoading) {
@@ -455,6 +460,7 @@ class CaptureEditorActivity : ComponentActivity() {
                     putExtra(FlowOverlayContract.EXTRA_RESULT_NODE_ID, flowNodeId)
                     putExtra(FlowOverlayContract.EXTRA_RESULT_FILE_PATH, tempFile.absolutePath)
                     putExtra(FlowOverlayContract.EXTRA_RESULT_IMAGE_PATH, currentImagePath)
+                    putExtra(FlowOverlayContract.EXTRA_RESULT_ML_MODE, currentDisplayMode.name)
                 }
                 LocalBroadcastManager.getInstance(this).sendBroadcast(resultIntent)
                 
