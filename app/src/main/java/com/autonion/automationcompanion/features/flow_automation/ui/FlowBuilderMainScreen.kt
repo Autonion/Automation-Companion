@@ -97,7 +97,7 @@ private fun startFlowService(context: Context, flowId: String) {
     val repository = com.autonion.automationcompanion.features.flow_automation.data.FlowRepository(context)
     val graph = repository.load(flowId)
     
-    val needsMediaProjection = graph?.nodes?.any {
+    val needsMediaProjection = graph?.reachableNodes()?.any {
         it is com.autonion.automationcompanion.features.flow_automation.model.VisualTriggerNode ||
         it is com.autonion.automationcompanion.features.flow_automation.model.ScreenMLNode
     } ?: false

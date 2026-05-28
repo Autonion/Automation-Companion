@@ -93,16 +93,20 @@ fun FlowEditorScreen(
     var showMediaProjectionDisclosure by remember { mutableStateOf(false) }
 
     // Detect if flow has LaunchApp + visual/ML nodes (needs full-screen capture)
-    val hasLaunchAppNode = remember(state.graph.nodes) {
-        state.graph.nodes.any { it is LaunchAppNode }
+    // Only consider nodes reachable from StartNode via edges
+    val reachableNodes = remember(state.graph.nodes, state.graph.edges) {
+        state.graph.reachableNodes()
     }
-    val hasVisualNodes = remember(state.graph.nodes) {
-        state.graph.nodes.any { it is VisualTriggerNode || it is ScreenMLNode }
+    val hasLaunchAppNode = remember(reachableNodes) {
+        reachableNodes.any { it is LaunchAppNode }
+    }
+    val hasVisualNodes = remember(reachableNodes) {
+        reachableNodes.any { it is VisualTriggerNode || it is ScreenMLNode }
     }
     val needsFullScreen = hasLaunchAppNode && hasVisualNodes
 
     // ── Warning banner for flows that need full-screen capture ──
-    val showScreenCaptureWarning = remember(state.graph.nodes) {
+    val showScreenCaptureWarning = remember(reachableNodes) {
         needsFullScreen
     }
 

@@ -447,8 +447,9 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
         val context = getApplication<android.app.Application>()
         val flowId = _state.value.graph.id
 
-        // Check if any node in the flow needs MediaProjection (screen capture)
-        val needsMediaProjection = _state.value.graph.nodes.any {
+        // Check if any reachable node in the flow needs MediaProjection (screen capture)
+        // Only nodes connected to the StartNode via edges are considered
+        val needsMediaProjection = _state.value.graph.reachableNodes().any {
             it is VisualTriggerNode || it is ScreenMLNode
         }
 
