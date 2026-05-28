@@ -66,6 +66,7 @@ fun FlowEditorScreen(
     val state by viewModel.state.collectAsState()
     val execState by viewModel.executionState.collectAsState()
     val isExecuting = execState is FlowExecutionState.Running
+    val validationErrors by viewModel.validationErrors.collectAsState()
 
     val editorColors = flowEditorColors()
     val density = LocalDensity.current
@@ -636,4 +637,47 @@ fun FlowEditorScreen(
             projectionLauncher.launch(mpManager.createScreenCaptureIntent())
         }
     )
+
+    // ── Flow Validation Error Dialog ──
+    if (validationErrors.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = { viewModel.clearValidationErrors() },
+            containerColor = Color(0xFF1A1C1E),
+            titleContentColor = Color.White,
+            textContentColor = Color.White.copy(alpha = 0.85f),
+            title = {
+                Text(
+                    "⚠ Cannot Run Flow",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "The following nodes are not configured:",
+                        color = Color.White.copy(alpha = 0.6f),
+                        fontSize = 13.sp
+                    )
+                    validationErrors.forEach { error ->
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFFB71C1C).copy(alpha = 0.15f)
+                        ) {
+                            Text(
+                                "•  $error",
+                                color = Color(0xFFEF9A9A),
+                                fontSize = 13.sp,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.clearValidationErrors() }) {
+                    Text("OK", color = Color(0xFF64FFDA))
+                }
+            }
+        )
+    }
 }
