@@ -1635,18 +1635,20 @@ private fun SmartWelcomeState(
             // ── Quick Action Chips ──
             val uriHandler = LocalUriHandler.current
             Row(
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Surface(
                     onClick = { uriHandler.openUri(YouTubeTutorials.OMNI_CHAT) },
                     color = AccentPurple.copy(alpha = if (isDark) 0.15f else 0.1f),
                     shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, AccentPurple.copy(alpha = 0.3f))
+                    border = androidx.compose.foundation.BorderStroke(1.dp, AccentPurple.copy(alpha = 0.3f)),
+                    modifier = Modifier.weight(1f)
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.Center
                     ) {
                         Icon(
                             Icons.Default.PlayCircle,
@@ -1654,10 +1656,13 @@ private fun SmartWelcomeState(
                             modifier = Modifier.size(16.dp),
                             tint = AccentPurple
                         )
+                        Spacer(Modifier.width(6.dp))
                         Text(
                             "Watch Tutorial",
                             color = textColor.copy(alpha = 0.85f),
-                            fontSize = 12.sp
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
@@ -1665,14 +1670,21 @@ private fun SmartWelcomeState(
                     onClick = onBrowseFAQs,
                     color = AccentBlue.copy(alpha = if (isDark) 0.15f else 0.1f),
                     shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, AccentBlue.copy(alpha = 0.3f))
+                    border = androidx.compose.foundation.BorderStroke(1.dp, AccentBlue.copy(alpha = 0.3f)),
+                    modifier = Modifier.weight(1f)
                 ) {
-                    Text(
-                        "❓ Browse FAQs",
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                        color = textColor.copy(alpha = 0.85f),
-                        fontSize = 12.sp
-                    )
+                    Box(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "❓ Browse FAQs",
+                            color = textColor.copy(alpha = 0.85f),
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
             }
         }

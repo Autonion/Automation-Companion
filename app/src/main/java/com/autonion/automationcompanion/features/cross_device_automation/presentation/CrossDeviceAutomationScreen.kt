@@ -250,6 +250,7 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
                                     Box(
                                         modifier = Modifier
                                             .fillMaxSize()
+                                            .background(if (isDark) Color(0xCC0F1115) else Color(0xCCF3F6FD))
                                             .clickable(
                                                 interactionSource = remember { MutableInteractionSource() },
                                                 indication = null,

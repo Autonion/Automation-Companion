@@ -3,6 +3,7 @@ package com.autonion.automationcompanion.ui.components
 
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -61,10 +62,19 @@ fun FeatureTipSheet(
     val uriHandler = LocalUriHandler.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
+    val isDark = isSystemInDarkTheme()
+    val sheetBg = if (isDark) SheetBg else MaterialTheme.colorScheme.surface
+    val cardGlassColor = if (isDark) CardGlass else Color(0xFFF0F4FA)
+    val textColor = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface
+    val secondaryTextColor = if (isDark) Color.White.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onSurfaceVariant
+    val dragHandleColor = if (isDark) Color.White.copy(alpha = 0.2f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f)
+    val buttonBgColor = if (isDark) Color.White.copy(alpha = 0.1f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)
+    val buttonTextColor = if (isDark) Color.White else MaterialTheme.colorScheme.onSurface
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
-        containerColor = SheetBg,
+        containerColor = sheetBg,
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
         dragHandle = {
             Box(
@@ -73,7 +83,7 @@ fun FeatureTipSheet(
                     .width(40.dp)
                     .height(4.dp)
                     .clip(RoundedCornerShape(2.dp))
-                    .background(Color.White.copy(alpha = 0.2f))
+                    .background(dragHandleColor)
             )
         },
         tonalElevation = 0.dp
@@ -118,7 +128,7 @@ fun FeatureTipSheet(
             // ── Title ──
             Text(
                 text = title,
-                color = Color.White,
+                color = textColor,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center
@@ -128,7 +138,7 @@ fun FeatureTipSheet(
 
             Text(
                 text = "Quick tips to get started",
-                color = Color.White.copy(alpha = 0.5f),
+                color = secondaryTextColor,
                 fontSize = 13.sp,
                 textAlign = TextAlign.Center
             )
@@ -137,7 +147,7 @@ fun FeatureTipSheet(
 
             // ── Tips List ──
             Surface(
-                color = CardGlass,
+                color = cardGlassColor,
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -146,7 +156,7 @@ fun FeatureTipSheet(
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     tips.forEachIndexed { index, tip ->
-                        TipRow(index = index + 1, text = tip)
+                        TipRow(index = index + 1, text = tip, textColor = textColor)
                     }
                 }
             }
@@ -165,8 +175,8 @@ fun FeatureTipSheet(
                         .weight(1f)
                         .height(48.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.White.copy(alpha = 0.1f),
-                        contentColor = Color.White
+                        containerColor = buttonBgColor,
+                        contentColor = buttonTextColor
                     ),
                     shape = RoundedCornerShape(14.dp)
                 ) {
@@ -232,14 +242,14 @@ fun FeatureTipSheet(
                 TextButton(
                     onClick = { uriHandler.openUri(youtubeLink) },
                     colors = ButtonDefaults.textButtonColors(
-                        contentColor = Color.White.copy(alpha = 0.6f)
+                        contentColor = secondaryTextColor
                     )
                 ) {
                     Icon(
                         Icons.Default.PlayCircle,
                         contentDescription = null,
                         modifier = Modifier.size(18.dp),
-                        tint = Color.White.copy(alpha = 0.6f)
+                        tint = secondaryTextColor
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
@@ -257,7 +267,7 @@ fun FeatureTipSheet(
  * Text wrapped in ** ** is rendered bold in the accent color.
  */
 @Composable
-private fun TipRow(index: Int, text: String) {
+private fun TipRow(index: Int, text: String, textColor: Color) {
     Row(
         verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -280,8 +290,8 @@ private fun TipRow(index: Int, text: String) {
 
         // Tip text with bold parsing
         Text(
-            text = parseBoldMarkdown(text),
-            color = Color.White.copy(alpha = 0.85f),
+            text = parseBoldMarkdown(text, textColor),
+            color = textColor.copy(alpha = 0.85f),
             fontSize = 14.sp,
             lineHeight = 20.sp,
             modifier = Modifier.weight(1f)
@@ -291,10 +301,10 @@ private fun TipRow(index: Int, text: String) {
 
 /**
  * Parses text with **bold** markers and returns an AnnotatedString
- * where bold segments are rendered in white bold with accent tint.
+ * where bold segments are rendered in bold with the matching theme color.
  */
 @Composable
-private fun parseBoldMarkdown(text: String) = buildAnnotatedString {
+private fun parseBoldMarkdown(text: String, boldColor: Color) = buildAnnotatedString {
     val regex = Regex("""\*\*(.+?)\*\*""")
     var lastIndex = 0
 
@@ -302,7 +312,7 @@ private fun parseBoldMarkdown(text: String) = buildAnnotatedString {
         // Append text before the match
         append(text.substring(lastIndex, match.range.first))
         // Append bold text
-        withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = Color.White)) {
+        withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = boldColor)) {
             append(match.groupValues[1])
         }
         lastIndex = match.range.last + 1
