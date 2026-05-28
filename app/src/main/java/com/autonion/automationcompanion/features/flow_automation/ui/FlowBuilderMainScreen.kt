@@ -24,6 +24,7 @@ import com.autonion.automationcompanion.features.flow_automation.ui.editor.FlowE
 import com.autonion.automationcompanion.features.flow_automation.ui.list.FlowListScreen
 import com.autonion.automationcompanion.features.flow_automation.ui.list.FlowListViewModel
 import com.autonion.automationcompanion.ui.components.FeatureTipSheet
+import com.autonion.automationcompanion.ui.components.YouTubeTutorials
 
 /**
  * Main entry composable for the Flow Builder feature.
@@ -50,7 +51,7 @@ fun FlowBuilderMainScreen(
             ),
             icon = Icons.Default.AccountTree,
             iconColor = Color(0xFF7C4DFF),
-            youtubeLink = null,
+            youtubeLink = YouTubeTutorials.FLOW_BUILDER,
             onDismiss = { onboardingPrefs.markTipSeen("flow_builder"); showTip = false }
         )
     }

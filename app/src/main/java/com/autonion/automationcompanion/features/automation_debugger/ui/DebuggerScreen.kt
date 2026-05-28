@@ -31,6 +31,9 @@ import com.autonion.automationcompanion.features.automation_debugger.CategorySum
 import com.autonion.automationcompanion.features.automation_debugger.DebuggerViewModel
 import com.autonion.automationcompanion.ui.components.AuroraBackground
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.ui.platform.LocalUriHandler
+import com.autonion.automationcompanion.ui.components.YouTubeTutorials
 import com.autonion.automationcompanion.features.omni_chatbot.ui.LocalStartWalkthrough
 import com.autonion.automationcompanion.core.onboarding.OnboardingPreferences
 import com.autonion.automationcompanion.ui.components.FeatureTipSheet
@@ -48,6 +51,7 @@ fun DebuggerScreen(
     val isDark = isSystemInDarkTheme()
     var showClearDialog by remember { mutableStateOf(false) }
     val startWalkthrough = LocalStartWalkthrough.current
+    val uriHandler = LocalUriHandler.current
 
     // ── First-visit Feature Tip ──
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -64,7 +68,7 @@ fun DebuggerScreen(
             ),
             icon = androidx.compose.material.icons.Icons.Default.BugReport,
             iconColor = androidx.compose.ui.graphics.Color(0xFF757575),
-            youtubeLink = null,
+            youtubeLink = YouTubeTutorials.DEBUGGER,
             onDismiss = { onboardingPrefs.markTipSeen("debugger"); showTip = false }
         )
     }
@@ -107,6 +111,9 @@ fun DebuggerScreen(
                         }
                     },
                     actions = {
+                        IconButton(onClick = { uriHandler.openUri(YouTubeTutorials.DEBUGGER) }) {
+                            Icon(Icons.Default.PlayCircle, contentDescription = "Watch Video Tutorial", tint = MaterialTheme.colorScheme.onBackground)
+                        }
                         IconButton(onClick = { startWalkthrough("debugger") }) {
                             Icon(Icons.Outlined.Info, contentDescription = "Take a Walkthrough", tint = MaterialTheme.colorScheme.onBackground)
                         }

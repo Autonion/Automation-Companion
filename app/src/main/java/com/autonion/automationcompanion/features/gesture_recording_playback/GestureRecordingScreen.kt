@@ -20,6 +20,7 @@ import com.autonion.automationcompanion.ui.components.FeatureTipSheet
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
+import com.autonion.automationcompanion.ui.components.YouTubeTutorials
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccessibilityNew
@@ -45,7 +46,7 @@ fun GestureRecordingScreen(onBack: () -> Unit = {}) {
             ),
             icon = Icons.Default.TouchApp,
             iconColor = Color(0xFF448AFF),
-            youtubeLink = null,
+            youtubeLink = YouTubeTutorials.GESTURE,
             onDismiss = { onboardingPrefs.markTipSeen("gesture_recording"); showTip = false }
         )
     }

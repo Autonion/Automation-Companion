@@ -48,6 +48,9 @@ import com.autonion.automationcompanion.features.screen_understanding_ml.logic.P
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.AutomationPreset
 import com.autonion.automationcompanion.ui.components.AuroraBackground
 import androidx.compose.material.icons.outlined.Info
+import com.autonion.automationcompanion.ui.components.YouTubeTutorials
+import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.ui.platform.LocalUriHandler
 import com.autonion.automationcompanion.features.omni_chatbot.ui.LocalStartWalkthrough
 import com.autonion.automationcompanion.ui.isTablet
 import com.autonion.automationcompanion.ui.rememberWindowWidthSize
@@ -88,7 +91,7 @@ fun ScreenMLRoute(onBack: () -> Unit) {
             ),
             icon = androidx.compose.material.icons.Icons.AutoMirrored.Filled.ViewQuilt,
             iconColor = androidx.compose.ui.graphics.Color(0xFF448AFF),
-            youtubeLink = null,
+            youtubeLink = YouTubeTutorials.SCREEN_ML,
             onDismiss = { onboardingPrefs.markTipSeen("screen_ml"); showTip = false }
         )
     }
@@ -199,6 +202,10 @@ private fun ScreenMLDashboardContent(
                         navigationIconContentColor = MaterialTheme.colorScheme.onSurface
                     ),
                     actions = {
+                        val uriHandler = LocalUriHandler.current
+                        IconButton(onClick = { uriHandler.openUri(YouTubeTutorials.SCREEN_ML) }) {
+                            Icon(Icons.Default.PlayCircle, contentDescription = "Watch Video Tutorial", tint = MaterialTheme.colorScheme.onSurface)
+                        }
                         IconButton(onClick = { startWalkthrough("screen_ml") }) {
                             Icon(Icons.Outlined.Info, contentDescription = "Take a Walkthrough", tint = MaterialTheme.colorScheme.onSurface)
                         }

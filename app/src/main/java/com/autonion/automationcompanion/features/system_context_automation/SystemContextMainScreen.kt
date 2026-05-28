@@ -64,6 +64,9 @@ import com.autonion.automationcompanion.ui.rememberWindowWidthSize
 import com.autonion.automationcompanion.ui.WindowWidthSize
 import com.autonion.automationcompanion.core.onboarding.OnboardingPreferences
 import com.autonion.automationcompanion.ui.components.FeatureTipSheet
+import com.autonion.automationcompanion.ui.components.YouTubeTutorials
+import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.ui.platform.LocalUriHandler
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -71,6 +74,7 @@ import kotlinx.coroutines.delay
 fun SystemContextMainScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val startWalkthrough = LocalStartWalkthrough.current
+    val uriHandler = LocalUriHandler.current
     val tablet = isTablet()
     val windowWidthSize = rememberWindowWidthSize()
 
@@ -88,7 +92,7 @@ fun SystemContextMainScreen(onBack: () -> Unit) {
             ),
             icon = androidx.compose.material.icons.Icons.Default.SettingsSystemDaydream,
             iconColor = androidx.compose.ui.graphics.Color(0xFF448AFF),
-            youtubeLink = null,
+            youtubeLink = YouTubeTutorials.SYSTEM_CONTEXT,
             onDismiss = { onboardingPrefs.markTipSeen("system_context"); showTip = false },
             onShowWalkthrough = { showTip = false; startWalkthrough("system_context") }
         )
@@ -108,6 +112,9 @@ fun SystemContextMainScreen(onBack: () -> Unit) {
                         }
                     },
                     actions = {
+                        IconButton(onClick = { uriHandler.openUri(YouTubeTutorials.SYSTEM_CONTEXT) }) {
+                            Icon(Icons.Default.PlayCircle, contentDescription = "Watch Video Tutorial")
+                        }
                         IconButton(onClick = { startWalkthrough("system_context") }) {
                             Icon(Icons.Outlined.Info, contentDescription = "Take a Walkthrough")
                         }

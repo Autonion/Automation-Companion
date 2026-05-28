@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Accessibility
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Screenshot
+import com.autonion.automationcompanion.ui.components.YouTubeTutorials
 import com.autonion.automationcompanion.features.system_context_automation.shared.ui.PermissionDisclosureDialog
 import com.autonion.automationcompanion.core.onboarding.OnboardingPreferences
 import com.autonion.automationcompanion.ui.components.FeatureTipSheet
@@ -55,7 +56,7 @@ fun VisualTriggerRoute(
             ),
             icon = Icons.Default.Screenshot,
             iconColor = androidx.compose.ui.graphics.Color(0xFF00E676),
-            youtubeLink = null,
+            youtubeLink = YouTubeTutorials.VISUAL_TRIGGER,
             onDismiss = { onboardingPrefs.markTipSeen("visual_trigger"); showTip = false }
         )
     }

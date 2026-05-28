@@ -49,6 +49,8 @@ import com.autonion.automationcompanion.ui.theme.*
 import com.autonion.automationcompanion.ui.rememberScreenWidthDp
 import com.autonion.automationcompanion.core.onboarding.OnboardingPreferences
 import com.autonion.automationcompanion.ui.components.FeatureTipSheet
+import com.autonion.automationcompanion.ui.components.YouTubeTutorials
+import androidx.compose.material.icons.filled.PlayCircle
 import kotlinx.coroutines.launch
 import java.util.*
 
@@ -107,7 +109,7 @@ fun SemanticAutomationScreen(
             ),
             icon = Icons.Default.AutoAwesome,
             iconColor = Color(0xFFFF9800),
-            youtubeLink = null,
+            youtubeLink = YouTubeTutorials.SEMANTIC_AUTOMATION,
             onDismiss = { onboardingPrefs.markTipSeen("semantic_automation"); showTip = false },
             onShowWalkthrough = { showTip = false; startWalkthrough("semantic_automation") }
         )
@@ -244,6 +246,10 @@ fun SemanticAutomationScreen(
                         }
                     },
                     actions = {
+                        val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+                        IconButton(onClick = { uriHandler.openUri(YouTubeTutorials.SEMANTIC_AUTOMATION) }) {
+                            Icon(Icons.Default.PlayCircle, contentDescription = "Watch Video Tutorial", tint = headerTextColor)
+                        }
                         IconButton(onClick = { startWalkthrough("semantic_automation") }) {
                             Icon(Icons.Outlined.Info, contentDescription = "Take a Walkthrough", tint = headerTextColor)
                         }

@@ -50,6 +50,9 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.filled.Accessibility
 import com.autonion.automationcompanion.features.omni_chatbot.ui.LocalStartWalkthrough
 import com.autonion.automationcompanion.features.cross_device_automation.engine.HardwareButtonMapper
+import com.autonion.automationcompanion.ui.components.YouTubeTutorials
+import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.ui.platform.LocalUriHandler
 import com.autonion.automationcompanion.ui.components.ChatHistoryPanel
 import com.autonion.automationcompanion.ui.components.ConnectionRequiredOverlay
 import com.autonion.automationcompanion.core.onboarding.OnboardingPreferences
@@ -85,6 +88,7 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
 
     val scope = rememberCoroutineScope()
     val startWalkthrough = LocalStartWalkthrough.current
+    val uriHandler = LocalUriHandler.current
     var showHardwareRemoteSheet by remember { mutableStateOf(false) }
     val isHardwareRemoteActive by HardwareButtonMapper.isActive.collectAsState()
 
@@ -102,7 +106,7 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
             ),
             icon = androidx.compose.material.icons.Icons.Default.Devices,
             iconColor = Color(0xFF7C4DFF),
-            youtubeLink = null,
+            youtubeLink = YouTubeTutorials.CROSS_DEVICE,
             onDismiss = { onboardingPrefs.markTipSeen("cross_device"); showTip = false },
             onShowWalkthrough = { showTip = false; startWalkthrough("cross_device") }
         )
@@ -146,6 +150,9 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
                         }
                     },
                     actions = {
+                        IconButton(onClick = { uriHandler.openUri(YouTubeTutorials.CROSS_DEVICE) }) {
+                            Icon(Icons.Default.PlayCircle, contentDescription = "Watch Video Tutorial", tint = headerTextColor)
+                        }
                         IconButton(onClick = { showHardwareRemoteSheet = true }) {
                             Icon(Icons.Default.SettingsRemote, contentDescription = "Hardware Remote", tint = if (isHardwareRemoteActive) AccentPurple else headerTextColor)
                         }
