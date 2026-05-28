@@ -95,6 +95,8 @@ class ScreenUnderstandingService : Service() {
     private var flowNodeId: String? = null
     private var flowMlJson: String? = null
     private var clearOnStart: Boolean = false
+    private var flowImagePath: String? = null
+    private var flowEditorMode: String? = null
 
     // Debug metrics mode
     var isDebugMode = false
@@ -171,6 +173,18 @@ class ScreenUnderstandingService : Service() {
         Toast.makeText(this, "Added ${steps.size} elements (Total: ${accumulatedSteps.size})", Toast.LENGTH_SHORT).show()
         // Reveal save button now that we have captured content
         overlay?.showSaveButton()
+        // Clear flowMlJson after the first accumulation so subsequent snaps
+        // don't re-load stale selections in the editor.
+        if (isFlowMode) {
+            flowMlJson = null
+            clearOnStart = false
+        }
+    }
+
+    /** Called by CaptureEditorActivity to store the latest image and editor mode for flow broadcast */
+    fun updateFlowMetadata(imagePath: String?, editorMode: String?) {
+        if (imagePath != null) flowImagePath = imagePath
+        if (editorMode != null) flowEditorMode = editorMode
     }
 
     /** Save all accumulated steps as a preset */
@@ -204,6 +218,36 @@ class ScreenUnderstandingService : Service() {
         )
         presetRepository?.savePreset(preset)
         Toast.makeText(this, "Preset '$normalizedName' saved with ${accumulatedSteps.size} steps!", Toast.LENGTH_LONG).show()
+    }
+
+    /**
+     * Flow mode: Broadcast all accumulated steps back to FlowEditorViewModel
+     * via LocalBroadcast, then stop the service (overlay + MediaProjection).
+     */
+    private fun saveAccumulatedStepsForFlow() {
+        if (accumulatedSteps.isEmpty()) {
+            Toast.makeText(this, "No elements captured — snap and select first", Toast.LENGTH_SHORT).show()
+            return
+        }
+        try {
+            val json = Json.encodeToString(accumulatedSteps.toList())
+            val tempFile = java.io.File(cacheDir, "flow_ml_${flowNodeId}.json")
+            tempFile.writeText(json)
+
+            val resultIntent = Intent(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.ACTION_FLOW_ML_DONE).apply {
+                putExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_RESULT_NODE_ID, flowNodeId)
+                putExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_RESULT_FILE_PATH, tempFile.absolutePath)
+                putExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_RESULT_IMAGE_PATH, flowImagePath)
+                putExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_RESULT_ML_MODE, flowEditorMode ?: "ELEMENTS")
+            }
+            androidx.localbroadcastmanager.content.LocalBroadcastManager.getInstance(this).sendBroadcast(resultIntent)
+
+            Toast.makeText(this, "Flow node configured with ${accumulatedSteps.size} steps", Toast.LENGTH_SHORT).show()
+            stopSelf()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to save flow steps", e)
+            Toast.makeText(this, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -318,11 +362,16 @@ class ScreenUnderstandingService : Service() {
 
         overlay = ScreenAgentOverlay(
             context = this,
-            initialName = presetToPlay?.name ?: presetName,
+            initialName = if (isFlowMode) "Flow" else (presetToPlay?.name ?: presetName),
             onAnchorSelected = { /* No-op in capture mode */ },
             onSave = { name, _ ->
-                // Save accumulated steps as preset
-                saveAccumulatedPreset(name)
+                if (isFlowMode && flowNodeId != null) {
+                    // Flow mode: broadcast accumulated steps to FlowEditorViewModel
+                    saveAccumulatedStepsForFlow()
+                } else {
+                    // Normal mode: save as preset
+                    saveAccumulatedPreset(name)
+                }
             },
             onPlay = { _, _ ->
                 // Triggered when user taps Play on overlay in playback mode

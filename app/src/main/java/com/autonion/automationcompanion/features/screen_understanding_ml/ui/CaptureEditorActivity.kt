@@ -449,25 +449,21 @@ class CaptureEditorActivity : ComponentActivity() {
                  captureScreenHeight = sourceBitmap?.height?.toFloat() ?: 0f
              )
         }
-        
-        if (isFlowMode && flowNodeId != null) {
-            try {
-                val json = Json.encodeToString(steps)
-                val tempFile = File(cacheDir, "flow_ml_${flowNodeId}.json")
-                tempFile.writeText(json)
-                
-                val resultIntent = Intent(FlowOverlayContract.ACTION_FLOW_ML_DONE).apply {
-                    putExtra(FlowOverlayContract.EXTRA_RESULT_NODE_ID, flowNodeId)
-                    putExtra(FlowOverlayContract.EXTRA_RESULT_FILE_PATH, tempFile.absolutePath)
-                    putExtra(FlowOverlayContract.EXTRA_RESULT_IMAGE_PATH, currentImagePath)
-                    putExtra(FlowOverlayContract.EXTRA_RESULT_ML_MODE, currentDisplayMode.name)
-                }
-                LocalBroadcastManager.getInstance(this).sendBroadcast(resultIntent)
-                
-                Toast.makeText(this, "Flow node configured", Toast.LENGTH_SHORT).show()
+             if (isFlowMode && flowNodeId != null) {
+            // Accumulate steps in the service (same multi-snap pipeline as
+            // normal mode). The overlay Save button will broadcast the final
+            // result back to the FlowEditorViewModel.
+            val service = ScreenUnderstandingService.instance
+            if (service != null) {
+                service.addStepsFromEditor(steps)
+                // Store latest image path and editor mode for the eventual broadcast
+                service.updateFlowMetadata(currentImagePath, currentDisplayMode.name)
+                // Go back to target app to continue capturing
+                moveTaskToBack(true)
                 finish()
-            } catch (e: Exception) {
-                Toast.makeText(this, "Error saving for flow mode: ${e.message}", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "Error: Service not running! Elements lost.", Toast.LENGTH_LONG).show()
+                android.util.Log.e("CaptureEditor", "Service instance is null (flow mode)")
             }
             return
         }
@@ -858,13 +854,35 @@ class CaptureEditorActivity : ComponentActivity() {
         }
 
         private fun toggleSelection(element: UIElement) {
-            val existing = selectionStates.find { it.element.id == element.id }
+            // Primary: exact ID match
+            var existing = selectionStates.find { it.element.id == element.id }
+            // Fallback: bounds-overlap match (handles recapture where YOLO assigns
+            // new IDs but the saved selection references the original ID)
+            if (existing == null) {
+                existing = selectionStates.find { state ->
+                    val iou = calculateIoU(state.element.bounds, element.bounds)
+                    iou > 0.5f
+                }
+            }
             if (existing != null) {
                 selectionStates.remove(existing)
             } else {
                 selectionStates.add(SelectionState(element))
             }
             invalidate()
+        }
+
+        /** Calculate Intersection over Union for two rectangles */
+        private fun calculateIoU(a: android.graphics.RectF, b: android.graphics.RectF): Float {
+            val interLeft = maxOf(a.left, b.left)
+            val interTop = maxOf(a.top, b.top)
+            val interRight = minOf(a.right, b.right)
+            val interBottom = minOf(a.bottom, b.bottom)
+            if (interRight <= interLeft || interBottom <= interTop) return 0f
+            val interArea = (interRight - interLeft) * (interBottom - interTop)
+            val areaA = a.width() * a.height()
+            val areaB = b.width() * b.height()
+            return interArea / (areaA + areaB - interArea)
         }
 
         override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
