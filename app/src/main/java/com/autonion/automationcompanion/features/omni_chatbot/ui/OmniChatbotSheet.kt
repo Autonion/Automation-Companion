@@ -64,6 +64,7 @@ import com.autonion.automationcompanion.features.semantic_automation.core.Semant
 import com.autonion.automationcompanion.features.semantic_automation.consent.CloudApiConsentManager
 import com.autonion.automationcompanion.features.semantic_automation.ui.CloudApiDisclaimerDialog
 import com.autonion.automationcompanion.ui.components.ChatHistoryPanel
+import com.autonion.automationcompanion.ui.components.YouTubeTutorials
 import java.util.Date
 
 // ─── Colors ──────────────────────────────────────────────
@@ -383,10 +384,7 @@ private fun OmniChatSheet(viewModel: OmniChatbotViewModel) {
                                             onOpenCloudApi = { viewModel.openSettingsWithMode(InferenceMode.CLOUD_API) },
                                             onOpenServer = { viewModel.openSettingsWithMode(InferenceMode.SERVER_LLM) },
                                             onOpenSLM = { viewModel.openSettingsWithMode(InferenceMode.LOCAL_SLM) },
-                                            onBrowseFAQs = { selectedTab = 0 },
-                                            onShowMeAround = {
-                                                viewModel.processPrompt("Show me around the app")
-                                            }
+                                            onBrowseFAQs = { selectedTab = 0 }
                                         )
                                     } else {
                                         LazyColumn(
@@ -631,6 +629,8 @@ private fun ChatSheetHeader(
                     modifier = Modifier.size(22.dp)
                 )
             }
+
+
 
             // Settings button with status indicator
             IconButton(onClick = onSettingsClick) {
@@ -1507,8 +1507,7 @@ private fun SmartWelcomeState(
     onOpenCloudApi: () -> Unit,
     onOpenServer: () -> Unit,
     onOpenSLM: () -> Unit,
-    onBrowseFAQs: () -> Unit,
-    onShowMeAround: () -> Unit
+    onBrowseFAQs: () -> Unit
 ) {
     val isDark = isSystemInDarkTheme()
     val textColor = if (isDark) Color.White else Color(0xFF1A1C1E)
@@ -1634,21 +1633,33 @@ private fun SmartWelcomeState(
             Spacer(Modifier.height(10.dp))
 
             // ── Quick Action Chips ──
+            val uriHandler = LocalUriHandler.current
             Row(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Surface(
-                    onClick = onShowMeAround,
+                    onClick = { uriHandler.openUri(YouTubeTutorials.OMNI_CHAT) },
                     color = AccentPurple.copy(alpha = if (isDark) 0.15f else 0.1f),
                     shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
                     border = androidx.compose.foundation.BorderStroke(1.dp, AccentPurple.copy(alpha = 0.3f))
                 ) {
-                    Text(
-                        "📖 Show me around",
+                    Row(
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                        color = textColor.copy(alpha = 0.85f),
-                        fontSize = 12.sp
-                    )
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.PlayCircle,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = AccentPurple
+                        )
+                        Text(
+                            "Watch Tutorial",
+                            color = textColor.copy(alpha = 0.85f),
+                            fontSize = 12.sp
+                        )
+                    }
                 }
                 Surface(
                     onClick = onBrowseFAQs,

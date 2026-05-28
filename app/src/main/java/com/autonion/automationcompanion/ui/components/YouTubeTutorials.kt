@@ -2,14 +2,14 @@ package com.autonion.automationcompanion.ui.components
 
 object YouTubeTutorials {
     // Replace these placeholder links with your actual YouTube tutorial URLs when ready
-    const val GESTURE = "https://www.youtube.com/watch?v=gesture_tutorial_placeholder"
-    const val SCREEN_ML = "https://www.youtube.com/watch?v=screen_ml_tutorial_placeholder"
-    const val VISUAL_TRIGGER = "https://www.youtube.com/watch?v=visual_trigger_tutorial_placeholder"
-    const val FLOW_BUILDER = "https://www.youtube.com/watch?v=flow_builder_tutorial_placeholder"
-    const val SEMANTIC_AUTOMATION = "https://www.youtube.com/watch?v=semantic_automation_tutorial_placeholder"
-    const val SYSTEM_CONTEXT = "https://www.youtube.com/watch?v=system_context_tutorial_placeholder"
-    const val DEBUGGER = "https://www.youtube.com/watch?v=debugger_tutorial_placeholder"
-    const val CROSS_DEVICE = "https://www.youtube.com/watch?v=cross_device_tutorial_placeholder"
+    const val GESTURE = "https://youtu.be/9Oy_GG5JbKM"
+    const val SCREEN_ML = "https://youtu.be/2dTMgr4hKRc"
+    const val VISUAL_TRIGGER = "https://youtu.be/zRNgHQE_CGQ"
+    const val FLOW_BUILDER = "https://youtu.be/91rrlWK0Gyk"
+    const val SEMANTIC_AUTOMATION = "https://youtu.be/JgEbAtQ4Mos"
+    const val SYSTEM_CONTEXT = "https://youtu.be/-0E6HDqMrvQ"
+    const val CROSS_DEVICE = "https://youtu.be/8lM1ibF_swM"
+    const val OMNI_CHAT = "https://youtu.be/EnItA5BEKrU"
 
     fun getUrl(featureId: String): String? {
         return when (featureId) {
@@ -19,8 +19,8 @@ object YouTubeTutorials {
             "flow_builder" -> FLOW_BUILDER
             "semantic_automation" -> SEMANTIC_AUTOMATION
             "system_context" -> SYSTEM_CONTEXT
-            "debugger" -> DEBUGGER
             "cross_device" -> CROSS_DEVICE
+            "omni_chat" -> OMNI_CHAT
             else -> null
         }
     }
