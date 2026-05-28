@@ -175,11 +175,21 @@ class ScreenUnderstandingService : Service() {
 
     /** Save all accumulated steps as a preset */
     private fun saveAccumulatedPreset(name: String) {
-        Log.d(TAG, "saveAccumulatedPreset called. Name: $name, Count: ${accumulatedSteps.size}")
+        val normalizedName = name.trim()
+        Log.d(TAG, "saveAccumulatedPreset called. Name: $normalizedName, Count: ${accumulatedSteps.size}")
+        if (normalizedName.isEmpty()) {
+            Toast.makeText(this, "Preset name is required", Toast.LENGTH_SHORT).show()
+            return
+        }
         if (accumulatedSteps.isEmpty()) {
             Toast.makeText(this, "No elements to save (Count: 0) — snap and select first", Toast.LENGTH_SHORT).show()
             return
         }
+        if (presetRepository?.hasPresetNamed(normalizedName, excludingId = savedPresetId) == true) {
+            Toast.makeText(this, "A preset with this name already exists", Toast.LENGTH_SHORT).show()
+            return
+        }
+
         // Reuse the same preset ID within a session so repeated saves update
         // the same file instead of creating duplicates
         val presetId = savedPresetId ?: UUID.randomUUID().toString()
@@ -187,13 +197,13 @@ class ScreenUnderstandingService : Service() {
 
         val preset = AutomationPreset(
             id = presetId,
-            name = name,
+            name = normalizedName,
             scope = ScopeType.GLOBAL,
             executionMode = ExecutionMode.STRICT,
             steps = accumulatedSteps.toList()
         )
         presetRepository?.savePreset(preset)
-        Toast.makeText(this, "Preset '$name' saved with ${accumulatedSteps.size} steps!", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, "Preset '$normalizedName' saved with ${accumulatedSteps.size} steps!", Toast.LENGTH_LONG).show()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -920,7 +930,12 @@ class ScreenUnderstandingService : Service() {
     }
 
     private fun savePreset(name: String, elementsData: List<Pair<UIElement, Boolean>>) {
+        val normalizedName = name.trim()
         Log.d(TAG, "savePreset called with ${elementsData.size} elements")
+        if (normalizedName.isEmpty()) {
+            Toast.makeText(this, "Preset name is required", Toast.LENGTH_SHORT).show()
+            return
+        }
         if (elementsData.isEmpty()) {
             Log.w(TAG, "Selection list is empty!")
             Toast.makeText(this, "No elements selected to save", Toast.LENGTH_SHORT).show()
@@ -958,22 +973,27 @@ class ScreenUnderstandingService : Service() {
 
         if (currentPresetId != null) {
             val existing = presetRepository?.getPreset(currentPresetId!!)
-            if (existing != null && existing.name == name) {
+            if (existing != null && existing.name.equals(normalizedName, ignoreCase = true)) {
                 presetId = currentPresetId!!
                 Log.d(TAG, "Overwriting existing preset: $presetId")
             }
         }
 
+        if (presetRepository?.hasPresetNamed(normalizedName, excludingId = presetId) == true) {
+            Toast.makeText(this, "A preset with this name already exists", Toast.LENGTH_SHORT).show()
+            return
+        }
+
         val preset = AutomationPreset(
             id = presetId,
-            name = name,
+            name = normalizedName,
             scope = com.autonion.automationcompanion.features.screen_understanding_ml.model.ScopeType.GLOBAL,
             executionMode = ExecutionMode.STRICT,
             steps = steps
         )
 
         presetRepository?.savePreset(preset)
-        Toast.makeText(this, "Preset '$name' Saved with ${steps.size} steps!", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, "Preset '$normalizedName' Saved with ${steps.size} steps!", Toast.LENGTH_LONG).show()
     }
 
     /**

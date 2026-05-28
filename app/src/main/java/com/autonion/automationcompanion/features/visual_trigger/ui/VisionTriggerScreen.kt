@@ -98,6 +98,13 @@ fun VisionTriggerScreen(
     // Name dialog state
     var showNameDialog by remember { mutableStateOf(false) }
     var newPresetName by remember { mutableStateOf("") }
+    val trimmedNewPresetName = newPresetName.trim()
+    val newPresetNameError = when {
+        newPresetName.isNotEmpty() && trimmedNewPresetName.isEmpty() -> "Preset name is required"
+        trimmedNewPresetName.isNotEmpty() && presets.any { it.name.equals(trimmedNewPresetName, ignoreCase = true) } ->
+            "A preset with this name already exists"
+        else -> null
+    }
 
     // FAB entrance animation
     val fabScale = remember { Animatable(0f) }
@@ -302,6 +309,10 @@ fun VisionTriggerScreen(
                     value = newPresetName,
                     onValueChange = { newPresetName = it },
                     label = { Text("Preset Name") },
+                    isError = newPresetNameError != null,
+                    supportingText = {
+                        newPresetNameError?.let { Text(it) }
+                    },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = primary,
@@ -318,9 +329,10 @@ fun VisionTriggerScreen(
                 Button(
                     onClick = {
                         showNameDialog = false
-                        onAddClicked(newPresetName)
-                        newPresetName = "New Automation"
+                        onAddClicked(trimmedNewPresetName)
+                        newPresetName = ""
                     },
+                    enabled = trimmedNewPresetName.isNotEmpty() && newPresetNameError == null,
                     colors = ButtonDefaults.buttonColors(containerColor = primary),
                     shape = RoundedCornerShape(12.dp)
                 ) {

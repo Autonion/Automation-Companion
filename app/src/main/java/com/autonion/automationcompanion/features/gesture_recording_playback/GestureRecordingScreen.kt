@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.widget.Toast
 import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.runtime.*
 import androidx.compose.ui.graphics.Color
@@ -121,13 +122,22 @@ fun GestureRecordingScreen(onBack: () -> Unit = {}) {
 
     if (showNewDialog) {
         NewPresetDialog(
+            existingPresetNames = presetsState.toSet(),
             onCreate = { newName ->
                 val nameTrim = newName.trim()
-                if (nameTrim.isNotEmpty()) {
-                    PresetManager.savePreset(context, nameTrim, emptyList())
-                    onboardingPrefs.hasCreatedFirstAutomation = true
-                    coroutineScope.launch { loadPresets(context, presetsState) }
-                    startOverlayIfAllowed(nameTrim)
+                when {
+                    nameTrim.isEmpty() -> {
+                        Toast.makeText(context, "Preset name is required", Toast.LENGTH_SHORT).show()
+                    }
+                    PresetManager.presetExists(context, nameTrim) -> {
+                        Toast.makeText(context, "A preset with this name already exists", Toast.LENGTH_SHORT).show()
+                    }
+                    else -> {
+                        PresetManager.savePreset(context, nameTrim, emptyList())
+                        onboardingPrefs.hasCreatedFirstAutomation = true
+                        coroutineScope.launch { loadPresets(context, presetsState) }
+                        startOverlayIfAllowed(nameTrim)
+                    }
                 }
                 showNewDialog = false
             },

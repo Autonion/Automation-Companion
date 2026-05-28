@@ -18,19 +18,22 @@ object PresetManager {
     }
 
     fun savePreset(context: Context, presetName: String, actions: List<Action>) {
+        val normalizedName = presetName.trim()
+        require(normalizedName.isNotEmpty()) { "Preset name cannot be blank" }
+
         val json = Json.encodeToString(actions)
-        val file = File(getPresetsDir(context), "$presetName.json")
+        val file = File(getPresetsDir(context), "$normalizedName.json")
         file.writeText(json)
         DebugLogger.success(
             context, LogCategory.GESTURE_RECORDING,
-            "Preset saved: $presetName",
+            "Preset saved: $normalizedName",
             "Saved ${actions.size} actions to file",
             "PresetManager"
         )
     }
 
     fun loadPreset(context: Context, presetName: String): List<Action> {
-        val file = File(getPresetsDir(context), "$presetName.json")
+        val file = File(getPresetsDir(context), "${presetName.trim()}.json")
         if (!file.exists()) return emptyList()
 
         val json = file.readText()
@@ -38,16 +41,26 @@ object PresetManager {
     }
 
     fun deletePreset(context: Context, presetName: String) {
-        val file = File(getPresetsDir(context), "$presetName.json")
+        val normalizedName = presetName.trim()
+        if (normalizedName.isEmpty()) return
+
+        val file = File(getPresetsDir(context), "$normalizedName.json")
         if (file.exists()) {
             file.delete()
             DebugLogger.info(
                 context, LogCategory.GESTURE_RECORDING,
-                "Preset deleted: $presetName",
+                "Preset deleted: $normalizedName",
                 "Removed preset file from storage",
                 "PresetManager"
             )
         }
+    }
+
+    fun presetExists(context: Context, presetName: String): Boolean {
+        val normalizedName = presetName.trim()
+        if (normalizedName.isEmpty()) return false
+
+        return listPresets(context).any { it.equals(normalizedName, ignoreCase = true) }
     }
 
     fun listPresets(context: Context): List<String> {
