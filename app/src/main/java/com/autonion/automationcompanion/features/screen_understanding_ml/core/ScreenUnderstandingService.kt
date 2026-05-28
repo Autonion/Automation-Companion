@@ -875,23 +875,53 @@ class ScreenUnderstandingService : Service() {
     /**
      * Run live OCR on the current screen to find where [targetText] appears right now.
      * Returns a UIElement with the text's current bounds, or null if not found within timeout.
+     *
+     * Search strategy (in order of priority):
+     * 1. Exact line-level match within OCR blocks (handles block segmentation differences)
+     * 2. Exact block-level match (original behavior)
+     * 3. Target text contains a block (reverse containment for smaller blocks)
+     * 4. Accessibility tree text search (no OCR needed, uses live a11y nodes)
      */
     private suspend fun findTextOnScreen(targetText: String): UIElement? {
         val timeout = 5000L
         val startTime = System.currentTimeMillis()
         val ocrEngine = OcrEngine()
+        val dm = resources.displayMetrics
 
         try {
             while (System.currentTimeMillis() - startTime < timeout && isPlaying) {
                 val bitmap = latestBitmap
                 if (bitmap != null) {
                     val result = ocrEngine.recognizeText(bitmap)
-                    // Find the best matching block (case-insensitive contains)
+
+                    // ── Strategy 1: Line-level match within blocks ──
+                    // ML Kit can segment text differently between runs; searching lines
+                    // within blocks handles cases where a block was split or merged.
+                    for (block in result.blocks) {
+                        for (line in block.lines) {
+                            if (line.text.contains(targetText, ignoreCase = true) ||
+                                targetText.contains(line.text, ignoreCase = true)) {
+                                val bounds = line.bounds ?: block.bounds
+                                if (bounds != null) {
+                                    Log.d(TAG, "findTextOnScreen: LINE match '${line.text}' for target '$targetText' at $bounds")
+                                    return UIElement(
+                                        id = java.util.UUID.randomUUID().toString(),
+                                        label = "Text",
+                                        confidence = line.confidence ?: block.confidence ?: 0.9f,
+                                        bounds = bounds,
+                                        text = line.text
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // ── Strategy 2: Block-level exact match (block contains target) ──
                     val matchBlock = result.blocks.firstOrNull { block ->
                         block.text.contains(targetText, ignoreCase = true)
                     }
                     if (matchBlock != null && matchBlock.bounds != null) {
-                        Log.d(TAG, "findTextOnScreen: found '${matchBlock.text}' at ${matchBlock.bounds}")
+                        Log.d(TAG, "findTextOnScreen: BLOCK match '${matchBlock.text}' for target '$targetText' at ${matchBlock.bounds}")
                         return UIElement(
                             id = java.util.UUID.randomUUID().toString(),
                             label = "Text",
@@ -900,8 +930,38 @@ class ScreenUnderstandingService : Service() {
                             text = matchBlock.text
                         )
                     }
-                    Log.d(TAG, "findTextOnScreen: '$targetText' not found in ${result.blocks.size} blocks, retrying...")
+
+                    // ── Strategy 3: Reverse containment (target contains block text) ──
+                    // Handles cases where the originally captured block was large but at
+                    // runtime it was split into smaller blocks.
+                    val reverseMatch = result.blocks.firstOrNull { block ->
+                        block.text.length >= 3 && targetText.contains(block.text, ignoreCase = true)
+                    }
+                    if (reverseMatch != null && reverseMatch.bounds != null) {
+                        Log.d(TAG, "findTextOnScreen: REVERSE match '${reverseMatch.text}' for target '$targetText' at ${reverseMatch.bounds}")
+                        return UIElement(
+                            id = java.util.UUID.randomUUID().toString(),
+                            label = "Text",
+                            confidence = (reverseMatch.confidence ?: 0.9f) * 0.8f,
+                            bounds = reverseMatch.bounds,
+                            text = reverseMatch.text
+                        )
+                    }
+
+                    Log.d(TAG, "findTextOnScreen: '$targetText' not found via OCR in ${result.blocks.size} blocks, trying accessibility...")
                 }
+
+                // ── Strategy 4: Accessibility tree fallback ──
+                // The accessibility tree often has reliable text regardless of OCR accuracy.
+                val accMatch = findAccessibilityElementByText(
+                    targetText, "Text",
+                    dm.widthPixels.toFloat(), dm.heightPixels.toFloat()
+                )
+                if (accMatch != null) {
+                    Log.d(TAG, "findTextOnScreen: A11Y fallback match for '$targetText' at ${accMatch.bounds}")
+                    return accMatch
+                }
+
                 delay(500)
             }
         } catch (e: Exception) {
@@ -909,7 +969,7 @@ class ScreenUnderstandingService : Service() {
         } finally {
             ocrEngine.close()
         }
-        Log.w(TAG, "findTextOnScreen: '$targetText' not found within timeout")
+        Log.w(TAG, "findTextOnScreen: '$targetText' not found within timeout (tried OCR + accessibility)")
         return null
     }
 
