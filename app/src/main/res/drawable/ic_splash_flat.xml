@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Solid background matching your custom logo background color exactly -->
+    <item>
+        <color android:color="#0C0E1C" />
+    </item>
+    <!-- Centered foreground PNG scaled to prevent circular clipping -->
+    <item
+        android:drawable="@mipmap/ic_launcher_foreground"
+        android:width="160dp"
+        android:height="160dp"
+        android:gravity="center" />
+</layer-list>

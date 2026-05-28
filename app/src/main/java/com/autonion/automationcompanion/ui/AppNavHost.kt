@@ -51,6 +51,7 @@ import kotlinx.coroutines.launch
 
 private const val ROUTE_HOME = "home"
 private const val ROUTE_ONBOARDING = "onboarding"
+
 private const val NAV_ANIM_DURATION = 300
 
 object AutomationRoutes {
@@ -139,9 +140,7 @@ fun AppNavHost() {
 
     // Determine start destination based on onboarding state
     val onboardingPrefs = remember { OnboardingPreferences.getInstance(context) }
-    val startDest = remember {
-        if (onboardingPrefs.hasCompletedOnboarding) ROUTE_HOME else ROUTE_ONBOARDING
-    }
+    val startDest = if (onboardingPrefs.hasCompletedOnboarding) ROUTE_HOME else ROUTE_ONBOARDING
 
     // ── Wrap everything in OmniChatbot scaffold ──
     OmniChatbotScaffold(
@@ -170,6 +169,7 @@ fun AppNavHost() {
                 slideOutHorizontally(animationSpec = tween(NAV_ANIM_DURATION)) { fullWidth -> fullWidth } + fadeOut(animationSpec = tween(NAV_ANIM_DURATION))
             }
         ) {
+
             // Onboarding wizard (first launch only)
             composable(ROUTE_ONBOARDING) {
                 OnboardingScreen(
