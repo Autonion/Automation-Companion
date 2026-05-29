@@ -1,6 +1,9 @@
 @file:OptIn(ExperimentalMaterial3Api::class)
 package com.autonion.automationcompanion.ui
 
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -33,6 +36,53 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+
+private const val BUG_REPORT_EMAIL = "autonion.automationcompanion@gmail.com"
+private const val GITHUB_ISSUES_URL = "https://github.com/Autonion/Automation-Companion/issues/new?template=bug_report.md"
+
+@Composable
+private fun rememberBugReportActions(): Pair<() -> Unit, () -> Unit> {
+    val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
+
+    val appVersion = try {
+        context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "unknown"
+    } catch (_: Exception) { "unknown" }
+
+    val emailAction: () -> Unit = {
+        val subject = "[Bug Report] Automation Companion v$appVersion"
+        val body = buildString {
+            appendLine("Describe the bug:")
+            appendLine()
+            appendLine("Steps to reproduce:")
+            appendLine("1. ")
+            appendLine("2. ")
+            appendLine("3. ")
+            appendLine()
+            appendLine("Expected behavior:")
+            appendLine()
+            appendLine("--- Device Info (auto-filled) ---")
+            appendLine("Device: ${Build.MANUFACTURER} ${Build.MODEL}")
+            appendLine("Android: ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
+            appendLine("App Version: $appVersion")
+        }
+        val intent = Intent(Intent.ACTION_SENDTO).apply {
+            data = Uri.parse("mailto:")
+            putExtra(Intent.EXTRA_EMAIL, arrayOf(BUG_REPORT_EMAIL))
+            putExtra(Intent.EXTRA_SUBJECT, subject)
+            putExtra(Intent.EXTRA_TEXT, body)
+        }
+        try {
+            context.startActivity(Intent.createChooser(intent, "Send Bug Report"))
+        } catch (_: Exception) { /* no email client */ }
+    }
+
+    val githubAction: () -> Unit = {
+        uriHandler.openUri(GITHUB_ISSUES_URL)
+    }
+
+    return Pair(emailAction, githubAction)
+}
 
 @Composable
 fun HomeScreen(
@@ -75,6 +125,7 @@ private fun CompactHomeLayout(
     innerPadding: PaddingValues
 ) {
     val isDark = isSystemInDarkTheme()
+    val (onBugReportEmail, onBugReportGithub) = rememberBugReportActions()
 
     LazyColumn(
         modifier = Modifier
@@ -90,7 +141,9 @@ private fun CompactHomeLayout(
                     subtitle = null,
                     onNotificationClick = null,
                     onExclusionClick = { onOpen("settings/exclusion") },
-                    onBackupClick = { onOpen("settings/backup_restore") }
+                    onBackupClick = { onOpen("settings/backup_restore") },
+                    onBugReportEmail = onBugReportEmail,
+                    onBugReportGithub = onBugReportGithub
                 )
             }
         }
@@ -273,6 +326,8 @@ private fun MediumHomeLayout(
     onOpen: (String) -> Unit,
     innerPadding: PaddingValues
 ) {
+    val (onBugReportEmail, onBugReportGithub) = rememberBugReportActions()
+
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
         modifier = Modifier
@@ -288,7 +343,9 @@ private fun MediumHomeLayout(
                 title = "Autonion",
                 subtitle = "AI-Powered Automation",
                 onExclusionClick = { onOpen("settings/exclusion") },
-                onBackupClick = { onOpen("settings/backup_restore") }
+                onBackupClick = { onOpen("settings/backup_restore") },
+                onBugReportEmail = onBugReportEmail,
+                onBugReportGithub = onBugReportGithub
             )
         }
 
@@ -442,10 +499,14 @@ private fun ExpandedHomeLayout(
             .fillMaxSize()
             .padding(innerPadding)
     ) {
+        val (onBugReportEmail, onBugReportGithub) = rememberBugReportActions()
+
         // Left Panel — Branding (32%)
         TabletBrandingPanel(
             onExclusionClick = { onOpen("settings/exclusion") },
             onBackupClick = { onOpen("settings/backup_restore") },
+            onBugReportEmail = onBugReportEmail,
+            onBugReportGithub = onBugReportGithub,
             modifier = Modifier
                 .fillMaxHeight()
                 .weight(0.32f)
