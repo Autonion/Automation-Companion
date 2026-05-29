@@ -15,8 +15,8 @@ android {
         applicationId = "com.autonion.automationcompanion"
         minSdk = 24
         targetSdk = 36
-        versionCode = 7
-        versionName = "1.0.8"
+        versionCode = 8
+        versionName = "1.0.9"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -24,6 +24,7 @@ android {
         externalNativeBuild {
             cmake {
                 cppFlags += "-std=c++17"
+                arguments += "-DANDROID_ALIGN_16KB=ON"
             }
         }
     }
@@ -119,6 +120,7 @@ dependencies {
     // TensorFlow Lite
     // LiteRT (formerly TensorFlow Lite)
     implementation(libs.tensorflow.lite)
+    implementation(libs.litert.api)
     implementation(libs.litert.gpu.api)
     implementation(libs.litert.gpu)
     implementation(libs.litert.support.api)
