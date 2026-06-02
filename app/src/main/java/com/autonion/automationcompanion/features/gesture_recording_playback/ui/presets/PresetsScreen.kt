@@ -59,6 +59,9 @@ import kotlinx.coroutines.launch
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.ui.platform.LocalUriHandler
+import com.autonion.automationcompanion.ui.components.YouTubeTutorials
 import com.autonion.automationcompanion.features.omni_chatbot.ui.LocalStartWalkthrough
 import com.autonion.automationcompanion.ui.isTablet
 import com.autonion.automationcompanion.ui.rememberWindowWidthSize
@@ -80,6 +83,7 @@ fun PresetsScreen(
     val scope = rememberCoroutineScope()
     val fabScale = remember { Animatable(0f) }
     val startWalkthrough = LocalStartWalkthrough.current
+    val uriHandler = LocalUriHandler.current
     val tablet = isTablet()
     val windowWidthSize = rememberWindowWidthSize()
 
@@ -104,6 +108,9 @@ fun PresetsScreen(
                         }
                     },
                     actions = {
+                        IconButton(onClick = { uriHandler.openUri(YouTubeTutorials.GESTURE) }) {
+                            Icon(Icons.Default.PlayCircle, contentDescription = "Watch Video Tutorial", tint = MaterialTheme.colorScheme.onSurface)
+                        }
                         IconButton(onClick = { startWalkthrough("gesture_recording") }) {
                             Icon(Icons.Outlined.Info, contentDescription = "Take a Walkthrough", tint = MaterialTheme.colorScheme.onSurface)
                         }

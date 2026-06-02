@@ -173,11 +173,20 @@ class SemanticAutomationEngine(private val context: Context) {
 
         // Parse the FULL original command → get app/domain context (1 LLM call)
         val masterGoal = try {
-            kotlinx.coroutines.withTimeoutOrNull(60_000L) {
-                if (inferenceMode == InferenceMode.CLOUD_API)
-                    goalParser.parse(rawCommand, cloudApiEngine, chatMemory.buildContextSummary())
-                else
-                    goalParser.parse(rawCommand, localServerEngine, chatMemory.buildContextSummary())
+            // On-device SLMs need more time for prompt processing on mobile CPUs
+            val timeoutMs = if (inferenceMode == InferenceMode.LOCAL_SLM) 180_000L else 60_000L
+            kotlinx.coroutines.withTimeoutOrNull(timeoutMs) {
+                when (inferenceMode) {
+                    InferenceMode.CLOUD_API ->
+                        goalParser.parse(rawCommand, cloudApiEngine, chatMemory.buildContextSummary())
+                    InferenceMode.LOCAL_SLM -> {
+                        val slm = PredictorCache.getSLMEngine(context, modelStorageManager)
+                        if (slm != null) goalParser.parse(rawCommand, slm, chatMemory.buildContextSummary())
+                        else null
+                    }
+                    else ->
+                        goalParser.parse(rawCommand, localServerEngine, chatMemory.buildContextSummary())
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Goal parsing exception: ${e.message}", e)
@@ -186,7 +195,10 @@ class SemanticAutomationEngine(private val context: Context) {
 
         if (masterGoal == null) {
             _status.value = AutomationStatus.FAILED
-            _lastActionDescription.value = "Could not reach LLM — check connection"
+            _lastActionDescription.value = when (inferenceMode) {
+                InferenceMode.LOCAL_SLM -> "On-device model failed to load or respond. Check AI Engine Hub."
+                else -> "Could not reach LLM — check connection"
+            }
             chatMemory.recordGoalOutcome(rawCommand, "failed: could not parse", false)
             return
         }
@@ -264,11 +276,20 @@ class SemanticAutomationEngine(private val context: Context) {
         stepHistory.clear()
 
         val parsedGoal = try {
-            kotlinx.coroutines.withTimeoutOrNull(60_000L) {
-                if (inferenceMode == InferenceMode.CLOUD_API)
-                    goalParser.parse(rawCommand, cloudApiEngine, chatMemory.buildContextSummary())
-                else
-                    goalParser.parse(rawCommand, localServerEngine, chatMemory.buildContextSummary())
+            // On-device SLMs need more time for prompt processing on mobile CPUs
+            val timeoutMs = if (inferenceMode == InferenceMode.LOCAL_SLM) 180_000L else 60_000L
+            kotlinx.coroutines.withTimeoutOrNull(timeoutMs) {
+                when (inferenceMode) {
+                    InferenceMode.CLOUD_API ->
+                        goalParser.parse(rawCommand, cloudApiEngine, chatMemory.buildContextSummary())
+                    InferenceMode.LOCAL_SLM -> {
+                        val slm = PredictorCache.getSLMEngine(context, modelStorageManager)
+                        if (slm != null) goalParser.parse(rawCommand, slm, chatMemory.buildContextSummary())
+                        else null
+                    }
+                    else ->
+                        goalParser.parse(rawCommand, localServerEngine, chatMemory.buildContextSummary())
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Goal parsing exception: ${e.message}", e)
@@ -276,11 +297,17 @@ class SemanticAutomationEngine(private val context: Context) {
         }
         if (parsedGoal == null) {
             _status.value = AutomationStatus.FAILED
-            _lastActionDescription.value = "Could not reach LLM — check connection"
+            _lastActionDescription.value = when (inferenceMode) {
+                InferenceMode.LOCAL_SLM -> "On-device model failed to load or respond. Check AI Engine Hub."
+                else -> "Could not reach LLM — check connection"
+            }
             DebugLogger.error(
                 context, LogCategory.UI_RECOGNITION_AI,
                 "Goal parsing failed",
-                "LLM not connected or timed out. Please configure the server/API in Settings.",
+                when (inferenceMode) {
+                    InferenceMode.LOCAL_SLM -> "On-device SLM failed. The model may be incompatible or corrupted."
+                    else -> "LLM not connected or timed out. Please configure the server/API in Settings."
+                },
                 TAG
             )
             return

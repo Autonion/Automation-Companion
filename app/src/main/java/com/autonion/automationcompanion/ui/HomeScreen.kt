@@ -1,6 +1,9 @@
 @file:OptIn(ExperimentalMaterial3Api::class)
 package com.autonion.automationcompanion.ui
 
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -14,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -26,9 +30,65 @@ import androidx.compose.material.icons.automirrored.filled.ViewQuilt
 import com.autonion.automationcompanion.ui.components.*
 import com.autonion.automationcompanion.ui.components.AuroraBackground
 import com.autonion.automationcompanion.ui.theme.*
+import com.autonion.automationcompanion.core.onboarding.OnboardingPreferences
+import com.autonion.automationcompanion.AccessibilityRouter
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+
+private const val BUG_REPORT_EMAIL = "autonion.automationcompanion@gmail.com"
+private const val GITHUB_ISSUES_URL = "https://github.com/Autonion/Automation-Companion/issues/new?template=bug_report.md"
 
 @Composable
-fun HomeScreen(onOpen: (String) -> Unit) {
+private fun rememberBugReportActions(): Pair<() -> Unit, () -> Unit> {
+    val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
+
+    val appVersion = try {
+        context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "unknown"
+    } catch (_: Exception) { "unknown" }
+
+    val emailAction: () -> Unit = {
+        val subject = "[Bug Report] Automation Companion v$appVersion"
+        val body = buildString {
+            appendLine("Describe the bug:")
+            appendLine()
+            appendLine("Steps to reproduce:")
+            appendLine("1. ")
+            appendLine("2. ")
+            appendLine("3. ")
+            appendLine()
+            appendLine("Expected behavior:")
+            appendLine()
+            appendLine("--- Device Info (auto-filled) ---")
+            appendLine("Device: ${Build.MANUFACTURER} ${Build.MODEL}")
+            appendLine("Android: ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
+            appendLine("App Version: $appVersion")
+        }
+        val intent = Intent(Intent.ACTION_SENDTO).apply {
+            data = Uri.parse("mailto:")
+            putExtra(Intent.EXTRA_EMAIL, arrayOf(BUG_REPORT_EMAIL))
+            putExtra(Intent.EXTRA_SUBJECT, subject)
+            putExtra(Intent.EXTRA_TEXT, body)
+        }
+        try {
+            context.startActivity(Intent.createChooser(intent, "Send Bug Report"))
+        } catch (_: Exception) { /* no email client */ }
+    }
+
+    val githubAction: () -> Unit = {
+        uriHandler.openUri(GITHUB_ISSUES_URL)
+    }
+
+    return Pair(emailAction, githubAction)
+}
+
+@Composable
+fun HomeScreen(
+    onOpen: (String) -> Unit,
+    onConnectAI: () -> Unit
+) {
     val windowWidthSize = rememberWindowWidthSize()
 
     AuroraBackground {
@@ -38,6 +98,7 @@ fun HomeScreen(onOpen: (String) -> Unit) {
             when (windowWidthSize) {
                 WindowWidthSize.Compact -> CompactHomeLayout(
                     onOpen = onOpen,
+                    onConnectAI = onConnectAI,
                     innerPadding = innerPadding
                 )
                 WindowWidthSize.Medium -> MediumHomeLayout(
@@ -60,15 +121,17 @@ fun HomeScreen(onOpen: (String) -> Unit) {
 @Composable
 private fun CompactHomeLayout(
     onOpen: (String) -> Unit,
+    onConnectAI: () -> Unit,
     innerPadding: PaddingValues
 ) {
     val isDark = isSystemInDarkTheme()
+    val (onBugReportEmail, onBugReportGithub) = rememberBugReportActions()
 
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
             .padding(innerPadding),
-        contentPadding = PaddingValues(bottom = 30.dp)
+        contentPadding = PaddingValues(bottom = 90.dp)
     ) {
         // Header
         item {
@@ -78,7 +141,9 @@ private fun CompactHomeLayout(
                     subtitle = null,
                     onNotificationClick = null,
                     onExclusionClick = { onOpen("settings/exclusion") },
-                    onBackupClick = { onOpen("settings/backup_restore") }
+                    onBackupClick = { onOpen("settings/backup_restore") },
+                    onBugReportEmail = onBugReportEmail,
+                    onBugReportGithub = onBugReportGithub
                 )
             }
         }
@@ -86,14 +151,40 @@ private fun CompactHomeLayout(
         // Section Title
         item {
             StaggeredEntry(index = 1) {
-                Text(
-                    "Tools & Features",
-                    style = MaterialTheme.typography.titleLarge.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground
-                    ),
-                    modifier = Modifier.padding(start = 24.dp, top = 24.dp, bottom = 16.dp)
-                )
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    // ── Getting Started Checklist ──
+                    val context = LocalContext.current
+                    val onboardingPrefs = remember { OnboardingPreferences.getInstance(context) }
+                    var isDismissed by remember { mutableStateOf(onboardingPrefs.isGettingStartedDismissed) }
+                    val isAIConnected = onboardingPrefs.hasConnectedAI
+                    val hasCreatedAutomation = onboardingPrefs.hasCreatedFirstAutomation
+
+                    if (!isDismissed) {
+                        GettingStartedCard(
+                            isAIConnected = isAIConnected,
+                            hasCreatedAutomation = hasCreatedAutomation,
+                            onConnectAI = onConnectAI,
+                            onCreateAutomation = { onOpen(AutomationRoutes.GESTURE) },
+                            onDismiss = {
+                                onboardingPrefs.isGettingStartedDismissed = true
+                                isDismissed = true
+                            }
+                        )
+                    }
+
+                    Text(
+                        "Tools & Features",
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onBackground
+                        ),
+                        modifier = Modifier.padding(
+                            start = 24.dp,
+                            top = if (isDismissed) 24.dp else 12.dp,
+                            bottom = 16.dp
+                        )
+                    )
+                }
             }
         }
 
@@ -133,7 +224,7 @@ private fun CompactHomeLayout(
                     GridCard(
                         title = "Visual Triggers",
                         description = "Automate actions based on detected visual regions.",
-                        icon = Icons.Default.ChatBubble,
+                        icon = Icons.Default.Screenshot,
                         iconColor = Color.White,
                         iconContainerColor = AccentGreen,
                         onClick = { onOpen(AutomationRoutes.VISUAL_TRIGGER) },
@@ -235,12 +326,14 @@ private fun MediumHomeLayout(
     onOpen: (String) -> Unit,
     innerPadding: PaddingValues
 ) {
+    val (onBugReportEmail, onBugReportGithub) = rememberBugReportActions()
+
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
         modifier = Modifier
             .fillMaxSize()
             .padding(innerPadding),
-        contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 48.dp),
+        contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 24.dp, bottom = 90.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -250,7 +343,9 @@ private fun MediumHomeLayout(
                 title = "Autonion",
                 subtitle = "AI-Powered Automation",
                 onExclusionClick = { onOpen("settings/exclusion") },
-                onBackupClick = { onOpen("settings/backup_restore") }
+                onBackupClick = { onOpen("settings/backup_restore") },
+                onBugReportEmail = onBugReportEmail,
+                onBugReportGithub = onBugReportGithub
             )
         }
 
@@ -299,7 +394,7 @@ private fun MediumHomeLayout(
                 GridCard(
                     title = "Visual Triggers",
                     description = "Automate actions based on detected visual regions.",
-                    icon = Icons.Default.ChatBubble,
+                    icon = Icons.Default.Screenshot,
                     iconColor = Color.White,
                     iconContainerColor = AccentGreen,
                     onClick = { onOpen(AutomationRoutes.VISUAL_TRIGGER) },
@@ -404,10 +499,14 @@ private fun ExpandedHomeLayout(
             .fillMaxSize()
             .padding(innerPadding)
     ) {
+        val (onBugReportEmail, onBugReportGithub) = rememberBugReportActions()
+
         // Left Panel — Branding (32%)
         TabletBrandingPanel(
             onExclusionClick = { onOpen("settings/exclusion") },
             onBackupClick = { onOpen("settings/backup_restore") },
+            onBugReportEmail = onBugReportEmail,
+            onBugReportGithub = onBugReportGithub,
             modifier = Modifier
                 .fillMaxHeight()
                 .weight(0.32f)
@@ -472,7 +571,7 @@ private fun ExpandedHomeLayout(
                     GridCard(
                         title = "Visual Triggers",
                         description = "Automate actions based on detected visual regions.",
-                        icon = Icons.Default.ChatBubble,
+                        icon = Icons.Default.Screenshot,
                         iconColor = Color.White,
                         iconContainerColor = AccentGreen,
                         onClick = { onOpen(AutomationRoutes.VISUAL_TRIGGER) },
@@ -572,7 +671,7 @@ private fun HomeFooter() {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = "v1.0.7",
+            text = "v1.0.9",
             style = MaterialTheme.typography.bodySmall.copy(
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 fontSize = 12.sp
@@ -620,5 +719,5 @@ private fun HomeFooter() {
 @Preview
 @Composable
 fun HomeScreenPreview() {
-    HomeScreen(onOpen = {})
+    HomeScreen(onOpen = {}, onConnectAI = {})
 }

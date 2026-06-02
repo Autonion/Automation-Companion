@@ -229,6 +229,18 @@ class OmniChatbotViewModel(
                 Log.e(TAG, "Error collecting desktop responses", e)
             }
         }
+
+        // Track successful connection of any AI engine to complete onboarding checklist row
+        viewModelScope.launch {
+            isAIReady.collect { ready ->
+                if (ready) {
+                    Log.d(TAG, "AI connection status verified as ready. Updating onboarding preferences.")
+                    com.autonion.automationcompanion.core.onboarding.OnboardingPreferences
+                        .getInstance(context)
+                        .hasConnectedAI = true
+                }
+            }
+        }
     }
 
     // ─── Input Handling ─────────────────────────────────────
@@ -303,6 +315,16 @@ class OmniChatbotViewModel(
     fun toggleSettings() {
         _showSettings.value = !_showSettings.value
         if (_showSettings.value) _showFAQBrowser.value = false
+    }
+
+    /**
+     * Opens the settings panel pre-set to a specific inference mode.
+     * Used by the smart welcome message in OmniChatbotSheet.
+     */
+    fun openSettingsWithMode(mode: com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode) {
+        setInferenceMode(mode)
+        _showSettings.value = true
+        _showFAQBrowser.value = false
     }
 
     fun toggleFAQBrowser() {

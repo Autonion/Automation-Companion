@@ -21,7 +21,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Accessibility
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Screenshot
+import com.autonion.automationcompanion.ui.components.YouTubeTutorials
 import com.autonion.automationcompanion.features.system_context_automation.shared.ui.PermissionDisclosureDialog
+import com.autonion.automationcompanion.core.onboarding.OnboardingPreferences
+import com.autonion.automationcompanion.ui.components.FeatureTipSheet
 
 @Composable
 fun VisualTriggerRoute(
@@ -38,6 +41,25 @@ fun VisualTriggerRoute(
     var showAccessibilityDisclosure by remember { mutableStateOf(false) }
     var showOverlayDisclosure by remember { mutableStateOf(false) }
     var showMediaProjectionDisclosure by remember { mutableStateOf(false) }
+
+    // ── First-visit Feature Tip ──
+    val onboardingPrefs = remember { OnboardingPreferences.getInstance(context) }
+    var showTip by remember { mutableStateOf(!onboardingPrefs.hasTipBeenSeen("visual_trigger")) }
+
+    if (showTip) {
+        FeatureTipSheet(
+            title = "Visual Trigger",
+            tips = listOf(
+                "Capture a screenshot, then **draw a selection box** around the target element",
+                "Set the **action** to run when the image is detected on screen",
+                "Requires **Accessibility** and **Screen Capture** permissions"
+            ),
+            icon = Icons.Default.Screenshot,
+            iconColor = androidx.compose.ui.graphics.Color(0xFF00E676),
+            youtubeLink = YouTubeTutorials.VISUAL_TRIGGER,
+            onDismiss = { onboardingPrefs.markTipSeen("visual_trigger"); showTip = false }
+        )
+    }
 
     fun isAccessibilityEnabled(): Boolean {
         if (AccessibilityRouter.isServiceConnected()) return true

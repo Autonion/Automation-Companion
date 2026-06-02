@@ -42,6 +42,18 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
     private val prefs = context.getSharedPreferences("cross_device_prefs", Context.MODE_PRIVATE)
     private val PREF_FEATURE_ENABLED = "feature_enabled"
 
+    init {
+        // One-time migration: reset clipboard sync for users who had it
+        // implicitly enabled under the old default=true behavior.
+        val MIGRATION_KEY = "clipboard_sync_default_migrated_v1"
+        if (!prefs.getBoolean(MIGRATION_KEY, false)) {
+            prefs.edit()
+                .putBoolean("clipboard_sync_enabled", false)
+                .putBoolean(MIGRATION_KEY, true)
+                .apply()
+        }
+    }
+
     fun initialize() {
         // ... (Existing initialization logic) ...
         
@@ -89,7 +101,7 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
     private val PREF_CLIPBOARD_SYNC_ENABLED = "clipboard_sync_enabled"
 
     fun isClipboardSyncEnabled(): Boolean {
-        return prefs.getBoolean(PREF_CLIPBOARD_SYNC_ENABLED, true)
+        return prefs.getBoolean(PREF_CLIPBOARD_SYNC_ENABLED, false)
     }
 
     fun setClipboardSyncEnabled(enabled: Boolean) {

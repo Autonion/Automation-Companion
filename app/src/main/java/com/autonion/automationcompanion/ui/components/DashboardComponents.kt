@@ -12,10 +12,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
@@ -86,7 +88,9 @@ fun DashboardHeader(
     subtitle: String? = null,
     onNotificationClick: (() -> Unit)? = null,
     onExclusionClick: () -> Unit = {},
-    onBackupClick: () -> Unit = {}
+    onBackupClick: () -> Unit = {},
+    onBugReportEmail: () -> Unit = {},
+    onBugReportGithub: () -> Unit = {}
 ) {
     var showSettingsMenu by remember { mutableStateOf(false) }
 
@@ -161,6 +165,27 @@ fun DashboardHeader(
                         },
                         leadingIcon = {
                             Icon(Icons.Default.CloudUpload, contentDescription = null)
+                        }
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                    DropdownMenuItem(
+                        text = { Text("Report Bug (Email)") },
+                        onClick = {
+                            showSettingsMenu = false
+                            onBugReportEmail()
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Default.Email, contentDescription = null)
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Report Bug (GitHub)") },
+                        onClick = {
+                            showSettingsMenu = false
+                            onBugReportGithub()
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Outlined.BugReport, contentDescription = null)
                         }
                     )
                 }
@@ -526,6 +551,8 @@ fun StaggeredEntry(
 fun TabletBrandingPanel(
     onExclusionClick: () -> Unit = {},
     onBackupClick: () -> Unit = {},
+    onBugReportEmail: () -> Unit = {},
+    onBugReportGithub: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val isDark = isSystemInDarkTheme()
@@ -623,6 +650,27 @@ fun TabletBrandingPanel(
                         },
                         leadingIcon = {
                             Icon(Icons.Default.CloudUpload, contentDescription = null)
+                        }
+                    )
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                    DropdownMenuItem(
+                        text = { Text("Report Bug (Email)") },
+                        onClick = {
+                            showSettingsMenu = false
+                            onBugReportEmail()
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Default.Email, contentDescription = null)
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Report Bug (GitHub)") },
+                        onClick = {
+                            showSettingsMenu = false
+                            onBugReportGithub()
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Outlined.BugReport, contentDescription = null)
                         }
                     )
                 }

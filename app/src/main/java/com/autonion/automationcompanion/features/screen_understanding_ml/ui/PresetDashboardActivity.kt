@@ -111,6 +111,7 @@ class PresetDashboardActivity : ComponentActivity() {
 
                 if (showDialog) {
                     NewAutomationDialog(
+                        existingPresetNames = presets.map { it.name }.toSet(),
                         onDismiss = { showDialog = false },
                         onConfirm = { name ->
                             showDialog = false
@@ -165,6 +166,7 @@ class PresetDashboardActivity : ComponentActivity() {
 
     @Composable
     private fun NewAutomationDialog(
+        existingPresetNames: Set<String> = emptySet(),
         onDismiss: () -> Unit,
         onConfirm: (String) -> Unit
     ) {
@@ -172,6 +174,13 @@ class PresetDashboardActivity : ComponentActivity() {
         val scale = remember { Animatable(0.9f) }
         val alpha = remember { Animatable(0f) }
         val scope = rememberCoroutineScope()
+        val trimmedName = name.trim()
+        val nameError = when {
+            name.isNotEmpty() && trimmedName.isEmpty() -> "Preset name is required"
+            trimmedName.isNotEmpty() && existingPresetNames.any { it.equals(trimmedName, ignoreCase = true) } ->
+                "A preset with this name already exists"
+            else -> null
+        }
 
         LaunchedEffect(Unit) {
             scale.animateTo(1f, tween(220, easing = FastOutSlowInEasing))
@@ -216,6 +225,10 @@ class PresetDashboardActivity : ComponentActivity() {
                         value = name,
                         onValueChange = { name = it },
                         label = { Text("Preset name") },
+                        isError = nameError != null,
+                        supportingText = {
+                            nameError?.let { Text(it) }
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(top = 20.dp),
@@ -233,10 +246,10 @@ class PresetDashboardActivity : ComponentActivity() {
                         androidx.compose.material3.Button(
                             onClick = {
                                 dismissThen {
-                                    if (name.isNotBlank()) onConfirm(name.trim())
+                                    if (trimmedName.isNotEmpty() && nameError == null) onConfirm(trimmedName)
                                 }
                             },
-                            enabled = name.isNotBlank()
+                            enabled = trimmedName.isNotEmpty() && nameError == null
                         ) {
                             Text("Create")
                         }

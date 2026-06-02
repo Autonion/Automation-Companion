@@ -39,6 +39,8 @@ import com.autonion.automationcompanion.features.flow_automation.ui.editor.canva
 import com.autonion.automationcompanion.features.system_context_automation.shared.ui.PermissionDisclosureDialog
 import com.autonion.automationcompanion.ui.components.AuroraBackground
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.filled.PlayCircle
+import com.autonion.automationcompanion.ui.components.YouTubeTutorials
 import com.autonion.automationcompanion.features.omni_chatbot.ui.LocalStartWalkthrough
 import com.autonion.automationcompanion.ui.isTablet
 import com.autonion.automationcompanion.ui.rememberWindowWidthSize
@@ -116,6 +118,15 @@ fun FlowListScreen(
                         }
                     },
                     actions = {
+                        // YouTube tutorial button
+                        val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+                        IconButton(onClick = { uriHandler.openUri(YouTubeTutorials.FLOW_BUILDER) }) {
+                            Icon(
+                                Icons.Default.PlayCircle,
+                                contentDescription = "Watch Video Tutorial",
+                                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                            )
+                        }
                         // Walkthrough button
                         IconButton(onClick = { startWalkthrough("flow_builder") }) {
                             Icon(Icons.Outlined.Info, contentDescription = "Take a Walkthrough", tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))

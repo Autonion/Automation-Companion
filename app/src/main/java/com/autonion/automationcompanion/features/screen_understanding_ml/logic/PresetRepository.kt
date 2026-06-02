@@ -19,9 +19,12 @@ class PresetRepository(private val context: Context) {
     }
 
     fun savePreset(preset: AutomationPreset) {
+        val normalizedName = preset.name.trim()
+        require(normalizedName.isNotEmpty()) { "Preset name cannot be blank" }
+
         val file = File(presetsDir, "${preset.id}.json")
         FileWriter(file).use { writer ->
-            gson.toJson(preset, writer)
+            gson.toJson(preset.copy(name = normalizedName), writer)
         }
     }
 
@@ -56,6 +59,15 @@ class PresetRepository(private val context: Context) {
         val file = File(presetsDir, "$id.json")
         if (file.exists()) {
             file.delete()
+        }
+    }
+
+    fun hasPresetNamed(name: String, excludingId: String? = null): Boolean {
+        val normalizedName = name.trim()
+        if (normalizedName.isEmpty()) return false
+
+        return getAllPresets().any { preset ->
+            preset.id != excludingId && preset.name.equals(normalizedName, ignoreCase = true)
         }
     }
 }

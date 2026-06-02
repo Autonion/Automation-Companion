@@ -825,8 +825,10 @@ fun WiFiConfigScreen(
 
                 // ═══ Save Button ═══
                 ConfigSectionEntry(index = 3) {
+                    val hasAnyAction = ActionBuilder.hasAnyValidAction(configuredActions)
                     Button(
                         onClick = { onSaveClicked(connectionState, ssidFilter.ifBlank { null }, configuredActions) },
+                        enabled = hasAnyAction,
                         modifier = Modifier.fillMaxWidth().height(54.dp),
                         shape = RoundedCornerShape(25.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
@@ -834,6 +836,17 @@ fun WiFiConfigScreen(
                         Icon(Icons.Rounded.Save, contentDescription = null, modifier = Modifier.size(20.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Save Automation", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    }
+
+                    if (!hasAnyAction) {
+                        Text(
+                            "Enable at least one automation",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier
+                                .padding(top = 4.dp)
+                                .align(Alignment.CenterHorizontally)
+                        )
                     }
                 }
 
@@ -923,6 +936,13 @@ private fun saveWiFiSlot(
             )
 
             val actions = ActionBuilder.buildActions(configuredActions)
+            if (actions.isEmpty()) {
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    Toast.makeText(context, "Enable at least one automation", Toast.LENGTH_SHORT).show()
+                }
+                return@launch
+            }
+
             val triggerConfigJson = json.encodeToString(
                 TriggerConfig.serializer(),
                 triggerConfig as TriggerConfig

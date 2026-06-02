@@ -4,6 +4,7 @@ import android.text.format.DateFormat
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -46,6 +47,10 @@ import androidx.compose.material.icons.outlined.Info
 import com.autonion.automationcompanion.features.omni_chatbot.ui.LocalStartWalkthrough
 import com.autonion.automationcompanion.ui.theme.*
 import com.autonion.automationcompanion.ui.rememberScreenWidthDp
+import com.autonion.automationcompanion.core.onboarding.OnboardingPreferences
+import com.autonion.automationcompanion.ui.components.FeatureTipSheet
+import com.autonion.automationcompanion.ui.components.YouTubeTutorials
+import androidx.compose.material.icons.filled.PlayCircle
 import kotlinx.coroutines.launch
 import java.util.*
 
@@ -78,11 +83,37 @@ fun SemanticAutomationScreen(
     var showLiveStatus by remember { mutableStateOf(true) }
     val startWalkthrough = LocalStartWalkthrough.current
 
+    val isDark = isSystemInDarkTheme()
+    val cardGlassColor = if (isDark) CardGlass else Color.White.copy(alpha = 0.7f)
+    val inputBarBgColor = if (isDark) InputBarBg else Color.White.copy(alpha = 0.85f)
+    val headerTextColor = if (isDark) Color.White else Color(0xFF1A1C1E)
+    val headerSubTextColor = if (isDark) Color.White.copy(alpha = 0.6f) else Color(0xFF1A1C1E).copy(alpha = 0.65f)
+
     // Chat state
     val messages = remember { mutableStateListOf<SemanticMessage>() }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+
+    // ── First-visit Feature Tip ──
+    val onboardingPrefs = remember { OnboardingPreferences.getInstance(context) }
+    var showTip by remember { mutableStateOf(!onboardingPrefs.hasTipBeenSeen("semantic_automation")) }
+
+    if (showTip) {
+        FeatureTipSheet(
+            title = "Semantic AI Agent",
+            tips = listOf(
+                "Connect an **AI model** first via ⚙ Settings in the top bar",
+                "Type a natural language command like **'open YouTube and play music'**",
+                "The AI agent will **take control** of your screen to execute the task"
+            ),
+            icon = Icons.Default.AutoAwesome,
+            iconColor = Color(0xFFFF9800),
+            youtubeLink = YouTubeTutorials.SEMANTIC_AUTOMATION,
+            onDismiss = { onboardingPrefs.markTipSeen("semantic_automation"); showTip = false },
+            onShowWalkthrough = { showTip = false; startWalkthrough("semantic_automation") }
+        )
+    }
 
     // ─── Chat History Persistence ─────────────────────────────
     val chatDao = remember { AppDatabase.get(context).omniChatDao() }
@@ -208,30 +239,34 @@ fun SemanticAutomationScreen(
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("Semantic AI Agent", color = Color.White, fontWeight = FontWeight.Bold) },
+                    title = { Text("Semantic AI Agent", color = headerTextColor, fontWeight = FontWeight.Bold) },
                     navigationIcon = {
                         IconButton(onClick = onBack) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = headerTextColor)
                         }
                     },
                     actions = {
+                        val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+                        IconButton(onClick = { uriHandler.openUri(YouTubeTutorials.SEMANTIC_AUTOMATION) }) {
+                            Icon(Icons.Default.PlayCircle, contentDescription = "Watch Video Tutorial", tint = headerTextColor)
+                        }
                         IconButton(onClick = { startWalkthrough("semantic_automation") }) {
-                            Icon(Icons.Outlined.Info, contentDescription = "Take a Walkthrough", tint = Color.White)
+                            Icon(Icons.Outlined.Info, contentDescription = "Take a Walkthrough", tint = headerTextColor)
                         }
                         IconButton(onClick = { showLiveStatus = !showLiveStatus }) {
                             Icon(
                                 if (showLiveStatus) Icons.Default.Visibility else Icons.Default.VisibilityOff,
                                 contentDescription = "Toggle Live Status",
-                                tint = if (isActive && showLiveStatus) AccentPurple else Color.White
+                                tint = if (isActive && showLiveStatus) AccentPurple else headerTextColor
                             )
                         }
                         IconButton(onClick = onOpenModelManager) {
-                            Icon(Icons.Default.Settings, contentDescription = "SLM Hub", tint = Color.White)
+                            Icon(Icons.Default.Settings, contentDescription = "SLM Hub", tint = headerTextColor)
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = Color.Transparent,
-                        titleContentColor = Color.White
+                        titleContentColor = headerTextColor
                     )
                 )
             },
@@ -289,22 +324,22 @@ fun SemanticAutomationScreen(
                         Icon(
                             Icons.Default.Add,
                             contentDescription = "New Chat",
-                            tint = Color.White.copy(alpha = 0.6f),
+                            tint = headerTextColor.copy(alpha = 0.6f),
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(Modifier.width(4.dp))
-                        Text("New Chat", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
+                        Text("New Chat", color = headerTextColor.copy(alpha = 0.6f), fontSize = 12.sp)
                     }
                     Spacer(Modifier.width(8.dp))
                     TextButton(onClick = { showHistory = !showHistory }) {
                         Icon(
                             Icons.Default.History,
                             contentDescription = "History",
-                            tint = Color.White.copy(alpha = 0.6f),
+                            tint = headerTextColor.copy(alpha = 0.6f),
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(Modifier.width(4.dp))
-                        Text("History", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
+                        Text("History", color = headerTextColor.copy(alpha = 0.6f), fontSize = 12.sp)
                     }
                 }
 
@@ -316,7 +351,7 @@ fun SemanticAutomationScreen(
                             .fillMaxWidth(),
                         contentAlignment = Alignment.Center
                     ) {
-                        EmptyChatState()
+                        EmptyChatState(isDark, headerTextColor, headerSubTextColor)
                     }
                 } else {
                     LazyColumn(
@@ -332,6 +367,7 @@ fun SemanticAutomationScreen(
                         items(messages, key = { it.id }) { message ->
                             ChatBubble(
                                 message = message,
+                                isDark = isDark,
                                 onOptionSelected = { option ->
                                     // Add the user's choice to chat
                                     messages.add(
@@ -357,13 +393,13 @@ fun SemanticAutomationScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 8.dp)
-                            .border(1.dp, Color.White.copy(alpha = 0.1f), RoundedCornerShape(16.dp)),
+                            .border(1.dp, if (isDark) Color.White.copy(alpha = 0.1f) else Color.Black.copy(alpha = 0.08f), RoundedCornerShape(16.dp)),
                         shape = RoundedCornerShape(16.dp),
                         colors = CardDefaults.cardColors(
                             containerColor = when (status) {
                                 AutomationStatus.COMPLETED -> AccentGreen.copy(alpha = 0.2f)
                                 AutomationStatus.FAILED -> AccentRed.copy(alpha = 0.2f)
-                                else -> CardGlass
+                                else -> cardGlassColor
                             }
                         )
                     ) {
@@ -392,7 +428,7 @@ fun SemanticAutomationScreen(
                                         tint = when (status) {
                                             AutomationStatus.COMPLETED -> AccentGreen
                                             AutomationStatus.FAILED -> AccentRed
-                                            else -> Color.White.copy(alpha = 0.7f)
+                                            else -> headerTextColor.copy(alpha = 0.7f)
                                         }
                                     )
                                 }
@@ -401,7 +437,7 @@ fun SemanticAutomationScreen(
                                     statusLabel(status),
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.SemiBold,
-                                    color = Color.White
+                                    color = headerTextColor
                                 )
                                 Spacer(modifier = Modifier.weight(1f))
                                 if (isActive) {
@@ -418,12 +454,12 @@ fun SemanticAutomationScreen(
                                 Text(
                                     "Goal: ${g.rawCommand}",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = Color.White.copy(alpha = 0.7f)
+                                    color = headerSubTextColor
                                 )
                                 Text(
                                     "Task: ${g.task} | App: ${g.targetApp ?: "—"} | Query: ${g.query ?: "—"}",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = Color.White.copy(alpha = 0.7f)
+                                    color = headerSubTextColor
                                 )
                             }
 
@@ -431,7 +467,7 @@ fun SemanticAutomationScreen(
                                 Text(
                                     "Loop iteration: $loopCount",
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = Color.White.copy(alpha = 0.7f)
+                                    color = headerSubTextColor
                                 )
                             }
 
@@ -440,7 +476,7 @@ fun SemanticAutomationScreen(
                                     "Last: $desc",
                                     style = MaterialTheme.typography.bodySmall,
                                     fontWeight = FontWeight.Medium,
-                                    color = Color.White
+                                    color = headerTextColor
                                 )
                             }
                         }
@@ -473,7 +509,8 @@ fun SemanticAutomationScreen(
                                 command = ""
                             }
                         },
-                        isActive = isActive
+                        isActive = isActive,
+                        isDark = isDark
                     )
                 }
                 }
@@ -504,6 +541,7 @@ fun SemanticAutomationScreen(
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
+                            .background(if (isDark) Color(0xCC0F1115) else Color(0xCCF3F6FD))
                             .clickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null,
@@ -564,7 +602,7 @@ fun SemanticAutomationScreen(
 }
 
 @Composable
-private fun EmptyChatState() {
+private fun EmptyChatState(isDark: Boolean, headerTextColor: Color, headerSubTextColor: Color) {
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     val pulseScale by infiniteTransition.animateFloat(
         initialValue = 0.92f,
@@ -588,14 +626,14 @@ private fun EmptyChatState() {
         Spacer(Modifier.height(16.dp))
         Text(
             "Start a conversation",
-            color = Color.White.copy(alpha = 0.6f),
+            color = headerTextColor.copy(alpha = 0.6f),
             fontSize = 16.sp,
             fontWeight = FontWeight.Medium
         )
         Spacer(Modifier.height(4.dp))
         Text(
             "Describe what you want to automate",
-            color = Color.White.copy(alpha = 0.35f),
+            color = headerSubTextColor,
             fontSize = 13.sp,
             textAlign = TextAlign.Center
         )
@@ -603,10 +641,13 @@ private fun EmptyChatState() {
 }
 
 @Composable
-private fun ChatBubble(message: SemanticMessage, onOptionSelected: (String) -> Unit) {
+private fun ChatBubble(message: SemanticMessage, isDark: Boolean, onOptionSelected: (String) -> Unit) {
     val isUser = message.isUser
     val screenWidth = rememberScreenWidthDp()
     val bubbleMaxWidth = (screenWidth * 0.65f).coerceAtMost(480.dp)
+
+    val systemBubbleBg = if (isDark) SystemBubbleBg else Color(0xFFE8ECF5)
+    val systemBubbleText = if (isDark) Color.White else Color(0xFF1A1C1E)
 
     // Entrance animation
     var visible by remember { mutableStateOf(false) }
@@ -635,7 +676,7 @@ private fun ChatBubble(message: SemanticMessage, onOptionSelected: (String) -> U
                         if (isUser) Brush.horizontalGradient(
                             listOf(AccentPurple, AccentBlue)
                         ) else Brush.horizontalGradient(
-                            listOf(SystemBubbleBg, SystemBubbleBg)
+                            listOf(systemBubbleBg, systemBubbleBg)
                         )
                     )
                     .padding(horizontal = 14.dp, vertical = 10.dp)
@@ -643,7 +684,7 @@ private fun ChatBubble(message: SemanticMessage, onOptionSelected: (String) -> U
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
                         text = message.text,
-                        color = Color.White,
+                        color = if (isUser) Color.White else systemBubbleText,
                         fontSize = 14.sp,
                         lineHeight = 20.sp
                     )
@@ -657,8 +698,8 @@ private fun ChatBubble(message: SemanticMessage, onOptionSelected: (String) -> U
                                 Button(
                                     onClick = { onOptionSelected(option) },
                                     colors = ButtonDefaults.buttonColors(
-                                        containerColor = Color.White.copy(alpha = 0.15f),
-                                        contentColor = Color.White
+                                        containerColor = if (isDark) Color.White.copy(alpha = 0.15f) else Color.Black.copy(alpha = 0.08f),
+                                        contentColor = if (isDark) Color.White else Color(0xFF1A1C1E)
                                     ),
                                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                                 ) {
@@ -673,7 +714,7 @@ private fun ChatBubble(message: SemanticMessage, onOptionSelected: (String) -> U
             // Timestamp
             Text(
                 text = formatTime(message.timestamp),
-                color = Color.White.copy(alpha = 0.3f),
+                color = if (isDark) Color.White.copy(alpha = 0.3f) else Color.Black.copy(alpha = 0.35f),
                 fontSize = 11.sp,
                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
             )
@@ -686,7 +727,8 @@ private fun ChatInputBar(
     value: String,
     onValueChange: (String) -> Unit,
     onSend: () -> Unit,
-    isActive: Boolean
+    isActive: Boolean,
+    isDark: Boolean
 ) {
     val focusManager = LocalFocusManager.current
     Row(
@@ -695,7 +737,11 @@ private fun ChatInputBar(
             .widthIn(max = 680.dp)
             .padding(horizontal = 12.dp, vertical = 8.dp)
             .clip(RoundedCornerShape(28.dp))
-            .background(InputBarBg)
+            .then(
+                if (!isDark) Modifier.border(1.dp, Color.Black.copy(alpha = 0.06f), RoundedCornerShape(28.dp))
+                else Modifier
+            )
+            .background(if (isDark) InputBarBg else Color.White.copy(alpha = 0.85f))
             .padding(horizontal = 6.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -707,7 +753,7 @@ private fun ChatInputBar(
             placeholder = {
                 Text(
                     if (isActive) "Agent is running..." else "Ask something...",
-                    color = Color.White.copy(alpha = 0.35f)
+                    color = if (isDark) Color.White.copy(alpha = 0.35f) else Color(0xFF1A1C1E).copy(alpha = 0.45f)
                 )
             },
             colors = TextFieldDefaults.colors(
@@ -718,9 +764,9 @@ private fun ChatInputBar(
                 unfocusedIndicatorColor = Color.Transparent,
                 disabledIndicatorColor = Color.Transparent,
                 cursorColor = AccentPurple,
-                focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White,
-                disabledTextColor = Color.White.copy(alpha = 0.5f)
+                focusedTextColor = if (isDark) Color.White else Color(0xFF1A1C1E),
+                unfocusedTextColor = if (isDark) Color.White else Color(0xFF1A1C1E),
+                disabledTextColor = if (isDark) Color.White.copy(alpha = 0.5f) else Color(0xFF1A1C1E).copy(alpha = 0.5f)
             ),
             maxLines = 3,
             textStyle = LocalTextStyle.current.copy(fontSize = 15.sp)
@@ -756,7 +802,7 @@ private fun ChatInputBar(
             Icon(
                 Icons.AutoMirrored.Filled.Send,
                 contentDescription = "Send",
-                tint = Color.White.copy(alpha = sendAlpha),
+                tint = if (hasText) Color.White else (if (isDark) Color.White.copy(alpha = sendAlpha) else Color.Black.copy(alpha = sendAlpha)),
                 modifier = Modifier.size(20.dp)
             )
         }

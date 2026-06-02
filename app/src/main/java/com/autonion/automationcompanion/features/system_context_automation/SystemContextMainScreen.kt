@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.BatteryStd
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.SettingsSystemDaydream
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -61,6 +62,11 @@ import com.autonion.automationcompanion.features.omni_chatbot.ui.LocalStartWalkt
 import com.autonion.automationcompanion.ui.isTablet
 import com.autonion.automationcompanion.ui.rememberWindowWidthSize
 import com.autonion.automationcompanion.ui.WindowWidthSize
+import com.autonion.automationcompanion.core.onboarding.OnboardingPreferences
+import com.autonion.automationcompanion.ui.components.FeatureTipSheet
+import com.autonion.automationcompanion.ui.components.YouTubeTutorials
+import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.ui.platform.LocalUriHandler
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -68,8 +74,29 @@ import kotlinx.coroutines.delay
 fun SystemContextMainScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val startWalkthrough = LocalStartWalkthrough.current
+    val uriHandler = LocalUriHandler.current
     val tablet = isTablet()
     val windowWidthSize = rememberWindowWidthSize()
+
+    // ── First-visit Feature Tip ──
+    val onboardingPrefs = remember { OnboardingPreferences.getInstance(context) }
+    var showTip by remember { mutableStateOf(!onboardingPrefs.hasTipBeenSeen("system_context")) }
+
+    if (showTip) {
+        FeatureTipSheet(
+            title = "System Context Automation",
+            tips = listOf(
+                "Tap a **category card** to set up automation rules",
+                "Rules run **automatically** in the background when conditions are met",
+                "Combine triggers like **location + time** for powerful automations"
+            ),
+            icon = androidx.compose.material.icons.Icons.Default.SettingsSystemDaydream,
+            iconColor = androidx.compose.ui.graphics.Color(0xFF448AFF),
+            youtubeLink = YouTubeTutorials.SYSTEM_CONTEXT,
+            onDismiss = { onboardingPrefs.markTipSeen("system_context"); showTip = false },
+            onShowWalkthrough = { showTip = false; startWalkthrough("system_context") }
+        )
+    }
 
     AuroraBackground {
         Scaffold(
@@ -85,6 +112,9 @@ fun SystemContextMainScreen(onBack: () -> Unit) {
                         }
                     },
                     actions = {
+                        IconButton(onClick = { uriHandler.openUri(YouTubeTutorials.SYSTEM_CONTEXT) }) {
+                            Icon(Icons.Default.PlayCircle, contentDescription = "Watch Video Tutorial")
+                        }
                         IconButton(onClick = { startWalkthrough("system_context") }) {
                             Icon(Icons.Outlined.Info, contentDescription = "Take a Walkthrough")
                         }

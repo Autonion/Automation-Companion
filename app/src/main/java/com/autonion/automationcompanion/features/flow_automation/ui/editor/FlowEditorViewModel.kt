@@ -54,6 +54,12 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
     private val _executionState = MutableStateFlow<FlowExecutionState>(FlowExecutionState.Idle)
     val executionState: StateFlow<FlowExecutionState> = _executionState.asStateFlow()
 
+    /** Validation errors to display before running a flow. Empty = valid. */
+    private val _validationErrors = MutableStateFlow<List<String>>(emptyList())
+    val validationErrors: StateFlow<List<String>> = _validationErrors.asStateFlow()
+
+    fun clearValidationErrors() { _validationErrors.value = emptyList() }
+
     // Bug #15 fix: Broadcast receiver for execution state updates from FlowExecutionService.
     // MUST be declared before init{} to avoid null during registration (Kotlin init order).
     private val serviceStateReceiver = object : android.content.BroadcastReceiver() {
@@ -441,14 +447,81 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
 
     // ─── Execution ───────────────────────────────────────────────────────
 
+    /**
+     * Validate the flow graph before execution.
+     * Returns a list of human-readable error messages. Empty list = valid.
+     */
+    fun validateFlow(): List<String> {
+        val graph = _state.value.graph
+        val errors = mutableListOf<String>()
+
+        // 1. Must have a start node
+        val start = graph.findStartNode()
+        if (start == null) {
+            errors.add("Flow is missing a Start node.")
+            return errors
+        }
+
+        // 2. Must have at least one edge from Start
+        val reachable = graph.reachableNodes()
+        if (reachable.size <= 1) {
+            errors.add("Flow has no nodes connected to Start. Add and connect at least one node.")
+            return errors
+        }
+
+        // 3. Validate each reachable node for missing configuration
+        for (node in reachable) {
+            when (node) {
+                is LaunchAppNode -> {
+                    if (node.appPackageName.isBlank()) {
+                        errors.add("\"${node.label}\" — No app selected.")
+                    }
+                }
+                is ScreenMLNode -> {
+                    if (node.automationStepsJson.isBlank()) {
+                        errors.add("\"${node.label}\" — No screen data captured. Open the overlay and select elements.")
+                    }
+                }
+                is VisualTriggerNode -> {
+                    if (node.visionPresetJson.isBlank() && node.templateImagePath.isBlank()) {
+                        errors.add("\"${node.label}\" — No image template captured. Open the overlay and configure regions.")
+                    }
+                }
+                is GestureNode -> {
+                    if (node.recordedActionsJson.isBlank()) {
+                        errors.add("\"${node.label}\" — No gesture recorded. Open the overlay and record a gesture.")
+                    }
+                }
+                is InputNode -> {
+                    val source = node.inputSource
+                    if (source is InputSource.Static && source.text.isBlank()) {
+                        errors.add("\"${node.label}\" — No input text provided.")
+                    }
+                }
+                // StartNode, DelayNode, RepeatNode, ClipboardNode are always valid
+                else -> { /* no validation needed */ }
+            }
+        }
+
+        return errors
+    }
+
     fun executeFlow(resultCode: Int? = null, resultData: android.content.Intent? = null) {
+        // Validate first
+        val errors = validateFlow()
+        if (errors.isNotEmpty()) {
+            _validationErrors.value = errors
+            return
+        }
+
         saveFlow()
         
         val context = getApplication<android.app.Application>()
         val flowId = _state.value.graph.id
 
-        // Check if any node in the flow needs MediaProjection (screen capture)
-        val needsMediaProjection = _state.value.graph.nodes.any {
+        // Check if any reachable node in the flow needs MediaProjection (screen capture)
+        // Only nodes connected to the StartNode via edges are considered
+        val needsMediaProjection = _state.value.graph.reachableNodes().any {
             it is VisualTriggerNode || it is ScreenMLNode
         }
 
@@ -530,7 +603,14 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
                 }
                 com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.ACTION_FLOW_ML_DONE -> {
                     val imgPath = intent.getStringExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_RESULT_IMAGE_PATH) ?: ""
-                    (node as? ScreenMLNode)?.copy(automationStepsJson = json, captureImagePath = imgPath) ?: node
+                    // Read which tab (Elements/Text) was active in the Screen ML editor
+                    val editorMode = intent.getStringExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_RESULT_ML_MODE)
+                    val mlMode = if (editorMode == "TEXT") ScreenMLMode.OCR else ScreenMLMode.OBJECT_DETECTION
+                    (node as? ScreenMLNode)?.copy(
+                        automationStepsJson = json,
+                        captureImagePath = imgPath,
+                        mode = mlMode
+                    ) ?: node
                 }
                 else -> node
             }

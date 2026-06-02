@@ -15,8 +15,8 @@ android {
         applicationId = "com.autonion.automationcompanion"
         minSdk = 24
         targetSdk = 36
-        versionCode = 6
-        versionName = "1.0.7"
+        versionCode = 8
+        versionName = "1.0.9"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -24,6 +24,7 @@ android {
         externalNativeBuild {
             cmake {
                 cppFlags += "-std=c++17"
+                arguments += "-DANDROID_ALIGN_16KB=ON"
             }
         }
     }
@@ -58,7 +59,7 @@ android {
     }
 
     androidResources {
-        noCompress += listOf("tflite", "onnx")
+        noCompress += listOf("tflite", "onnx", "gguf")
     }
 }
 
@@ -66,6 +67,7 @@ dependencies {
     implementation(libs.java.websocket)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.core.splashscreen)
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
     implementation(libs.androidx.activity)
@@ -118,6 +120,7 @@ dependencies {
     // TensorFlow Lite
     // LiteRT (formerly TensorFlow Lite)
     implementation(libs.tensorflow.lite)
+    implementation(libs.litert.api)
     implementation(libs.litert.gpu.api)
     implementation(libs.litert.gpu)
     implementation(libs.litert.support.api)
@@ -153,4 +156,7 @@ dependencies {
 
     // Security — Encrypted SharedPreferences for API key storage
     implementation(libs.androidx.security.crypto)
+
+    // llama.cpp Kotlin wrapper (for GGUF on-device SLM inference)
+    implementation(libs.llama.kotlin.android)
 }

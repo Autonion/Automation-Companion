@@ -6,4 +6,14 @@
     </style>
 
     <style name="Theme.AutomationCompanion" parent="Base.Theme.AutomationCompanion" />
+
+    <!-- Splash Screen Starting Theme -->
+    <style name="Theme.App.Starting" parent="Theme.SplashScreen">
+        <!-- Background matches the dominant dark colour in the foreground icon's baked-in gradient.
+             On Android 12+ the icon is masked into a circle; because the splash bg and the icon's
+             outer region are the same colour, the circle edge is invisible. -->
+        <item name="windowSplashScreenBackground">#0C0E1C</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_flat</item>
+        <item name="postSplashScreenTheme">@style/Theme.AutomationCompanion</item>
+    </style>
 </resources>

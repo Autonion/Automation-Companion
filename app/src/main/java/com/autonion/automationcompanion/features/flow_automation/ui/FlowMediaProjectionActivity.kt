@@ -124,8 +124,9 @@ class FlowMediaProjectionActivity : ComponentActivity() {
         if (intent.action != ACTION_RUN_FLOW) return false
         val flowId = intent.getStringExtra(EXTRA_FLOW_ID) ?: return false
         val graph = FlowRepository(this).load(flowId) ?: return false
-        val hasLaunchAppNode = graph.nodes.any { it is LaunchAppNode }
-        val hasScreenCaptureNode = graph.nodes.any { it is VisualTriggerNode || it is ScreenMLNode }
+        val reachable = graph.reachableNodes()
+        val hasLaunchAppNode = reachable.any { it is LaunchAppNode }
+        val hasScreenCaptureNode = reachable.any { it is VisualTriggerNode || it is ScreenMLNode }
         return hasLaunchAppNode && hasScreenCaptureNode
     }
 }

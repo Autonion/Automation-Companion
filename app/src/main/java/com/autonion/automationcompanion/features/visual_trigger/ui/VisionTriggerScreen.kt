@@ -49,6 +49,9 @@ import com.autonion.automationcompanion.features.visual_trigger.service.CaptureO
 import com.autonion.automationcompanion.features.visual_trigger.service.VisionExecutionService
 import com.autonion.automationcompanion.ui.components.AuroraBackground
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.ui.platform.LocalUriHandler
+import com.autonion.automationcompanion.ui.components.YouTubeTutorials
 import com.autonion.automationcompanion.features.omni_chatbot.ui.LocalStartWalkthrough
 import com.autonion.automationcompanion.ui.isTablet
 import com.autonion.automationcompanion.ui.rememberWindowWidthSize
@@ -70,6 +73,7 @@ fun VisionTriggerScreen(
     val isDark = isSystemInDarkTheme()
     val primary = MaterialTheme.colorScheme.primary
     val startWalkthrough = LocalStartWalkthrough.current
+    val uriHandler = LocalUriHandler.current
     val tablet = isTablet()
     val windowWidthSize = rememberWindowWidthSize()
 
@@ -94,6 +98,13 @@ fun VisionTriggerScreen(
     // Name dialog state
     var showNameDialog by remember { mutableStateOf(false) }
     var newPresetName by remember { mutableStateOf("") }
+    val trimmedNewPresetName = newPresetName.trim()
+    val newPresetNameError = when {
+        newPresetName.isNotEmpty() && trimmedNewPresetName.isEmpty() -> "Preset name is required"
+        trimmedNewPresetName.isNotEmpty() && presets.any { it.name.equals(trimmedNewPresetName, ignoreCase = true) } ->
+            "A preset with this name already exists"
+        else -> null
+    }
 
     // FAB entrance animation
     val fabScale = remember { Animatable(0f) }
@@ -123,6 +134,9 @@ fun VisionTriggerScreen(
                         }
                     },
                     actions = {
+                        IconButton(onClick = { uriHandler.openUri(YouTubeTutorials.VISUAL_TRIGGER) }) {
+                            Icon(Icons.Default.PlayCircle, contentDescription = "Watch Video Tutorial", tint = MaterialTheme.colorScheme.onSurface)
+                        }
                         IconButton(onClick = { startWalkthrough("visual_trigger") }) {
                             Icon(Icons.Outlined.Info, contentDescription = "Take a Walkthrough", tint = MaterialTheme.colorScheme.onSurface)
                         }
@@ -295,6 +309,10 @@ fun VisionTriggerScreen(
                     value = newPresetName,
                     onValueChange = { newPresetName = it },
                     label = { Text("Preset Name") },
+                    isError = newPresetNameError != null,
+                    supportingText = {
+                        newPresetNameError?.let { Text(it) }
+                    },
                     singleLine = true,
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = primary,
@@ -311,9 +329,10 @@ fun VisionTriggerScreen(
                 Button(
                     onClick = {
                         showNameDialog = false
-                        onAddClicked(newPresetName)
-                        newPresetName = "New Automation"
+                        onAddClicked(trimmedNewPresetName)
+                        newPresetName = ""
                     },
+                    enabled = trimmedNewPresetName.isNotEmpty() && newPresetNameError == null,
                     colors = ButtonDefaults.buttonColors(containerColor = primary),
                     shape = RoundedCornerShape(12.dp)
                 ) {

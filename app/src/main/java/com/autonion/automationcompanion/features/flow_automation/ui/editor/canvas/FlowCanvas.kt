@@ -398,7 +398,10 @@ private fun DrawScope.drawNode(
         is StartNode -> "ENTRY POINT"
         is GestureNode -> node.gestureType.name.uppercase()
         is VisualTriggerNode -> "IMAGE MATCH"
-        is ScreenMLNode -> node.mode.name.uppercase()
+        is ScreenMLNode -> when (node.mode) {
+            ScreenMLMode.OBJECT_DETECTION -> "ELEMENTS"
+            ScreenMLMode.OCR -> "OCR"
+        }
         is DelayNode -> "WAIT"
         is LaunchAppNode -> if (node.appPackageName.isNotBlank())
             node.appPackageName.substringAfterLast('.').uppercase()

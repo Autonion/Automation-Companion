@@ -48,10 +48,15 @@ import com.autonion.automationcompanion.features.screen_understanding_ml.logic.P
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.AutomationPreset
 import com.autonion.automationcompanion.ui.components.AuroraBackground
 import androidx.compose.material.icons.outlined.Info
+import com.autonion.automationcompanion.ui.components.YouTubeTutorials
+import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.ui.platform.LocalUriHandler
 import com.autonion.automationcompanion.features.omni_chatbot.ui.LocalStartWalkthrough
 import com.autonion.automationcompanion.ui.isTablet
 import com.autonion.automationcompanion.ui.rememberWindowWidthSize
 import com.autonion.automationcompanion.ui.WindowWidthSize
+import com.autonion.automationcompanion.core.onboarding.OnboardingPreferences
+import com.autonion.automationcompanion.ui.components.FeatureTipSheet
 import kotlinx.coroutines.launch
 
 /**
@@ -72,6 +77,25 @@ fun ScreenMLRoute(onBack: () -> Unit) {
     var showDialog by remember { mutableStateOf(false) }
     var confirmDeleteFor by remember { mutableStateOf<AutomationPreset?>(null) }
 
+    // ── First-visit Feature Tip ──
+    val onboardingPrefs = remember { OnboardingPreferences.getInstance(context) }
+    var showTip by remember { mutableStateOf(!onboardingPrefs.hasTipBeenSeen("screen_ml")) }
+
+    if (showTip) {
+        FeatureTipSheet(
+            title = "UI Recognition AI",
+            tips = listOf(
+                "Tap **+ Add** to capture and analyze your current screen",
+                "The AI identifies **clickable elements** and their coordinates",
+                "Create **multi-step presets** that run automatic UI interactions"
+            ),
+            icon = androidx.compose.material.icons.Icons.AutoMirrored.Filled.ViewQuilt,
+            iconColor = androidx.compose.ui.graphics.Color(0xFF448AFF),
+            youtubeLink = YouTubeTutorials.SCREEN_ML,
+            onDismiss = { onboardingPrefs.markTipSeen("screen_ml"); showTip = false }
+        )
+    }
+
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -86,6 +110,7 @@ fun ScreenMLRoute(onBack: () -> Unit) {
 
     if (showDialog) {
         NewAutomationDialog(
+            existingPresetNames = presets.map { it.name }.toSet(),
             onDismiss = { showDialog = false },
             onConfirm = { name ->
                 showDialog = false
@@ -178,6 +203,10 @@ private fun ScreenMLDashboardContent(
                         navigationIconContentColor = MaterialTheme.colorScheme.onSurface
                     ),
                     actions = {
+                        val uriHandler = LocalUriHandler.current
+                        IconButton(onClick = { uriHandler.openUri(YouTubeTutorials.SCREEN_ML) }) {
+                            Icon(Icons.Default.PlayCircle, contentDescription = "Watch Video Tutorial", tint = MaterialTheme.colorScheme.onSurface)
+                        }
                         IconButton(onClick = { startWalkthrough("screen_ml") }) {
                             Icon(Icons.Outlined.Info, contentDescription = "Take a Walkthrough", tint = MaterialTheme.colorScheme.onSurface)
                         }
@@ -405,6 +434,7 @@ private fun AgentPresetItem(
 
 @Composable
 private fun NewAutomationDialog(
+    existingPresetNames: Set<String> = emptySet(),
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit
 ) {
@@ -412,6 +442,13 @@ private fun NewAutomationDialog(
     val scale = remember { Animatable(0.9f) }
     val alpha = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
+    val trimmedName = name.trim()
+    val nameError = when {
+        name.isNotEmpty() && trimmedName.isEmpty() -> "Preset name is required"
+        trimmedName.isNotEmpty() && existingPresetNames.any { it.equals(trimmedName, ignoreCase = true) } ->
+            "A preset with this name already exists"
+        else -> null
+    }
 
     LaunchedEffect(Unit) {
         scale.animateTo(1f, tween(220, easing = FastOutSlowInEasing))
@@ -456,6 +493,10 @@ private fun NewAutomationDialog(
                     value = name,
                     onValueChange = { name = it },
                     label = { Text("Preset name") },
+                    isError = nameError != null,
+                    supportingText = {
+                        nameError?.let { Text(it) }
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 20.dp),
@@ -473,10 +514,10 @@ private fun NewAutomationDialog(
                     Button(
                         onClick = {
                             dismissThen {
-                                if (name.isNotBlank()) onConfirm(name.trim())
+                                if (trimmedName.isNotEmpty() && nameError == null) onConfirm(trimmedName)
                             }
                         },
-                        enabled = name.isNotBlank()
+                        enabled = trimmedName.isNotEmpty() && nameError == null
                     ) {
                         Text("Create")
                     }

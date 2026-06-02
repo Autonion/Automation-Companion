@@ -44,10 +44,14 @@ import com.autonion.automationcompanion.features.omni_chatbot.ui.OmniChatbotScaf
 import com.autonion.automationcompanion.features.semantic_automation.ml.ModelStorageManager
 import com.autonion.automationcompanion.features.semantic_automation.ui.ModelManagerScreen
 import com.autonion.automationcompanion.features.system_context_automation.SystemContextMainScreen
+import com.autonion.automationcompanion.core.onboarding.OnboardingPreferences
+import com.autonion.automationcompanion.ui.onboarding.OnboardingScreen
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private const val ROUTE_HOME = "home"
+private const val ROUTE_ONBOARDING = "onboarding"
+
 private const val NAV_ANIM_DURATION = 300
 
 object AutomationRoutes {
@@ -134,6 +138,10 @@ fun AppNavHost() {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    // Determine start destination based on onboarding state
+    val onboardingPrefs = remember { OnboardingPreferences.getInstance(context) }
+    val startDest = if (onboardingPrefs.hasCompletedOnboarding) ROUTE_HOME else ROUTE_ONBOARDING
+
     // ── Wrap everything in OmniChatbot scaffold ──
     OmniChatbotScaffold(
         viewModel = omniViewModel,
@@ -147,7 +155,7 @@ fun AppNavHost() {
     ) {
         NavHost(
             navController = navController,
-            startDestination = ROUTE_HOME,
+            startDestination = startDest,
             enterTransition = {
                 slideInHorizontally(animationSpec = tween(NAV_ANIM_DURATION)) { fullWidth -> fullWidth } + fadeIn(animationSpec = tween(NAV_ANIM_DURATION))
             },
@@ -161,8 +169,32 @@ fun AppNavHost() {
                 slideOutHorizontally(animationSpec = tween(NAV_ANIM_DURATION)) { fullWidth -> fullWidth } + fadeOut(animationSpec = tween(NAV_ANIM_DURATION))
             }
         ) {
+
+            // Onboarding wizard (first launch only)
+            composable(ROUTE_ONBOARDING) {
+                OnboardingScreen(
+                    onComplete = {
+                        navController.navigate(ROUTE_HOME) {
+                            popUpTo(ROUTE_ONBOARDING) { inclusive = true }
+                        }
+                    },
+                    onNavigateToRoute = { route ->
+                        navController.navigate(ROUTE_HOME) {
+                            popUpTo(ROUTE_ONBOARDING) { inclusive = true }
+                        }
+                        navController.navigate(route)
+                    }
+                )
+            }
+
             composable(ROUTE_HOME) {
-                HomeScreen(onOpen = { route -> navController.navigate(route) })
+                HomeScreen(
+                    onOpen = { route -> navController.navigate(route) },
+                    onConnectAI = {
+                        omniViewModel.expand()
+                        omniViewModel.openSettingsWithMode(com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.CLOUD_API)
+                    }
+                )
             }
 
         composable(AutomationRoutes.GESTURE) {

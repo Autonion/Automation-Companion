@@ -11,4 +11,5 @@
     <color name="overlay_on_primary">#FFFFFF</color>
     <color name="overlay_secondary">#888888</color>
     <color name="overlay_ripple">#11000000</color>
+    <color name="splash_icon_bg">#131629</color>
 </resources>

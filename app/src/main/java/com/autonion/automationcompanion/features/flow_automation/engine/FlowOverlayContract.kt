@@ -39,4 +39,7 @@ object FlowOverlayContract {
 
     /** String — path to captured image (for vision trigger / screen ML). */
     const val EXTRA_RESULT_IMAGE_PATH = "extra_result_image_path"
+
+    /** String — the detection mode used in the Screen ML editor ("ELEMENTS" or "TEXT"). */
+    const val EXTRA_RESULT_ML_MODE = "extra_result_ml_mode"
 }

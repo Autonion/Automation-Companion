@@ -36,8 +36,11 @@ class VisionRepository(private val context: Context) {
     }
 
     suspend fun savePreset(preset: VisionPreset) = withContext(Dispatchers.IO) {
+        val normalizedName = preset.name.trim()
+        require(normalizedName.isNotEmpty()) { "Preset name cannot be blank" }
+
         val file = File(presetsDir, "${preset.id}.json")
-        val text = json.encodeToString(preset)
+        val text = json.encodeToString(preset.copy(name = normalizedName))
         file.writeText(text)
     }
 
@@ -59,5 +62,19 @@ class VisionRepository(private val context: Context) {
         } else {
             null
         }
+    }
+
+    suspend fun hasPresetNamed(name: String, excludingId: String? = null): Boolean = withContext(Dispatchers.IO) {
+        val normalizedName = name.trim()
+        if (normalizedName.isEmpty()) return@withContext false
+
+        presetsDir.listFiles()?.any { file ->
+            try {
+                val preset = json.decodeFromString<VisionPreset>(file.readText())
+                preset.id != excludingId && preset.name.equals(normalizedName, ignoreCase = true)
+            } catch (e: Exception) {
+                false
+            }
+        } ?: false
     }
 }

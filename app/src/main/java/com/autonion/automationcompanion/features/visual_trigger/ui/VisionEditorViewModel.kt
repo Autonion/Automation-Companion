@@ -4,6 +4,7 @@ import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Rect
+import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.autonion.automationcompanion.features.visual_trigger.data.VisionRepository
@@ -52,6 +53,7 @@ class VisionEditorViewModel(application: Application) : AndroidViewModel(applica
     private var currentImagePath: String? = null
     private var editingPresetId: String? = null
     private var appendPresetId: String? = null
+    private var loadedPresetName: String? = null
 
     private val _executionMode = MutableStateFlow(ExecutionMode.MANDATORY_SEQUENTIAL)
     val executionMode = _executionMode.asStateFlow()
@@ -90,6 +92,7 @@ class VisionEditorViewModel(application: Application) : AndroidViewModel(applica
             }
 
             editingPresetId = presetId
+            loadedPresetName = preset.name
             _executionMode.value = preset.executionMode
 
             // Build list of all regions with their source info
@@ -294,8 +297,26 @@ class VisionEditorViewModel(application: Application) : AndroidViewModel(applica
     fun savePreset(name: String, onComplete: (String) -> Unit) {
         val bitmap = _imageBitmap.value ?: return
         if (currentImagePath == null) return
+        val normalizedName = if (editingPresetId != null && name == "New Automation") {
+            loadedPresetName?.trim().orEmpty()
+        } else {
+            name.trim()
+        }
+
+        if (appendPresetId == null && normalizedName.isEmpty()) {
+            Toast.makeText(getApplication<Application>(), "Preset name is required", Toast.LENGTH_SHORT).show()
+            return
+        }
 
         viewModelScope.launch {
+            if (
+                appendPresetId == null &&
+                repository.hasPresetNamed(normalizedName, excludingId = editingPresetId)
+            ) {
+                Toast.makeText(getApplication<Application>(), "A preset with this name already exists", Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+
             val savedId = withContext(Dispatchers.IO) {
                 if (appendPresetId != null) {
                     val existingPreset = repository.getPreset(appendPresetId!!)
@@ -379,7 +400,7 @@ class VisionEditorViewModel(application: Application) : AndroidViewModel(applica
 
                     val preset = VisionPreset(
                         id = presetId,
-                        name = name,
+                        name = normalizedName,
                         regions = visionRegions,
                         isActive = true,
                         executionMode = _executionMode.value,
@@ -422,7 +443,7 @@ class VisionEditorViewModel(application: Application) : AndroidViewModel(applica
 
                 val preset = VisionPreset(
                     id = presetId,
-                    name = name,
+                    name = normalizedName,
                     regions = visionRegions,
                     isActive = true,
                     executionMode = _executionMode.value,
