@@ -1,6 +1,6 @@
 # Privacy Policy for Autonion (Automation Companion)
 
-**Effective Date:** 3 May 2026
+**Effective Date:** 3 June 2026
 
 Thank you for choosing to be part of the Autonion community. In this document, "Autonion", "we", "us", and "our" refer to the developer(s) of the Autonion application. We are committed to protecting your personal information and your right to privacy. If you have any questions or concerns about this privacy notice, or our practices with regards to your personal information, please contact us at <gurupreetam.ai@gmail.com>.
 
@@ -36,6 +36,14 @@ The App requests permissions to read contacts and send SMS messages.
 * **Query All Packages:** Required so you can select specific apps to launch or target within your automation flows.
 * **Battery & Wake Locks:** Required to ensure your scheduled automations run reliably even when the device is asleep.
 
+### Age Verification Data (Google Play Age Signals API)
+In jurisdictions where age verification is legally required (currently the U.S. state of Texas under SB 2420, with potential expansion to other states), the App receives age-range signals from Google Play.
+* **What data is received:** An age band (e.g., 13–17, 18+) and a verification/supervision status (e.g., Verified, Supervised). We do **not** receive your exact date of birth.
+* **How it is used:** This data is used **solely** to comply with applicable age verification laws — specifically, to respect parental access decisions made through Google Play's parental controls.
+* **What we do NOT do:** We do **not** use this data for advertising, analytics, profiling, marketing, or any purpose other than legal compliance.
+* **Storage:** The age-range signal is cached locally on your device for offline access. It is **not** transmitted to our servers or any third party.
+* **Non-regulated regions:** If you are not in a jurisdiction with an active age verification law, no age data is received or processed.
+
 ## 3. Data Processing, Ecosystem Integrations, and Cloud Providers
 
 Autonion is built with an "Offline-First, Cloud-Enhanced" architecture that spans the Android App, the Autonion Desktop Agent, and Browser Extensions (e.g., Lemur Browser extension).
@@ -53,7 +61,7 @@ We use administrative, technical, and physical security measures to help protect
 Autonion is an open-source project. We believe that applications requiring system-level permissions should operate with complete transparency. You can review the source code of the App, Desktop Agent, and Extensions, audit our data handling practices, and contribute to the project on our GitHub repository: <https://github.com/Autonion>.
 
 ## 7. Children's Privacy
-Our App does not address anyone under the age of 13. We do not knowingly collect personally identifiable information from children under 13.
+Our App does not address anyone under the age of 13. We do not knowingly collect personally identifiable information from children under 13. In jurisdictions with age verification laws (such as Texas SB 2420), we use the Google Play Age Signals API to receive age-range signals and respect parental controls. If a parent or guardian has denied access to this App through Google Play's parental controls, the App will display a restriction screen and prevent usage until the parent updates their settings.
 
 ## 8. Your Data Protection Rights (GDPR, CCPA, CalOPPA)
 Depending on your location (such as the EU or California), you have specific rights regarding your personal data, including the right to request access, deletion, or restriction of your data. 

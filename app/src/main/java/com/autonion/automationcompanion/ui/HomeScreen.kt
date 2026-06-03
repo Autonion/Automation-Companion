@@ -142,6 +142,7 @@ private fun CompactHomeLayout(
                     onNotificationClick = null,
                     onExclusionClick = { onOpen("settings/exclusion") },
                     onBackupClick = { onOpen("settings/backup_restore") },
+                    onAgeComplianceClick = { onOpen("settings/age_compliance") },
                     onBugReportEmail = onBugReportEmail,
                     onBugReportGithub = onBugReportGithub
                 )
@@ -344,6 +345,7 @@ private fun MediumHomeLayout(
                 subtitle = "AI-Powered Automation",
                 onExclusionClick = { onOpen("settings/exclusion") },
                 onBackupClick = { onOpen("settings/backup_restore") },
+                onAgeComplianceClick = { onOpen("settings/age_compliance") },
                 onBugReportEmail = onBugReportEmail,
                 onBugReportGithub = onBugReportGithub
             )
@@ -505,6 +507,7 @@ private fun ExpandedHomeLayout(
         TabletBrandingPanel(
             onExclusionClick = { onOpen("settings/exclusion") },
             onBackupClick = { onOpen("settings/backup_restore") },
+            onAgeComplianceClick = { onOpen("settings/age_compliance") },
             onBugReportEmail = onBugReportEmail,
             onBugReportGithub = onBugReportGithub,
             modifier = Modifier

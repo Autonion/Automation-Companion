@@ -41,6 +41,8 @@ javaWebsocket = "1.5.3"
 securityCrypto = "1.1.0-alpha06"
 llamaKotlinAndroid = "0.1.1"
 coreSplashScreen = "1.0.1"
+playAgeSignals = "0.0.3"
+coroutinesPlayServices = "1.7.3"
 
 [libraries]
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activity" }
@@ -96,6 +98,8 @@ java-websocket = { module = "org.java-websocket:Java-WebSocket", version.ref = "
 androidx-security-crypto = { module = "androidx.security:security-crypto", version.ref = "securityCrypto" }
 llama-kotlin-android = { module = "org.codeshipping:llama-kotlin-android", version.ref = "llamaKotlinAndroid" }
 androidx-core-splashscreen = { group = "androidx.core", name = "core-splashscreen", version.ref = "coreSplashScreen" }
+play-age-signals = { module = "com.google.android.play:age-signals", version.ref = "playAgeSignals" }
+kotlinx-coroutines-play-services = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-play-services", version.ref = "coroutinesPlayServices" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

@@ -89,6 +89,7 @@ fun DashboardHeader(
     onNotificationClick: (() -> Unit)? = null,
     onExclusionClick: () -> Unit = {},
     onBackupClick: () -> Unit = {},
+    onAgeComplianceClick: () -> Unit = {},
     onBugReportEmail: () -> Unit = {},
     onBugReportGithub: () -> Unit = {}
 ) {
@@ -165,6 +166,16 @@ fun DashboardHeader(
                         },
                         leadingIcon = {
                             Icon(Icons.Default.CloudUpload, contentDescription = null)
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Age & Compliance") },
+                        onClick = {
+                            showSettingsMenu = false
+                            onAgeComplianceClick()
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Default.Security, contentDescription = null)
                         }
                     )
                     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
@@ -551,6 +562,7 @@ fun StaggeredEntry(
 fun TabletBrandingPanel(
     onExclusionClick: () -> Unit = {},
     onBackupClick: () -> Unit = {},
+    onAgeComplianceClick: () -> Unit = {},
     onBugReportEmail: () -> Unit = {},
     onBugReportGithub: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -650,6 +662,16 @@ fun TabletBrandingPanel(
                         },
                         leadingIcon = {
                             Icon(Icons.Default.CloudUpload, contentDescription = null)
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Age & Compliance") },
+                        onClick = {
+                            showSettingsMenu = false
+                            onAgeComplianceClick()
+                        },
+                        leadingIcon = {
+                            Icon(Icons.Default.Security, contentDescription = null)
                         }
                     )
                     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))

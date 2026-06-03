@@ -157,6 +157,10 @@ dependencies {
     // Security — Encrypted SharedPreferences for API key storage
     implementation(libs.androidx.security.crypto)
 
+    // Play Age Signals API (Texas SB 2420 compliance)
+    implementation(libs.play.age.signals)
+    implementation(libs.kotlinx.coroutines.play.services)
+
     // llama.cpp Kotlin wrapper (for GGUF on-device SLM inference)
     implementation(libs.llama.kotlin.android)
 }

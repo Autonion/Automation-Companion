@@ -45,7 +45,10 @@ import com.autonion.automationcompanion.features.semantic_automation.ml.ModelSto
 import com.autonion.automationcompanion.features.semantic_automation.ui.ModelManagerScreen
 import com.autonion.automationcompanion.features.system_context_automation.SystemContextMainScreen
 import com.autonion.automationcompanion.core.onboarding.OnboardingPreferences
+import com.autonion.automationcompanion.core.age_signals.AgeSignalsRepository
 import com.autonion.automationcompanion.ui.onboarding.OnboardingScreen
+import com.autonion.automationcompanion.ui.components.ParentalBlockScreen
+import androidx.compose.runtime.collectAsState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -141,6 +144,15 @@ fun AppNavHost() {
     // Determine start destination based on onboarding state
     val onboardingPrefs = remember { OnboardingPreferences.getInstance(context) }
     val startDest = if (onboardingPrefs.hasCompletedOnboarding) ROUTE_HOME else ROUTE_ONBOARDING
+
+    // ── Age Signals: check for parental block (Texas SB 2420) ──
+    val ageRepo = remember { AgeSignalsRepository.getInstance(context) }
+    val ageState by ageRepo.ageSignalState.collectAsState()
+
+    if (ageRepo.isParentallyBlocked()) {
+        ParentalBlockScreen()
+        return
+    }
 
     // ── Wrap everything in OmniChatbot scaffold ──
     OmniChatbotScaffold(
@@ -386,6 +398,12 @@ fun AppNavHost() {
 
         composable("settings/backup_restore") {
             com.autonion.automationcompanion.features.settings.BackupRestoreScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable("settings/age_compliance") {
+            com.autonion.automationcompanion.features.settings.AgeComplianceScreen(
                 onBack = { navController.popBackStack() }
             )
         }
