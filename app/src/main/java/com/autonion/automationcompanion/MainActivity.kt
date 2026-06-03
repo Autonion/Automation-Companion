@@ -2,6 +2,7 @@ package com.autonion.automationcompanion
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.enableEdgeToEdge
 import com.autonion.automationcompanion.ui.AppNavHost
 import androidx.activity.compose.setContent
 import com.autonion.automationcompanion.ui.theme.AppTheme
@@ -15,6 +16,7 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         val splashScreen = installSplashScreen()
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         
         // Initialize WiFi monitoring for Android 7+

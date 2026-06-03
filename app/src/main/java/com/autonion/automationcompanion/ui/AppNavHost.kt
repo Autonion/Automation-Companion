@@ -17,8 +17,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalView
@@ -84,22 +82,15 @@ fun AppNavHost() {
     val currentRoute = navBackStackEntry?.destination?.route
     val view = LocalView.current
     val activity = view.context as? Activity
-    val colorScheme = MaterialTheme.colorScheme
     val isDark = isSystemInDarkTheme()
     val context = LocalContext.current
 
+    // enableEdgeToEdge() in MainActivity makes system bars transparent;
+    // only control status-bar icon contrast here per route.
     SideEffect {
         activity?.let { act ->
             val window = act.window
-            if (currentRoute == ROUTE_HOME || currentRoute == AutomationRoutes.SEMANTIC_AUTOMATION || currentRoute == AutomationRoutes.CROSS_DEVICE) {
-                WindowCompat.setDecorFitsSystemWindows(window, false)
-                window.statusBarColor = Color.Transparent.toArgb()
-                WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !isDark
-            } else {
-                WindowCompat.setDecorFitsSystemWindows(window, true)
-                window.statusBarColor = colorScheme.primary.toArgb()
-                WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = isDark
-            }
+            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !isDark
         }
     }
 
