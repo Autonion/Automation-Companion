@@ -161,6 +161,10 @@ dependencies {
     implementation(libs.play.age.signals)
     implementation(libs.kotlinx.coroutines.play.services)
 
+    // Play In-App Updates (remind users when a new version is available)
+    implementation(libs.play.app.update)
+    implementation(libs.play.app.update.ktx)
+
     // llama.cpp Kotlin wrapper (for GGUF on-device SLM inference)
     implementation(libs.llama.kotlin.android)
 }

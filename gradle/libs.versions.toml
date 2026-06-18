@@ -42,6 +42,7 @@ securityCrypto = "1.1.0-alpha06"
 llamaKotlinAndroid = "0.1.1"
 coreSplashScreen = "1.0.1"
 playAgeSignals = "0.0.3"
+playAppUpdate = "2.1.0"
 coroutinesPlayServices = "1.7.3"
 
 [libraries]
@@ -99,6 +100,8 @@ androidx-security-crypto = { module = "androidx.security:security-crypto", versi
 llama-kotlin-android = { module = "org.codeshipping:llama-kotlin-android", version.ref = "llamaKotlinAndroid" }
 androidx-core-splashscreen = { group = "androidx.core", name = "core-splashscreen", version.ref = "coreSplashScreen" }
 play-age-signals = { module = "com.google.android.play:age-signals", version.ref = "playAgeSignals" }
+play-app-update = { module = "com.google.android.play:app-update", version.ref = "playAppUpdate" }
+play-app-update-ktx = { module = "com.google.android.play:app-update-ktx", version.ref = "playAppUpdate" }
 kotlinx-coroutines-play-services = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-play-services", version.ref = "coroutinesPlayServices" }
 
 [plugins]
