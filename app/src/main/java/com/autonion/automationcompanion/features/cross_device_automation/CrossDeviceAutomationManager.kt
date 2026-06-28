@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
 import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
+import com.autonion.automationcompanion.features.flow_automation.data.DesktopFlowManager
 import kotlinx.coroutines.launch
 import com.autonion.automationcompanion.features.cross_device_automation.actions.ActionExecutor
 import com.autonion.automationcompanion.features.cross_device_automation.data.InMemoryDeviceRepository
@@ -33,6 +34,11 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
     private lateinit var hostManager: HostManager
     private lateinit var clipboardMonitor: com.autonion.automationcompanion.features.cross_device_automation.event_source.ClipboardMonitor
     private var isStarted = false
+
+    // Desktop Flow Manager — lazy init after networkingManager is available
+    val desktopFlowManager: DesktopFlowManager by lazy {
+        DesktopFlowManager(context, this)
+    }
 
     // Background Execution Locks
     private var wakeLock: android.os.PowerManager.WakeLock? = null
@@ -261,6 +267,7 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
     override fun onDeviceConnected(device: com.autonion.automationcompanion.features.cross_device_automation.domain.Device) {
         Log.d("CrossDeviceManager", "Device connected: ${device.name}")
         syncRulesToDesktop() // Sync rules immediately on connection
+        desktopFlowManager.requestFlowList() // Also fetch desktop flows
     }
 
     override fun onDeviceDisconnected(deviceId: String) {
@@ -279,6 +286,12 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
                     Log.d("CrossDeviceManager", "Received remote trigger for rule: $ruleId")
                     executeRuleById(ruleId)
                 }
+                return
+            }
+
+            // ── Flow System messages from Desktop ──
+            if (type == "flow_list_response" || type == "flow_trigger_response") {
+                desktopFlowManager.handleIncomingMessage(message)
                 return
             }
 

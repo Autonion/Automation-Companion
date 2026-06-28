@@ -1147,12 +1147,24 @@ class OmniChatbotViewModel(
             }
         }.ifBlank { null }
 
+        // Build structured conversation history for richer cross-device context.
+        // Desktop agent uses this to understand multi-turn references like
+        // "type hello in it" (where "it" = the app opened in a prior turn).
+        val conversationHistory = chatMemory.messages().takeLast(10).mapNotNull { msg ->
+            when (msg) {
+                is UserMessage -> mapOf("role" to "user", "content" to msg.singleText().take(500))
+                is AiMessage -> mapOf("role" to "assistant", "content" to msg.text().take(500))
+                else -> null
+            }
+        }
+
         return AgentRequest(
             transactionId = txnId,
             prompt = result.rawPrompt,
             timestamp = System.currentTimeMillis(),
             target = result.entities.targetDevice ?: "desktop",
             context = contextSummary,
+            conversationHistory = conversationHistory,
             agentContext = AgentRequestContext(
                 conversationSummary = contextSummary,
                 preferredModelMode = "desktop_default",

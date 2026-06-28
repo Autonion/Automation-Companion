@@ -49,6 +49,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+
 /**
  * Flow list screen — shows saved flows with edit, run, export, and delete actions.
  * Supports importing flows from external JSON files.
@@ -96,7 +97,9 @@ fun FlowListScreen(
         exportingFlowId = null
     }
 
-    LaunchedEffect(Unit) { viewModel.refresh() }
+    LaunchedEffect(Unit) {
+        viewModel.refresh()
+    }
 
     AuroraBackground {
         Scaffold(
@@ -570,3 +573,4 @@ private fun FlowCard(
         }
     }
 }
+

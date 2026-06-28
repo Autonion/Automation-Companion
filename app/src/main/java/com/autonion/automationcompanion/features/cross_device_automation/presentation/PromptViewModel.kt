@@ -122,11 +122,19 @@ class PromptViewModel(
             // agent_request envelope for newer Desktop Agents.
             val transactionId = UUID.randomUUID().toString()
             val contextSummary = chatMemory.buildContextSummary()
+
+            // Build structured conversation history for cross-device context.
+            val recentMessages = _messages.value.take(10).reversed()
+            val conversationHistory = recentMessages.mapNotNull { msg ->
+                mapOf("role" to if (msg.isUser) "user" else "assistant", "content" to msg.text.take(500))
+            }
+
             val prompt = AgentRequest(
                 transactionId = transactionId,
                 prompt = promptText,
                 timestamp = System.currentTimeMillis(),
                 context = contextSummary,
+                conversationHistory = conversationHistory,
                 agentContext = AgentRequestContext(
                     conversationSummary = contextSummary,
                     preferredModelMode = "desktop_default",

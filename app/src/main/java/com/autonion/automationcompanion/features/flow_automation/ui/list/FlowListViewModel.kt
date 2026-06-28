@@ -17,6 +17,7 @@ class FlowListViewModel(application: Application) : AndroidViewModel(application
 
     private val repository = FlowRepository(application)
 
+    // ── Local Flows ──
     private val _flows = MutableStateFlow<List<FlowGraph>>(emptyList())
     val flows: StateFlow<List<FlowGraph>> = _flows.asStateFlow()
 

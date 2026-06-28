@@ -3,6 +3,7 @@ package com.autonion.automationcompanion.features.cross_device_automation.presen
 import android.text.format.DateFormat
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -16,10 +17,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Rule
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Rule
 import androidx.compose.material.icons.filled.SettingsRemote
 import androidx.compose.material.icons.filled.SmartToy
@@ -44,6 +49,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.border
 import androidx.compose.foundation.isSystemInDarkTheme
 import com.autonion.automationcompanion.features.cross_device_automation.CrossDeviceAutomationManager
+import com.autonion.automationcompanion.features.flow_automation.data.DesktopFlowManifest
+import com.autonion.automationcompanion.features.flow_automation.data.FlowTriggerProgress
+import com.autonion.automationcompanion.features.flow_automation.data.FlowTriggerStatus
 import com.autonion.automationcompanion.features.system_context_automation.shared.ui.PermissionDisclosureDialog
 import com.autonion.automationcompanion.ui.components.AuroraBackground
 import androidx.compose.material.icons.outlined.Info
@@ -233,8 +241,8 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
                         0 -> DeviceManagementScreen(
                             onAccessibilityNeeded = { showPermissionDialog = true }
                         )
-                        1, 2 -> {
-                            // Ask & Rules tabs need agent + LLM connection
+                        1, 2, 3 -> {
+                            // Rules, Flows & Ask tabs need agent connection
                             Box(modifier = Modifier.fillMaxSize()) {
                                     Box(
                                         modifier = Modifier
@@ -243,7 +251,8 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
                                     ) {
                                     when (tab) {
                                         1 -> DesktopAutomationScreen()
-                                        2 -> PromptScreen()
+                                        2 -> DesktopFlowsTab()
+                                        3 -> PromptScreen()
                                     }
                                 }
                                 if (!isAIReady) {
@@ -298,6 +307,7 @@ private fun StyledTabRow(selectedTab: Int, isDark: Boolean, headerTextColor: Col
     val tabs = listOf(
         TabItem("Devices", Icons.Default.Devices),
         TabItem("Rules", Icons.AutoMirrored.Filled.Rule),
+        TabItem("Flows", Icons.Default.AccountTree),
         TabItem("Ask", Icons.Default.SmartToy)
     )
 
@@ -319,36 +329,34 @@ private fun StyledTabRow(selectedTab: Int, isDark: Boolean, headerTextColor: Col
         tabs.forEachIndexed { index, tab ->
             val isSelected = selectedTab == index
 
-            Box(
+            Column(
                 modifier = Modifier
                     .weight(1f)
-                    .padding(4.dp)
+                    .padding(3.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .background(
                         if (isSelected) Brush.horizontalGradient(
                             listOf(AccentPurple.copy(alpha = if (isDark) 0.4f else 0.85f), AccentBlue.copy(alpha = if (isDark) 0.3f else 0.75f))
                         ) else Brush.horizontalGradient(listOf(Color.Transparent, Color.Transparent))
-                    ),
-                contentAlignment = Alignment.Center
+                    )
+                    .clickable { onTabSelected(index) }
+                    .padding(vertical = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                TextButton(
-                    onClick = { onTabSelected(index) },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(
-                        tab.icon,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                        tint = if (isSelected) Color.White else unselectedColor
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        tab.title,
-                        color = if (isSelected) Color.White else unselectedColor,
-                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                        fontSize = 14.sp
-                    )
-                }
+                Icon(
+                    tab.icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = if (isSelected) Color.White else unselectedColor
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    tab.title,
+                    color = if (isSelected) Color.White else unselectedColor,
+                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                    fontSize = 11.sp,
+                    maxLines = 1
+                )
             }
         }
     }
@@ -664,4 +672,316 @@ private fun ChatInputBar(
 
 private fun formatTime(timestamp: Long): String {
     return DateFormat.format("hh:mm a", Date(timestamp)).toString()
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  DESKTOP FLOWS TAB
+// ═══════════════════════════════════════════════════════════════
+
+@Composable
+fun DesktopFlowsTab() {
+    val context = LocalContext.current
+    val isDark = isSystemInDarkTheme()
+    val headerTextColor = if (isDark) Color.White else Color(0xFF1A1C1E)
+    val headerSubTextColor = if (isDark) Color.White.copy(alpha = 0.6f) else Color(0xFF1A1C1E).copy(alpha = 0.65f)
+
+    val crossManager = remember { CrossDeviceAutomationManager.getInstance(context) }
+    val flowManager = crossManager.desktopFlowManager
+
+    val desktopFlows by flowManager.desktopFlows.collectAsState()
+    val isLoading by flowManager.isLoading.collectAsState()
+    val runningFlowId by flowManager.runningFlowId.collectAsState()
+
+    // Track progress
+    var lastProgress by remember { mutableStateOf<FlowTriggerProgress?>(null) }
+    LaunchedEffect(Unit) {
+        flowManager.requestFlowList()
+        flowManager.progressUpdates.collect { progress ->
+            lastProgress = progress
+            if (progress.status == FlowTriggerStatus.COMPLETED ||
+                progress.status == FlowTriggerStatus.FAILED) {
+                kotlinx.coroutines.delay(5000)
+                if (lastProgress?.flowId == progress.flowId) {
+                    lastProgress = null
+                }
+            }
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Header row with count + refresh
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Default.Computer,
+                contentDescription = null,
+                tint = AccentPurple,
+                modifier = Modifier.size(22.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                "Desktop Flows",
+                color = headerTextColor,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp
+            )
+            if (desktopFlows.isNotEmpty()) {
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    "(${desktopFlows.size})",
+                    color = headerSubTextColor,
+                    fontSize = 13.sp
+                )
+            }
+            Spacer(modifier = Modifier.weight(1f))
+            if (isLoading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp,
+                    color = AccentPurple
+                )
+            } else {
+                IconButton(
+                    onClick = { flowManager.requestFlowList() },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Refresh,
+                        contentDescription = "Refresh",
+                        tint = headerTextColor.copy(alpha = 0.6f),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        }
+
+        if (desktopFlows.isEmpty() && !isLoading) {
+            // Empty state
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                DesktopFlowsEmptyState(isDark, headerTextColor, headerSubTextColor)
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                items(desktopFlows, key = { it.id }) { manifest ->
+                    DesktopFlowCard(
+                        manifest = manifest,
+                        isDark = isDark,
+                        isRunning = runningFlowId == manifest.id,
+                        progress = lastProgress?.takeIf { it.flowId == manifest.id },
+                        onTrigger = { flowManager.triggerFlow(manifest.id) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DesktopFlowsEmptyState(isDark: Boolean, headerTextColor: Color, headerSubTextColor: Color) {
+    val infiniteTransition = rememberInfiniteTransition(label = "flowPulse")
+    val pulseScale by infiniteTransition.animateFloat(
+        initialValue = 0.92f,
+        targetValue = 1.08f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1800, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulse"
+    )
+
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(
+            Icons.Default.AccountTree,
+            contentDescription = null,
+            modifier = Modifier.size(64.dp).scale(pulseScale),
+            tint = AccentPurple.copy(alpha = 0.5f)
+        )
+        Spacer(Modifier.height(16.dp))
+        Text(
+            "No desktop flows found",
+            color = headerTextColor.copy(alpha = 0.6f),
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Medium
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "Create flows in the Desktop Agent's\nFlow Builder, then refresh here.",
+            color = headerSubTextColor,
+            fontSize = 13.sp,
+            textAlign = TextAlign.Center,
+            lineHeight = 18.sp
+        )
+    }
+}
+
+@Composable
+private fun DesktopFlowCard(
+    manifest: DesktopFlowManifest,
+    isDark: Boolean,
+    isRunning: Boolean,
+    progress: FlowTriggerProgress?,
+    onTrigger: () -> Unit
+) {
+    val glassBg = if (isDark) GlassBg else Color.White.copy(alpha = 0.75f)
+    val glassBorder = if (isDark) GlassBorder else Color.Black.copy(alpha = 0.06f)
+    val textColor = if (isDark) Color.White else Color(0xFF1A1C1E)
+    val secondaryColor = if (isDark) Color.White.copy(alpha = 0.6f) else Color(0xFF1A1C1E).copy(alpha = 0.6f)
+
+    val borderColor = when {
+        isRunning -> AccentPurple
+        else -> glassBorder
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(
+                Brush.verticalGradient(listOf(glassBg, glassBg.copy(alpha = 0.45f)))
+            )
+            .border(if (isRunning) 2.dp else 1.dp, borderColor, RoundedCornerShape(20.dp))
+            .animateContentSize()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Icon
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(AccentPurple.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Default.AccountTree,
+                        contentDescription = null,
+                        tint = AccentPurple,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                // Flow info
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        manifest.name,
+                        color = textColor,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        maxLines = 1
+                    )
+                    if (manifest.description.isNotEmpty()) {
+                        Text(
+                            manifest.description,
+                            color = secondaryColor,
+                            fontSize = 12.sp,
+                            maxLines = 1
+                        )
+                    }
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(top = 4.dp)
+                    ) {
+                        // Node count chip
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(if (isDark) Color.White.copy(alpha = 0.06f) else Color.Black.copy(alpha = 0.04f))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                "${manifest.nodeCount} nodes",
+                                fontSize = 10.sp,
+                                color = secondaryColor.copy(alpha = 0.8f)
+                            )
+                        }
+                        // Trigger type chip
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(if (isDark) Color.White.copy(alpha = 0.06f) else Color.Black.copy(alpha = 0.04f))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                manifest.triggerType,
+                                fontSize = 10.sp,
+                                color = secondaryColor.copy(alpha = 0.8f)
+                            )
+                        }
+                    }
+                }
+
+                // Play / Running indicator
+                if (isRunning) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(36.dp),
+                        strokeWidth = 3.dp,
+                        color = AccentPurple
+                    )
+                } else {
+                    FilledIconButton(
+                        onClick = onTrigger,
+                        modifier = Modifier.size(42.dp),
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = AccentPurple.copy(alpha = 0.15f),
+                            contentColor = AccentPurple
+                        )
+                    ) {
+                        Icon(
+                            Icons.Default.PlayArrow,
+                            contentDescription = "Run on Desktop",
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+            }
+
+            // Progress indicator
+            if (progress != null) {
+                Spacer(modifier = Modifier.height(10.dp))
+                val progressColor = when (progress.status) {
+                    FlowTriggerStatus.COMPLETED -> Color(0xFF4CAF50)
+                    FlowTriggerStatus.FAILED -> Color(0xFFEF5350)
+                    else -> AccentPurple
+                }
+                if (progress.totalSteps > 0) {
+                    LinearProgressIndicator(
+                        progress = { progress.currentStep.toFloat() / progress.totalSteps },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(4.dp)
+                            .clip(RoundedCornerShape(2.dp)),
+                        color = progressColor,
+                        trackColor = if (isDark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.06f)
+                    )
+                }
+                Text(
+                    progress.message,
+                    fontSize = 12.sp,
+                    color = progressColor,
+                    modifier = Modifier.padding(top = 4.dp),
+                    maxLines = 1
+                )
+            }
+        }
+    }
 }

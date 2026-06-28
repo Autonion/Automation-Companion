@@ -13,6 +13,7 @@ data class AgentRequest(
     val target: String = "desktop",
     val context: String? = null,
     val agentContext: AgentRequestContext? = null,
+    val conversationHistory: List<Map<String, String>> = emptyList(),
     val limits: AgentLimits = AgentLimits(),
     val safety: AgentSafety = AgentSafety(),
     val capabilitiesRequired: List<String> = DEFAULT_CAPABILITIES
