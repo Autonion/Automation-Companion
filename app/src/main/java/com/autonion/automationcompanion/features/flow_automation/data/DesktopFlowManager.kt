@@ -106,6 +106,12 @@ class DesktopFlowManager(
             return
         }
 
+        // Guard: don't re-trigger while a flow is already running
+        if (_runningFlowId.value != null) {
+            Log.w(TAG, "Flow already running — ignoring trigger for $flowId")
+            return
+        }
+
         val transactionId = UUID.randomUUID().toString()
         pendingTransactions[transactionId] = "trigger_flow"
 
@@ -121,6 +127,34 @@ class DesktopFlowManager(
         DebugLogger.info(
             context, LogCategory.CROSS_DEVICE_SYNC,
             "Desktop Flows", "Triggering flow: $flowId",
+            TAG
+        )
+    }
+
+    /**
+     * Request desktop to stop the currently running flow.
+     */
+    fun stopFlow(flowId: String) {
+        if (!crossDeviceManager.networkingManager.hasActiveConnections()) {
+            Log.w(TAG, "No desktop connected — cannot stop flow")
+            return
+        }
+
+        val transactionId = UUID.randomUUID().toString()
+        pendingTransactions[transactionId] = "stop_flow"
+
+        val request = StopFlowRequest(
+            transactionId = transactionId,
+            flowId = flowId
+        )
+
+        crossDeviceManager.networkingManager.broadcast(request)
+        _runningFlowId.value = null
+
+        Log.d(TAG, "Requested stop for flow $flowId (txn=$transactionId)")
+        DebugLogger.info(
+            context, LogCategory.CROSS_DEVICE_SYNC,
+            "Desktop Flows", "Stopping flow: $flowId",
             TAG
         )
     }
@@ -202,6 +236,7 @@ class DesktopFlowManager(
         val currentStep = (map["currentStep"] as? Double)?.toInt() ?: 0
         val totalSteps = (map["totalSteps"] as? Double)?.toInt() ?: 0
         val nodeLabel = map["nodeLabel"]?.toString()
+        val isFinal = map["isFinal"] as? Boolean ?: false
 
         val status = FlowTriggerStatus.fromString(statusStr)
 
@@ -218,8 +253,8 @@ class DesktopFlowManager(
             _progressUpdates.emit(progress)
         }
 
-        // Clear running state on terminal statuses
-        if (status == FlowTriggerStatus.COMPLETED || status == FlowTriggerStatus.FAILED) {
+        // Only clear running state on the FINAL response (not step-level failures)
+        if (isFinal) {
             _runningFlowId.value = null
             Log.d(TAG, "Flow $flowId finished: $statusStr - $message")
         }

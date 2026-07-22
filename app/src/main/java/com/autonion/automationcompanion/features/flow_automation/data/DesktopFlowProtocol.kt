@@ -23,6 +23,13 @@ data class TriggerFlowRequest(
     val flowId: String
 )
 
+/** Request the desktop to stop the currently running flow. */
+data class StopFlowRequest(
+    val type: String = "stop_flow",
+    val transactionId: String,
+    val flowId: String
+)
+
 // ── Incoming: Desktop → Android ────────────────────────────────────
 
 /** A lightweight manifest of a Desktop flow (mirrors Desktop's FlowManifest). */
@@ -42,6 +49,7 @@ enum class FlowTriggerStatus {
     STEP_EXECUTING,
     STEP_COMPLETED,
     COMPLETED,
+    STOPPED,
     FAILED;
 
     companion object {

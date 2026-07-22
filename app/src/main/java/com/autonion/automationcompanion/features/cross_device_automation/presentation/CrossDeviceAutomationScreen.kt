@@ -56,6 +56,7 @@ import com.autonion.automationcompanion.features.system_context_automation.share
 import com.autonion.automationcompanion.ui.components.AuroraBackground
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.filled.Accessibility
+import androidx.compose.material.icons.filled.Close
 import com.autonion.automationcompanion.features.omni_chatbot.ui.LocalStartWalkthrough
 import com.autonion.automationcompanion.features.cross_device_automation.engine.HardwareButtonMapper
 import com.autonion.automationcompanion.ui.components.YouTubeTutorials
@@ -699,7 +700,8 @@ fun DesktopFlowsTab() {
         flowManager.progressUpdates.collect { progress ->
             lastProgress = progress
             if (progress.status == FlowTriggerStatus.COMPLETED ||
-                progress.status == FlowTriggerStatus.FAILED) {
+                progress.status == FlowTriggerStatus.FAILED ||
+                progress.status == FlowTriggerStatus.STOPPED) {
                 kotlinx.coroutines.delay(5000)
                 if (lastProgress?.flowId == progress.flowId) {
                     lastProgress = null
@@ -778,8 +780,10 @@ fun DesktopFlowsTab() {
                         manifest = manifest,
                         isDark = isDark,
                         isRunning = runningFlowId == manifest.id,
+                        anyFlowRunning = runningFlowId != null,
                         progress = lastProgress?.takeIf { it.flowId == manifest.id },
-                        onTrigger = { flowManager.triggerFlow(manifest.id) }
+                        onTrigger = { flowManager.triggerFlow(manifest.id) },
+                        onStop = { flowManager.stopFlow(manifest.id) }
                     )
                 }
             }
@@ -830,8 +834,10 @@ private fun DesktopFlowCard(
     manifest: DesktopFlowManifest,
     isDark: Boolean,
     isRunning: Boolean,
+    anyFlowRunning: Boolean,
     progress: FlowTriggerProgress?,
-    onTrigger: () -> Unit
+    onTrigger: () -> Unit,
+    onStop: () -> Unit
 ) {
     val glassBg = if (isDark) GlassBg else Color.White.copy(alpha = 0.75f)
     val glassBorder = if (isDark) GlassBorder else Color.Black.copy(alpha = 0.06f)
@@ -930,20 +936,30 @@ private fun DesktopFlowCard(
                     }
                 }
 
-                // Play / Running indicator
+                // Play / Stop button
                 if (isRunning) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(36.dp),
-                        strokeWidth = 3.dp,
-                        color = AccentPurple
-                    )
+                    FilledIconButton(
+                        onClick = onStop,
+                        modifier = Modifier.size(42.dp),
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = Color(0xFFEF5350).copy(alpha = 0.15f),
+                            contentColor = Color(0xFFEF5350)
+                        )
+                    ) {
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = "Stop Flow",
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
                 } else {
                     FilledIconButton(
                         onClick = onTrigger,
+                        enabled = !anyFlowRunning,
                         modifier = Modifier.size(42.dp),
                         colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = AccentPurple.copy(alpha = 0.15f),
-                            contentColor = AccentPurple
+                            containerColor = AccentPurple.copy(alpha = if (anyFlowRunning) 0.06f else 0.15f),
+                            contentColor = AccentPurple.copy(alpha = if (anyFlowRunning) 0.3f else 1f)
                         )
                     ) {
                         Icon(
@@ -961,6 +977,7 @@ private fun DesktopFlowCard(
                 val progressColor = when (progress.status) {
                     FlowTriggerStatus.COMPLETED -> Color(0xFF4CAF50)
                     FlowTriggerStatus.FAILED -> Color(0xFFEF5350)
+                    FlowTriggerStatus.STOPPED -> Color(0xFFFFA726)
                     else -> AccentPurple
                 }
                 if (progress.totalSteps > 0) {
