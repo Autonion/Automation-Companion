@@ -198,10 +198,17 @@ class NetworkingManager(
                             ResponseStatus.IN_PROGRESS
                         }
 
+                        // Parse optional data map (e.g. action_history for Save as Flow)
+                        val dataMap: Map<String, String>? = try {
+                            val dataObj = jsonObject.getAsJsonObject("data")
+                            dataObj?.entrySet()?.associate { it.key to it.value.asString }
+                        } catch (_: Exception) { null }
+
                         val response = PromptResponse(
                             transactionId = transactionId,
                             status = responseStatus,
-                            message = message
+                            message = message,
+                            data = dataMap
                         )
 
                         scope.launch {

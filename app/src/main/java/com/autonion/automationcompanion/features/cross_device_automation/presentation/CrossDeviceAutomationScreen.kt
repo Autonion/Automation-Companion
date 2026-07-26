@@ -378,6 +378,8 @@ fun PromptScreen() {
     val isAutomationActive by viewModel.isAutomationActive.collectAsState()
     val showHistory by viewModel.showHistory.collectAsState()
     val chatHistorySessions by viewModel.chatHistorySessions.collectAsState()
+    val showSaveAsFlow by viewModel.showSaveAsFlow.collectAsState()
+    val lastUserPrompt by viewModel.lastUserPrompt.collectAsState()
     val listState = rememberLazyListState()
 
     val isDark = isSystemInDarkTheme()
@@ -449,6 +451,20 @@ fun PromptScreen() {
                         ChatBubble(message, isDark)
                     }
                 }
+            }
+
+            // ─── Save as Flow Card ──────────────────────
+            AnimatedVisibility(
+                visible = showSaveAsFlow,
+                enter = fadeIn(tween(300)) + expandVertically(tween(300)),
+                exit = fadeOut(tween(200)) + shrinkVertically(tween(200))
+            ) {
+                SaveAsFlowCard(
+                    defaultName = lastUserPrompt?.take(40) ?: "AI-Generated Flow",
+                    onSave = { flowName -> viewModel.saveAsFlow(flowName) },
+                    onDismiss = { viewModel.dismissSaveAsFlow() },
+                    isDark = isDark
+                )
             }
 
             // ─── Input Bar ──────────────────────
@@ -998,6 +1014,106 @@ private fun DesktopFlowCard(
                     modifier = Modifier.padding(top = 4.dp),
                     maxLines = 1
                 )
+            }
+        }
+    }
+}
+
+// ─── Save as Flow Card ───────────────────────────────────────
+@Composable
+private fun SaveAsFlowCard(
+    defaultName: String,
+    onSave: (String) -> Unit,
+    onDismiss: () -> Unit,
+    isDark: Boolean
+) {
+    var flowName by remember(defaultName) { mutableStateOf(defaultName) }
+    val cardBg = if (isDark) Color(0xFF1E2430) else Color(0xFFF0F2FF)
+    val borderColor = AccentPurple.copy(alpha = 0.4f)
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = cardBg),
+        border = BorderStroke(1.dp, borderColor)
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            // Title row with dismiss
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.AccountTree,
+                    contentDescription = null,
+                    tint = AccentPurple,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "Save as Flow",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp,
+                    color = if (isDark) Color.White else Color(0xFF1A1C1E)
+                )
+                Spacer(Modifier.weight(1f))
+                IconButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Close,
+                        contentDescription = "Dismiss",
+                        tint = (if (isDark) Color.White else Color.Black).copy(alpha = 0.5f),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Convert these AI actions into a reusable automation flow",
+                fontSize = 12.sp,
+                color = (if (isDark) Color.White else Color.Black).copy(alpha = 0.55f)
+            )
+
+            Spacer(Modifier.height(10.dp))
+
+            // Flow name input
+            OutlinedTextField(
+                value = flowName,
+                onValueChange = { flowName = it },
+                label = { Text("Flow Name") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = AccentPurple,
+                    unfocusedBorderColor = borderColor,
+                    focusedLabelColor = AccentPurple,
+                    cursorColor = AccentPurple
+                )
+            )
+
+            Spacer(Modifier.height(10.dp))
+
+            // Save button
+            Button(
+                onClick = { if (flowName.isNotBlank()) onSave(flowName.trim()) },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = AccentPurple),
+                enabled = flowName.isNotBlank()
+            ) {
+                Icon(
+                    Icons.Default.AccountTree,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(Modifier.width(6.dp))
+                Text("Save as Flow", fontWeight = FontWeight.SemiBold)
             }
         }
     }

@@ -54,6 +54,16 @@ class PromptViewModel(
     private val _chatHistorySessions = MutableStateFlow<List<OmniChatSessionEntity>>(emptyList())
     val chatHistorySessions: StateFlow<List<OmniChatSessionEntity>> = _chatHistorySessions.asStateFlow()
 
+    // ─── Save as Flow State ─────────────────────────────────
+    private val _showSaveAsFlow = MutableStateFlow(false)
+    val showSaveAsFlow: StateFlow<Boolean> = _showSaveAsFlow.asStateFlow()
+
+    private val _lastActionHistory = MutableStateFlow<String?>(null)
+    val lastActionHistory: StateFlow<String?> = _lastActionHistory.asStateFlow()
+
+    private val _lastUserPrompt = MutableStateFlow<String?>(null)
+    val lastUserPrompt: StateFlow<String?> = _lastUserPrompt.asStateFlow()
+
     init {
         // Collect chat history sessions for this module
         viewModelScope.launch {
@@ -76,6 +86,15 @@ class PromptViewModel(
                     
                     if (response.status == ResponseStatus.COMPLETED || response.status == ResponseStatus.FAILED || response.status == ResponseStatus.CANCELLED) {
                         _isAutomationActive.value = false
+                    }
+
+                    // Capture action history for "Save as Flow" feature
+                    if (response.status == ResponseStatus.COMPLETED) {
+                        val actionHistoryJson = response.data?.get("action_history")
+                        if (!actionHistoryJson.isNullOrBlank()) {
+                            _lastActionHistory.value = actionHistoryJson
+                            _showSaveAsFlow.value = true
+                        }
                     }
 
                     addMessage(ChatMessage(
@@ -144,6 +163,7 @@ class PromptViewModel(
 
             manager.networkingManager.broadcast(prompt)
             _isAutomationActive.value = true
+            _lastUserPrompt.value = promptText
             _inputQuery.value = ""
         }
     }
@@ -351,5 +371,32 @@ class PromptViewModel(
         current.add(0, message) // Add to top (for reverseLayout)
         _messages.value = current
         persistSessionAndMessage(message)
+    }
+
+    // ─── Save as Flow ───────────────────────────────────────
+
+    fun saveAsFlow(flowName: String) {
+        val actionHistory = _lastActionHistory.value ?: return
+        viewModelScope.launch {
+            val transactionId = UUID.randomUUID().toString()
+            val command = mapOf(
+                "type" to "save_prompt_as_flow",
+                "transactionId" to transactionId,
+                "flowName" to flowName,
+                "actionHistory" to actionHistory
+            )
+            manager.networkingManager.broadcast(command)
+            addMessage(ChatMessage(
+                text = "💾 Saving as flow: \"$flowName\"...",
+                isUser = false
+            ))
+            _showSaveAsFlow.value = false
+            _lastActionHistory.value = null
+        }
+    }
+
+    fun dismissSaveAsFlow() {
+        _showSaveAsFlow.value = false
+        _lastActionHistory.value = null
     }
 }
