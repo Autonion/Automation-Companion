@@ -300,8 +300,19 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
         _compatibilityWarning.value = null // Clear stale warnings
     }
 
-    override fun onAgentVersionReceived(deviceId: String, agentVersion: String, minCompanionVersion: String?) {
+    override fun onAgentVersionReceived(deviceId: String, agentVersion: String?, minCompanionVersion: String?) {
         Log.d(TAG, "Desktop agent v$agentVersion (requires companion >= $minCompanionVersion)")
+
+        // Old desktop that doesn't send version at all → definitely outdated
+        if (agentVersion == null) {
+            _compatibilityWarning.value =
+                "Connected Desktop Agent is outdated and missing features like Flows. " +
+                "Please update to v$MIN_REQUIRED_AGENT_VERSION+ for full compatibility."
+            Log.w(TAG, _compatibilityWarning.value!!)
+            return
+        }
+
+        // New desktop, check if OUR version meets their minimum
         if (minCompanionVersion != null) {
             val ourVersion = try {
                 context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "0.0.0"
@@ -315,6 +326,8 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
             } else {
                 _compatibilityWarning.value = null
             }
+        } else {
+            _compatibilityWarning.value = null
         }
     }
 
@@ -436,6 +449,8 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
     
     companion object {
         private const val TAG = "CrossDeviceManager"
+        /** Minimum Autonion Agent version required for full feature compatibility. */
+        private const val MIN_REQUIRED_AGENT_VERSION = "2.0.5"
         @Volatile
         private var instance: CrossDeviceAutomationManager? = null
 

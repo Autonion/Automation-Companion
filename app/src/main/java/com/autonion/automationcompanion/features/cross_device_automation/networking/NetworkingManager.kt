@@ -42,8 +42,8 @@ class NetworkingManager(
         fun onDeviceConnected(device: Device)
         fun onDeviceDisconnected(deviceId: String)
         fun onMessageReceived(deviceId: String, rawJson: String)
-        /** Called once when the desktop agent sends its version in connection_ack. */
-        fun onAgentVersionReceived(deviceId: String, agentVersion: String, minCompanionVersion: String?) {}
+        /** Called once when the desktop agent sends its version in connection_ack. Null = old agent. */
+        fun onAgentVersionReceived(deviceId: String, agentVersion: String?, minCompanionVersion: String?) {}
     }
 
     private val client = OkHttpClient.Builder()
@@ -193,13 +193,13 @@ class NetworkingManager(
                             TAG
                         )
                         // Check desktop version compatibility
+                        // If version is null, the desktop is an old build that predates
+                        // the version handshake — the listener will treat null as "outdated".
                         val agentVersion = jsonObject.get("version")?.asString
                         val minCompanion = jsonObject.get("min_companion_version")?.asString
-                        if (agentVersion != null) {
-                            this@NetworkingManager.listener?.onAgentVersionReceived(
-                                device.id, agentVersion, minCompanion
-                            )
-                        }
+                        this@NetworkingManager.listener?.onAgentVersionReceived(
+                            device.id, agentVersion, minCompanion
+                        )
                         return // Don't try to parse as RawEvent
                     }
 
