@@ -42,6 +42,8 @@ class NetworkingManager(
         fun onDeviceConnected(device: Device)
         fun onDeviceDisconnected(deviceId: String)
         fun onMessageReceived(deviceId: String, rawJson: String)
+        /** Called once when the desktop agent sends its version in connection_ack. */
+        fun onAgentVersionReceived(deviceId: String, agentVersion: String, minCompanionVersion: String?) {}
     }
 
     private val client = OkHttpClient.Builder()
@@ -138,6 +140,21 @@ class NetworkingManager(
                 connectedEndpoints.add(endpoint)
                 reconnectingDevices.remove(device.id)
                 this@NetworkingManager.listener?.onDeviceConnected(device)
+
+                // Send our version info to desktop (one-shot, no polling)
+                try {
+                    val appVersion = context.packageManager
+                        .getPackageInfo(context.packageName, 0).versionName ?: "unknown"
+                    val clientInfo = gson.toJson(mapOf(
+                        "type" to "client_info",
+                        "app" to "AutomationCompanion",
+                        "version" to appVersion
+                    ))
+                    webSocket.send(clientInfo)
+                    Log.d(TAG, "Sent client_info v$appVersion to ${device.name}")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to send client_info: ${e.message}")
+                }
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -175,6 +192,14 @@ class NetworkingManager(
                             "Handshake received from ${device.name}: $text",
                             TAG
                         )
+                        // Check desktop version compatibility
+                        val agentVersion = jsonObject.get("version")?.asString
+                        val minCompanion = jsonObject.get("min_companion_version")?.asString
+                        if (agentVersion != null) {
+                            this@NetworkingManager.listener?.onAgentVersionReceived(
+                                device.id, agentVersion, minCompanion
+                            )
+                        }
                         return // Don't try to parse as RawEvent
                     }
 

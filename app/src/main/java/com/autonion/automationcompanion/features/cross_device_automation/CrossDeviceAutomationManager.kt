@@ -56,6 +56,10 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
     private val _clipboardSyncEnabled = MutableStateFlow(false)
     val clipboardSyncStateFlow: StateFlow<Boolean> = _clipboardSyncEnabled.asStateFlow()
 
+    // Version compatibility warning — non-null when desktop requires a newer companion
+    private val _compatibilityWarning = MutableStateFlow<String?>(null)
+    val compatibilityWarning: StateFlow<String?> = _compatibilityWarning.asStateFlow()
+
     init {
         // One-time migration: reset clipboard sync for users who had it
         // implicitly enabled under the old default=true behavior.
@@ -293,6 +297,25 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
 
     override fun onDeviceDisconnected(deviceId: String) {
         Log.d("CrossDeviceManager", "Device disconnected: $deviceId")
+        _compatibilityWarning.value = null // Clear stale warnings
+    }
+
+    override fun onAgentVersionReceived(deviceId: String, agentVersion: String, minCompanionVersion: String?) {
+        Log.d(TAG, "Desktop agent v$agentVersion (requires companion >= $minCompanionVersion)")
+        if (minCompanionVersion != null) {
+            val ourVersion = try {
+                context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "0.0.0"
+            } catch (_: Exception) { "0.0.0" }
+
+            if (compareVersions(ourVersion, minCompanionVersion) < 0) {
+                _compatibilityWarning.value =
+                    "Desktop Agent v$agentVersion requires Companion v$minCompanionVersion+. " +
+                    "You have v$ourVersion. Please update for full compatibility."
+                Log.w(TAG, _compatibilityWarning.value!!)
+            } else {
+                _compatibilityWarning.value = null
+            }
+        }
     }
 
     override fun onMessageReceived(deviceId: String, message: String) {
@@ -418,11 +441,24 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
 
         fun getInstance(context: Context): CrossDeviceAutomationManager {
             return instance ?: synchronized(this) {
-                instance ?: CrossDeviceAutomationManager(context.applicationContext).also { 
+                instance ?: CrossDeviceAutomationManager(context.applicationContext).also {
                     it.initialize()
-                    instance = it 
+                    instance = it
                 }
             }
+        }
+
+        /** Compare two semver strings (e.g. "1.1.0" vs "1.0.9"). Returns -1, 0, or 1. */
+        fun compareVersions(a: String, b: String): Int {
+            val pa = a.split(".").map { it.toIntOrNull() ?: 0 }
+            val pb = b.split(".").map { it.toIntOrNull() ?: 0 }
+            for (i in 0 until 3) {
+                val va = pa.getOrElse(i) { 0 }
+                val vb = pb.getOrElse(i) { 0 }
+                if (va < vb) return -1
+                if (va > vb) return 1
+            }
+            return 0
         }
     }
 }

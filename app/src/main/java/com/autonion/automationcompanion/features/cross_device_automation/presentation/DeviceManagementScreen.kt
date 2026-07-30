@@ -140,6 +140,37 @@ fun DeviceManagementScreen(
 
         // ─── Sub-settings (when enabled) ────────────
         if (isEnabled) {
+            // Compatibility Warning
+            item {
+                val warning by viewModel.compatibilityWarning.collectAsState()
+                if (warning != null) {
+                    GlassSettingsCard {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xFFFFA726).copy(alpha = 0.1f))
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Warning,
+                                contentDescription = null,
+                                tint = Color(0xFFFFA726),
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                warning!!,
+                                color = Color(0xFFFFA726),
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp
+                            )
+                        }
+                    }
+                }
+            }
+
             // Clipboard Sync
             item {
                 val isClipboardSyncEnabled by viewModel.isClipboardSyncEnabled.collectAsState()

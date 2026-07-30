@@ -21,6 +21,9 @@ class DeviceManagementViewModel(
     // local toggles and remote desktop pushes are reflected automatically.
     val isClipboardSyncEnabled: StateFlow<Boolean> = manager.clipboardSyncStateFlow
 
+    /// Non-null when the connected desktop agent requires a newer companion version.
+    val compatibilityWarning: StateFlow<String?> = manager.compatibilityWarning
+
     private val _devices = MutableStateFlow<List<Device>>(emptyList())
     val devices: StateFlow<List<Device>> = _devices.asStateFlow()
 
