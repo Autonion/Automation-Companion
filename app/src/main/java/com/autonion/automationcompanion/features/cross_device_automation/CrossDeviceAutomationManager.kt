@@ -15,6 +15,9 @@ import com.autonion.automationcompanion.features.cross_device_automation.host_ma
 import com.autonion.automationcompanion.features.cross_device_automation.networking.NetworkingManager
 import com.autonion.automationcompanion.features.cross_device_automation.rules.RuleEngine
 import com.autonion.automationcompanion.features.cross_device_automation.tagging.TaggingSystem
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 
 class CrossDeviceAutomationManager(private val context: Context) : NetworkingManager.NetworkingListener {
@@ -47,6 +50,11 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
     // Preferences
     private val prefs = context.getSharedPreferences("cross_device_prefs", Context.MODE_PRIVATE)
     private val PREF_FEATURE_ENABLED = "feature_enabled"
+    private val PREF_CLIPBOARD_SYNC_ENABLED = "clipboard_sync_enabled"
+
+    // Reactive StateFlow so the ViewModel updates when desktop pushes state changes
+    private val _clipboardSyncEnabled = MutableStateFlow(false)
+    val clipboardSyncStateFlow: StateFlow<Boolean> = _clipboardSyncEnabled.asStateFlow()
 
     init {
         // One-time migration: reset clipboard sync for users who had it
@@ -58,6 +66,8 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
                 .putBoolean(MIGRATION_KEY, true)
                 .apply()
         }
+        // Seed reactive StateFlow with persisted value
+        _clipboardSyncEnabled.value = prefs.getBoolean(PREF_CLIPBOARD_SYNC_ENABLED, false)
     }
 
     fun initialize() {
@@ -104,14 +114,23 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
         }
     }
 
-    private val PREF_CLIPBOARD_SYNC_ENABLED = "clipboard_sync_enabled"
-
     fun isClipboardSyncEnabled(): Boolean {
         return prefs.getBoolean(PREF_CLIPBOARD_SYNC_ENABLED, false)
     }
 
     fun setClipboardSyncEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(PREF_CLIPBOARD_SYNC_ENABLED, enabled).apply()
+        _clipboardSyncEnabled.value = enabled
+
+        // Send one-shot command to desktop (no polling)
+        if (::networkingManager.isInitialized && isStarted) {
+            val command = mapOf(
+                "type" to "clipboard.set_sync_enabled",
+                "payload" to mapOf("enabled" to enabled)
+            )
+            networkingManager.broadcast(command)
+            Log.d(TAG, "Sent clipboard sync ${if (enabled) "enabled" else "disabled"} to desktop")
+        }
     }
 
     fun start() {
@@ -268,6 +287,8 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
         Log.d("CrossDeviceManager", "Device connected: ${device.name}")
         syncRulesToDesktop() // Sync rules immediately on connection
         desktopFlowManager.requestFlowList() // Also fetch desktop flows
+        // Push clipboard sync state to desktop on connect (one-shot, no polling)
+        syncClipboardStateToDesktop()
     }
 
     override fun onDeviceDisconnected(deviceId: String) {
@@ -292,6 +313,17 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
             // ── Flow System messages from Desktop ──
             if (type == "flow_list_response" || type == "flow_trigger_response") {
                 desktopFlowManager.handleIncomingMessage(message)
+                return
+            }
+
+            // ── Clipboard sync state pushed from Desktop ──
+            if (type == "clipboard.sync_state_changed") {
+                val payload = json.optJSONObject("payload")
+                val enabled = payload?.optBoolean("enabled", true) ?: true
+                // Update local preference and reactive state without echoing back
+                prefs.edit().putBoolean(PREF_CLIPBOARD_SYNC_ENABLED, enabled).apply()
+                _clipboardSyncEnabled.value = enabled
+                Log.d(TAG, "Clipboard sync state updated from desktop: $enabled")
                 return
             }
 
@@ -336,6 +368,17 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
         if (::clipboardMonitor.isInitialized && isFeatureEnabled() && isClipboardSyncEnabled()) {
             clipboardMonitor.checkNow(context)
         }
+    }
+
+    /// Push clipboard sync preference to desktop on connect (one-shot, no polling).
+    private fun syncClipboardStateToDesktop() {
+        if (!::networkingManager.isInitialized || !isStarted) return
+        val command = mapOf(
+            "type" to "clipboard.set_sync_enabled",
+            "payload" to mapOf("enabled" to isClipboardSyncEnabled())
+        )
+        networkingManager.broadcast(command)
+        Log.d(TAG, "Pushed clipboard sync state to desktop on connect: ${isClipboardSyncEnabled()}")
     }
 
     fun onExternalEvent(event: com.autonion.automationcompanion.features.cross_device_automation.domain.RawEvent) {

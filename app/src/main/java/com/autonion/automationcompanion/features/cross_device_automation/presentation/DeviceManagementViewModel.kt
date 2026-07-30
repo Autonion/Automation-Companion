@@ -17,8 +17,9 @@ class DeviceManagementViewModel(
     private val _isFeatureEnabled = MutableStateFlow(manager.isFeatureEnabled())
     val isFeatureEnabled: StateFlow<Boolean> = _isFeatureEnabled.asStateFlow()
 
-    private val _isClipboardSyncEnabled = MutableStateFlow<Boolean>(manager.isClipboardSyncEnabled())
-    val isClipboardSyncEnabled: StateFlow<Boolean> = _isClipboardSyncEnabled.asStateFlow()
+    // Directly expose the manager's reactive StateFlow — updates from both
+    // local toggles and remote desktop pushes are reflected automatically.
+    val isClipboardSyncEnabled: StateFlow<Boolean> = manager.clipboardSyncStateFlow
 
     private val _devices = MutableStateFlow<List<Device>>(emptyList())
     val devices: StateFlow<List<Device>> = _devices.asStateFlow()
@@ -38,7 +39,6 @@ class DeviceManagementViewModel(
 
     fun toggleClipboardSync(enabled: Boolean) {
         manager.setClipboardSyncEnabled(enabled)
-        _isClipboardSyncEnabled.value = enabled
     }
 
     fun updateDeviceRole(deviceId: String, role: DeviceRole) {
