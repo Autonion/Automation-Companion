@@ -376,6 +376,7 @@ fun PromptScreen() {
     val inputQuery by viewModel.inputQuery.collectAsState()
     val messages by viewModel.messages.collectAsState()
     val isAutomationActive by viewModel.isAutomationActive.collectAsState()
+    val stopRequested by viewModel.stopRequested.collectAsState()
     val showHistory by viewModel.showHistory.collectAsState()
     val chatHistorySessions by viewModel.chatHistorySessions.collectAsState()
     val showSaveAsFlow by viewModel.showSaveAsFlow.collectAsState()
@@ -471,12 +472,30 @@ fun PromptScreen() {
             if (isAutomationActive) {
                 Button(
                     onClick = { viewModel.stopAutomation() },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    enabled = !stopRequested,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (stopRequested)
+                            MaterialTheme.colorScheme.error.copy(alpha = 0.5f)
+                        else
+                            MaterialTheme.colorScheme.error,
+                        disabledContainerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.5f),
+                        disabledContentColor = Color.White.copy(alpha = 0.7f)
+                    ),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 8.dp)
                 ) {
-                    Text("Stop Automation", color = Color.White)
+                    if (stopRequested) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            color = Color.White.copy(alpha = 0.7f),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("Stopping...", color = Color.White.copy(alpha = 0.7f))
+                    } else {
+                        Text("Stop Automation", color = Color.White)
+                    }
                 }
             } else {
                 ChatInputBar(

@@ -9,6 +9,8 @@ import com.autonion.automationcompanion.features.cross_device_automation.domain.
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.UUID
 import android.content.Context
@@ -41,6 +43,12 @@ class PromptViewModel(
     
     private val _isAutomationActive = MutableStateFlow(false)
     val isAutomationActive: StateFlow<Boolean> = _isAutomationActive.asStateFlow()
+
+    private val _stopRequested = MutableStateFlow(false)
+    val stopRequested: StateFlow<Boolean> = _stopRequested.asStateFlow()
+
+    private var _lastTransactionId: String? = null
+    private var _stopTimeoutJob: Job? = null
 
     private val chatMemory = AutomationChatMemory.getInstance(context)
     private val chatDao = AppDatabase.get(context).omniChatDao()
@@ -83,9 +91,22 @@ class PromptViewModel(
                         ResponseStatus.CANCELLED -> "Cancelled"
                         else -> response.status.name.lowercase().replaceFirstChar { it.uppercase() }
                     }
-                    
-                    if (response.status == ResponseStatus.COMPLETED || response.status == ResponseStatus.FAILED || response.status == ResponseStatus.CANCELLED) {
+
+                    val isTerminal = response.status == ResponseStatus.COMPLETED ||
+                            response.status == ResponseStatus.FAILED ||
+                            response.status == ResponseStatus.CANCELLED
+
+                    // When stop was requested, ignore non-terminal messages (they are
+                    // from the tail of execution that was still in-flight). Only process
+                    // terminal responses so the UI properly resets.
+                    if (_stopRequested.value && !isTerminal) {
+                        return@collect
+                    }
+
+                    if (isTerminal) {
                         _isAutomationActive.value = false
+                        _stopRequested.value = false
+                        _stopTimeoutJob?.cancel()
                     }
 
                     // Capture action history for "Save as Flow" feature
@@ -140,6 +161,8 @@ class PromptViewModel(
             // This keeps legacy prompt/transactionId fields while adding the
             // agent_request envelope for newer Desktop Agents.
             val transactionId = UUID.randomUUID().toString()
+            _lastTransactionId = transactionId
+            _stopRequested.value = false
             val contextSummary = chatMemory.buildContextSummary()
 
             // Build structured conversation history for cross-device context.
@@ -169,9 +192,25 @@ class PromptViewModel(
     }
     
     fun stopAutomation() {
-        _isAutomationActive.value = false
+        _stopRequested.value = true
+        // Keep _isAutomationActive = true so the button stays visible in "Stopping..." state
         addMessage(ChatMessage(text = "Stopping automation...", isUser = false))
-        manager.stopRemoteAutomation()
+        manager.stopRemoteAutomation(_lastTransactionId)
+
+        // Safety timeout: if the desktop never sends a terminal response (e.g. it
+        // disconnected), auto-reset the UI after 10 seconds.
+        _stopTimeoutJob?.cancel()
+        _stopTimeoutJob = viewModelScope.launch {
+            delay(10_000L)
+            if (_stopRequested.value) {
+                _stopRequested.value = false
+                _isAutomationActive.value = false
+                addMessage(ChatMessage(
+                    text = "[Timeout] Stop not confirmed by desktop — UI reset.",
+                    isUser = false
+                ))
+            }
+        }
     }
 
     // ─── Direct Keyboard Intent Parser ──────────────────────────

@@ -279,10 +279,13 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
         }
     }
 
-    fun stopRemoteAutomation() {
-        val command = mapOf("type" to "kill_switch")
+    fun stopRemoteAutomation(transactionId: String? = null) {
+        val command = mutableMapOf<String, Any>("type" to "kill_switch")
+        if (!transactionId.isNullOrEmpty()) {
+            command["transactionId"] = transactionId
+        }
         networkingManager.broadcast(command)
-        Log.i(TAG, "Sent kill_switch to remote devices")
+        Log.i(TAG, "Sent kill_switch to remote devices (txn=$transactionId)")
     }
 
     // --- Networking Events ---
