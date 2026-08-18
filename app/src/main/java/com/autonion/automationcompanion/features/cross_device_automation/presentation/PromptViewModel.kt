@@ -6,9 +6,11 @@ import com.autonion.automationcompanion.features.agent_core.models.AgentRequest
 import com.autonion.automationcompanion.features.agent_core.models.AgentRequestContext
 import com.autonion.automationcompanion.features.cross_device_automation.CrossDeviceAutomationManager
 import com.autonion.automationcompanion.features.cross_device_automation.domain.ResponseStatus
+import com.autonion.automationcompanion.features.cross_device_automation.domain.DeviceStatus
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -138,6 +140,23 @@ class PromptViewModel(
         if (promptText.isBlank()) return
 
         viewModelScope.launch {
+            // Guard: block if only background service is connected (no full agent)
+            val devices = manager.deviceRepository.getAllDevices().first()
+            val hasFullAgent = devices.any {
+                it.isSelected && it.status == DeviceStatus.ONLINE && !it.isServiceOnly
+            }
+            val hasServiceOnly = devices.any {
+                it.isSelected && it.status == DeviceStatus.ONLINE && it.isServiceOnly
+            }
+            if (!hasFullAgent && hasServiceOnly) {
+                addMessage(ChatMessage(
+                    text = "Cannot send prompt: Autonion Agent app is closed on your PC. " +
+                            "Use the Flows tab for Screen Unlock, or open the Autonion Agent app to execute AI prompts.",
+                    isUser = false
+                ))
+                return@launch
+            }
+
             // Add user message
             addMessage(ChatMessage(text = promptText, isUser = true))
 

@@ -200,6 +200,24 @@ class NetworkingManager(
                         this@NetworkingManager.listener?.onAgentVersionReceived(
                             device.id, agentVersion, minCompanion
                         )
+
+                        // Parse agent/prelogin to verify isServiceOnly post-handshake
+                        val agentField = jsonObject.get("agent")?.asString ?: ""
+                        val preloginField = jsonObject.get("prelogin")?.asBoolean ?: false
+                        val isServiceOnly = preloginField
+                                || agentField.contains("prelogin", ignoreCase = true)
+                        Log.d(TAG, "connection_ack: agent=$agentField, prelogin=$preloginField, isServiceOnly=$isServiceOnly")
+
+                        // Update device with verified isServiceOnly state
+                        scope.launch {
+                            val existing = deviceRepository.getDeviceById(device.id)
+                            if (existing != null && existing.isServiceOnly != isServiceOnly) {
+                                deviceRepository.addOrUpdateDevice(
+                                    existing.copy(isServiceOnly = isServiceOnly)
+                                )
+                            }
+                        }
+
                         return // Don't try to parse as RawEvent
                     }
 

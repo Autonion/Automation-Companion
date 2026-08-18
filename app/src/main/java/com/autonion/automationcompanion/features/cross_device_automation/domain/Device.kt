@@ -24,5 +24,6 @@ data class Device(
     val status: DeviceStatus = DeviceStatus.UNKNOWN,
     val lastSeen: Long = System.currentTimeMillis(),
     val capabilities: List<String> = emptyList(),
-    val isSelected: Boolean = false
+    val isSelected: Boolean = false,
+    val isServiceOnly: Boolean = false
 )

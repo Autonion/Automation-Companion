@@ -660,12 +660,15 @@ private fun DeviceGlassCard(device: Device, onToggleSelection: () -> Unit) {
     val cardBorder = if (isDark) CardBorder else Color.Black.copy(alpha = 0.05f)
     val textColor = if (isDark) Color.White else Color(0xFF1A1C1E)
 
-    val statusColor = when (device.status) {
-        DeviceStatus.ONLINE -> OnlineGreen
-        DeviceStatus.OFFLINE -> OfflineRed
-        DeviceStatus.UNKNOWN -> UnknownGray
+    val statusColor = when {
+        device.isServiceOnly && device.status == DeviceStatus.ONLINE -> Color(0xFFFFB74D)
+        device.status == DeviceStatus.ONLINE -> OnlineGreen
+        device.status == DeviceStatus.OFFLINE -> OfflineRed
+        else -> UnknownGray
     }
     val statusLabel = when {
+        device.isServiceOnly && device.isSelected && device.status == DeviceStatus.ONLINE -> "Service Only"
+        device.isServiceOnly && device.status == DeviceStatus.ONLINE -> "Service Available"
         device.isSelected && device.status == DeviceStatus.ONLINE -> "Connected"
         device.isSelected -> "Selected"
         device.status == DeviceStatus.ONLINE -> "Available"
@@ -732,7 +735,10 @@ private fun DeviceGlassCard(device: Device, onToggleSelection: () -> Unit) {
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    device.ipAddress,
+                    if (device.isServiceOnly && device.status == DeviceStatus.ONLINE)
+                        "${device.ipAddress} • Unlock Service"
+                    else
+                        device.ipAddress,
                     color = textColor.copy(alpha = 0.4f),
                     fontSize = 12.sp
                 )

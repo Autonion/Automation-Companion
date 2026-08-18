@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Rule
 import androidx.compose.material.icons.filled.SettingsRemote
@@ -178,14 +179,16 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
             }
         ) { innerPadding ->
             // ─── Connection State for Overlay ────────────
-            // Cross-Device only needs a connected Desktop Agent.
-            // The Agent handles its own LLM (Ollama or Cloud API).
+            // Distinguish full desktop agent from background service (unlock helper)
             val crossManager = remember { CrossDeviceAutomationManager.getInstance(context) }
             val devices by crossManager.deviceRepository.getAllDevices().collectAsState(initial = emptyList())
-            val hasAgentConnection = devices.any {
+            val hasFullAgentConnection = devices.any {
+                it.isSelected && it.status == com.autonion.automationcompanion.features.cross_device_automation.domain.DeviceStatus.ONLINE && !it.isServiceOnly
+            }
+            val hasAnyConnection = devices.any {
                 it.isSelected && it.status == com.autonion.automationcompanion.features.cross_device_automation.domain.DeviceStatus.ONLINE
             }
-            val isAIReady = hasAgentConnection
+            val isServiceOnlyConnected = hasAnyConnection && !hasFullAgentConnection
 
             Column(
                 modifier = Modifier
@@ -242,49 +245,90 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
                         0 -> DeviceManagementScreen(
                             onAccessibilityNeeded = { showPermissionDialog = true }
                         )
-                        1, 2, 3 -> {
-                            // Rules, Flows & Ask tabs need agent connection
+                        1 -> {
+                            // Rules tab: needs full agent connection
+                            val shouldBlur = !hasFullAgentConnection
                             Box(modifier = Modifier.fillMaxSize()) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .then(if (!isAIReady) Modifier.blur(12.dp) else Modifier)
-                                    ) {
-                                    when (tab) {
-                                        1 -> DesktopAutomationScreen()
-                                        2 -> DesktopFlowsTab()
-                                        3 -> PromptScreen()
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .then(if (shouldBlur) Modifier.blur(12.dp) else Modifier)
+                                ) {
+                                    DesktopAutomationScreen()
+                                }
+                                if (shouldBlur) {
+                                    BlurOverlay(
+                                        isDark = isDark,
+                                        isServiceOnlyConnected = isServiceOnlyConnected
+                                    )
+                                }
+                            }
+                        }
+                        2 -> {
+                            // Flows tab: accessible with any connection (including service-only for unlock flows)
+                            val shouldBlur = !hasAnyConnection
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .then(if (shouldBlur) Modifier.blur(12.dp) else Modifier)
+                                ) {
+                                    Column(modifier = Modifier.fillMaxSize()) {
+                                        // Service-only banner when connected to background service
+                                        if (isServiceOnlyConnected) {
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(horizontal = 16.dp, vertical = 4.dp)
+                                                    .background(
+                                                        Color(0xFFFFB74D).copy(alpha = 0.15f),
+                                                        RoundedCornerShape(10.dp)
+                                                    )
+                                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Icon(
+                                                    Icons.Default.Lock,
+                                                    contentDescription = null,
+                                                    tint = Color(0xFFFFB74D),
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                                Spacer(Modifier.width(8.dp))
+                                                Text(
+                                                    "Pre-login Mode • Unlock Flows Available",
+                                                    color = if (isDark) Color.White.copy(alpha = 0.8f) else Color(0xFF1A1C1E).copy(alpha = 0.75f),
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Medium
+                                                )
+                                            }
+                                        }
+                                        DesktopFlowsTab()
                                     }
                                 }
-                                if (!isAIReady) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .background(if (isDark) Color(0xCC0F1115) else Color(0xCCF3F6FD))
-                                            .clickable(
-                                                interactionSource = remember { MutableInteractionSource() },
-                                                indication = null,
-                                                onClick = {}
-                                            )
-                                            .pointerInput(Unit) {
-                                                awaitPointerEventScope {
-                                                    while (true) {
-                                                        awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
-                                                    }
-                                                }
-                                            },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        ConnectionRequiredOverlay(
-                                            message = "Connect to a Desktop Agent to use Cross-Device Automation.",
-                                            steps = listOf(
-                                                "Go to the Devices tab and select a desktop.",
-                                                "The AI model is configured on the Desktop Agent.",
-                                                "Open Agent Settings → AI Settings to select a model."
-                                            ),
-                                            optionalChip = "Desktop Agent not connected"
-                                        )
-                                    }
+                                if (shouldBlur) {
+                                    BlurOverlay(
+                                        isDark = isDark,
+                                        isServiceOnlyConnected = false // No service; fully disconnected
+                                    )
+                                }
+                            }
+                        }
+                        3 -> {
+                            // Ask tab: needs full agent connection
+                            val shouldBlur = !hasFullAgentConnection
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .then(if (shouldBlur) Modifier.blur(12.dp) else Modifier)
+                                ) {
+                                    PromptScreen()
+                                }
+                                if (shouldBlur) {
+                                    BlurOverlay(
+                                        isDark = isDark,
+                                        isServiceOnlyConnected = isServiceOnlyConnected
+                                    )
                                 }
                             }
                         }
@@ -1134,6 +1178,54 @@ private fun SaveAsFlowCard(
                 Spacer(Modifier.width(6.dp))
                 Text("Save as Flow", fontWeight = FontWeight.SemiBold)
             }
+        }
+    }
+}
+
+/**
+ * Blur overlay shown on tabs that are disabled.
+ * Shows different messaging for fully disconnected vs service-only connected.
+ */
+@Composable
+private fun BlurOverlay(
+    isDark: Boolean,
+    isServiceOnlyConnected: Boolean
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(if (isDark) Color(0xCC0F1115) else Color(0xCCF3F6FD))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = {}
+            )
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
+                    }
+                }
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        if (isServiceOnlyConnected) {
+            ConnectionRequiredOverlay(
+                title = "Agent App is Closed",
+                message = "The background service is connected for Screen Unlock.\nUse the Flows tab to unlock your PC.\n\nTo run AI prompts or Rules, open Autonion Agent on your PC.",
+                steps = emptyList(),
+                optionalChip = "Service Connected (Agent App Closed)"
+            )
+        } else {
+            ConnectionRequiredOverlay(
+                message = "Connect to a Desktop Agent to use Cross-Device Automation.",
+                steps = listOf(
+                    "Go to the Devices tab and select a desktop.",
+                    "The AI model is configured on the Desktop Agent.",
+                    "Open Agent Settings \u2192 AI Settings to select a model."
+                ),
+                optionalChip = "Desktop Agent not connected"
+            )
         }
     }
 }
