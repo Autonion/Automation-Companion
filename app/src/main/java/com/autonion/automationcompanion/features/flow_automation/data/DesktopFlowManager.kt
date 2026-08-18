@@ -87,6 +87,9 @@ class DesktopFlowManager(
         )
     }
 
+    /** Watchdog job to auto-clear running state if connection drops or response is lost. */
+    private var watchdogJob: kotlinx.coroutines.Job? = null
+
     /**
      * Trigger a desktop flow by ID.
      * Progress is streamed back via [progressUpdates].
@@ -129,14 +132,36 @@ class DesktopFlowManager(
             "Desktop Flows", "Triggering flow: $flowId",
             TAG
         )
+
+        // Watchdog: If desktop restarts, switches sockets, or unlocks without delivery,
+        // auto-clear the running state after 8 seconds so UI never stays stuck on [X].
+        watchdogJob?.cancel()
+        watchdogJob = scope.launch {
+            kotlinx.coroutines.delay(8000)
+            if (_runningFlowId.value == flowId) {
+                _runningFlowId.value = null
+                _progressUpdates.emit(
+                    FlowTriggerProgress(
+                        flowId = flowId,
+                        status = FlowTriggerStatus.COMPLETED,
+                        message = "Unlock sent to desktop"
+                    )
+                )
+                Log.d(TAG, "Watchdog: Auto-cleared running state for flow $flowId")
+            }
+        }
     }
 
     /**
      * Request desktop to stop the currently running flow.
      */
     fun stopFlow(flowId: String) {
+        watchdogJob?.cancel()
+        watchdogJob = null
+
         if (!crossDeviceManager.networkingManager.hasActiveConnections()) {
             Log.w(TAG, "No desktop connected — cannot stop flow")
+            _runningFlowId.value = null
             return
         }
 
@@ -157,6 +182,29 @@ class DesktopFlowManager(
             "Desktop Flows", "Stopping flow: $flowId",
             TAG
         )
+    }
+
+    /**
+     * Called when a device disconnects or connection resets (e.g. desktop unlocks).
+     */
+    fun onDeviceDisconnected(deviceId: String? = null) {
+        watchdogJob?.cancel()
+        watchdogJob = null
+
+        val flowId = _runningFlowId.value
+        if (flowId != null) {
+            _runningFlowId.value = null
+            scope.launch {
+                _progressUpdates.emit(
+                    FlowTriggerProgress(
+                        flowId = flowId,
+                        status = FlowTriggerStatus.COMPLETED,
+                        message = "Desktop unlocked successfully"
+                    )
+                )
+            }
+        }
+        _isLoading.value = false
     }
 
     // ── Incoming Message Handler ───────────────────────────────
@@ -253,8 +301,15 @@ class DesktopFlowManager(
             _progressUpdates.emit(progress)
         }
 
-        // Only clear running state on the FINAL response (not step-level failures)
-        if (isFinal) {
+        // Clear running state on final response OR any terminal status (COMPLETED, FAILED, STOPPED)
+        val isTerminal = isFinal ||
+                status == FlowTriggerStatus.COMPLETED ||
+                status == FlowTriggerStatus.FAILED ||
+                status == FlowTriggerStatus.STOPPED
+
+        if (isTerminal) {
+            watchdogJob?.cancel()
+            watchdogJob = null
             _runningFlowId.value = null
             Log.d(TAG, "Flow $flowId finished: $statusStr - $message")
         }

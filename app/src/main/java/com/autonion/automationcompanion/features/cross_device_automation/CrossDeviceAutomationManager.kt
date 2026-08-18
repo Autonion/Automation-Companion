@@ -301,6 +301,7 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
     override fun onDeviceDisconnected(deviceId: String) {
         Log.d("CrossDeviceManager", "Device disconnected: $deviceId")
         _compatibilityWarning.value = null // Clear stale warnings
+        desktopFlowManager.onDeviceDisconnected(deviceId)
     }
 
     override fun onAgentVersionReceived(deviceId: String, agentVersion: String?, minCompanionVersion: String?) {
