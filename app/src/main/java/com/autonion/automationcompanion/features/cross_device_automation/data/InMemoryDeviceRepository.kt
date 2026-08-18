@@ -64,4 +64,8 @@ class InMemoryDeviceRepository : DeviceRepository {
             currentList.map { it.copy(isSelected = false) }
         }
     }
+
+    override suspend fun clearAllDevices() {
+        _devices.value = emptyList()
+    }
 }

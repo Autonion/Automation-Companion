@@ -32,7 +32,8 @@ import java.util.concurrent.TimeUnit
 class NetworkingManager(
     private val context: Context,
     private val deviceRepository: DeviceRepository,
-    private val eventReceiver: EventReceiver
+    private val eventReceiver: EventReceiver,
+    private val deviceAuthManager: com.autonion.automationcompanion.features.cross_device_automation.data.DeviceAuthManager
 ) {
     companion object {
         private const val TAG = "NetworkingManager"
@@ -42,8 +43,14 @@ class NetworkingManager(
         fun onDeviceConnected(device: Device)
         fun onDeviceDisconnected(deviceId: String)
         fun onMessageReceived(deviceId: String, rawJson: String)
-        /** Called once when the desktop agent sends its version in connection_ack. Null = old agent. */
+        /** Called once when the desktop agent sends its version in auth_result/connection_ack. Null = old agent. */
         fun onAgentVersionReceived(deviceId: String, agentVersion: String?, minCompanionVersion: String?) {}
+        /** Called when desktop agent requests 6-digit PIN pairing. */
+        fun onPairingRequired(deviceId: String, deviceName: String) {}
+        /** Called when pairing succeeds and device is authenticated. */
+        fun onPairingSuccess(deviceId: String) {}
+        /** Called when pairing fails or is rejected. */
+        fun onPairingFailed(deviceId: String, error: String) {}
     }
 
     private val client = OkHttpClient.Builder()
@@ -96,7 +103,22 @@ class NetworkingManager(
         }
     }
 
-
+    fun submitPairingPin(deviceId: String, pin: String) {
+        val ws = activeConnections[deviceId]
+        if (ws != null) {
+            val payload = gson.toJson(mapOf(
+                "type" to "pairing_submit",
+                "pin" to pin.trim(),
+                "deviceId" to deviceAuthManager.deviceId,
+                "deviceName" to deviceAuthManager.deviceName,
+                "deviceSecret" to deviceAuthManager.deviceSecret
+            ))
+            ws.send(payload)
+            Log.d(TAG, "Sent pairing_submit to device $deviceId")
+        } else {
+            Log.e(TAG, "Cannot submit PIN: no active connection for $deviceId")
+        }
+    }
 
     private fun connectToDevice(device: Device): Boolean {
         val endpoint = "${device.ipAddress}:${device.port}"
@@ -141,17 +163,20 @@ class NetworkingManager(
                 reconnectingDevices.remove(device.id)
                 this@NetworkingManager.listener?.onDeviceConnected(device)
 
-                // Send our version info to desktop (one-shot, no polling)
+                // Send our full identity & version info to desktop
                 try {
                     val appVersion = context.packageManager
                         .getPackageInfo(context.packageName, 0).versionName ?: "unknown"
                     val clientInfo = gson.toJson(mapOf(
                         "type" to "client_info",
                         "app" to "AutomationCompanion",
-                        "version" to appVersion
+                        "version" to appVersion,
+                        "deviceId" to deviceAuthManager.deviceId,
+                        "deviceName" to deviceAuthManager.deviceName,
+                        "deviceSecret" to deviceAuthManager.deviceSecret
                     ))
                     webSocket.send(clientInfo)
-                    Log.d(TAG, "Sent client_info v$appVersion to ${device.name}")
+                    Log.d(TAG, "Sent client_info v$appVersion (id=${deviceAuthManager.deviceId}) to ${device.name}")
                 } catch (e: Exception) {
                     Log.w(TAG, "Failed to send client_info: ${e.message}")
                 }
@@ -183,38 +208,105 @@ class NetworkingManager(
                         return
                     }
 
-                    // 2. Handle Control Messages
-                    if (type == "connection_ack") {
-                        Log.d(TAG, "Handshake received from ${device.name}: $text")
+                    // 2. Handle Control & Authentication Messages
+                    if (type == "auth_result" || type == "connection_ack") {
+                        Log.d(TAG, "Auth response received from ${device.name}: $text")
                         DebugLogger.info(
                             context, LogCategory.CROSS_DEVICE_SYNC,
-                            "Connection Acknowledged",
-                            "Handshake received from ${device.name}: $text",
+                            "Authentication Response",
+                            "Received $type from ${device.name}: $text",
                             TAG
                         )
-                        // Check desktop version compatibility
-                        // If version is null, the desktop is an old build that predates
-                        // the version handshake — the listener will treat null as "outdated".
+
+                        val status = jsonObject.get("status")?.asString ?: "unknown"
+                        val agentId = jsonObject.get("agent_id")?.asString
                         val agentVersion = jsonObject.get("version")?.asString
                         val minCompanion = jsonObject.get("min_companion_version")?.asString
-                        this@NetworkingManager.listener?.onAgentVersionReceived(
-                            device.id, agentVersion, minCompanion
-                        )
 
-                        // Parse agent/prelogin to verify isServiceOnly post-handshake
+                        if (agentVersion != null) {
+                            this@NetworkingManager.listener?.onAgentVersionReceived(
+                                device.id, agentVersion, minCompanion
+                            )
+                        }
+
+                        // Parse agent/prelogin to verify isServiceOnly
                         val agentField = jsonObject.get("agent")?.asString ?: ""
                         val preloginField = jsonObject.get("prelogin")?.asBoolean ?: false
                         val isServiceOnly = preloginField
                                 || agentField.contains("prelogin", ignoreCase = true)
-                        Log.d(TAG, "connection_ack: agent=$agentField, prelogin=$preloginField, isServiceOnly=$isServiceOnly")
 
-                        // Update device with verified isServiceOnly state
-                        scope.launch {
-                            val existing = deviceRepository.getDeviceById(device.id)
-                            if (existing != null && existing.isServiceOnly != isServiceOnly) {
-                                deviceRepository.addOrUpdateDevice(
-                                    existing.copy(isServiceOnly = isServiceOnly)
-                                )
+                        when (status) {
+                            "authenticated", "connected" -> {
+                                if (!agentId.isNullOrBlank()) {
+                                    deviceAuthManager.markAgentPaired(agentId)
+                                }
+                                scope.launch {
+                                    val existing = deviceRepository.getDeviceById(device.id)
+                                    if (existing != null) {
+                                        deviceRepository.addOrUpdateDevice(
+                                            existing.copy(
+                                                isPaired = true,
+                                                isPairingRequired = false,
+                                                agentId = agentId ?: existing.agentId,
+                                                isServiceOnly = isServiceOnly
+                                            )
+                                        )
+                                    }
+                                }
+                                this@NetworkingManager.listener?.onPairingSuccess(device.id)
+                            }
+                            "pairing_required" -> {
+                                scope.launch {
+                                    val existing = deviceRepository.getDeviceById(device.id)
+                                    if (existing != null) {
+                                        deviceRepository.addOrUpdateDevice(
+                                            existing.copy(
+                                                isPaired = false,
+                                                isPairingRequired = true,
+                                                agentId = agentId ?: existing.agentId
+                                            )
+                                        )
+                                    }
+                                }
+                                this@NetworkingManager.listener?.onPairingRequired(device.id, device.name)
+                            }
+                            "paired_success" -> {
+                                if (!agentId.isNullOrBlank()) {
+                                    deviceAuthManager.markAgentPaired(agentId)
+                                }
+                                scope.launch {
+                                    val existing = deviceRepository.getDeviceById(device.id)
+                                    if (existing != null) {
+                                        deviceRepository.addOrUpdateDevice(
+                                            existing.copy(
+                                                isPaired = true,
+                                                isPairingRequired = false,
+                                                agentId = agentId ?: existing.agentId
+                                            )
+                                        )
+                                    }
+                                }
+                                this@NetworkingManager.listener?.onPairingSuccess(device.id)
+                            }
+                            "pairing_failed" -> {
+                                val error = jsonObject.get("error")?.asString ?: "Invalid PIN"
+                                this@NetworkingManager.listener?.onPairingFailed(device.id, error)
+                            }
+                            "pairing_busy" -> {
+                                val msg = jsonObject.get("message")?.asString ?: "Another pairing is in progress on this desktop."
+                                this@NetworkingManager.listener?.onPairingFailed(device.id, msg)
+                            }
+                            "pairing_disabled" -> {
+                                val msg = jsonObject.get("message")?.asString ?: "New device pairing is disabled on this desktop."
+                                this@NetworkingManager.listener?.onPairingFailed(device.id, msg)
+                            }
+                            "pairing_expired" -> {
+                                val msg = jsonObject.get("message")?.asString ?: "Pairing timed out."
+                                this@NetworkingManager.listener?.onPairingFailed(device.id, msg)
+                            }
+                            "pairing_rejected" -> {
+                                val msg = jsonObject.get("message")?.asString ?: "Pairing declined by desktop user."
+                                this@NetworkingManager.listener?.onPairingFailed(device.id, msg)
                             }
                         }
 

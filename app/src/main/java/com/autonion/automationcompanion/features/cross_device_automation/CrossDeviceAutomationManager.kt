@@ -25,6 +25,7 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
     // Repositories
     val deviceRepository = InMemoryDeviceRepository()
     val ruleRepository = InMemoryRuleRepository()
+    val deviceAuthManager = com.autonion.automationcompanion.features.cross_device_automation.data.DeviceAuthManager(context)
 
     // Event Pipeline Components
     private val enricher = EventEnricher()
@@ -60,6 +61,13 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
     private val _compatibilityWarning = MutableStateFlow<String?>(null)
     val compatibilityWarning: StateFlow<String?> = _compatibilityWarning.asStateFlow()
 
+    // Active Pairing State
+    private val _activePairingDevice = MutableStateFlow<com.autonion.automationcompanion.features.cross_device_automation.domain.Device?>(null)
+    val activePairingDevice: StateFlow<com.autonion.automationcompanion.features.cross_device_automation.domain.Device?> = _activePairingDevice.asStateFlow()
+
+    private val _pairingError = MutableStateFlow<String?>(null)
+    val pairingError: StateFlow<String?> = _pairingError.asStateFlow()
+
     init {
         // One-time migration: reset clipboard sync for users who had it
         // implicitly enabled under the old default=true behavior.
@@ -85,7 +93,7 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
             }
         }
         
-        networkingManager = NetworkingManager(context, deviceRepository, eventReceiverProxy)
+        networkingManager = NetworkingManager(context, deviceRepository, eventReceiverProxy, deviceAuthManager)
         networkingManager.listener = this
         actionExecutor = ActionExecutor(context, networkingManager)
         
@@ -176,8 +184,14 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
         hostManager.stopDiscovery()
         networkingManager.stop()
         releaseLocks()
-        // Deselect all devices so UI reflects disconnected state
-        scope.launch { deviceRepository.deselectAllDevices() }
+        // Clear all devices from memory and state so UI and repo reflect that discovery is stopped
+        scope.launch {
+            deviceRepository.deselectAllDevices()
+            deviceRepository.clearAllDevices()
+        }
+        _compatibilityWarning.value = null
+        _activePairingDevice.value = null
+        _pairingError.value = null
     }
 
     private fun acquireLocks() {
@@ -332,6 +346,54 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
             }
         } else {
             _compatibilityWarning.value = null
+        }
+    }
+
+    override fun onPairingRequired(deviceId: String, deviceName: String) {
+        Log.d(TAG, "Pairing required for device: $deviceName ($deviceId)")
+        scope.launch {
+            val device = deviceRepository.getDeviceById(deviceId)
+            _activePairingDevice.value = device
+            _pairingError.value = null
+        }
+    }
+
+    override fun onPairingSuccess(deviceId: String) {
+        Log.d(TAG, "Pairing succeeded for device: $deviceId")
+        if (_activePairingDevice.value?.id == deviceId) {
+            _activePairingDevice.value = null
+            _pairingError.value = null
+        }
+    }
+
+    override fun onPairingFailed(deviceId: String, error: String) {
+        Log.w(TAG, "Pairing failed for device $deviceId: $error")
+        _pairingError.value = error
+    }
+
+    fun submitPairingPin(deviceId: String, pin: String) {
+        if (::networkingManager.isInitialized) {
+            _pairingError.value = null
+            networkingManager.submitPairingPin(deviceId, pin)
+        }
+    }
+
+    fun dismissPairing() {
+        _activePairingDevice.value = null
+        _pairingError.value = null
+    }
+
+    fun unpairDevice(deviceId: String) {
+        scope.launch {
+            val device = deviceRepository.getDeviceById(deviceId)
+            if (device != null) {
+                if (device.agentId != null) {
+                    deviceAuthManager.unpairAgent(device.agentId)
+                }
+                deviceRepository.addOrUpdateDevice(
+                    device.copy(isPaired = false, isSelected = false)
+                )
+            }
         }
     }
 

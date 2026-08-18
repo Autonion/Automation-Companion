@@ -63,11 +63,24 @@ fun DeviceManagementScreen(
     val viewModel = viewModel { DeviceManagementViewModel(manager) }
     val devices by viewModel.devices.collectAsState()
     val isEnabled by viewModel.isFeatureEnabled.collectAsState()
+    val activePairingDevice by viewModel.activePairingDevice.collectAsState()
+    val pairingError by viewModel.pairingError.collectAsState()
 
     val isDark = isSystemInDarkTheme()
     val textColor = if (isDark) Color.White else Color(0xFF1A1C1E)
     val secondaryTextColor = if (isDark) Color.White.copy(alpha = 0.6f) else Color(0xFF1A1C1E).copy(alpha = 0.6f)
     val disabledColor = if (isDark) Color.White.copy(alpha = 0.4f) else Color(0xFF1A1C1E).copy(alpha = 0.4f)
+
+    if (activePairingDevice != null) {
+        PairingBottomSheet(
+            device = activePairingDevice!!,
+            errorMessage = pairingError,
+            onDismiss = viewModel::dismissPairing,
+            onSubmitPin = { pin ->
+                viewModel.submitPairingPin(activePairingDevice!!.id, pin)
+            }
+        )
+    }
 
     Box(
         modifier = Modifier.fillMaxSize(),
@@ -358,33 +371,75 @@ fun DeviceManagementScreen(
             }
         }
 
-        // ─── Section Header ─────────────────────────
-        item {
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "Discovered Devices",
-                color = textColor.copy(alpha = 0.6f),
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 13.sp,
-                letterSpacing = 1.sp,
-                modifier = Modifier.padding(start = 4.dp)
-            )
-        }
-
-        // ─── Empty + Scanning ───────────────────────
-        if (devices.isEmpty()) {
+        if (!isEnabled) {
             item {
-                ScanningState(isDark, textColor)
+                GlassSettingsCard {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 16.dp, horizontal = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Sensors,
+                            contentDescription = null,
+                            modifier = Modifier.size(36.dp),
+                            tint = textColor.copy(alpha = 0.25f)
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            "Cross-Device Automation is Off",
+                            color = textColor.copy(alpha = 0.7f),
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 14.sp
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "Turn on the toggle above to scan for and connect to nearby PCs.",
+                            color = secondaryTextColor.copy(alpha = 0.5f),
+                            fontSize = 12.sp,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
             }
-            // ── Setup Guide (LLM-independent) ──
+            // ── Getting Started steps when toggled off ──
             item {
                 SetupGuideCard(isDark, textColor)
             }
-        }
+        } else {
+            // ─── Section Header ─────────────────────────
+            item {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Discovered Devices",
+                    color = textColor.copy(alpha = 0.6f),
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                    letterSpacing = 1.sp,
+                    modifier = Modifier.padding(start = 4.dp)
+                )
+            }
 
-        // ─── Device Cards ───────────────────────────
-        itemsIndexed(devices) { index, device ->
-            StaggeredDeviceItem(device = device, index = index, onToggleSelection = { viewModel.toggleDeviceSelection(device.id) })
+            // ─── Empty + Scanning (Only when enabled and actively scanning) ───
+            if (devices.isEmpty()) {
+                item {
+                    ScanningState(isDark, textColor)
+                }
+                // ── Setup Guide (LLM-independent) ──
+                item {
+                    SetupGuideCard(isDark, textColor)
+                }
+            }
+
+            // ─── Device Cards ───────────────────────────
+            itemsIndexed(devices) { index, device ->
+                StaggeredDeviceItem(
+                    device = device,
+                    index = index,
+                    onToggleSelection = { viewModel.toggleDeviceSelection(device.id) }
+                )
+            }
         }
     }
     }
@@ -661,17 +716,19 @@ private fun DeviceGlassCard(device: Device, onToggleSelection: () -> Unit) {
     val textColor = if (isDark) Color.White else Color(0xFF1A1C1E)
 
     val statusColor = when {
+        device.isPairingRequired -> Color(0xFFFFB74D)
         device.isServiceOnly && device.status == DeviceStatus.ONLINE -> Color(0xFFFFB74D)
         device.status == DeviceStatus.ONLINE -> OnlineGreen
         device.status == DeviceStatus.OFFLINE -> OfflineRed
         else -> UnknownGray
     }
     val statusLabel = when {
+        device.isPairingRequired -> "PIN Required"
         device.isServiceOnly && device.isSelected && device.status == DeviceStatus.ONLINE -> "Service Only"
         device.isServiceOnly && device.status == DeviceStatus.ONLINE -> "Service Available"
-        device.isSelected && device.status == DeviceStatus.ONLINE -> "Connected"
+        device.isSelected && device.status == DeviceStatus.ONLINE -> if (device.isPaired) "Paired" else "Connected"
         device.isSelected -> "Selected"
-        device.status == DeviceStatus.ONLINE -> "Available"
+        device.status == DeviceStatus.ONLINE -> if (device.isPaired) "Paired" else "Available"
         device.status == DeviceStatus.OFFLINE -> "Offline"
         else -> "Unknown"
     }

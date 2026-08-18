@@ -25,5 +25,8 @@ data class Device(
     val lastSeen: Long = System.currentTimeMillis(),
     val capabilities: List<String> = emptyList(),
     val isSelected: Boolean = false,
-    val isServiceOnly: Boolean = false
+    val isServiceOnly: Boolean = false,
+    val agentId: String? = null,
+    val isPaired: Boolean = false,
+    val isPairingRequired: Boolean = false
 )

@@ -24,6 +24,9 @@ class DeviceManagementViewModel(
     /// Non-null when the connected desktop agent requires a newer companion version.
     val compatibilityWarning: StateFlow<String?> = manager.compatibilityWarning
 
+    val activePairingDevice: StateFlow<Device?> = manager.activePairingDevice
+    val pairingError: StateFlow<String?> = manager.pairingError
+
     private val _devices = MutableStateFlow<List<Device>>(emptyList())
     val devices: StateFlow<List<Device>> = _devices.asStateFlow()
 
@@ -57,5 +60,17 @@ class DeviceManagementViewModel(
         viewModelScope.launch {
             manager.deviceRepository.toggleDeviceSelection(deviceId)
         }
+    }
+
+    fun submitPairingPin(deviceId: String, pin: String) {
+        manager.submitPairingPin(deviceId, pin)
+    }
+
+    fun dismissPairing() {
+        manager.dismissPairing()
+    }
+
+    fun unpairDevice(deviceId: String) {
+        manager.unpairDevice(deviceId)
     }
 }
