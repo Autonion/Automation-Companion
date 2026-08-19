@@ -28,9 +28,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 /**
- * Full-screen blocking UI displayed when a parent has explicitly denied
- * access to this app via Google Play parental controls
- * ([UserStatus.SUPERVISED_APPROVAL_DENIED]).
+ * Full-screen blocking UI displayed when a user or parent has explicitly
+ * declined to share age signals via Google Play
+ * ([AgeSharingStatus.NOT_SHARED]).
  *
  * Shows a clear, non-alarming explanation and a "Request access again"
  * button that deep-links to Google Play's Family settings.

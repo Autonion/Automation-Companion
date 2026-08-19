@@ -50,11 +50,12 @@ class MainActivity : ComponentActivity() {
             com.autonion.automationcompanion.features.semantic_automation.core.ExtensionBridgeServer.getInstance(this@MainActivity)
         }
 
-        // Fetch age signals for compliance (Texas SB 2420) — non-blocking
-        lifecycleScope.launch(Dispatchers.IO) {
+        // Fetch age signals for compliance (Texas SB 2420, Brazil, etc.) — non-blocking
+        // v0.0.4: Two-step flow — request access (triggers Play prompt) then fetch signals
+        lifecycleScope.launch(Dispatchers.Main) {
             com.autonion.automationcompanion.core.age_signals.AgeSignalsRepository
                 .getInstance(this@MainActivity)
-                .fetchAgeSignals(this@MainActivity)
+                .requestAndFetchAgeSignals(this@MainActivity)
         }
         
         setContent {

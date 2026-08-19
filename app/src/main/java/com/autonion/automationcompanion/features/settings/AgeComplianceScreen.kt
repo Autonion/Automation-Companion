@@ -19,9 +19,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.autonion.automationcompanion.core.age_signals.AgeRangeSource
 import com.autonion.automationcompanion.core.age_signals.AgeSignalResult
 import com.autonion.automationcompanion.core.age_signals.AgeSignalsRepository
-import com.autonion.automationcompanion.core.age_signals.UserStatus
+import com.autonion.automationcompanion.core.age_signals.AgeSharingStatus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
@@ -102,32 +103,23 @@ fun AgeComplianceScreen(
                         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                         DetailRow(
                             icon = Icons.Default.Lock,
-                            label = "Verification Method",
-                            value = formatUserStatus(result.userStatus)
+                            label = "Verification Source",
+                            value = formatAgeSource(result.ageRangeSource)
                         )
-                        if (result.userStatus == UserStatus.SUPERVISED ||
-                            result.userStatus == UserStatus.SUPERVISED_APPROVAL_PENDING ||
-                            result.userStatus == UserStatus.SUPERVISED_APPROVAL_DENIED
-                        ) {
-                            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                            DetailRow(
-                                icon = Icons.Default.Lock,
-                                label = "Supervision Status",
-                                value = when (result.userStatus) {
-                                    UserStatus.SUPERVISED -> "Parent/guardian approved"
-                                    UserStatus.SUPERVISED_APPROVAL_PENDING -> "Awaiting parent/guardian decision"
-                                    else -> "Parent/guardian denied"
-                                }
-                            )
-                        }
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                        DetailRow(
+                            icon = Icons.Default.Share,
+                            label = "Sharing Status",
+                            value = formatSharingStatus(result.ageSharingStatus)
+                        )
                     }
                 }
                 is AgeSignalResult.Unavailable -> {
                     DetailCard(title = "Status") {
                         Text(
                             "Age verification is not required in your region. " +
-                                    "This feature is currently active only in U.S. states " +
-                                    "with age verification laws (e.g., Texas).",
+                                    "This feature is currently active only in jurisdictions " +
+                                    "with age verification laws (e.g., Texas, Brazil).",
                             style = MaterialTheme.typography.bodyMedium.copy(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 lineHeight = 22.sp
@@ -168,11 +160,11 @@ fun AgeComplianceScreen(
             // About Section
             DetailCard(title = "About Age Verification") {
                 Text(
-                    "Some U.S. states (such as Texas under SB 2420) require app stores " +
-                            "to verify users' ages. Google Play handles this verification process " +
-                            "and shares age-range signals with app developers to help comply " +
-                            "with these laws. If you're not in a regulated region, no age data " +
-                            "is collected or used.",
+                    "Some jurisdictions (such as Texas under SB 2420 and Brazil) " +
+                            "require app stores to verify users' ages. Google Play handles " +
+                            "this verification process and shares age-range signals with app " +
+                            "developers to help comply with these laws. If you're not in a " +
+                            "regulated region, no age data is collected or used.",
                     style = MaterialTheme.typography.bodySmall.copy(
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                         lineHeight = 20.sp
@@ -190,15 +182,20 @@ private fun StatusBanner(ageState: AgeSignalResult) {
     val isDark = isSystemInDarkTheme()
     val (icon, title, subtitle, containerColor) = when (ageState) {
         is AgeSignalResult.Available -> {
-            if (ageState.userStatus == UserStatus.SUPERVISED_APPROVAL_DENIED) {
-                StatusInfo(
+            when (ageState.ageSharingStatus) {
+                AgeSharingStatus.NOT_SHARED -> StatusInfo(
                     Icons.Default.Block,
                     "Access Restricted",
-                    "Parental controls are blocking this app",
+                    "Age signal sharing was declined",
                     if (isDark) Color(0xFF5A1A1A) else Color(0xFFFFEBEE)
                 )
-            } else {
-                StatusInfo(
+                AgeSharingStatus.VERIFICATION_REQUIRED -> StatusInfo(
+                    Icons.Default.Warning,
+                    "Verification Required",
+                    "Please verify your age in Google Play",
+                    if (isDark) Color(0xFF3A3A1A) else Color(0xFFFFF8E1)
+                )
+                AgeSharingStatus.SHARED -> StatusInfo(
                     Icons.Default.CheckCircle,
                     "Verified",
                     "Age verification is active for your region",
@@ -323,19 +320,27 @@ private data class StatusInfo(
 
 private fun formatAgeRange(lower: Int, upper: Int): String {
     return when {
+        lower == 0 && upper == 0 -> "Not available"
         lower == upper -> "$lower years old"
         upper >= 100 -> "$lower+"
         else -> "$lower – $upper years old"
     }
 }
 
-private fun formatUserStatus(status: UserStatus): String {
+private fun formatAgeSource(source: AgeRangeSource): String {
+    return when (source) {
+        AgeRangeSource.VERIFIED -> "Verified (Government ID)"
+        AgeRangeSource.SUPERVISED -> "Supervised (Family Link)"
+        AgeRangeSource.ACCOUNT_SIGNALS -> "Google Account Signals"
+        AgeRangeSource.SELF_DECLARED -> "Self-declared"
+        AgeRangeSource.UNKNOWN -> "Unknown"
+    }
+}
+
+private fun formatSharingStatus(status: AgeSharingStatus): String {
     return when (status) {
-        UserStatus.VERIFIED -> "Verified by Google Play"
-        UserStatus.DECLARED -> "Self-declared"
-        UserStatus.SUPERVISED -> "Supervised (parent approved)"
-        UserStatus.SUPERVISED_APPROVAL_PENDING -> "Supervised (approval pending)"
-        UserStatus.SUPERVISED_APPROVAL_DENIED -> "Supervised (parent denied)"
-        UserStatus.UNKNOWN -> "Unknown"
+        AgeSharingStatus.SHARED -> "Shared with app"
+        AgeSharingStatus.NOT_SHARED -> "Declined by user or parent"
+        AgeSharingStatus.VERIFICATION_REQUIRED -> "Pending verification in Play Store"
     }
 }

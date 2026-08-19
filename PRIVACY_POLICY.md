@@ -1,6 +1,6 @@
 # Privacy Policy for Autonion (Automation Companion)
 
-**Effective Date:** 3 June 2026
+**Effective Date:** 19 August 2026
 
 Thank you for choosing to be part of the Autonion community. In this document, "Autonion", "we", "us", and "our" refer to the developer(s) of the Autonion application. We are committed to protecting your personal information and your right to privacy. If you have any questions or concerns about this privacy notice, or our practices with regards to your personal information, please contact us at <gurupreetam.ai@gmail.com>.
 
@@ -23,7 +23,10 @@ The App uses the Media Projection API to capture screen content for Visual Trigg
 ### Location Data (Including Background Location)
 The App requests access to your location data (Foreground and Background).
 * **Why it is required:** This allows the App to trigger location-based automations (e.g., executing a workflow when you arrive at a specific geofence).
-* **Data Collection and Sharing:** You can manually input coordinates for triggers. Optionally, you may use our external map service (hosted on Vercel) to select map coordinates. This web service operates statelessly to simply return the selected coordinates back to the App and **does not** store, log, or track your real-time location. Once the coordinates are set, your live location data is used purely on-device to evaluate automation triggers. We do not track your location on our servers or sell your location history to third parties.
+* **Precise Location (`ACCESS_FINE_LOCATION`):** Used to accurately evaluate geofence boundaries and location-based automation triggers that you configure. Precise coordinates are processed entirely on-device and are never transmitted to our servers.
+* **Approximate Location (`ACCESS_COARSE_LOCATION`):** Used as a lower-power fallback for broader location-based triggers (e.g., city-level automations). Like precise location, this data is processed entirely on-device.
+* **Background Location (`ACCESS_BACKGROUND_LOCATION`):** Required so that your location-based automations can continue to evaluate triggers when the App is not in the foreground (e.g., arriving at a saved geofence while the screen is off).
+* **Data Collection and Sharing:** You can manually input coordinates for triggers. Optionally, you may use our external map service (hosted on Vercel) to select map coordinates. This web service operates statelessly to simply return the selected coordinates back to the App and **does not** store, log, or track your real-time location. Once the coordinates are set, your live location data is used purely on-device to evaluate automation triggers. Location data is **never** transmitted to our servers, third-party analytics, advertising networks, or any external service. We do not track your location on our servers or sell your location history to third parties.
 
 ### Contacts and SMS
 The App requests permissions to read contacts and send SMS messages.
@@ -51,8 +54,20 @@ Autonion is built with an "Offline-First, Cloud-Enhanced" architecture that span
 * **Autonion Ecosystem (Desktop Agent & Extensions):** If you use Cross-Device Sync, the App securely transmits automation commands and context over your local network to the Autonion Desktop Agent or Browser Extensions. We do not intermediate this connection with a central server.
 * **Cloud AI Processing:** If you opt-in to use Cloud APIs (e.g., OpenAI, Anthropic, Google Gemini) either in the Android App or via the Desktop Agent to power the Semantic Automation Engine, the relevant context (text or screen representations) required to fulfill your prompt will be sent to those third-party providers. Their use of your data is governed by their respective Privacy Policies. We recommend reviewing the privacy policies of the AI providers you choose to connect.
 
+### Third-Party AI Integrations — Disclosure, Consent, and Limited Use
+In compliance with Google Play's User Data policy (including its August 2026 clarification that data requirements extend to third-party AI integrations), we disclose the following:
+* **User-Initiated Only:** Data is transmitted to a third-party AI provider **only** when you explicitly configure and activate a Cloud AI provider (e.g., OpenAI, Anthropic, Google Gemini) within the App's settings. No data is ever sent to any AI provider without your active configuration and consent.
+* **In-App Disclosure:** Before any data is transmitted to a Cloud AI provider, the App displays a clear notice informing you which provider will receive your data, what data will be sent (e.g., screen context, text prompts), and for what purpose (executing your automation request).
+* **Limited Use:** We transmit only the minimum data necessary to fulfill the specific automation task you requested. We do **not** send bulk data, historical data, or any data unrelated to the active automation prompt.
+* **No Secondary Use:** Data sent to third-party AI providers is used solely to generate a response for your automation request. We do **not** use this data for advertising, analytics, profiling, model training, or any purpose beyond fulfilling your explicit request.
+* **Third-Party Policies:** Each AI provider processes your data according to their own Privacy Policy and Terms of Service. We encourage you to review the privacy policies of any provider you choose to connect:
+  * OpenAI: [https://openai.com/privacy](https://openai.com/privacy)
+  * Anthropic: [https://www.anthropic.com/privacy](https://www.anthropic.com/privacy)
+  * Google Gemini: [https://ai.google.dev/terms](https://ai.google.dev/terms)
+* **API Key Security:** Your API keys for third-party providers are stored locally on your device using Android's EncryptedSharedPreferences and are **never** transmitted to our servers.
+
 ## 4. Do We Share Your Information?
-We do not sell, trade, or rent your personal identification information to others. The App does not contain third-party ad networks or hidden tracking SDKs. Data transmission only occurs based on the explicit API configurations you set up within the App (e.g., your configured Cloud LLM provider).
+We do not sell, trade, or rent your personal identification information to others. The App does not contain third-party ad networks or hidden tracking SDKs. Data transmission only occurs based on the explicit API configurations you set up within the App (e.g., your configured Cloud LLM provider). Any data transmitted to third-party AI providers is subject to the limited-use restrictions described in Section 3 above and is used solely to fulfill your automation request.
 
 ## 5. Security of Your Information
 We use administrative, technical, and physical security measures to help protect your personal information. While we have taken reasonable steps to secure the personal information you provide to us, please be aware that despite our efforts, no security measures are perfect or impenetrable.
