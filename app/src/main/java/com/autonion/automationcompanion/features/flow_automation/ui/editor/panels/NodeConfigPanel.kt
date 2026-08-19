@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -14,6 +15,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -71,6 +73,39 @@ fun NodeConfigPanel(
                 )
                 TextButton(onClick = onDismiss) {
                     Text("Done", color = Color(0xFF64FFDA))
+                }
+            }
+
+            // Warning banner if node attributes are unconfigured
+            val warning = node.configurationWarning()
+            if (warning != null) {
+                Spacer(Modifier.height(12.dp))
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = Color(0xFF3E2723),
+                    border = BorderStroke(1.dp, Color(0xFFFF9800)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text("⚠", fontSize = 18.sp, color = Color(0xFFFF9800))
+                        Column {
+                            Text(
+                                "Setup Required",
+                                color = Color(0xFFFF9800),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
+                            )
+                            Text(
+                                warning,
+                                color = Color.White.copy(alpha = 0.85f),
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
                 }
             }
 

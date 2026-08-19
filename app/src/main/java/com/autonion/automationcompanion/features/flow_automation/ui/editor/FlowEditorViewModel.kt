@@ -482,35 +482,9 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
 
         // 3. Validate each reachable node for missing configuration
         for (node in reachable) {
-            when (node) {
-                is LaunchAppNode -> {
-                    if (node.appPackageName.isBlank()) {
-                        errors.add("\"${node.label}\" — No app selected.")
-                    }
-                }
-                is ScreenMLNode -> {
-                    if (node.automationStepsJson.isBlank()) {
-                        errors.add("\"${node.label}\" — No screen data captured. Open the overlay and select elements.")
-                    }
-                }
-                is VisualTriggerNode -> {
-                    if (node.visionPresetJson.isBlank() && node.templateImagePath.isBlank()) {
-                        errors.add("\"${node.label}\" — No image template captured. Open the overlay and configure regions.")
-                    }
-                }
-                is GestureNode -> {
-                    if (node.recordedActionsJson.isBlank()) {
-                        errors.add("\"${node.label}\" — No gesture recorded. Open the overlay and record a gesture.")
-                    }
-                }
-                is InputNode -> {
-                    val source = node.inputSource
-                    if (source is InputSource.Static && source.text.isBlank()) {
-                        errors.add("\"${node.label}\" — No input text provided.")
-                    }
-                }
-                // StartNode, DelayNode, RepeatNode, ClipboardNode are always valid
-                else -> { /* no validation needed */ }
+            val warning = node.configurationWarning()
+            if (warning != null) {
+                errors.add("\"${node.label}\" — $warning.")
             }
         }
 

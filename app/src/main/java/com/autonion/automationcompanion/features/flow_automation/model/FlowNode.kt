@@ -325,3 +325,23 @@ data class InputNode(
 ) : FlowNode() {
     override val nodeType: FlowNodeType = FlowNodeType.INPUT
 }
+
+/**
+ * Returns a human-readable warning if required configuration is missing, or null if valid.
+ */
+fun FlowNode.configurationWarning(): String? {
+    return when (this) {
+        is LaunchAppNode -> if (appPackageName.isBlank()) "No app selected" else null
+        is ScreenMLNode -> if (automationStepsJson.isBlank()) "No screen elements captured" else null
+        is VisualTriggerNode -> if (visionPresetJson.isBlank() && templateImagePath.isBlank()) "No image template captured" else null
+        is GestureNode -> if (recordedActionsJson.isBlank()) "No gesture recorded" else null
+        is InputNode -> {
+            val source = inputSource
+            if (source is InputSource.Static && source.text.isBlank()) "No input text provided" else null
+        }
+        else -> null
+    }
+}
+
+fun FlowNode.isConfigured(): Boolean = configurationWarning() == null
+

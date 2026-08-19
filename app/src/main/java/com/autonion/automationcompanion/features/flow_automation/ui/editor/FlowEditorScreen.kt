@@ -499,6 +499,13 @@ fun FlowEditorScreen(
                         if (isExecuting) {
                             viewModel.stopExecution()
                         } else {
+                            // 1. Always validate flow configuration first!
+                            val errors = viewModel.validateFlow()
+                            if (errors.isNotEmpty()) {
+                                viewModel.executeFlow() // Sets _validationErrors and triggers error dialog
+                                return@FloatingActionButton
+                            }
+
                             if (!com.autonion.automationcompanion.AccessibilityRouter.isServiceConnected()) {
                                 showAccessibilityDisclosure = true
                             } else if (!hasVisualNodes) {

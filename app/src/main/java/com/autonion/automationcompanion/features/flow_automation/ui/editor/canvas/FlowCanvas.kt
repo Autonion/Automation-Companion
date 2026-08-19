@@ -393,33 +393,55 @@ private fun DrawScope.drawNode(
     )
     drawText(titleResult, topLeft = Offset(textStartX, iconCenterY - titleResult.size.height - 2f))
 
-    // ── Subtitle (uppercase, accent colored in pill) ──
-    val subtitle = when (node) {
-        is StartNode -> "ENTRY POINT"
-        is GestureNode -> node.gestureType.name.uppercase()
-        is VisualTriggerNode -> "IMAGE MATCH"
-        is ScreenMLNode -> when (node.mode) {
-            ScreenMLMode.OBJECT_DETECTION -> "ELEMENTS"
-            ScreenMLMode.OCR -> "OCR"
-            ScreenMLMode.UI_ATTRIBUTE -> "UI ATTR"
-        }
-        is DelayNode -> "WAIT"
-        is LaunchAppNode -> if (node.appPackageName.isNotBlank())
-            node.appPackageName.substringAfterLast('.').uppercase()
-        else "SELECT APP"
-        is RepeatNode -> if (node.repeatCount == 0) "∞ INFINITE" else "×${node.repeatCount}"
-        is ClipboardNode -> node.operation.name.uppercase()
-        is InputNode -> "INJECT TEXT"
+    // ── Warning badge on top-right corner if unconfigured ──
+    val warning = node.configurationWarning()
+    val isUnconfigured = warning != null
+    if (isUnconfigured) {
+        val badgeRadius = 14f
+        val badgeCenter = Offset(x + w - 32f, y + 32f)
+        drawCircle(Color(0xFFEF5350).copy(alpha = 0.3f), radius = badgeRadius + 5f, center = badgeCenter)
+        drawCircle(Color(0xFFEF5350), radius = badgeRadius, center = badgeCenter)
+        val exMark = textMeasurer.measure(
+            AnnotatedString("!"),
+            TextStyle(Color.White, fontSize = 14.sp, fontWeight = FontWeight.Black)
+        )
+        drawText(exMark, topLeft = Offset(badgeCenter.x - exMark.size.width / 2f, badgeCenter.y - exMark.size.height / 2f))
     }
+
+    // ── Subtitle (uppercase, accent colored in pill or amber warning pill if unconfigured) ──
+    val subtitle = if (isUnconfigured) {
+        "⚠ ${warning!!.uppercase()}"
+    } else {
+        when (node) {
+            is StartNode -> if (!node.appPackageName.isNullOrBlank()) node.appPackageName.substringAfterLast('.').uppercase() else "ENTRY POINT"
+            is GestureNode -> node.gestureType.name.uppercase()
+            is VisualTriggerNode -> "IMAGE MATCH"
+            is ScreenMLNode -> when (node.mode) {
+                ScreenMLMode.OBJECT_DETECTION -> "ELEMENTS"
+                ScreenMLMode.OCR -> "OCR"
+                ScreenMLMode.UI_ATTRIBUTE -> "UI ATTR"
+            }
+            is DelayNode -> "WAIT"
+            is LaunchAppNode -> if (node.appPackageName.isNotBlank())
+                node.appPackageName.substringAfterLast('.').uppercase()
+            else "SELECT APP"
+            is RepeatNode -> if (node.repeatCount == 0) "∞ INFINITE" else "×${node.repeatCount}"
+            is ClipboardNode -> node.operation.name.uppercase()
+            is InputNode -> "INJECT TEXT"
+        }
+    }
+    val subColor = if (isUnconfigured) Color(0xFFFFB74D) else accent.copy(alpha = 0.9f)
+    val subBgColor = if (isUnconfigured) Color(0xFFE65100).copy(alpha = 0.4f) else accent.copy(alpha = colors.subtitleBgAlpha)
+
     val subText = textMeasurer.measure(
         AnnotatedString(subtitle),
-        TextStyle(accent.copy(alpha = 0.9f), fontSize = 13.sp, fontWeight = FontWeight.Medium, letterSpacing = 0.8.sp),
+        TextStyle(subColor, fontSize = 13.sp, fontWeight = FontWeight.Medium, letterSpacing = 0.8.sp),
         maxLines = 1, overflow = TextOverflow.Ellipsis,
         constraints = androidx.compose.ui.unit.Constraints(maxWidth = maxTextW)
     )
     val subY = iconCenterY + 4f
     drawRoundRect(
-        color = accent.copy(alpha = colors.subtitleBgAlpha),
+        color = subBgColor,
         topLeft = Offset(textStartX - 8f, subY - 4f),
         size = Size(Math.min(subText.size.width.toFloat(), maxTextW.toFloat()) + 16f, subText.size.height + 8f),
         cornerRadius = androidx.compose.ui.geometry.CornerRadius(8f)
