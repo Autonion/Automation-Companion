@@ -74,8 +74,15 @@ class OverlayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // If the system restarted the service (null intent), shut down immediately.
+        // A valid launch always carries EXTRA_PRESET_NAME or EXTRA_FLOW_MODE.
+        if (intent == null) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
         // Check for flow mode
-        if (intent?.getBooleanExtra(FlowOverlayContract.EXTRA_FLOW_MODE, false) == true) {
+        if (intent.getBooleanExtra(FlowOverlayContract.EXTRA_FLOW_MODE, false)) {
             isFlowMode = true
             flowNodeId = intent.getStringExtra(FlowOverlayContract.EXTRA_FLOW_NODE_ID)
             
@@ -877,6 +884,11 @@ class OverlayService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+
+        // Stop any running playback in AutomationService so gestures don't
+        // continue executing after the overlay is gone.
+        broadcastIntent(ACTION_STOP)
+
         LocalBroadcastManager.getInstance(this).unregisterReceiver(playbackReceiver)
 
         if (::markersView.isInitialized) {
