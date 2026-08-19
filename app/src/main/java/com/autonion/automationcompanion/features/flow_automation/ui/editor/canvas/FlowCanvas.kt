@@ -430,22 +430,51 @@ private fun DrawScope.drawNode(
             is InputNode -> "INJECT TEXT"
         }
     }
-    val subColor = if (isUnconfigured) Color(0xFFFFB74D) else accent.copy(alpha = 0.9f)
-    val subBgColor = if (isUnconfigured) Color(0xFFE65100).copy(alpha = 0.4f) else accent.copy(alpha = colors.subtitleBgAlpha)
+    val isLightMode = colors.nodeBodyBg == Color.White
+    val subColor = if (isUnconfigured) {
+        colors.warningText
+    } else {
+        if (isLightMode) {
+            NodeColors.getDarkAccentForType(node.nodeType)
+        } else {
+            accent.copy(alpha = 0.9f)
+        }
+    }
+    val subBgColor = if (isUnconfigured) {
+        colors.warningPillBg
+    } else {
+        accent.copy(alpha = colors.subtitleBgAlpha)
+    }
 
     val subText = textMeasurer.measure(
         AnnotatedString(subtitle),
-        TextStyle(subColor, fontSize = 13.sp, fontWeight = FontWeight.Medium, letterSpacing = 0.8.sp),
+        TextStyle(
+            subColor,
+            fontSize = 13.sp,
+            fontWeight = if (isUnconfigured || isLightMode) FontWeight.SemiBold else FontWeight.Medium,
+            letterSpacing = 0.8.sp
+        ),
         maxLines = 1, overflow = TextOverflow.Ellipsis,
         constraints = androidx.compose.ui.unit.Constraints(maxWidth = maxTextW)
     )
     val subY = iconCenterY + 4f
+    val subW = Math.min(subText.size.width.toFloat(), maxTextW.toFloat()) + 16f
+    val subH = subText.size.height + 8f
     drawRoundRect(
         color = subBgColor,
         topLeft = Offset(textStartX - 8f, subY - 4f),
-        size = Size(Math.min(subText.size.width.toFloat(), maxTextW.toFloat()) + 16f, subText.size.height + 8f),
+        size = Size(subW, subH),
         cornerRadius = androidx.compose.ui.geometry.CornerRadius(8f)
     )
+    if (isUnconfigured) {
+        drawRoundRect(
+            color = colors.warningPillBorder,
+            topLeft = Offset(textStartX - 8f, subY - 4f),
+            size = Size(subW, subH),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(8f),
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1f)
+        )
+    }
     drawText(subText, topLeft = Offset(textStartX, subY))
 
     // ── Input port (left-center) ──

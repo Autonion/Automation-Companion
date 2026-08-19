@@ -8,6 +8,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -49,6 +50,7 @@ private data class NodeTypeItem(
 /**
  * Grid palette showing available node types to add.
  * Includes interactive (i) info badges, clean vector icons, and an on-demand detail banner.
+ * Supports both Light and Dark mode with high-contrast, theme-adaptive text and backgrounds.
  */
 @Composable
 fun NodePalette(
@@ -127,6 +129,7 @@ fun NodePalette(
 
     var activeInfoNode by remember { mutableStateOf<NodeTypeItem?>(null) }
     val editorColors = flowEditorColors()
+    val isDark = isSystemInDarkTheme()
     val screenHeight = LocalConfiguration.current.screenHeightDp.dp
 
     // Dynamic grid height constraint based on screen size and active banner state
@@ -143,7 +146,7 @@ fun NodePalette(
             .navigationBarsPadding(),
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = editorColors.panelBg),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+        border = BorderStroke(1.dp, editorColors.panelText.copy(alpha = 0.08f)),
         elevation = CardDefaults.cardElevation(12.dp)
     ) {
         Column(
@@ -171,7 +174,7 @@ fun NodePalette(
                     // Header discoverability hint
                     Surface(
                         shape = RoundedCornerShape(10.dp),
-                        color = Color.White.copy(alpha = 0.06f),
+                        color = editorColors.panelText.copy(alpha = 0.06f),
                         modifier = Modifier.padding(start = 4.dp)
                     ) {
                         Row(
@@ -225,8 +228,8 @@ fun NodePalette(
                                 .fillMaxWidth()
                                 .padding(top = 12.dp),
                             shape = RoundedCornerShape(16.dp),
-                            color = targetNode.color.copy(alpha = 0.12f),
-                            border = BorderStroke(1.dp, targetNode.color.copy(alpha = 0.35f))
+                            color = targetNode.color.copy(alpha = if (isDark) 0.12f else 0.16f),
+                            border = BorderStroke(1.dp, targetNode.color.copy(alpha = if (isDark) 0.35f else 0.5f))
                         ) {
                             Column(
                                 modifier = Modifier.padding(12.dp)
@@ -244,7 +247,7 @@ fun NodePalette(
                                             modifier = Modifier
                                                 .size(26.dp)
                                                 .clip(CircleShape)
-                                                .background(targetNode.color.copy(alpha = 0.25f)),
+                                                .background(targetNode.color.copy(alpha = if (isDark) 0.25f else 0.35f)),
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Icon(
@@ -257,7 +260,7 @@ fun NodePalette(
 
                                         Text(
                                             text = targetNode.label,
-                                            color = Color.White,
+                                            color = editorColors.panelText,
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 14.sp
                                         )
@@ -265,7 +268,7 @@ fun NodePalette(
                                         // Category Tag
                                         Surface(
                                             shape = RoundedCornerShape(6.dp),
-                                            color = targetNode.color.copy(alpha = 0.2f)
+                                            color = targetNode.color.copy(alpha = if (isDark) 0.2f else 0.25f)
                                         ) {
                                             Text(
                                                 text = targetNode.category,
@@ -294,7 +297,7 @@ fun NodePalette(
 
                                 Text(
                                     text = targetNode.description,
-                                    color = Color.White.copy(alpha = 0.85f),
+                                    color = editorColors.panelText.copy(alpha = 0.85f),
                                     fontSize = 12.sp,
                                     lineHeight = 16.sp
                                 )
@@ -352,13 +355,13 @@ fun NodePalette(
                             .aspectRatio(0.88f)
                             .clip(RoundedCornerShape(18.dp))
                             .background(
-                                if (isSelected) item.color.copy(alpha = 0.16f)
-                                else Color.White.copy(alpha = 0.04f)
+                                if (isSelected) item.color.copy(alpha = if (isDark) 0.16f else 0.22f)
+                                else editorColors.panelText.copy(alpha = if (isDark) 0.04f else 0.06f)
                             )
                             .border(
                                 BorderStroke(
                                     width = if (isSelected) 1.5.dp else 1.dp,
-                                    color = if (isSelected) item.color else Color.White.copy(alpha = 0.07f)
+                                    color = if (isSelected) item.color else editorColors.panelText.copy(alpha = if (isDark) 0.07f else 0.10f)
                                 ),
                                 RoundedCornerShape(18.dp)
                             )
@@ -404,7 +407,7 @@ fun NodePalette(
                                 modifier = Modifier
                                     .size(38.dp)
                                     .clip(RoundedCornerShape(12.dp))
-                                    .background(item.color.copy(alpha = 0.18f)),
+                                    .background(item.color.copy(alpha = if (isDark) 0.18f else 0.25f)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
@@ -419,7 +422,7 @@ fun NodePalette(
 
                             Text(
                                 text = item.label,
-                                color = Color.White,
+                                color = editorColors.panelText,
                                 fontSize = 11.5.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 textAlign = TextAlign.Center,
@@ -434,4 +437,3 @@ fun NodePalette(
         }
     }
 }
-

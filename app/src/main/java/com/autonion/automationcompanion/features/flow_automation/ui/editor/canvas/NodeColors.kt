@@ -4,14 +4,15 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import com.autonion.automationcompanion.features.flow_automation.model.FlowNodeType
 
 /**
  * Theme-aware colors for the flow editor.
  * Provides light and dark variants for all editor chrome
- * (canvas background, grid, panels, ports, text).
+ * (canvas background, grid, panels, ports, text, warning badges).
  *
  * Node accent colors (green, blue, purple, amber, grey, teal) remain
- * the same in both themes — only backgrounds and surfaces adapt.
+ * the same in both themes — backgrounds, surfaces, and text adapt for maximum contrast.
  */
 data class FlowEditorColors(
     // Canvas
@@ -25,6 +26,10 @@ data class FlowEditorColors(
     // Text
     val titleText: Color,
     val subtitleBgAlpha: Float,
+    // Warning pill on unconfigured nodes
+    val warningText: Color,
+    val warningPillBg: Color,
+    val warningPillBorder: Color,
     // Ports
     val portBg: Color,
     // Panel chrome
@@ -49,6 +54,9 @@ data class FlowEditorColors(
             nodeBorderBg = Color(0xFF101216),
             titleText = Color.White,
             subtitleBgAlpha = 0.1f,
+            warningText = Color(0xFFFFB74D),                       // Crisp amber on dark node
+            warningPillBg = Color(0xFFE65100).copy(alpha = 0.35f), // Dark orange pill
+            warningPillBorder = Color(0xFFFF9800).copy(alpha = 0.5f),
             portBg = Color(0xFF1A1C20),
             panelBg = Color(0xFF1A1C1E),
             panelText = Color.White,
@@ -69,6 +77,9 @@ data class FlowEditorColors(
             nodeBorderBg = Color.White,
             titleText = Color(0xFF1A1C1E),
             subtitleBgAlpha = 0.12f,
+            warningText = Color(0xFFBF360C),                       // Deep burnt orange (WCAG AAA high contrast on light bg)
+            warningPillBg = Color(0xFFFFE0B2),                     // Soft warm peach pill
+            warningPillBorder = Color(0xFFFF9800).copy(alpha = 0.6f),
             portBg = Color(0xFFE8EAED),
             panelBg = Color(0xFFF0F1F5),
             panelText = Color(0xFF1A1C1E),
@@ -118,6 +129,29 @@ object NodeColors {
     val ClipboardBrownBg= Color(0xFF1F1A18)
     val InputPink       = Color(0xFFF48FB1)
     val InputPinkBg     = Color(0xFF1F1216)
+
+    // ── Dark accent variants for crisp subtitle text in Light mode ──
+    val StartGreenDarkVariant        = Color(0xFF15803D)
+    val GestureBlueDarkVariant       = Color(0xFF1D4ED8)
+    val VisualTriggerPurpleDarkVariant = Color(0xFF7E22CE)
+    val ScreenMLAmberDarkVariant     = Color(0xFFB45309)
+    val DelayGreyDarkVariant         = Color(0xFF4B5563)
+    val LaunchAppTealDarkVariant     = Color(0xFF0F766E)
+    val RepeatOrangeDarkVariant      = Color(0xFFC2410C)
+    val ClipboardBrownDarkVariant    = Color(0xFF5D4037)
+    val InputPinkDarkVariant         = Color(0xFFBE185D)
+
+    fun getDarkAccentForType(type: FlowNodeType): Color = when (type) {
+        FlowNodeType.START -> StartGreenDarkVariant
+        FlowNodeType.GESTURE -> GestureBlueDarkVariant
+        FlowNodeType.VISUAL_TRIGGER -> VisualTriggerPurpleDarkVariant
+        FlowNodeType.SCREEN_ML -> ScreenMLAmberDarkVariant
+        FlowNodeType.DELAY -> DelayGreyDarkVariant
+        FlowNodeType.LAUNCH_APP -> LaunchAppTealDarkVariant
+        FlowNodeType.REPEAT -> RepeatOrangeDarkVariant
+        FlowNodeType.CLIPBOARD -> ClipboardBrownDarkVariant
+        FlowNodeType.INPUT -> InputPinkDarkVariant
+    }
 
     // ── Edge & port colors ──
     val EdgeDefault     = Color(0xFF94A3B8)
