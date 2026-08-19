@@ -8,7 +8,7 @@ plugins {
 android {
     namespace = "com.autonion.automationcompanion"
     compileSdk {
-        version = release(36)
+        version = release(37)
     }
 
     defaultConfig {
@@ -126,7 +126,7 @@ dependencies {
     implementation(libs.litert.support.api)
     
     // Gson for JSON parsing
-    implementation("com.google.code.gson:gson:2.13.2")
+    implementation(libs.gson)
     implementation(libs.okhttp)
 
     // ML Kit Text Recognition (OCR)
