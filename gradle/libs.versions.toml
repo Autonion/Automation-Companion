@@ -108,6 +108,6 @@ kotlinx-coroutines-play-services = { module = "org.jetbrains.kotlinx:kotlinx-cor
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
-compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version = "2.3.10" }
+compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id= "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin"}
 
