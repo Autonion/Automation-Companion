@@ -7,6 +7,8 @@ import android.util.Log
 import com.google.android.play.agesignals.AgeSignalsAccessRequest
 import com.google.android.play.agesignals.AgeSignalsManagerFactory
 import com.google.android.play.agesignals.AgeSignalsRequest
+import com.google.android.play.agesignals.model.AgeSignalsStatus
+import com.google.android.play.agesignals.model.SignificantChangeStatus as PlaySignificantChangeStatus
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -20,17 +22,10 @@ import kotlinx.coroutines.tasks.await
  * - Caches the latest result in memory ([StateFlow]) and on disk ([SharedPreferences])
  * - Exposes a single blocking predicate: [isParentallyBlocked]
  *
- * v0.0.4 changes:
- * - `userStatus` is deprecated → replaced by `ageRangeSource`
- * - New `requestAgeSignalsAccess(Activity)` step returns sharing consent status
- * - Supports Brazil in-app prompt for unsupervised users
- *
- * This API only returns data for users in jurisdictions with age-verification
- * laws (currently Texas, expanding to Brazil and other regions). For all other
- * users the result is [AgeSignalResult.Unavailable] and access is fully unrestricted.
- *
- * The ONLY scenario that blocks the user is when [AgeSharingStatus.NOT_SHARED],
- * meaning the user or parent explicitly declined to share age signals.
+ * The ONLY scenario that blocks the user is when a parent/guardian explicitly
+ * declined access ([SignificantChangeStatus.DECLINED]).
+ * All other users (minors, adults, users outside regulated regions, users who choose
+ * not to share signals) have full unrestricted access to the application.
  */
 object AgeSignalsRepository {
 
@@ -40,6 +35,7 @@ object AgeSignalsRepository {
     private const val KEY_AGE_UPPER = "age_upper"
     private const val KEY_AGE_RANGE_SOURCE = "age_range_source"
     private const val KEY_AGE_SHARING_STATUS = "age_sharing_status"
+    private const val KEY_SIGNIFICANT_CHANGE_STATUS = "significant_change_status"
     private const val KEY_INSTALL_ID = "install_id"
     private const val KEY_HAS_RESULT = "has_result"
 
@@ -71,10 +67,7 @@ object AgeSignalsRepository {
      * Step 1 of the v0.0.4 two-step flow.
      *
      * Calls `requestAgeSignalsAccess(Activity)` to trigger the Google Play-managed
-     * prompt for age signal sharing consent. This prompt is only shown to users
-     * in regulated jurisdictions (currently Texas and Brazil).
-     *
-     * @return the [AgeSharingStatus] indicating whether age signals will be available
+     * prompt for age signal sharing consent if applicable in the user's jurisdiction.
      */
     suspend fun requestAgeAccess(activity: Activity): AgeSharingStatus {
         return try {
@@ -89,24 +82,14 @@ object AgeSignalsRepository {
             status
         } catch (e: Exception) {
             Log.d(TAG, "Age signals access request failed: ${e.message}")
-            if (isServiceUnavailableError(e)) {
-                AgeSharingStatus.SHARED // Not in a regulated region, allow access
-            } else {
-                AgeSharingStatus.SHARED // Graceful degradation — don't block on errors
-            }
+            AgeSharingStatus.UNSPECIFIED
         }
     }
 
     /**
      * Step 2 of the v0.0.4 two-step flow.
      *
-     * Fetch age signals from Google Play after access has been granted.
-     * Should be called after [requestAgeAccess] returns [AgeSharingStatus.SHARED].
-     *
-     * Safe to call from any coroutine scope on any dispatcher — the Play
-     * Task is inherently async and `.await()` suspends without blocking.
-     *
-     * @return the fetched [AgeSignalResult]
+     * Fetch age signals from Google Play.
      */
     suspend fun fetchAgeSignals(context: Context): AgeSignalResult {
         return try {
@@ -115,19 +98,21 @@ object AgeSignalsRepository {
             val playResult = manager.checkAgeSignals(request).await()
 
             val ageSource = mapAgeRangeSource(playResult.ageRangeSource())
+            val sigStatus = mapSignificantChangeStatus(playResult.significantChangeStatus())
+
             val result = AgeSignalResult.Available(
                 ageLower = playResult.ageLower() ?: 0,
                 ageUpper = playResult.ageUpper() ?: 0,
                 ageRangeSource = ageSource,
                 ageSharingStatus = AgeSharingStatus.SHARED,
+                significantChangeStatus = sigStatus,
                 installId = playResult.installId()
             )
             _ageSignalState.value = result
             cacheResult(result)
-            Log.d(TAG, "Age signals fetched: age=${result.ageLower}-${result.ageUpper}, source=$ageSource")
+            Log.d(TAG, "Age signals fetched: age=${result.ageLower}-${result.ageUpper}, source=$ageSource, sigStatus=$sigStatus")
             result
         } catch (e: Exception) {
-            // Common: CANNOT_BIND_TO_SERVICE (user not in regulated region or service inactive)
             Log.d(TAG, "Age signals unavailable: ${e.message}")
             val result = if (isServiceUnavailableError(e)) {
                 AgeSignalResult.Unavailable
@@ -140,64 +125,41 @@ object AgeSignalsRepository {
     }
 
     /**
-     * Combined convenience method: performs both request + fetch in one call.
+     * Combined convenience method: performs request + fetch.
      *
-     * If the user/parent declines sharing (NOT_SHARED), emits a blocked state.
-     * If VERIFICATION_REQUIRED, emits Unavailable (user must visit Play Store).
+     * Note: If age sharing is not active or declined, the user receives
+     * [AgeSignalResult.Unavailable] (unrestricted access).
      */
     suspend fun requestAndFetchAgeSignals(activity: Activity): AgeSignalResult {
         val sharingStatus = requestAgeAccess(activity)
 
-        return when (sharingStatus) {
-            AgeSharingStatus.SHARED -> {
-                fetchAgeSignals(activity)
-            }
-            AgeSharingStatus.NOT_SHARED -> {
-                // Parent/user explicitly denied sharing — block access
-                val result = AgeSignalResult.Available(
-                    ageLower = 0,
-                    ageUpper = 0,
-                    ageRangeSource = AgeRangeSource.UNKNOWN,
-                    ageSharingStatus = AgeSharingStatus.NOT_SHARED
-                )
-                _ageSignalState.value = result
-                cacheResult(result)
-                result
-            }
-            AgeSharingStatus.VERIFICATION_REQUIRED -> {
-                // User needs to verify in Play Store first
-                val result = AgeSignalResult.Available(
-                    ageLower = 0,
-                    ageUpper = 0,
-                    ageRangeSource = AgeRangeSource.UNKNOWN,
-                    ageSharingStatus = AgeSharingStatus.VERIFICATION_REQUIRED
-                )
-                _ageSignalState.value = result
-                cacheResult(result)
-                result
-            }
+        return if (sharingStatus == AgeSharingStatus.SHARED) {
+            fetchAgeSignals(activity)
+        } else {
+            // User did not share age signals or not in regulated region.
+            // App access is completely unrestricted.
+            val result = AgeSignalResult.Unavailable
+            _ageSignalState.value = result
+            result
         }
     }
 
     /**
-     * Returns `true` ONLY when a user or parent has explicitly declined
-     * to share age signals ([AgeSharingStatus.NOT_SHARED]).
+     * Returns `true` ONLY when a parent/guardian has explicitly declined
+     * access via Google Play parental controls ([SignificantChangeStatus.DECLINED]).
      *
-     * All other cases — including errors, users outside regulated regions,
-     * and users awaiting verification — return `false` (unrestricted access).
+     * All other cases (including not sharing, minors, adults, errors, and users outside
+     * regulated regions) return `false` (unrestricted access).
      */
     fun isParentallyBlocked(): Boolean {
         val current = _ageSignalState.value
         return current is AgeSignalResult.Available &&
-                current.ageSharingStatus == AgeSharingStatus.NOT_SHARED
+                current.significantChangeStatus == SignificantChangeStatus.DECLINED
     }
 
     // ─── Internal Helpers ──────────────────────────────────
 
     private fun mapAgeRangeSource(sourceValue: Int?): AgeRangeSource {
-        // Map API integer constants to our domain enum
-        // The actual constant names/values depend on the 0.0.4 SDK;
-        // these are mapped based on the documented tier system
         return when (sourceValue) {
             1 -> AgeRangeSource.SELF_DECLARED
             2 -> AgeRangeSource.ACCOUNT_SIGNALS
@@ -209,16 +171,23 @@ object AgeSignalsRepository {
 
     private fun mapAgeSharingStatus(statusValue: Int?): AgeSharingStatus {
         return when (statusValue) {
-            1 -> AgeSharingStatus.SHARED
-            2 -> AgeSharingStatus.NOT_SHARED
-            3 -> AgeSharingStatus.VERIFICATION_REQUIRED
-            else -> AgeSharingStatus.SHARED // Default to allow — graceful degradation
+            AgeSignalsStatus.SHARED -> AgeSharingStatus.SHARED
+            AgeSignalsStatus.NOT_SHARED -> AgeSharingStatus.NOT_SHARED
+            AgeSignalsStatus.VERIFICATION_REQUIRED -> AgeSharingStatus.VERIFICATION_REQUIRED
+            else -> AgeSharingStatus.UNSPECIFIED
+        }
+    }
+
+    private fun mapSignificantChangeStatus(statusValue: Int?): SignificantChangeStatus {
+        return when (statusValue) {
+            PlaySignificantChangeStatus.APPROVED -> SignificantChangeStatus.APPROVED
+            PlaySignificantChangeStatus.PENDING -> SignificantChangeStatus.PENDING
+            PlaySignificantChangeStatus.DECLINED -> SignificantChangeStatus.DECLINED
+            else -> SignificantChangeStatus.UNSPECIFIED
         }
     }
 
     private fun isServiceUnavailableError(e: Exception): Boolean {
-        // CANNOT_BIND_TO_SERVICE is the expected error when the user is not
-        // in a regulated region or the service hasn't been activated yet
         val message = e.message ?: ""
         return message.contains("CANNOT_BIND_TO_SERVICE", ignoreCase = true) ||
                 message.contains("API_NOT_AVAILABLE", ignoreCase = true)
@@ -231,6 +200,7 @@ object AgeSignalsRepository {
             .putInt(KEY_AGE_UPPER, result.ageUpper)
             .putString(KEY_AGE_RANGE_SOURCE, result.ageRangeSource.name)
             .putString(KEY_AGE_SHARING_STATUS, result.ageSharingStatus.name)
+            .putString(KEY_SIGNIFICANT_CHANGE_STATUS, result.significantChangeStatus.name)
             .putString(KEY_INSTALL_ID, result.installId)
             .apply()
     }
@@ -238,32 +208,46 @@ object AgeSignalsRepository {
     private fun restoreCachedResult() {
         if (!prefs.getBoolean(KEY_HAS_RESULT, false)) return
         try {
-            val sourceName = prefs.getString(KEY_AGE_RANGE_SOURCE, null)
-            val sharingName = prefs.getString(KEY_AGE_SHARING_STATUS, null)
+            val sigStatusName = prefs.getString(KEY_SIGNIFICANT_CHANGE_STATUS, null)
+            val sigStatus = sigStatusName?.let {
+                try { SignificantChangeStatus.valueOf(it) } catch (_: Exception) { SignificantChangeStatus.UNSPECIFIED }
+            } ?: SignificantChangeStatus.UNSPECIFIED
 
-            // Handle migration from v0.0.3 cache (old KEY_USER_STATUS)
-            val ageSource = sourceName?.let {
-                try { AgeRangeSource.valueOf(it) } catch (_: Exception) { AgeRangeSource.UNKNOWN }
-            } ?: AgeRangeSource.UNKNOWN
+            // If it was wrongfully saved as blocked from the previous code, discard it
+            if (sigStatus != SignificantChangeStatus.DECLINED) {
+                val sourceName = prefs.getString(KEY_AGE_RANGE_SOURCE, null)
+                val sharingName = prefs.getString(KEY_AGE_SHARING_STATUS, null)
 
-            val sharingStatus = sharingName?.let {
-                try { AgeSharingStatus.valueOf(it) } catch (_: Exception) { AgeSharingStatus.SHARED }
-            } ?: AgeSharingStatus.SHARED
+                val ageSource = sourceName?.let {
+                    try { AgeRangeSource.valueOf(it) } catch (_: Exception) { AgeRangeSource.UNKNOWN }
+                } ?: AgeRangeSource.UNKNOWN
 
-            _ageSignalState.value = AgeSignalResult.Available(
-                ageLower = prefs.getInt(KEY_AGE_LOWER, 0),
-                ageUpper = prefs.getInt(KEY_AGE_UPPER, 0),
-                ageRangeSource = ageSource,
-                ageSharingStatus = sharingStatus,
-                installId = prefs.getString(KEY_INSTALL_ID, null)
-            )
+                val sharingStatus = sharingName?.let {
+                    try { AgeSharingStatus.valueOf(it) } catch (_: Exception) { AgeSharingStatus.SHARED }
+                } ?: AgeSharingStatus.SHARED
+
+                _ageSignalState.value = AgeSignalResult.Available(
+                    ageLower = prefs.getInt(KEY_AGE_LOWER, 0),
+                    ageUpper = prefs.getInt(KEY_AGE_UPPER, 0),
+                    ageRangeSource = ageSource,
+                    ageSharingStatus = sharingStatus,
+                    significantChangeStatus = sigStatus,
+                    installId = prefs.getString(KEY_INSTALL_ID, null)
+                )
+            } else {
+                _ageSignalState.value = AgeSignalResult.Available(
+                    ageLower = prefs.getInt(KEY_AGE_LOWER, 0),
+                    ageUpper = prefs.getInt(KEY_AGE_UPPER, 0),
+                    significantChangeStatus = SignificantChangeStatus.DECLINED
+                )
+            }
         } catch (e: Exception) {
             Log.w(TAG, "Failed to restore cached age signals", e)
         }
     }
 
     /**
-     * Clears all cached age signal data. Useful for testing or account switching.
+     * Clears all cached age signal data.
      */
     fun clearCache() {
         prefs.edit().clear().apply()

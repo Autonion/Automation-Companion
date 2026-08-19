@@ -16,26 +16,28 @@ sealed class AgeSignalResult {
      * @param ageUpper Inclusive upper bound of the user's age range (e.g. 17)
      * @param ageRangeSource How the age range was determined (replaces deprecated userStatus in v0.0.4)
      * @param ageSharingStatus Whether the user/parent agreed to share age signals
+     * @param significantChangeStatus Whether a parent/guardian approved or declined access
      * @param installId Identifier for supervised installs (used for approval revocation)
      */
     data class Available(
         val ageLower: Int,
         val ageUpper: Int,
-        val ageRangeSource: AgeRangeSource,
+        val ageRangeSource: AgeRangeSource = AgeRangeSource.UNKNOWN,
         val ageSharingStatus: AgeSharingStatus = AgeSharingStatus.SHARED,
+        val significantChangeStatus: SignificantChangeStatus = SignificantChangeStatus.UNSPECIFIED,
         val installId: String? = null
     ) : AgeSignalResult()
 
     /**
      * The user is not in a regulated region, or Google Play's age
      * verification service is not yet active for this user.
-     * The app should grant full unrestricted access.
+     * The app grants full unrestricted access.
      */
     data object Unavailable : AgeSignalResult()
 
     /**
      * The API call failed (network, service binding, outdated SDK, etc.).
-     * The app should grant full unrestricted access (graceful degradation).
+     * The app grants full unrestricted access (graceful degradation).
      */
     data class Error(val cause: Throwable? = null) : AgeSignalResult()
 }
@@ -44,38 +46,32 @@ sealed class AgeSignalResult {
  * Indicates the source / verification tier of the age range data.
  *
  * Replaces the deprecated `userStatus` field from API v0.0.3.
- * Higher tiers represent stronger verification methods.
  */
 enum class AgeRangeSource {
-    /** Source could not be determined */
     UNKNOWN,
-
-    /** Age was self-declared by the user */
     SELF_DECLARED,
-
-    /** Age was determined via Google account signals */
     ACCOUNT_SIGNALS,
-
-    /** Age was verified via parental/family link supervision */
     SUPERVISED,
-
-    /** Age was verified via government ID or equivalent strong verification */
     VERIFIED
 }
 
 /**
- * Result of calling `requestAgeSignalsAccess(Activity)` — indicates
- * whether the user or parent has agreed to share age signals with the app.
- *
- * New in API v0.0.4.
+ * Result of calling `requestAgeSignalsAccess(Activity)`.
  */
 enum class AgeSharingStatus {
-    /** User/parent agreed to share age signals; proceed to checkAgeSignals() */
+    UNSPECIFIED,
     SHARED,
-
-    /** User declined or parent denied sharing age signals — app should restrict access */
     NOT_SHARED,
-
-    /** User's age is unknown in a mandatory verification region; prompt to visit Play Store */
     VERIFICATION_REQUIRED
+}
+
+/**
+ * Indicates whether a parent/guardian approved or declined access in Google Play.
+ * Only DECLINED triggers an access restriction.
+ */
+enum class SignificantChangeStatus {
+    UNSPECIFIED,
+    APPROVED,
+    PENDING,
+    DECLINED
 }

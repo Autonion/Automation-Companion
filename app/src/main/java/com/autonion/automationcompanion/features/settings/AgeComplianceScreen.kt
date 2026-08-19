@@ -23,6 +23,7 @@ import com.autonion.automationcompanion.core.age_signals.AgeRangeSource
 import com.autonion.automationcompanion.core.age_signals.AgeSignalResult
 import com.autonion.automationcompanion.core.age_signals.AgeSignalsRepository
 import com.autonion.automationcompanion.core.age_signals.AgeSharingStatus
+import com.autonion.automationcompanion.core.age_signals.SignificantChangeStatus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
@@ -182,20 +183,15 @@ private fun StatusBanner(ageState: AgeSignalResult) {
     val isDark = isSystemInDarkTheme()
     val (icon, title, subtitle, containerColor) = when (ageState) {
         is AgeSignalResult.Available -> {
-            when (ageState.ageSharingStatus) {
-                AgeSharingStatus.NOT_SHARED -> StatusInfo(
+            if (ageState.significantChangeStatus == SignificantChangeStatus.DECLINED) {
+                StatusInfo(
                     Icons.Default.Block,
                     "Access Restricted",
-                    "Age signal sharing was declined",
+                    "Parental controls are blocking this app",
                     if (isDark) Color(0xFF5A1A1A) else Color(0xFFFFEBEE)
                 )
-                AgeSharingStatus.VERIFICATION_REQUIRED -> StatusInfo(
-                    Icons.Default.Warning,
-                    "Verification Required",
-                    "Please verify your age in Google Play",
-                    if (isDark) Color(0xFF3A3A1A) else Color(0xFFFFF8E1)
-                )
-                AgeSharingStatus.SHARED -> StatusInfo(
+            } else {
+                StatusInfo(
                     Icons.Default.CheckCircle,
                     "Verified",
                     "Age verification is active for your region",
@@ -342,5 +338,6 @@ private fun formatSharingStatus(status: AgeSharingStatus): String {
         AgeSharingStatus.SHARED -> "Shared with app"
         AgeSharingStatus.NOT_SHARED -> "Declined by user or parent"
         AgeSharingStatus.VERIFICATION_REQUIRED -> "Pending verification in Play Store"
+        AgeSharingStatus.UNSPECIFIED -> "Not applicable"
     }
 }
