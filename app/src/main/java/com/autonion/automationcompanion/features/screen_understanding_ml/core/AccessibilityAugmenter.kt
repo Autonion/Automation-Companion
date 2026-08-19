@@ -58,18 +58,35 @@ object AccessibilityAugmenter {
             Log.d(TAG, "Accessibility service not connected")
             return emptyList()
         }
+        val elements = mutableListOf<UIElement>()
         val root = try {
             service.rootInActiveWindow
         } catch (e: Exception) {
             Log.d(TAG, "Failed to get rootInActiveWindow: ${e.message}")
             null
-        } ?: return emptyList()
+        }
+        if (root != null) {
+            try {
+                traverseForInteractive(root, elements, depth = 0)
+            } finally {
+                try { root.recycle() } catch (_: Exception) {}
+            }
+        }
 
-        val elements = mutableListOf<UIElement>()
-        try {
-            traverseForInteractive(root, elements, depth = 0)
-        } finally {
-            try { root.recycle() } catch (_: Exception) {}
+        // Fallback: if rootInActiveWindow was empty or null, try service.windows
+        if (elements.isEmpty()) {
+            try {
+                for (window in service.windows) {
+                    val windowRoot = window.root ?: continue
+                    try {
+                        traverseForInteractive(windowRoot, elements, depth = 0)
+                    } finally {
+                        try { windowRoot.recycle() } catch (_: Exception) {}
+                    }
+                }
+            } catch (e: Exception) {
+                Log.d(TAG, "Failed to traverse service.windows: ${e.message}")
+            }
         }
 
         Log.d(TAG, "Captured ${elements.size} interactive accessibility elements")
@@ -159,7 +176,8 @@ object AccessibilityAugmenter {
             return
         }
 
-        val isInteractive = node.isClickable || node.isEditable || node.isCheckable
+        val hasText = !node.text.isNullOrBlank() || !node.contentDescription.isNullOrBlank()
+        val isInteractive = node.isClickable || node.isEditable || node.isCheckable || node.isFocusable || hasText
         val className = node.className?.toString() ?: ""
         val label = mapToYoloLabel(className, node)
 
@@ -217,19 +235,17 @@ object AccessibilityAugmenter {
             cn.contains("radiobutton") -> "radio"
             // Dropdowns / spinners
             cn.contains("spinner") -> "dropdown"
-            // Clickable images → icon
-            cn.contains("imageview") && node.isClickable -> "icon"
-            cn.contains("imagebutton") -> "icon"
-            // Generic clickable views → button
-            // Exclude only known structural/scrolling containers, NOT layout wrappers like
-            // FrameLayout which are commonly used as clickable items (e.g. bottom nav tabs)
-            node.isClickable
+            // Clickable images or image buttons → icon
+            cn.contains("imageview") || cn.contains("imagebutton") -> "icon"
+            // Text views or nodes with text
+            cn.contains("textview") || !node.text.isNullOrBlank() -> "button"
+            // Generic clickable or focusable views
+            (node.isClickable || node.isFocusable || !node.contentDescription.isNullOrBlank())
                     && !cn.contains("scrollview") && !cn.contains("recyclerview")
                     && !cn.contains("viewpager") && !cn.contains("drawerlayout")
                     && !cn.contains("coordinatorlayout") && !cn.contains("navigationbarview")
                     && !cn.contains("toolbar") && !cn.contains("appbar")
                     && !cn.contains("viewgroup") -> "button"
-            // Everything else → not a detectable element type
             else -> null
         }
     }

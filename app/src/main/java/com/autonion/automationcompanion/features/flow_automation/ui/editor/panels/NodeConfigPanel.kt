@@ -10,6 +10,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -802,9 +803,60 @@ private fun VisualTriggerNodeConfig(node: VisualTriggerNode, onUpdate: (FlowNode
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ScreenMLNodeConfig(node: ScreenMLNode, onUpdate: (FlowNode) -> Unit, onLaunchOverlay: (FlowNode) -> Unit) {
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+
+    // ── Mode selector ──
+    var selectedMode by remember(node.id) { mutableStateOf(node.mode) }
+
+    Text("Detection Mode", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
+    Spacer(Modifier.height(4.dp))
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        listOf(
+            ScreenMLMode.OBJECT_DETECTION,
+            ScreenMLMode.UI_ATTRIBUTE,
+            ScreenMLMode.OCR
+        ).forEach { mode ->
+            FilterChip(
+                selected = selectedMode == mode,
+                onClick = {
+                    selectedMode = mode
+                    onUpdate(node.copy(mode = mode))
+                },
+                label = {
+                    Text(
+                        when (mode) {
+                            ScreenMLMode.OBJECT_DETECTION -> "🔲 Elements"
+                            ScreenMLMode.UI_ATTRIBUTE -> "🧩 UI Attribute"
+                            ScreenMLMode.OCR -> "📝 OCR"
+                        },
+                        fontSize = 11.5.sp
+                    )
+                },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = NodeColors.ScreenMLAmber,
+                    selectedLabelColor = Color.Black,
+                    containerColor = Color(0xFF2A2D33),
+                    labelColor = Color.White.copy(alpha = 0.7f)
+                )
+            )
+        }
+    }
+
+    if (selectedMode == ScreenMLMode.UI_ATTRIBUTE) {
+        Spacer(Modifier.height(2.dp))
+        Text("✓ Screen recording only for capture • Flow execution runs directly via Accessibility",
+            color = Color(0xFF64FFDA), fontSize = 11.sp)
+    }
+
+    Spacer(Modifier.height(10.dp))
 
     // ── Status indicator ──
     if (node.automationStepsJson.isNotEmpty()) {
@@ -812,7 +864,7 @@ private fun ScreenMLNodeConfig(node: ScreenMLNode, onUpdate: (FlowNode) -> Unit,
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text("✓ Screen ML actions configured", color = Color(0xFF64FFDA), fontSize = 12.sp)
+            Text("✓ Screen Understanding actions configured", color = Color(0xFF64FFDA), fontSize = 12.sp)
             Surface(
                 shape = RoundedCornerShape(8.dp),
                 color = NodeColors.ScreenMLAmber.copy(alpha = 0.2f)
@@ -821,6 +873,7 @@ private fun ScreenMLNodeConfig(node: ScreenMLNode, onUpdate: (FlowNode) -> Unit,
                     when (node.mode) {
                         ScreenMLMode.OCR -> "OCR"
                         ScreenMLMode.OBJECT_DETECTION -> "ELEMENTS"
+                        ScreenMLMode.UI_ATTRIBUTE -> "UI ATTR"
                     },
                     color = NodeColors.ScreenMLAmber,
                     fontSize = 11.sp,
@@ -839,11 +892,19 @@ private fun ScreenMLNodeConfig(node: ScreenMLNode, onUpdate: (FlowNode) -> Unit,
         colors = ButtonDefaults.buttonColors(containerColor = NodeColors.ScreenMLAmber),
         shape = RoundedCornerShape(12.dp)
     ) {
-        Text(if (node.automationStepsJson.isEmpty()) "Capture & Detect Screen" else "Re-capture Screen", color = Color.Black)
+        val btnText = if (node.mode == ScreenMLMode.UI_ATTRIBUTE) {
+            if (node.automationStepsJson.isEmpty()) "Capture UI Attributes" else "Re-capture UI Attributes"
+        } else {
+            if (node.automationStepsJson.isEmpty()) "Capture & Detect Screen" else "Re-capture Screen"
+        }
+        Text(btnText, color = Color.Black)
     }
     Spacer(Modifier.height(4.dp))
     Text(
-        "Use the Elements or Text tab in the editor to choose detection mode",
+        if (node.mode == ScreenMLMode.UI_ATTRIBUTE)
+            "Captures accessibility elements directly without MediaProjection"
+        else
+            "Use the Elements or Text tab in the editor to choose detection mode",
         color = Color.White.copy(alpha = 0.35f),
         fontSize = 11.sp
     )
@@ -904,6 +965,7 @@ private fun ScreenMLNodeConfig(node: ScreenMLNode, onUpdate: (FlowNode) -> Unit,
                 when (node.mode) {
                     ScreenMLMode.OCR -> "If set, the node will search for this text and report found/not-found"
                     ScreenMLMode.OBJECT_DETECTION -> "If set (without steps), the node will look for this element type"
+                    ScreenMLMode.UI_ATTRIBUTE -> "If set (without steps), the node will look for this element label or text via accessibility"
                 },
                 color = Color.White.copy(alpha = 0.35f),
                 fontSize = 11.sp

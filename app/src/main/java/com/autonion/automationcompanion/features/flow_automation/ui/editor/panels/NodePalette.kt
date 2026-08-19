@@ -92,9 +92,9 @@ fun NodePalette(
             ),
             NodeTypeItem(
                 nodeType = FlowNodeType.SCREEN_ML,
-                label = "Screen ML",
+                label = "Screen Understanding",
                 category = "Detection",
-                description = "Uses on-device AI for OCR text recognition, screen parsing, and element detection.",
+                description = "Detect UI elements using YOLO + Accessibility, OCR, or Accessibility-only attributes.",
                 icon = Icons.Rounded.Psychology,
                 color = NodeColors.ScreenMLAmber
             ),
@@ -349,7 +349,7 @@ fun NodePalette(
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .aspectRatio(0.95f)
+                            .aspectRatio(0.88f)
                             .clip(RoundedCornerShape(18.dp))
                             .background(
                                 if (isSelected) item.color.copy(alpha = 0.16f)
@@ -396,14 +396,14 @@ fun NodePalette(
                         Column(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .padding(horizontal = 8.dp, vertical = 10.dp),
+                                .padding(horizontal = 6.dp, vertical = 8.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(42.dp)
-                                    .clip(RoundedCornerShape(13.dp))
+                                    .size(38.dp)
+                                    .clip(RoundedCornerShape(12.dp))
                                     .background(item.color.copy(alpha = 0.18f)),
                                 contentAlignment = Alignment.Center
                             ) {
@@ -411,19 +411,20 @@ fun NodePalette(
                                     imageVector = item.icon,
                                     contentDescription = item.label,
                                     tint = item.color,
-                                    modifier = Modifier.size(23.dp)
+                                    modifier = Modifier.size(22.dp)
                                 )
                             }
 
-                            Spacer(Modifier.height(8.dp))
+                            Spacer(Modifier.height(6.dp))
 
                             Text(
                                 text = item.label,
                                 color = Color.White,
-                                fontSize = 12.sp,
+                                fontSize = 11.5.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 textAlign = TextAlign.Center,
-                                maxLines = 1,
+                                lineHeight = 13.sp,
+                                maxLines = 2,
                                 overflow = TextOverflow.Ellipsis
                             )
                         }

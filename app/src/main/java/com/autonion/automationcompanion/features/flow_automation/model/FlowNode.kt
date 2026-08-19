@@ -50,8 +50,9 @@ sealed class CoordinateSource {
  */
 @Serializable
 enum class ScreenMLMode {
-    @SerialName("ocr") OCR,
-    @SerialName("object_detection") OBJECT_DETECTION
+    @SerialName("object_detection") OBJECT_DETECTION,
+    @SerialName("ui_attribute") UI_ATTRIBUTE,
+    @SerialName("ocr") OCR
 }
 
 /**
@@ -187,25 +188,28 @@ data class VisualTriggerNode(
 }
 
 /**
- * ML-powered screen understanding node.
+ * Screen understanding node with three detection sub-modes:
  *
- * Configuration modes:
- * 1. **Recorded preset** — User captures screen via CaptureEditor, selects
- *    elements & assigns actions. Stored in [automationStepsJson].
- * 2. **Live mode** — Real-time OCR/object detection via [mode].
+ * 1. **Elements (YOLO + Accessibility)** — Requires MediaProjection. Uses YOLO model
+ *    on a screenshot + accessibility tree augmentation to detect interactive UI elements.
+ * 2. **OCR (Text)** — Requires MediaProjection. Uses ML Kit text recognition on a screenshot.
+ * 3. **UI Attribute (Accessibility only)** — No MediaProjection needed. Reads the
+ *    accessibility tree directly to detect interactive elements by their attributes
+ *    (text, className, contentDescription, bounds).
  *
- * The executor checks [automationStepsJson] first.
+ * In all modes, the user flow is: Snap → Editor → Select elements → Add.
+ * [automationStepsJson] stores recorded automation steps from the CaptureEditor.
  */
 @Serializable
 @SerialName("screen_ml")
 data class ScreenMLNode(
     override val id: String = UUID.randomUUID().toString(),
     override val position: NodePosition = NodePosition(),
-    override val label: String = "Screen ML",
+    override val label: String = "Screen Understanding",
     override val outputEdgeIds: List<String> = emptyList(),
     override val onFailureEdgeId: String? = null,
     override val timeoutMs: Long = 20_000L,
-    val mode: ScreenMLMode = ScreenMLMode.OCR,
+    val mode: ScreenMLMode = ScreenMLMode.OBJECT_DETECTION,
     val outputContextKey: String = "ml_result",
     val targetLabel: String? = null,
     /** Serialized automation steps JSON from CaptureEditor. */
@@ -215,6 +219,10 @@ data class ScreenMLNode(
 ) : FlowNode() {
     override val nodeType: FlowNodeType = FlowNodeType.SCREEN_ML
 }
+
+/** Returns true if this node's mode requires MediaProjection screen capture. */
+fun ScreenMLNode.needsMediaProjection(): Boolean =
+    mode != ScreenMLMode.UI_ATTRIBUTE
 
 /**
  * Simple delay node that pauses execution for a fixed duration.

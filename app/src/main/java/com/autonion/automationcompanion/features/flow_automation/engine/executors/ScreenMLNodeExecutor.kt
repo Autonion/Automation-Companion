@@ -12,6 +12,13 @@ import com.autonion.automationcompanion.features.flow_automation.model.FlowNode
 import com.autonion.automationcompanion.features.flow_automation.model.ScreenMLMode
 import com.autonion.automationcompanion.features.flow_automation.model.ScreenMLNode
 import com.autonion.automationcompanion.features.screen_understanding_ml.core.PerceptionLayer
+import com.autonion.automationcompanion.features.screen_understanding_ml.core.AccessibilityAugmenter
+import com.autonion.automationcompanion.features.screen_understanding_ml.model.AutomationStep
+import com.autonion.automationcompanion.features.screen_understanding_ml.model.UIElement
+import com.autonion.automationcompanion.features.screen_understanding_ml.model.ActionIntent
+import com.autonion.automationcompanion.features.screen_understanding_ml.logic.ActionExecutor
+import kotlinx.serialization.json.Json
+import android.graphics.PointF
 
 private const val TAG = "ScreenMLNodeExecutor"
 
@@ -37,14 +44,19 @@ class ScreenMLNodeExecutor(
         Log.d(TAG, "Screen ML: mode=${mlNode.mode}, outputKey=${mlNode.outputContextKey}")
 
         if (mlNode.automationStepsJson.isNotEmpty()) {
-            val provider = screenCaptureProvider 
-                ?: return NodeResult.Failure("Screen capture not available")
-            return executeSteps(mlNode, context, provider)
+            if (mlNode.mode == ScreenMLMode.UI_ATTRIBUTE) {
+                return executeStepsA11yOnly(mlNode, context)
+            } else {
+                val provider = screenCaptureProvider 
+                    ?: return NodeResult.Failure("Screen capture not available")
+                return executeSteps(mlNode, context, provider)
+            }
         }
 
         return when (mlNode.mode) {
             ScreenMLMode.OCR -> executeOCR(mlNode, context)
             ScreenMLMode.OBJECT_DETECTION -> executeObjectDetection(mlNode, context)
+            ScreenMLMode.UI_ATTRIBUTE -> executeUIAttributeSearch(mlNode, context)
         }
     }
 
@@ -497,6 +509,120 @@ class ScreenMLNodeExecutor(
         }
         Log.w(TAG, "findTextOnScreen: '$targetText' not found within timeout")
         return null
+    }
+
+    private suspend fun executeStepsA11yOnly(node: ScreenMLNode, context: FlowContext): NodeResult {
+        val ctx = appContext ?: return NodeResult.Failure("App context not available")
+        
+        try {
+            val steps = Json.decodeFromString<List<AutomationStep>>(node.automationStepsJson)
+            Log.d(TAG, "Playing back ${steps.size} A11y-only automation steps")
+            DebugLogger.info(ctx, LogCategory.FLOW_BUILDER, "A11y Steps Started", "Playing back ${steps.size} automation steps via Accessibility", TAG)
+
+            for (step in steps.sortedBy { it.orderIndex }) {
+                Log.d(TAG, "Executing A11y step ${step.orderIndex}: ${step.label} (text=${step.anchor.text ?: "null"})")
+                
+                // Allow UI to settle
+                kotlinx.coroutines.delay(500)
+
+                val foundElement = findElementViaA11y(step, timeout = 5000L)
+
+                if (foundElement != null) {
+                    val cx = (foundElement.bounds.left + foundElement.bounds.right) / 2f
+                    val cy = (foundElement.bounds.top + foundElement.bounds.bottom) / 2f
+                    Log.d(TAG, "Step ${step.orderIndex}: matched via A11y at ($cx, $cy), executing ${step.actionType}")
+                    
+                    val intent = ActionIntent(
+                        type = step.actionType,
+                        targetPoint = PointF(cx, cy),
+                        inputText = step.inputText,
+                        description = step.label
+                    )
+                    
+                    val success = ActionExecutor.execute(ctx, intent)
+                    if (!success && !step.isOptional) {
+                        return NodeResult.Failure("Failed to execute action for step ${step.label}")
+                    }
+                    
+                    kotlinx.coroutines.delay(1000)
+                } else {
+                    Log.d(TAG, "Could not find element '${step.anchor.label}' (text=${step.anchor.text}) via A11y for step ${step.orderIndex}")
+                    if (!step.isOptional) {
+                        return NodeResult.Failure("Mandatory element '${step.anchor.label}' not found via accessibility")
+                    }
+                }
+            }
+            return NodeResult.Success
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed playing back A11y automation steps", e)
+            DebugLogger.error(ctx, LogCategory.FLOW_BUILDER, "A11y Steps Failed", "Error: ${e.message}", TAG)
+            return NodeResult.Failure("Malformed A11y steps: ${e.message}")
+        }
+    }
+
+    private suspend fun findElementViaA11y(step: AutomationStep, timeout: Long = 5000L): UIElement? {
+        val startTime = System.currentTimeMillis()
+        val anchorText = step.anchor.text
+
+        while (System.currentTimeMillis() - startTime < timeout) {
+            val elements = AccessibilityAugmenter.captureAllInteractiveElements()
+
+            // Strategy 1: Text match
+            if (!anchorText.isNullOrBlank()) {
+                val textMatch = elements.firstOrNull { el ->
+                    !el.text.isNullOrBlank() && (
+                        el.text!!.contains(anchorText, ignoreCase = true) ||
+                        anchorText.contains(el.text!!, ignoreCase = true)
+                    )
+                }
+                if (textMatch != null) return textMatch
+            }
+
+            // Strategy 2: Label + closest position match
+            val sameLabel = elements.filter { it.label.equals(step.anchor.label, ignoreCase = true) }
+            if (sameLabel.isNotEmpty()) {
+                val closest = sameLabel.minByOrNull { el ->
+                    val dx = (el.bounds.centerX() - step.anchor.bounds.centerX())
+                    val dy = (el.bounds.centerY() - step.anchor.bounds.centerY())
+                    dx * dx + dy * dy
+                }
+                if (closest != null) return closest
+            }
+
+            kotlinx.coroutines.delay(300)
+        }
+        return null
+    }
+
+    private suspend fun executeUIAttributeSearch(node: ScreenMLNode, context: FlowContext): NodeResult {
+        val ctx = appContext ?: return NodeResult.Failure("App context not available")
+        val elements = AccessibilityAugmenter.captureAllInteractiveElements()
+
+        val json = elements.joinToString(";") { el ->
+            "${el.label}:${el.bounds.left},${el.bounds.top},${el.bounds.right},${el.bounds.bottom}:${el.confidence}"
+        }
+        context.put(node.outputContextKey, json)
+        context.put("${node.outputContextKey}_success", true)
+        context.put("${node.outputContextKey}_element_count", elements.size)
+
+        if (node.targetLabel != null) {
+            val target = elements.find { it.label.equals(node.targetLabel, ignoreCase = true) }
+                ?: elements.find { it.text?.contains(node.targetLabel, ignoreCase = true) == true }
+
+            if (target != null) {
+                val cx = (target.bounds.left + target.bounds.right) / 2f
+                val cy = (target.bounds.top + target.bounds.bottom) / 2f
+                context.put("${node.outputContextKey}_target_found", true)
+                context.put("${node.outputContextKey}_target_x", cx)
+                context.put("${node.outputContextKey}_target_y", cy)
+                DebugLogger.success(ctx, LogCategory.FLOW_BUILDER, "Target Found", "'${node.targetLabel}' found via accessibility at ($cx, $cy)", TAG)
+            } else {
+                context.put("${node.outputContextKey}_target_found", false)
+                DebugLogger.warning(ctx, LogCategory.FLOW_BUILDER, "Target Missing", "'${node.targetLabel}' not found via accessibility", TAG)
+                return NodeResult.Failure("Target '${node.targetLabel}' not found via accessibility")
+            }
+        }
+        return NodeResult.Success
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────

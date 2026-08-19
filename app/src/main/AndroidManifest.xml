@@ -157,7 +157,9 @@
             android:name=".features.screen_understanding_ml.core.ScreenUnderstandingService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="mediaProjection" />
+            android:foregroundServiceType="mediaProjection|specialUse">
+            <property android:name="android.app.property.FOREGROUND_SERVICE_TYPE" android:value="specialUse" />
+        </service>
 
         <!-- Flow Automation Engine -->
         <activity

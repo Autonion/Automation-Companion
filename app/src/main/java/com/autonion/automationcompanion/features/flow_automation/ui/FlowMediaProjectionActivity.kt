@@ -20,6 +20,7 @@ import com.autonion.automationcompanion.features.flow_automation.engine.FlowOver
 import com.autonion.automationcompanion.features.flow_automation.model.LaunchAppNode
 import com.autonion.automationcompanion.features.flow_automation.model.ScreenMLNode
 import com.autonion.automationcompanion.features.flow_automation.model.VisualTriggerNode
+import com.autonion.automationcompanion.features.flow_automation.model.needsMediaProjection
 import com.autonion.automationcompanion.features.system_context_automation.shared.ui.PermissionDisclosureDialog
 import com.autonion.automationcompanion.features.visual_trigger.service.CaptureOverlayService
 import com.autonion.automationcompanion.ui.theme.AppTheme
@@ -68,6 +69,7 @@ class FlowMediaProjectionActivity : ComponentActivity() {
                         putExtra(FlowOverlayContract.EXTRA_FLOW_MODE, true)
                         putExtra(FlowOverlayContract.EXTRA_FLOW_NODE_ID, nodeId)
                         intent.getStringExtra("EXTRA_FLOW_ML_JSON")?.let { putExtra("EXTRA_FLOW_ML_JSON", it) }
+                        intent.getStringExtra("EXTRA_FLOW_NODE_MODE")?.let { putExtra("EXTRA_FLOW_NODE_MODE", it) }
                         intent.getBooleanExtra("EXTRA_CLEAR_ON_START", false).let { if (it) putExtra("EXTRA_CLEAR_ON_START", true) }
                     }
                     androidx.core.content.ContextCompat.startForegroundService(this, serviceIntent)
@@ -126,7 +128,9 @@ class FlowMediaProjectionActivity : ComponentActivity() {
         val graph = FlowRepository(this).load(flowId) ?: return false
         val reachable = graph.reachableNodes()
         val hasLaunchAppNode = reachable.any { it is LaunchAppNode }
-        val hasScreenCaptureNode = reachable.any { it is VisualTriggerNode || it is ScreenMLNode }
+        val hasScreenCaptureNode = reachable.any {
+            it is VisualTriggerNode || (it is ScreenMLNode && it.needsMediaProjection())
+        }
         return hasLaunchAppNode && hasScreenCaptureNode
     }
 }

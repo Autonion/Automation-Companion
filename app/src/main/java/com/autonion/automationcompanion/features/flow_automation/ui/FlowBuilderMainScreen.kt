@@ -19,6 +19,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.autonion.automationcompanion.core.onboarding.OnboardingPreferences
 import com.autonion.automationcompanion.features.flow_automation.engine.FlowExecutionService
+import com.autonion.automationcompanion.features.flow_automation.model.needsMediaProjection
 import com.autonion.automationcompanion.features.flow_automation.ui.editor.FlowEditorScreen
 import com.autonion.automationcompanion.features.flow_automation.ui.editor.FlowEditorViewModel
 import com.autonion.automationcompanion.features.flow_automation.ui.list.FlowListScreen
@@ -99,7 +100,7 @@ private fun startFlowService(context: Context, flowId: String) {
     
     val needsMediaProjection = graph?.reachableNodes()?.any {
         it is com.autonion.automationcompanion.features.flow_automation.model.VisualTriggerNode ||
-        it is com.autonion.automationcompanion.features.flow_automation.model.ScreenMLNode
+        (it is com.autonion.automationcompanion.features.flow_automation.model.ScreenMLNode && it.needsMediaProjection())
     } ?: false
 
     if (needsMediaProjection) {

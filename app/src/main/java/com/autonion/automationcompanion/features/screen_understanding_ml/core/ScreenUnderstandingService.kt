@@ -1,5 +1,6 @@
 package com.autonion.automationcompanion.features.screen_understanding_ml.core
 
+import android.accessibilityservice.AccessibilityService
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -19,6 +20,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.util.Log
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import com.autonion.automationcompanion.R
@@ -48,6 +50,8 @@ import java.util.UUID
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.CapturedTextNode
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 
 class ScreenUnderstandingService : Service() {
 
@@ -97,6 +101,7 @@ class ScreenUnderstandingService : Service() {
     private var clearOnStart: Boolean = false
     private var flowImagePath: String? = null
     private var flowEditorMode: String? = null
+    private var isA11yOnlyMode = false
 
     // Debug metrics mode
     var isDebugMode = false
@@ -251,11 +256,13 @@ class ScreenUnderstandingService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Always use media projection FGS type — all paths go through SetupFlowActivity first
-        startForegroundNotification(useMediaProjectionType = true)
+        // Determine foreground service type BEFORE starting notification
+        val isA11yOnlyAction = intent?.action == "START_CAPTURE_A11Y_ONLY"
+        startForegroundNotification(useMediaProjectionType = !isA11yOnlyAction)
 
         when (intent?.action) {
             "START_CAPTURE" -> handleStartCapture(intent)
+            "START_CAPTURE_A11Y_ONLY" -> handleStartCaptureA11yOnly(intent)
             "DEBUG_TOGGLE" -> {
                 isDebugMode = !isDebugMode
                 Log.d(TAG, "Debug mode toggled: $isDebugMode")
@@ -292,8 +299,61 @@ class ScreenUnderstandingService : Service() {
                 notification,
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
             )
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            )
         } else {
             startForeground(NOTIFICATION_ID, notification)
+        }
+    }
+
+    private fun handleStartCaptureA11yOnly(intent: Intent) {
+        val presetName = intent.getStringExtra("presetName")
+        val playPresetId = intent.getStringExtra("playPresetId")
+
+        isFlowMode = intent.getBooleanExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_MODE, false)
+        flowNodeId = intent.getStringExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_NODE_ID)
+        flowMlJson = intent.getStringExtra("EXTRA_FLOW_ML_JSON")
+        clearOnStart = intent.getBooleanExtra("EXTRA_CLEAR_ON_START", false)
+        isA11yOnlyMode = true
+
+        accumulatedSteps.clear()
+        savedPresetId = null
+
+        overlay?.dismiss()
+        mediaProjectionCore?.stopProjection()
+        perceptionLayer?.close()
+
+        val presetToPlay = if (playPresetId != null) {
+            presetRepository?.getPreset(playPresetId)
+        } else null
+
+        overlay = ScreenAgentOverlay(
+            context = this,
+            initialName = if (isFlowMode) "Flow" else (presetToPlay?.name ?: presetName),
+            onAnchorSelected = { /* No-op in capture mode */ },
+            onSave = { name, _ ->
+                if (isFlowMode && flowNodeId != null) {
+                    saveAccumulatedStepsForFlow()
+                } else {
+                    saveAccumulatedPreset(name)
+                }
+            },
+            onPlay = { _, _ ->
+                if (presetToPlay != null) {
+                    playPreset(presetToPlay)
+                }
+            },
+            onCapture = { captureA11ySnapshot() },
+            onPausePlayback = { stopPlayback() },
+            onStop = { stopSelf() }
+        )
+
+        if (android.provider.Settings.canDrawOverlays(this)) {
+            overlay?.showCaptureMode()
         }
     }
 
@@ -307,6 +367,8 @@ class ScreenUnderstandingService : Service() {
         isFlowMode = intent.getBooleanExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_MODE, false)
         flowNodeId = intent.getStringExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_NODE_ID)
         flowMlJson = intent.getStringExtra("EXTRA_FLOW_ML_JSON")
+        val flowNodeMode = intent.getStringExtra("EXTRA_FLOW_NODE_MODE")
+        isA11yOnlyMode = (flowNodeMode == "UI_ATTRIBUTE")
         clearOnStart = intent.getBooleanExtra("EXTRA_CLEAR_ON_START", false)
 
         Log.d(TAG, "Service received presetName: '$presetName', playPresetId: '$playPresetId', modelFile: '$modelFile'")
@@ -331,7 +393,18 @@ class ScreenUnderstandingService : Service() {
         mediaProjectionCore?.stopProjection()
         perceptionLayer?.close()
 
-        val metrics = resources.displayMetrics
+        val (realWidth, realHeight, densityDpi) = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            val bounds = windowManager.currentWindowMetrics.bounds
+            val density = resources.configuration.densityDpi
+            Triple(bounds.width(), bounds.height(), density)
+        } else {
+            val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            val displayMetrics = android.util.DisplayMetrics()
+            @Suppress("DEPRECATION")
+            windowManager.defaultDisplay.getRealMetrics(displayMetrics)
+            Triple(displayMetrics.widthPixels, displayMetrics.heightPixels, displayMetrics.densityDpi)
+        }
 
         mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         mediaProjectionCore = MediaProjectionCore(this, mediaProjectionManager!!) {
@@ -399,7 +472,7 @@ class ScreenUnderstandingService : Service() {
             }
         }
 
-        mediaProjectionCore?.startProjection(resultCode, data, metrics.widthPixels, metrics.heightPixels, metrics.densityDpi)
+        mediaProjectionCore?.startProjection(resultCode, data, realWidth, realHeight, densityDpi)
 
         scope.launch {
             var frameCount = 0L
@@ -467,6 +540,107 @@ class ScreenUnderstandingService : Service() {
         }
     }
 
+    private fun captureA11ySnapshot() {
+        Log.d(TAG, "A11y-only snap clicked")
+        Toast.makeText(this, "Capturing Snapshot...", Toast.LENGTH_SHORT).show()
+
+        scope.launch {
+            // 1. Capture interactive elements + text (while target app is in foreground)
+            val a11yElements = AccessibilityAugmenter.captureAllInteractiveElements()
+            val accTextNodes = captureAccessibilityTextNodes()
+
+            if (a11yElements.isEmpty()) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@ScreenUnderstandingService, "No interactive elements found on screen", Toast.LENGTH_SHORT).show()
+                }
+                return@launch
+            }
+
+            // 2. Take screenshot via AccessibilityService (API 30+) — required for Editor bitmap
+            val bitmap = takeAccessibilityScreenshot()
+            val file = if (bitmap != null) {
+                val f = File(cacheDir, "a11y_capture_${UUID.randomUUID()}.png")
+                withContext(Dispatchers.IO) {
+                    FileOutputStream(f).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                }
+                f
+            } else {
+                val metrics = resources.displayMetrics
+                val width = metrics.widthPixels.coerceAtLeast(1080)
+                val height = metrics.heightPixels.coerceAtLeast(1920)
+                val placeholder = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                val canvas = android.graphics.Canvas(placeholder)
+                canvas.drawColor(android.graphics.Color.DKGRAY)
+                val f = File(cacheDir, "a11y_placeholder_${UUID.randomUUID()}.png")
+                withContext(Dispatchers.IO) {
+                    FileOutputStream(f).use { placeholder.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                }
+                f
+            }
+
+            // 3. Serialize a11y data
+            val accElementsJson = try { Json.encodeToString(a11yElements) } catch (_: Exception) { null }
+            val accTextJson = try { Json.encodeToString(accTextNodes) } catch (_: Exception) { null }
+
+            // 4. Launch CaptureEditorActivity
+            withContext(Dispatchers.Main) {
+                val intent = Intent(this@ScreenUnderstandingService, CaptureEditorActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    putExtra("IMAGE_PATH", file.absolutePath)
+                    putExtra("PRESET_NAME", overlay?.getCurrentName() ?: "Untitled")
+                    putExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_MODE, isFlowMode)
+                    putExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_NODE_ID, flowNodeId)
+                    putExtra("A11Y_ONLY_MODE", true)
+                    accElementsJson?.let { putExtra("ACC_ELEMENTS_DATA", it) }
+                    accTextJson?.let { putExtra("ACC_TEXT_DATA", it) }
+                    flowMlJson?.let { putExtra("EXTRA_FLOW_ML_JSON", it) }
+                    if (clearOnStart) putExtra("EXTRA_CLEAR_ON_START", true)
+                }
+                startActivity(intent)
+            }
+        }
+    }
+
+    private suspend fun takeAccessibilityScreenshot(): Bitmap? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            Log.w(TAG, "takeAccessibilityScreenshot requires API 30+, current: ${Build.VERSION.SDK_INT}")
+            return null
+        }
+
+        val service = AccessibilityRouter.getService() ?: run {
+            Log.w(TAG, "AccessibilityService not connected — cannot take screenshot")
+            return null
+        }
+
+        return suspendCancellableCoroutine { continuation ->
+            try {
+                service.takeScreenshot(
+                    android.view.Display.DEFAULT_DISPLAY,
+                    mainExecutor,
+                    object : AccessibilityService.TakeScreenshotCallback {
+                        override fun onSuccess(result: AccessibilityService.ScreenshotResult) {
+                            val hwBitmap = android.graphics.Bitmap.wrapHardwareBuffer(
+                                result.hardwareBuffer, result.colorSpace
+                            )
+                            result.hardwareBuffer.close()
+                            val swBitmap = hwBitmap?.copy(Bitmap.Config.ARGB_8888, false)
+                            hwBitmap?.recycle()
+                            continuation.resume(swBitmap)
+                        }
+
+                        override fun onFailure(errorCode: Int) {
+                            Log.w(TAG, "Accessibility screenshot failed, errorCode=$errorCode")
+                            continuation.resume(null)
+                        }
+                    }
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "takeScreenshot threw", e)
+                continuation.resume(null)
+            }
+        }
+    }
+
     private fun captureSnapshot() {
         Log.d(TAG, "Snap clicked, latestBitmap=${latestBitmap != null}")
         DebugLogger.info(
@@ -475,12 +649,31 @@ class ScreenUnderstandingService : Service() {
             "Screenshot taken for element selection",
             TAG
         )
-        val bitmap = latestBitmap
-        if (bitmap != null) {
-            Toast.makeText(this, "Capturing Snapshot...", Toast.LENGTH_SHORT).show()
-            scope.launch { saveBitmapAndOpenEditor(bitmap) }
-        } else {
-            Toast.makeText(this, "No frame captured yet, wait a moment...", Toast.LENGTH_SHORT).show()
+        scope.launch {
+            try {
+                // Hide overlay immediately so it doesn't appear in the captured screenshot
+                withContext(Dispatchers.Main) {
+                    setOverlayVisibility(false)
+                }
+
+                // Wait 120ms for WindowManager to remove overlay and VirtualDisplay to receive a clean frame
+                delay(120)
+
+                val bitmap = latestBitmap
+                if (bitmap != null) {
+                    saveBitmapAndOpenEditor(bitmap)
+                } else {
+                    withContext(Dispatchers.Main) {
+                        setOverlayVisibility(true)
+                        Toast.makeText(this@ScreenUnderstandingService, "No frame captured yet, wait a moment...", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed during captureSnapshot", e)
+                withContext(Dispatchers.Main) {
+                    setOverlayVisibility(true)
+                }
+            }
         }
     }
 
@@ -525,6 +718,7 @@ class ScreenUnderstandingService : Service() {
                     putExtra("PRESET_NAME", overlay?.getCurrentName() ?: "Untitled")
                     putExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_MODE, isFlowMode)
                     putExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_NODE_ID, flowNodeId)
+                    putExtra("A11Y_ONLY_MODE", isA11yOnlyMode)
                     flowMlJson?.let { putExtra("EXTRA_FLOW_ML_JSON", it) }
                     if (clearOnStart) putExtra("EXTRA_CLEAR_ON_START", true)
                     accTextJson?.let { putExtra("ACC_TEXT_DATA", it) }

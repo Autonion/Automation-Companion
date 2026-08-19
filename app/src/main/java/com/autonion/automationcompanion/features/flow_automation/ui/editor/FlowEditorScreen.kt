@@ -43,6 +43,7 @@ import com.autonion.automationcompanion.features.flow_automation.engine.FlowExec
 import com.autonion.automationcompanion.features.flow_automation.model.LaunchAppNode
 import com.autonion.automationcompanion.features.flow_automation.model.ScreenMLNode
 import com.autonion.automationcompanion.features.flow_automation.model.VisualTriggerNode
+import com.autonion.automationcompanion.features.flow_automation.model.needsMediaProjection
 import com.autonion.automationcompanion.features.flow_automation.ui.editor.canvas.FlowCanvas
 import com.autonion.automationcompanion.features.flow_automation.ui.editor.canvas.MiniMap
 import com.autonion.automationcompanion.features.flow_automation.ui.editor.canvas.flowEditorColors
@@ -102,7 +103,9 @@ fun FlowEditorScreen(
         reachableNodes.any { it is LaunchAppNode }
     }
     val hasVisualNodes = remember(reachableNodes) {
-        reachableNodes.any { it is VisualTriggerNode || it is ScreenMLNode }
+        reachableNodes.any {
+            it is VisualTriggerNode || (it is ScreenMLNode && it.needsMediaProjection())
+        }
     }
     val needsFullScreen = hasLaunchAppNode && hasVisualNodes
 
@@ -432,7 +435,7 @@ fun FlowEditorScreen(
 
             // Node config panel
             AnimatedVisibility(
-                visible = state.showNodeConfig && state.selectedNodeId != null,
+                visible = !state.showNodePalette && state.showNodeConfig && state.selectedNodeId != null,
                 enter = slideInVertically { it } + fadeIn(),
                 exit = slideOutVertically { it } + fadeOut()
             ) {
@@ -458,7 +461,7 @@ fun FlowEditorScreen(
 
             // Edge config overlay
             AnimatedVisibility(
-                visible = state.showEdgeConfig && state.selectedEdgeId != null,
+                visible = !state.showNodePalette && state.showEdgeConfig && state.selectedEdgeId != null,
                 enter = slideInVertically { it } + fadeIn(),
                 exit = slideOutVertically { it } + fadeOut()
             ) {

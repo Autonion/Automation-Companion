@@ -401,6 +401,7 @@ private fun DrawScope.drawNode(
         is ScreenMLNode -> when (node.mode) {
             ScreenMLMode.OBJECT_DETECTION -> "ELEMENTS"
             ScreenMLMode.OCR -> "OCR"
+            ScreenMLMode.UI_ATTRIBUTE -> "UI ATTR"
         }
         is DelayNode -> "WAIT"
         is LaunchAppNode -> if (node.appPackageName.isNotBlank())
