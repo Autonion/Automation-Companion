@@ -1,5 +1,6 @@
 package com.autonion.automationcompanion.features.semantic_automation.ml
 
+import android.app.ActivityManager
 import android.content.Context
 import android.util.Log
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.ActionIntent
@@ -10,12 +11,16 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import org.codeshipping.llamakotlin.LlamaModel
+import java.io.File
 
 /**
  * On-Device SLM Engine using llama.cpp (via llama-kotlin-android) to run GGUF models locally.
  * Supports models like Gemma 4, Gemma 3n, Phi-3.5, Llama 3.2, Qwen 2.5, etc.
  *
- * The .gguf model file must be imported by the user via the ModelManagerScreen.
+ * Stability enhancements:
+ * - Pre-allocation RAM guard to prevent SIGSEGV memory faults in native matrix routines
+ * - Adaptive thread limits scaled to mobile big.LITTLE architectures
+ * - Optimized 1024 context window for mobile RAM constraints
  */
 class GGUFInferenceEngine(
     private val context: Context,
@@ -26,18 +31,81 @@ class GGUFInferenceEngine(
     private var llamaModel: LlamaModel? = null
 
     companion object {
-        // Default inference parameters — balanced for mobile devices
-        private const val DEFAULT_CONTEXT_SIZE = 2048
-        private const val DEFAULT_THREAD_COUNT = 4
+        // Balanced mobile defaults: 1024 context saves ~300MB KV cache RAM vs 2048
+        private const val DEFAULT_CONTEXT_SIZE = 1024
         private const val DEFAULT_TEMPERATURE = 0.3f
+    }
+
+    private fun calculateOptimalThreads(): Int {
+        val cores = Runtime.getRuntime().availableProcessors()
+        // On mobile 8-core (4 efficient + 4 performance), 2-3 worker threads prevent CPU cache thrashing
+        return when {
+            cores >= 8 -> 3
+            cores >= 4 -> 2
+            else -> 1
+        }
+    }
+
+    private fun checkMemoryHeadroom(modelFile: File) {
+        try {
+            val actManager = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+            if (actManager != null) {
+                val memInfo = ActivityManager.MemoryInfo()
+                actManager.getMemoryInfo(memInfo)
+                val availRamMB = memInfo.availMem / (1024 * 1024)
+                val modelFileMB = modelFile.length() / (1024 * 1024)
+                Log.d(TAG, "Device Memory Check: Available RAM = ${availRamMB}MB, Model Size = ${modelFileMB}MB")
+
+                // If available RAM is less than model size + 200MB safety margin, abort before SIGSEGV
+                if (availRamMB < (modelFileMB + 200)) {
+                    throw IllegalStateException(
+                        "Insufficient available RAM (${availRamMB}MB) to load ${modelFile.name} (${modelFileMB}MB).\n" +
+                        "Close background apps or switch to Cloud API / Local Server (Ollama) mode to avoid device crashes."
+                    )
+                }
+            }
+        } catch (e: IllegalStateException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not verify memory headroom", e)
+        }
+    }
+
+    private fun validateGgufHeader(modelFile: File) {
+        try {
+            java.io.FileInputStream(modelFile).use { fis ->
+                val header = ByteArray(4)
+                val read = fis.read(header)
+                if (read < 4) {
+                    throw IllegalStateException("Model file is too small to contain a valid GGUF header.")
+                }
+                // GGUF magic number in ASCII is 'G' 'G' 'U' 'F' (0x47, 0x47, 0x55, 0x46)
+                val isGguf = header[0] == 0x47.toByte() &&
+                             header[1] == 0x47.toByte() &&
+                             header[2] == 0x55.toByte() &&
+                             header[3] == 0x46.toByte()
+                if (!isGguf) {
+                    val headerStr = String(header, Charsets.US_ASCII)
+                    throw IllegalStateException(
+                        "The selected file is not a valid GGUF model (header: '$headerStr'). " +
+                        "If you downloaded this file from Hugging Face, ensure the direct file was downloaded, " +
+                        "not an HTML error page."
+                    )
+                }
+            }
+        } catch (e: IllegalStateException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not inspect GGUF header, proceeding with caution", e)
+        }
     }
 
     override suspend fun initialize() {
         withContext(Dispatchers.IO) {
             Log.d(TAG, "Initializing llama.cpp with model: $modelPath")
 
-            // Validate the model file exists and is non-trivially sized
-            val modelFile = java.io.File(modelPath)
+            // Validate model file
+            val modelFile = File(modelPath)
             if (!modelFile.exists()) {
                 throw IllegalStateException("GGUF model file not found: $modelPath")
             }
@@ -50,18 +118,26 @@ class GGUFInferenceEngine(
                 )
             }
 
+            // Validate GGUF magic header ('GGUF' = 0x47 0x47 0x55 0x46) to prevent native SIGSEGV on corrupted files
+            validateGgufHeader(modelFile)
+
+            // Verify RAM headroom before native allocation
+            checkMemoryHeadroom(modelFile)
+
+            val threadsToUse = calculateOptimalThreads()
+            Log.d(TAG, "Configuring llama.cpp: contextSize=$DEFAULT_CONTEXT_SIZE, threads=$threadsToUse")
+
             val startTime = System.currentTimeMillis()
             try {
                 llamaModel = LlamaModel.load(modelPath) {
                     contextSize = DEFAULT_CONTEXT_SIZE
-                    threads = DEFAULT_THREAD_COUNT
+                    threads = threadsToUse
                     temperature = DEFAULT_TEMPERATURE
                 }
                 val elapsed = System.currentTimeMillis() - startTime
                 Log.d(TAG, "llama.cpp model loaded in ${elapsed}ms")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to load GGUF model via llama.cpp", e)
-                // Provide a more helpful error message
                 val message = e.message ?: "Unknown error"
                 if (message.contains("Failed to load model")) {
                     throw IllegalStateException(
@@ -90,7 +166,7 @@ class GGUFInferenceEngine(
             model.generateStream(prompt).collect { token ->
                 responseBuilder.append(token)
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "Error generating stream for action prediction", e)
             return@withContext null
         }
@@ -114,7 +190,7 @@ class GGUFInferenceEngine(
             model.generateStream(prompt).collect { token ->
                 responseBuilder.append(token)
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "Error generating stream for chat response", e)
             return@withContext null
         }
@@ -137,7 +213,7 @@ class GGUFInferenceEngine(
             model.generateStream(prompt).collect { token ->
                 emit(token)
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "Error in GGUF chat response stream", e)
         }
 
@@ -145,18 +221,10 @@ class GGUFInferenceEngine(
         Log.d(TAG, "GGUF streaming complete in ${elapsed}ms")
     }.flowOn(Dispatchers.IO)
 
-    /**
-     * Parses the raw LLM text output into a structured ActionIntent.
-     * Expected format: {"action": "CLICK", "element_index": 1, "text_to_type": null}
-     *
-     * This is the same parsing logic used by OnDeviceSLMEngine for consistency.
-     */
     private fun parseJsonResponse(raw: String): ActionIntent? {
         return try {
-            // Strip markdown code fences if present
             var jsonString = raw
 
-            // Extract from markdown block if present
             val jsonBlockStart = jsonString.indexOf("```json")
             if (jsonBlockStart != -1) {
                 val blockEnd = jsonString.indexOf("```", jsonBlockStart + 7)
@@ -182,11 +250,11 @@ class GGUFInferenceEngine(
                 try {
                     val obj = org.json.JSONObject(text)
                     if (obj.has("action")) return obj
-                } catch (e: Exception) {}
+                } catch (_: Exception) {}
                 try {
                     val obj = org.json.JSONObject("$text}")
                     if (obj.has("action")) return obj
-                } catch (e: Exception) {}
+                } catch (_: Exception) {}
                 return null
             }
 
@@ -197,7 +265,7 @@ class GGUFInferenceEngine(
                         val obj = arr.optJSONObject(i)
                         if (obj != null && obj.has("action")) return obj
                     }
-                } catch (e: Exception) {}
+                } catch (_: Exception) {}
                 return null
             }
 
@@ -240,7 +308,7 @@ class GGUFInferenceEngine(
             ActionIntent(
                 type = actionType,
                 targetId = if (elementIndex >= 0) "slm_element_$elementIndex" else null,
-                targetPoint = null, // Will be resolved by the engine using element_index
+                targetPoint = null,
                 inputText = if (textToType != "null" && !textToType.isNullOrBlank()) textToType else null,
                 description = "GGUF: $actionStr on element[$elementIndex]"
             )
@@ -253,7 +321,7 @@ class GGUFInferenceEngine(
     override fun close() {
         try {
             llamaModel?.close()
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "Error closing llamaModel", e)
         }
         llamaModel = null
