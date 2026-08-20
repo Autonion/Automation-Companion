@@ -385,13 +385,38 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
 
     fun unpairDevice(deviceId: String) {
         scope.launch {
+            // 1. Send unpair command to desktop over active connection
+            if (::networkingManager.isInitialized) {
+                networkingManager.sendCommand(
+                    deviceId,
+                    mapOf("type" to "unpair_device")
+                )
+            }
+
+            // 2. Query latest device record from repository
             val device = deviceRepository.getDeviceById(deviceId)
             if (device != null) {
+                // 3. Clear paired agent ID
                 if (device.agentId != null) {
                     deviceAuthManager.unpairAgent(device.agentId)
                 }
-                deviceRepository.addOrUpdateDevice(
-                    device.copy(isPaired = false, isSelected = false)
+
+                // 4. Rotate deviceSecret so offline desktops cannot re-auth with old secret
+                deviceAuthManager.rotateSecret()
+
+                // 5. Cleanly disconnect socket
+                if (::networkingManager.isInitialized) {
+                    networkingManager.disconnectDevice(deviceId)
+                }
+
+                // 6. Update repository with reset pairing state
+                deviceRepository.updateDevice(
+                    device.copy(
+                        isPaired = false,
+                        isSelected = false,
+                        isPairingRequired = true,
+                        agentId = null
+                    )
                 )
             }
         }

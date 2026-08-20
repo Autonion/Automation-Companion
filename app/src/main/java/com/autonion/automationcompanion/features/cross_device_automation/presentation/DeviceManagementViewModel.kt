@@ -51,7 +51,7 @@ class DeviceManagementViewModel(
         viewModelScope.launch {
              val device = manager.deviceRepository.getDeviceById(deviceId)
              if (device != null) {
-                 manager.deviceRepository.addOrUpdateDevice(device.copy(role = role))
+                 manager.deviceRepository.updateDevice(device.copy(role = role))
              }
         }
     }

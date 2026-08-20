@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.Accessibility
 import androidx.compose.material.icons.filled.Tv
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -437,7 +438,8 @@ fun DeviceManagementScreen(
                 StaggeredDeviceItem(
                     device = device,
                     index = index,
-                    onToggleSelection = { viewModel.toggleDeviceSelection(device.id) }
+                    onToggleSelection = { viewModel.toggleDeviceSelection(device.id) },
+                    onUnpair = { viewModel.unpairDevice(device.id) }
                 )
             }
         }
@@ -693,7 +695,12 @@ private fun SetupStep(number: String, text: String, textColor: Color) {
 // ═══════════════════════════════════════════════════════════════
 
 @Composable
-private fun StaggeredDeviceItem(device: Device, index: Int, onToggleSelection: () -> Unit) {
+private fun StaggeredDeviceItem(
+    device: Device,
+    index: Int,
+    onToggleSelection: () -> Unit,
+    onUnpair: () -> Unit
+) {
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         kotlinx.coroutines.delay(index * 100L)
@@ -704,16 +711,37 @@ private fun StaggeredDeviceItem(device: Device, index: Int, onToggleSelection: (
         visible = visible,
         enter = fadeIn(tween(300)) + slideInVertically(tween(300)) { it / 2 }
     ) {
-        DeviceGlassCard(device, onToggleSelection = onToggleSelection)
+        DeviceGlassCard(
+            device = device,
+            onToggleSelection = onToggleSelection,
+            onUnpair = onUnpair
+        )
     }
 }
 
 @Composable
-private fun DeviceGlassCard(device: Device, onToggleSelection: () -> Unit) {
+private fun DeviceGlassCard(
+    device: Device,
+    onToggleSelection: () -> Unit,
+    onUnpair: () -> Unit
+) {
     val isDark = isSystemInDarkTheme()
     val cardGlass = if (isDark) CardGlass else Color.White.copy(alpha = 0.65f)
     val cardBorder = if (isDark) CardBorder else Color.Black.copy(alpha = 0.05f)
     val textColor = if (isDark) Color.White else Color(0xFF1A1C1E)
+
+    var showUnpairDialog by remember { mutableStateOf(false) }
+
+    if (showUnpairDialog) {
+        UnpairDeviceWarningDialog(
+            device = device,
+            onConfirm = {
+                showUnpairDialog = false
+                onUnpair()
+            },
+            onDismiss = { showUnpairDialog = false }
+        )
+    }
 
     val statusColor = when {
         device.isPairingRequired -> Color(0xFFFFB74D)
@@ -840,6 +868,22 @@ private fun DeviceGlassCard(device: Device, onToggleSelection: () -> Unit) {
 
             Spacer(Modifier.width(8.dp))
 
+            // Unpair button (only when device is paired)
+            if (device.isPaired) {
+                IconButton(
+                    onClick = { showUnpairDialog = true },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.DeleteOutline,
+                        contentDescription = "Unpair device",
+                        tint = OfflineRed.copy(alpha = 0.85f),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Spacer(Modifier.width(4.dp))
+            }
+
             // Selection toggle icon
             Icon(
                 imageVector = if (device.isSelected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
@@ -849,6 +893,94 @@ private fun DeviceGlassCard(device: Device, onToggleSelection: () -> Unit) {
             )
         }
     }
+}
+
+@Composable
+fun UnpairDeviceWarningDialog(
+    device: Device,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val isDark = isSystemInDarkTheme()
+    val textColor = if (isDark) Color.White else Color(0xFF1A1C1E)
+    val secondaryTextColor = if (isDark) Color.White.copy(alpha = 0.7f) else Color(0xFF1A1C1E).copy(alpha = 0.7f)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFFFFA726).copy(alpha = 0.15f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = Color(0xFFFFA726),
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+        },
+        title = {
+            Text(
+                text = "Unpair from \"${device.name}\"?",
+                fontWeight = FontWeight.Bold,
+                fontSize = 17.sp,
+                textAlign = TextAlign.Center,
+                color = textColor
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "This will disconnect this phone and revoke its trusted pairing credentials with your desktop agent.",
+                    fontSize = 13.sp,
+                    color = secondaryTextColor,
+                    lineHeight = 18.sp
+                )
+                Spacer(Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.Top) {
+                    Text("• ", color = Color(0xFFFFA726), fontWeight = FontWeight.Bold)
+                    Text("Remote triggers & desktop actions will stop.", fontSize = 12.sp, color = secondaryTextColor)
+                }
+                Row(verticalAlignment = Alignment.Top) {
+                    Text("• ", color = Color(0xFFFFA726), fontWeight = FontWeight.Bold)
+                    Text("Clipboard synchronization will be disabled for this PC.", fontSize = 12.sp, color = secondaryTextColor)
+                }
+                Row(verticalAlignment = Alignment.Top) {
+                    Text("• ", color = Color(0xFFFFA726), fontWeight = FontWeight.Bold)
+                    Text("Reconnecting will require entering a new 6-digit PIN on your PC.", fontSize = 12.sp, color = secondaryTextColor)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = OfflineRed,
+                    contentColor = Color.White
+                ),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Text("Unpair Device", fontWeight = FontWeight.SemiBold)
+            }
+        },
+        dismissButton = {
+            OutlinedButton(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Text("Cancel")
+            }
+        },
+        containerColor = if (isDark) Color(0xFF1E2130) else Color.White,
+        shape = RoundedCornerShape(20.dp)
+    )
 }
 
 fun getDeviceIcon(role: DeviceRole): ImageVector {

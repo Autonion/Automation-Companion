@@ -68,6 +68,63 @@ class DeviceAuthTest {
     }
 
     @Test
+    fun `unpair_device payload JSON contains correct type`() {
+        val gson = Gson()
+        val payload = mapOf("type" to "unpair_device")
+        val json = gson.toJson(payload)
+        val parsed = gson.fromJson(json, Map::class.java)
+
+        assertEquals("unpair_device", parsed["type"])
+    }
+
+    @Test
+    fun `in memory device repository updateDevice explicitly mutates state while addOrUpdate preserves isSelected`() = kotlinx.coroutines.runBlocking {
+        val repo = com.autonion.automationcompanion.features.cross_device_automation.data.InMemoryDeviceRepository()
+        val dev1 = Device(
+            id = "test-1",
+            name = "Desktop PC",
+            ipAddress = "192.168.1.10",
+            port = 4545,
+            isSelected = true,
+            agentId = "agent-1",
+            isPaired = true,
+            isPairingRequired = false
+        )
+        repo.addOrUpdateDevice(dev1)
+
+        // 1. Routine mDNS re-resolve (comes in with isSelected=false by default)
+        val mDnsResolved = Device(
+            id = "test-1",
+            name = "Desktop PC",
+            ipAddress = "192.168.1.10",
+            port = 4545,
+            isSelected = false // mDNS default
+        )
+        repo.addOrUpdateDevice(mDnsResolved)
+        val afterMdns = repo.getDeviceById("test-1")
+        assertNotNull(afterMdns)
+        assertTrue("mDNS re-resolve must preserve isSelected=true", afterMdns!!.isSelected)
+        assertTrue("mDNS re-resolve must preserve isPaired=true", afterMdns.isPaired)
+        assertFalse("mDNS re-resolve must preserve isPairingRequired=false", afterMdns.isPairingRequired)
+        assertEquals("agent-1", afterMdns.agentId)
+
+        // 2. Explicit updateDevice (e.g. unpair/deselect)
+        val unpaired = afterMdns.copy(
+            isPaired = false,
+            isSelected = false,
+            isPairingRequired = true,
+            agentId = null
+        )
+        repo.updateDevice(unpaired)
+        val afterUnpair = repo.getDeviceById("test-1")
+        assertNotNull(afterUnpair)
+        assertFalse(afterUnpair!!.isPaired)
+        assertFalse(afterUnpair.isSelected)
+        assertTrue(afterUnpair.isPairingRequired)
+        assertNull(afterUnpair.agentId)
+    }
+
+    @Test
     fun `version comparison correctly evaluates semver compatibility`() {
         assertEquals(0, CrossDeviceAutomationManager.compareVersions("2.0.5", "2.0.5"))
         assertTrue(CrossDeviceAutomationManager.compareVersions("2.0.6", "2.0.5") > 0)

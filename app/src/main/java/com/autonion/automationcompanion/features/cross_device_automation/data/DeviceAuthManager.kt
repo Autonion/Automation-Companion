@@ -66,6 +66,15 @@ class DeviceAuthManager(private val context: Context) {
             return secret
         }
 
+    fun rotateSecret(): String {
+        val randomBytes = ByteArray(32)
+        SecureRandom().nextBytes(randomBytes)
+        val newSecret = Base64.encodeToString(randomBytes, Base64.NO_WRAP)
+        prefs.edit().putString(KEY_DEVICE_SECRET, newSecret).apply()
+        Log.i(TAG, "Rotated companion device secret")
+        return newSecret
+    }
+
     val deviceName: String
         get() {
             val customName = prefs.getString(KEY_DEVICE_NAME, null)

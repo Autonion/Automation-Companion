@@ -61,6 +61,7 @@ class NetworkingManager(
     private val activeConnections = ConcurrentHashMap<String, WebSocket>()
     private val connectedEndpoints = ConcurrentHashMap.newKeySet<String>() // Tracks IP:port to prevent duplicate connections
     private val reconnectingDevices = ConcurrentHashMap.newKeySet<String>() // Prevents duplicate reconnect coroutines
+    private val revocationCleanupDevices = ConcurrentHashMap.newKeySet<String>() // Ensures revoke cleanup runs once per device
     private val gson = Gson()
     private val scope = CoroutineScope(Dispatchers.IO)
 
@@ -237,13 +238,14 @@ class NetworkingManager(
 
                         when (status) {
                             "authenticated", "connected" -> {
+                                revocationCleanupDevices.remove(device.id)
                                 if (!agentId.isNullOrBlank()) {
                                     deviceAuthManager.markAgentPaired(agentId)
                                 }
                                 scope.launch {
                                     val existing = deviceRepository.getDeviceById(device.id)
                                     if (existing != null) {
-                                        deviceRepository.addOrUpdateDevice(
+                                        deviceRepository.updateDevice(
                                             existing.copy(
                                                 isPaired = true,
                                                 isPairingRequired = false,
@@ -259,7 +261,7 @@ class NetworkingManager(
                                 scope.launch {
                                     val existing = deviceRepository.getDeviceById(device.id)
                                     if (existing != null) {
-                                        deviceRepository.addOrUpdateDevice(
+                                        deviceRepository.updateDevice(
                                             existing.copy(
                                                 isPaired = false,
                                                 isPairingRequired = true,
@@ -271,13 +273,14 @@ class NetworkingManager(
                                 this@NetworkingManager.listener?.onPairingRequired(device.id, device.name)
                             }
                             "paired_success" -> {
+                                revocationCleanupDevices.remove(device.id)
                                 if (!agentId.isNullOrBlank()) {
                                     deviceAuthManager.markAgentPaired(agentId)
                                 }
                                 scope.launch {
                                     val existing = deviceRepository.getDeviceById(device.id)
                                     if (existing != null) {
-                                        deviceRepository.addOrUpdateDevice(
+                                        deviceRepository.updateDevice(
                                             existing.copy(
                                                 isPaired = true,
                                                 isPairingRequired = false,
@@ -307,6 +310,9 @@ class NetworkingManager(
                             "pairing_rejected" -> {
                                 val msg = jsonObject.get("message")?.asString ?: "Pairing declined by desktop user."
                                 this@NetworkingManager.listener?.onPairingFailed(device.id, msg)
+                            }
+                            "pairing_revoked" -> {
+                                handlePairingRevoked(device.id)
                             }
                         }
 
@@ -381,7 +387,7 @@ class NetworkingManager(
             }
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
-                Log.d(TAG, "Closing: $reason")
+                Log.d(TAG, "Closing: $reason (code=$code)")
                 DebugLogger.warning(
                     context, LogCategory.CROSS_DEVICE_SYNC,
                     "WebSocket closing",
@@ -389,10 +395,12 @@ class NetworkingManager(
                     TAG
                 )
                 webSocket.close(1000, null)
-                activeConnections.remove(device.id)
-                connectedEndpoints.remove("${device.ipAddress}:${device.port}")
-                this@NetworkingManager.listener?.onDeviceDisconnected(device.id)
-                // Don't reconnect on graceful close (user-initiated or deselect)
+                handleDisconnection(device.id, code, reason)
+            }
+
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                Log.d(TAG, "Closed: $reason (code=$code)")
+                handleDisconnection(device.id, code, reason)
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
@@ -403,9 +411,7 @@ class NetworkingManager(
                     "Connection to ${device.name} failed: ${t.message}",
                     TAG
                 )
-                activeConnections.remove(device.id)
-                connectedEndpoints.remove("${device.ipAddress}:${device.port}")
-                this@NetworkingManager.listener?.onDeviceDisconnected(device.id)
+                handleDisconnection(device.id, 1006, t.message ?: "Connection failure")
                 // Auto-reconnect if this device is still selected
                 scheduleReconnect(device)
             }
@@ -413,6 +419,54 @@ class NetworkingManager(
 
         client.newWebSocket(request, listener)
         return true
+    }
+
+    private fun handleDisconnection(deviceId: String, code: Int, reason: String) {
+        val wasConnected = activeConnections.remove(deviceId) != null
+        reconnectingDevices.remove(deviceId)
+        scope.launch {
+            val device = deviceRepository.getDeviceById(deviceId)
+            if (device != null) {
+                connectedEndpoints.remove("${device.ipAddress}:${device.port}")
+            }
+        }
+        if (code == 4001) {
+            handlePairingRevoked(deviceId)
+        }
+        if (wasConnected) {
+            this@NetworkingManager.listener?.onDeviceDisconnected(deviceId)
+        }
+    }
+
+    fun disconnectDevice(deviceId: String) {
+        val ws = activeConnections[deviceId]
+        ws?.close(1000, "Device unpaired")
+        handleDisconnection(deviceId, 1000, "Device unpaired")
+    }
+
+    private fun handlePairingRevoked(deviceId: String) {
+        if (!revocationCleanupDevices.add(deviceId)) {
+            Log.d(TAG, "Pairing revocation cleanup already handled for $deviceId")
+            return
+        }
+
+        Log.i(TAG, "Device $deviceId pairing revoked")
+        scope.launch {
+            deviceAuthManager.rotateSecret()
+            val device = deviceRepository.getDeviceById(deviceId)
+            if (device != null) {
+                device.agentId?.let { deviceAuthManager.unpairAgent(it) }
+                deviceRepository.updateDevice(
+                    device.copy(
+                        isPaired = false,
+                        isPairingRequired = true,
+                        isSelected = false,
+                        agentId = null
+                    )
+                )
+            }
+        }
+        this@NetworkingManager.listener?.onPairingFailed(deviceId, "Pairing revoked by desktop host.")
     }
 
     fun sendCommand(deviceId: String, command: Any) {
