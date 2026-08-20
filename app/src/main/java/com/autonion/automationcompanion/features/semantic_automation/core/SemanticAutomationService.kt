@@ -120,7 +120,7 @@ class SemanticAutomationService : Service() {
         }
 
         DebugLogger.info(
-            this, LogCategory.UI_RECOGNITION_AI,
+            this, LogCategory.SEMANTIC_AUTOMATION,
             "Semantic automation started",
             "Command: \"$command\"",
             TAG
