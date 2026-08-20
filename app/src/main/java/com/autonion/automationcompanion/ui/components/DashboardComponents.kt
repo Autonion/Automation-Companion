@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.CloudUpload
@@ -17,8 +18,13 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.AppBlocking
 import androidx.compose.material.icons.outlined.BugReport
+import androidx.compose.material.icons.outlined.CloudSync
+import androidx.compose.material.icons.outlined.MailOutline
+import androidx.compose.material.icons.outlined.Policy
 import androidx.compose.material3.*
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -83,6 +89,197 @@ fun SecondaryButton(text: String, icon: ImageVector, onClick: () -> Unit, modifi
 }
 
 @Composable
+fun SettingsDropdownMenu(
+    expanded: Boolean,
+    onDismissRequest: () -> Unit,
+    onExclusionClick: () -> Unit,
+    onBackupClick: () -> Unit,
+    onAgeComplianceClick: () -> Unit,
+    onBugReportEmail: () -> Unit,
+    onBugReportGithub: () -> Unit,
+    modifier: Modifier = Modifier,
+    offset: DpOffset = DpOffset(x = (-8).dp, y = 8.dp)
+) {
+    val isDark = isSystemInDarkTheme()
+    val menuBg = if (isDark) Color(0xFF161926) else MaterialTheme.colorScheme.surface
+    val borderColor = if (isDark) Color(0xFF7C4DFF).copy(alpha = 0.25f) else Color.Black.copy(alpha = 0.08f)
+    val dividerColor = if (isDark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.06f)
+    val sectionHeaderColor = if (isDark) Color(0xFF9ECAFF).copy(alpha = 0.85f) else MaterialTheme.colorScheme.primary
+
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismissRequest,
+        offset = offset,
+        shape = RoundedCornerShape(18.dp),
+        containerColor = menuBg,
+        tonalElevation = 6.dp,
+        shadowElevation = 16.dp,
+        border = BorderStroke(1.dp, borderColor),
+        modifier = modifier.widthIn(min = 260.dp, max = 310.dp)
+    ) {
+        // ── Section 1: Preferences ──────────────────────────────
+        Text(
+            text = "PREFERENCES",
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontWeight = FontWeight.Bold,
+                fontSize = 10.sp,
+                letterSpacing = 0.8.sp,
+                color = sectionHeaderColor
+            ),
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp)
+        )
+
+        SettingsDropdownItem(
+            title = "Excluded Apps",
+            subtitle = "Manage app restrictions",
+            icon = Icons.Outlined.AppBlocking,
+            accentColor = Color(0xFFFF9100),
+            onClick = {
+                onDismissRequest()
+                onExclusionClick()
+            }
+        )
+
+        SettingsDropdownItem(
+            title = "Backup & Restore",
+            subtitle = "Export & sync configs",
+            icon = Icons.Outlined.CloudSync,
+            accentColor = Color(0xFF00BCD4),
+            onClick = {
+                onDismissRequest()
+                onBackupClick()
+            }
+        )
+
+        SettingsDropdownItem(
+            title = "Age & Compliance",
+            subtitle = "Policies & data safety",
+            icon = Icons.Outlined.Policy,
+            accentColor = Color(0xFF00C853),
+            onClick = {
+                onDismissRequest()
+                onAgeComplianceClick()
+            }
+        )
+
+        HorizontalDivider(
+            color = dividerColor,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+        )
+
+        // ── Section 2: Support & Feedback ────────────────────────
+        Text(
+            text = "HELP & FEEDBACK",
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontWeight = FontWeight.Bold,
+                fontSize = 10.sp,
+                letterSpacing = 0.8.sp,
+                color = sectionHeaderColor
+            ),
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp)
+        )
+
+        SettingsDropdownItem(
+            title = "Report Bug (Email)",
+            subtitle = "Direct developer support",
+            icon = Icons.Outlined.MailOutline,
+            accentColor = Color(0xFF7C4DFF),
+            trailingIcon = Icons.AutoMirrored.Outlined.OpenInNew,
+            onClick = {
+                onDismissRequest()
+                onBugReportEmail()
+            }
+        )
+
+        SettingsDropdownItem(
+            title = "Report Bug (GitHub)",
+            subtitle = "Issue tracker & logs",
+            icon = Icons.Outlined.BugReport,
+            accentColor = Color(0xFF2979FF),
+            trailingIcon = Icons.AutoMirrored.Outlined.OpenInNew,
+            onClick = {
+                onDismissRequest()
+                onBugReportGithub()
+            }
+        )
+
+        Spacer(modifier = Modifier.height(4.dp))
+    }
+}
+
+@Composable
+private fun SettingsDropdownItem(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    accentColor: Color,
+    onClick: () -> Unit,
+    trailingIcon: ImageVector = Icons.Default.ChevronRight,
+    modifier: Modifier = Modifier
+) {
+    val isDark = isSystemInDarkTheme()
+
+    DropdownMenuItem(
+        text = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                // Leading squircle badge
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(accentColor.copy(alpha = if (isDark) 0.16f else 0.12f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = accentColor,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                // Title and subtitle
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    )
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Normal
+                        )
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(6.dp))
+
+                // Trailing icon
+                Icon(
+                    imageVector = trailingIcon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                    modifier = Modifier.size(15.dp)
+                )
+            }
+        },
+        onClick = onClick,
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+        modifier = modifier
+    )
+}
+
+@Composable
 fun DashboardHeader(
     title: String,
     subtitle: String? = null,
@@ -144,62 +341,15 @@ fun DashboardHeader(
                     }
                 }
 
-                DropdownMenu(
+                SettingsDropdownMenu(
                     expanded = showSettingsMenu,
-                    onDismissRequest = { showSettingsMenu = false }
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("Excluded Apps") },
-                        onClick = {
-                            showSettingsMenu = false
-                            onExclusionClick()
-                        },
-                        leadingIcon = {
-                            Icon(Icons.Default.Security, contentDescription = null)
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Backup & Restore") },
-                        onClick = {
-                            showSettingsMenu = false
-                            onBackupClick()
-                        },
-                        leadingIcon = {
-                            Icon(Icons.Default.CloudUpload, contentDescription = null)
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Age & Compliance") },
-                        onClick = {
-                            showSettingsMenu = false
-                            onAgeComplianceClick()
-                        },
-                        leadingIcon = {
-                            Icon(Icons.Default.Security, contentDescription = null)
-                        }
-                    )
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                    DropdownMenuItem(
-                        text = { Text("Report Bug (Email)") },
-                        onClick = {
-                            showSettingsMenu = false
-                            onBugReportEmail()
-                        },
-                        leadingIcon = {
-                            Icon(Icons.Default.Email, contentDescription = null)
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Report Bug (GitHub)") },
-                        onClick = {
-                            showSettingsMenu = false
-                            onBugReportGithub()
-                        },
-                        leadingIcon = {
-                            Icon(Icons.Outlined.BugReport, contentDescription = null)
-                        }
-                    )
-                }
+                    onDismissRequest = { showSettingsMenu = false },
+                    onExclusionClick = onExclusionClick,
+                    onBackupClick = onBackupClick,
+                    onAgeComplianceClick = onAgeComplianceClick,
+                    onBugReportEmail = onBugReportEmail,
+                    onBugReportGithub = onBugReportGithub
+                )
             }
 
             if (onNotificationClick != null) {
@@ -640,62 +790,15 @@ fun TabletBrandingPanel(
                     )
                 }
 
-                DropdownMenu(
+                SettingsDropdownMenu(
                     expanded = showSettingsMenu,
-                    onDismissRequest = { showSettingsMenu = false }
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("Excluded Apps") },
-                        onClick = {
-                            showSettingsMenu = false
-                            onExclusionClick()
-                        },
-                        leadingIcon = {
-                            Icon(Icons.Default.Security, contentDescription = null)
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Backup & Restore") },
-                        onClick = {
-                            showSettingsMenu = false
-                            onBackupClick()
-                        },
-                        leadingIcon = {
-                            Icon(Icons.Default.CloudUpload, contentDescription = null)
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Age & Compliance") },
-                        onClick = {
-                            showSettingsMenu = false
-                            onAgeComplianceClick()
-                        },
-                        leadingIcon = {
-                            Icon(Icons.Default.Security, contentDescription = null)
-                        }
-                    )
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                    DropdownMenuItem(
-                        text = { Text("Report Bug (Email)") },
-                        onClick = {
-                            showSettingsMenu = false
-                            onBugReportEmail()
-                        },
-                        leadingIcon = {
-                            Icon(Icons.Default.Email, contentDescription = null)
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Report Bug (GitHub)") },
-                        onClick = {
-                            showSettingsMenu = false
-                            onBugReportGithub()
-                        },
-                        leadingIcon = {
-                            Icon(Icons.Outlined.BugReport, contentDescription = null)
-                        }
-                    )
-                }
+                    onDismissRequest = { showSettingsMenu = false },
+                    onExclusionClick = onExclusionClick,
+                    onBackupClick = onBackupClick,
+                    onAgeComplianceClick = onAgeComplianceClick,
+                    onBugReportEmail = onBugReportEmail,
+                    onBugReportGithub = onBugReportGithub
+                )
             }
 
             Spacer(modifier = Modifier.height(16.dp))
