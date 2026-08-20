@@ -160,7 +160,8 @@ Cross-device features:
 - Clipboard sync between devices. Text copied on one device automatically appears on the other. Only text is supported, not images or files. Works only over local WiFi.
 - Rule-based automation triggers. You can register trigger rules from Android that execute on the Desktop when conditions are met.
 - Scheduled/recurring actions. Example: "press next every 30 seconds on desktop" starts a timer on the Desktop that executes the key press repeatedly.
-- Structured commands. For simple key presses, the command is sent with structured data (key name, key code) so the Desktop can execute it directly without LLM involvement. This is faster and more reliable.
+- Structured commands. For simple key presses, the command is sent with structured data (key name, key code) so the Desktop can execute it directly without LLM involvement. This is faster and more reliable.\r
+- Hardware Remote. Map your phone's physical volume buttons to send keyboard commands to the desktop (e.g., Volume Up → Next slide, Volume Down → Previous slide). Supports single tap, double tap, and long press gestures — each can be mapped to different desktop key actions (Enter, Space, Arrow keys, Escape, Backspace). Runs as a foreground service so it works even with the phone screen off. Ideal for presentations, media control, or hands-free desktop navigation. Access it via the remote icon in the Cross-Device top bar.
 
 Setup steps:
 1. Download and install the Autonion Desktop Agent from github.com/Autonion/Autonion-Agent/releases on your Windows PC (Flutter-based app, also called Autonion-Agent).

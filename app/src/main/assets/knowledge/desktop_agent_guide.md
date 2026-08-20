@@ -165,6 +165,24 @@ The Android app can register trigger rules that execute on the Desktop when spec
 ### Scheduled Actions
 Recurring actions (e.g., "press next every 30 seconds") are handled by the Desktop Agent's built-in scheduler.
 
+### Hardware Remote
+The Android app includes a Hardware Remote feature that maps the phone's physical volume buttons to desktop keyboard commands via the WebSocket connection. This turns the phone into a wireless remote control for the PC.
+
+How it works:
+1. The user taps the remote icon in the Cross-Device top bar on the Android app.
+2. A configuration sheet opens with 6 mapping slots:
+   - Volume Up: Single Tap, Double Tap, Long Press
+   - Volume Down: Single Tap, Double Tap, Long Press
+3. Each slot can be mapped to a desktop key action: Enter, Space, Up/Down/Left/Right Arrow, Escape, or Backspace.
+4. When activated, a foreground service keeps the mappings alive even with the phone screen off.
+5. Volume button presses are intercepted, the corresponding gesture is detected (single/double/long), and the mapped key command is sent to the Desktop Agent via WebSocket.
+6. The Desktop Agent executes the key press on the PC.
+
+Use cases:
+- Presentation control: Volume Up → Next slide (Right Arrow), Volume Down → Previous slide (Left Arrow)
+- Media control: Volume Up → Play/Pause (Space), Volume Down → Skip (Right Arrow)
+- Hands-free navigation: Control the PC from across the room
+
 ## Browser Extension Integration
 
 For web automation tasks, the Autonion Extension can be installed in Chrome or Edge on the desktop:

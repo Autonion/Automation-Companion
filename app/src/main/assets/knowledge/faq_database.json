@@ -1734,5 +1734,16 @@
       "deepseek",
       "inference"
     ]
+  },
+  {
+    "question": "What is Hardware Remote and how do I use it?",
+    "answer": "Hardware Remote lets you use your phone's physical volume buttons as a wireless remote control for your PC.\n\n**How to use it:**\n1. Connect to your Desktop Agent (via Cross-Device Automation).\n2. Tap the remote icon (🎮) in the Cross-Device top bar.\n3. Configure your mappings:\n   - **Volume Up**: Map single tap, double tap, and long press to different desktop keys\n   - **Volume Down**: Same — single tap, double tap, and long press\n4. Available keys: Enter, Space, Up/Down/Left/Right Arrow, Escape, Backspace\n5. Tap 'Start Remote' to activate.\n\n**Key features:**\n- Works with the phone screen off (runs as a foreground service)\n- Each volume button supports 3 gestures = up to 6 different desktop key actions\n- Perfect for presentations (next/previous slide), media control, or hands-free navigation\n- Mappings are saved and persist across sessions\n\nTo stop, tap 'Stop Remote' in the Hardware Remote sheet or dismiss the persistent notification.",
+    "tags": [
+      "hardware remote",
+      "volume buttons",
+      "remote control",
+      "presentation",
+      "cross-device"
+    ]
   }
 ]
