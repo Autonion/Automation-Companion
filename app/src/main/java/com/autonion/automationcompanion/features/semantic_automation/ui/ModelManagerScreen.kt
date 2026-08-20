@@ -237,7 +237,11 @@ fun ModelManagerScreen(
         if (uri != null) {
             isImporting = true
             coroutineScope.launch {
-                storageManager.importModelFromUri(uri)
+                val result = storageManager.importModelFromUri(uri)
+                if (result.isFailure) {
+                    val err = result.exceptionOrNull()?.message ?: "Failed to import model"
+                    android.widget.Toast.makeText(context, err, android.widget.Toast.LENGTH_LONG).show()
+                }
                 importedModels = storageManager.getImportedModels()
                 activeModelPath = storageManager.getActiveModelPath()
                 isImporting = false

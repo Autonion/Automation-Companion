@@ -794,8 +794,10 @@ class OmniChatbotViewModel(
                     cloudApiEngine.connectionStatus.value == CloudApiConnectionStatus.CONNECTED || cloudApiEngine.isConfigured
                 com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.SERVER_LLM ->
                     llmEngine.connectionStatus.value == ServerConnectionStatus.CONNECTED
-                com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.LOCAL_SLM ->
-                    true // SLM is always available on-device
+                com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.LOCAL_SLM -> {
+                    val activePath = modelStorageManager.getActiveModelPath()
+                    !activePath.isNullOrBlank() && java.io.File(activePath).exists()
+                }
             }
             if (!isLlmAvailable) {
                 val cleanText = cleanKnowledgeChunk(chunks.first().text.take(1000), maxLength = 600)
@@ -805,6 +807,12 @@ class OmniChatbotViewModel(
                         append("\n\n💡 For smarter answers, configure Cloud API:\n")
                         append("• Tap ⚙️ above and select a provider\n")
                         append("• Enter your API key and save")
+                    }
+                    com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.LOCAL_SLM -> buildString {
+                        append(cleanText)
+                        append("\n\n💡 For smarter answers, import an on-device SLM model:\n")
+                        append("• Tap ⚙️ above → Settings → AI Model Manager\n")
+                        append("• Import a .gguf or .bin model")
                     }
                     else -> buildString {
                         append(cleanText)
@@ -826,10 +834,7 @@ class OmniChatbotViewModel(
                 }
             }
 
-
             // ── Stable system prompt — identity + rules only, NEVER changes ──
-            // This mirrors how ChatGPT/Gemini work: constant system identity
-            // with conversation history flowing naturally between turns.
             val baseSystemPrompt = buildString {
                 append("/no_think\n")
                 append("You are Autonion, an AI assistant built into an Android automation app.\n\n")
@@ -846,8 +851,6 @@ class OmniChatbotViewModel(
             }
 
             // ── Per-query knowledge — scoped to current question only ──
-            // Placed right before the user's question so the model knows
-            // this knowledge is for THIS turn, not for the conversation history.
             val knowledgeContext = buildString {
                 append("REFERENCE KNOWLEDGE FOR THE FOLLOWING QUESTION ONLY:\n")
                 append("(Use this knowledge to answer the user's next message. ")
@@ -857,17 +860,40 @@ class OmniChatbotViewModel(
 
             var rawAnswer: String? = null
             try {
-                // ── Common Langchain4j Path for both Local Server and Cloud API ──
-                withContext(Dispatchers.IO) {
-                    val model = getLangchainModel()
-                    if (model != null) {
+                if (currentMode == com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.LOCAL_SLM) {
+                    withContext(Dispatchers.IO) {
+                        val slm = com.autonion.automationcompanion.features.semantic_automation.ml.PredictorCache.getSLMEngine(context, modelStorageManager)
+                        if (slm != null) {
+                            val slmPrompt = buildString {
+                                append("You are Autonion, an AI assistant for Android automation.\n")
+                                append("Answer the question concisely using ONLY the reference knowledge.\n\n")
+                                append("Knowledge:\n")
+                                append(contextText.take(1500))
+                                append("\n\nQuestion: ")
+                                append(result.rawPrompt)
+                                append("\nAnswer:")
+                            }
+                            val response = slm.generateChatResponse(slmPrompt)
+                            if (!response.isNullOrBlank()) {
+                                var content = response.trim()
+                                if (content.contains("</think>")) {
+                                    content = content.substringAfter("</think>").trim()
+                                } else if (content.startsWith("<think>")) {
+                                    content = ""
+                                }
+                                if (content.isNotBlank()) {
+                                    rawAnswer = content
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // ── Common Langchain4j Path for both Local Server and Cloud API ──
+                    withContext(Dispatchers.IO) {
+                        val model = getLangchainModel()
+                        if (model != null) {
                             val userMsg = UserMessage(result.rawPrompt)
 
-                            // Message ordering mirrors ChatGPT architecture:
-                            // 1. Stable system identity (constant across turns)
-                            // 2. Full conversation history (natural flow)
-                            // 3. Per-query knowledge (scoped to current question)
-                            // 4. Current user question
                             val allMessages = mutableListOf<dev.langchain4j.data.message.ChatMessage>()
                             allMessages.add(SystemMessage(baseSystemPrompt))
                             allMessages.addAll(chatMemory.messages())
@@ -890,13 +916,12 @@ class OmniChatbotViewModel(
                             }
                         }
                     }
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Q&A generation failed (${_inferenceMode.value})", e)
             }
 
             // Parse [WALKTHROUGH:feature_id] tag from the LLM response.
-            // The LLM appends this when the answer is clearly about a specific feature.
-            // Also catch bare [feature_id] tags that the LLM sometimes produces.
             val walkthroughTagRegex = Regex("""\[WALKTHROUGH:(\w+)]""")
             val bareTagRegex = Regex("""\[(flow_builder|gesture_recording|semantic_automation|cross_device|visual_trigger|screen_ml|system_context|debugger)]""")
             val tagMatch = rawAnswer?.let { walkthroughTagRegex.find(it) }
@@ -911,8 +936,6 @@ class OmniChatbotViewModel(
                 ?.trim()
 
             // Priority: prompt-based match → LLM tag → null
-            // If the query is about an excluded topic (e.g. extensions), suppress ALL
-            // walkthrough suggestions — even hallucinated LLM tags.
             val walkthroughFeature = if (FeatureMatcher.isExcludedFromWalkthrough(result.rawPrompt)) {
                 null
             } else {
@@ -924,8 +947,14 @@ class OmniChatbotViewModel(
             } else {
                 // LLM failed — show clean chunk fallback
                 val fallback = cleanKnowledgeChunk(chunks.first().text.take(1000), maxLength = 600)
+                val fallbackNote = when (currentMode) {
+                    com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.LOCAL_SLM ->
+                        "$fallback\n\n💡 On-device SLM didn't respond. Showing knowledge base excerpt."
+                    else ->
+                        "$fallback\n\n💡 LLM didn't respond. Showing knowledge base excerpt."
+                }
                 updateLastBotMessage(
-                    "$fallback\n\n💡 LLM didn't respond. Showing knowledge base excerpt.",
+                    fallbackNote,
                     ResponseMode.KNOWLEDGE,
                     suggestedWalkthroughId = walkthroughFeature
                 )

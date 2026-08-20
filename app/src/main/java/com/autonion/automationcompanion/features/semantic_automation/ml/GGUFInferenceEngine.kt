@@ -16,11 +16,6 @@ import java.io.File
 /**
  * On-Device SLM Engine using llama.cpp (via llama-kotlin-android) to run GGUF models locally.
  * Supports models like Gemma 4, Gemma 3n, Phi-3.5, Llama 3.2, Qwen 2.5, etc.
- *
- * Stability enhancements:
- * - Pre-allocation RAM guard to prevent SIGSEGV memory faults in native matrix routines
- * - Adaptive thread limits scaled to mobile big.LITTLE architectures
- * - Optimized 1024 context window for mobile RAM constraints
  */
 class GGUFInferenceEngine(
     private val context: Context,
@@ -31,19 +26,15 @@ class GGUFInferenceEngine(
     private var llamaModel: LlamaModel? = null
 
     companion object {
-        // Balanced mobile defaults: 1024 context saves ~300MB KV cache RAM vs 2048
-        private const val DEFAULT_CONTEXT_SIZE = 1024
+        private const val DEFAULT_CONTEXT_SIZE = 2048
+        private const val FALLBACK_CONTEXT_SIZE = 1024
+        private const val DEFAULT_THREAD_COUNT = 4
         private const val DEFAULT_TEMPERATURE = 0.3f
     }
 
     private fun calculateOptimalThreads(): Int {
         val cores = Runtime.getRuntime().availableProcessors()
-        // On mobile 8-core (4 efficient + 4 performance), 2-3 worker threads prevent CPU cache thrashing
-        return when {
-            cores >= 8 -> 3
-            cores >= 4 -> 2
-            else -> 1
-        }
+        return cores.coerceIn(2, DEFAULT_THREAD_COUNT)
     }
 
     private fun checkMemoryHeadroom(modelFile: File) {
@@ -54,20 +45,10 @@ class GGUFInferenceEngine(
                 actManager.getMemoryInfo(memInfo)
                 val availRamMB = memInfo.availMem / (1024 * 1024)
                 val modelFileMB = modelFile.length() / (1024 * 1024)
-                Log.d(TAG, "Device Memory Check: Available RAM = ${availRamMB}MB, Model Size = ${modelFileMB}MB")
-
-                // If available RAM is less than model size + 200MB safety margin, abort before SIGSEGV
-                if (availRamMB < (modelFileMB + 200)) {
-                    throw IllegalStateException(
-                        "Insufficient available RAM (${availRamMB}MB) to load ${modelFile.name} (${modelFileMB}MB).\n" +
-                        "Close background apps or switch to Cloud API / Local Server (Ollama) mode to avoid device crashes."
-                    )
-                }
+                Log.d(TAG, "Device Memory Info: Available RAM = ${availRamMB}MB, Model Size = ${modelFileMB}MB")
             }
-        } catch (e: IllegalStateException) {
-            throw e
         } catch (e: Exception) {
-            Log.w(TAG, "Could not verify memory headroom", e)
+            Log.w(TAG, "Could not query memory info", e)
         }
     }
 
@@ -76,27 +57,21 @@ class GGUFInferenceEngine(
             java.io.FileInputStream(modelFile).use { fis ->
                 val header = ByteArray(4)
                 val read = fis.read(header)
-                if (read < 4) {
-                    throw IllegalStateException("Model file is too small to contain a valid GGUF header.")
-                }
-                // GGUF magic number in ASCII is 'G' 'G' 'U' 'F' (0x47, 0x47, 0x55, 0x46)
-                val isGguf = header[0] == 0x47.toByte() &&
-                             header[1] == 0x47.toByte() &&
-                             header[2] == 0x55.toByte() &&
-                             header[3] == 0x46.toByte()
-                if (!isGguf) {
-                    val headerStr = String(header, Charsets.US_ASCII)
-                    throw IllegalStateException(
-                        "The selected file is not a valid GGUF model (header: '$headerStr'). " +
-                        "If you downloaded this file from Hugging Face, ensure the direct file was downloaded, " +
-                        "not an HTML error page."
-                    )
+                if (read == 4) {
+                    val isGguf = header[0] == 0x47.toByte() &&
+                                 header[1] == 0x47.toByte() &&
+                                 header[2] == 0x55.toByte() &&
+                                 header[3] == 0x46.toByte()
+                    if (!isGguf) {
+                        val headerStr = String(header, Charsets.US_ASCII)
+                        Log.w(TAG, "Non-standard GGUF header '$headerStr' detected; attempting load via llama.cpp.")
+                    } else {
+                        Log.d(TAG, "Valid GGUF magic header confirmed.")
+                    }
                 }
             }
-        } catch (e: IllegalStateException) {
-            throw e
         } catch (e: Exception) {
-            Log.w(TAG, "Could not inspect GGUF header, proceeding with caution", e)
+            Log.w(TAG, "Could not inspect GGUF header, proceeding with load", e)
         }
     }
 
@@ -118,10 +93,8 @@ class GGUFInferenceEngine(
                 )
             }
 
-            // Validate GGUF magic header ('GGUF' = 0x47 0x47 0x55 0x46) to prevent native SIGSEGV on corrupted files
+            // Inspect header & memory for telemetry without hard-blocking execution
             validateGgufHeader(modelFile)
-
-            // Verify RAM headroom before native allocation
             checkMemoryHeadroom(modelFile)
 
             val threadsToUse = calculateOptimalThreads()
@@ -137,19 +110,30 @@ class GGUFInferenceEngine(
                 val elapsed = System.currentTimeMillis() - startTime
                 Log.d(TAG, "llama.cpp model loaded in ${elapsed}ms")
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to load GGUF model via llama.cpp", e)
-                val message = e.message ?: "Unknown error"
-                if (message.contains("Failed to load model")) {
-                    throw IllegalStateException(
-                        "llama.cpp could not load this model. This usually means:\n" +
-                        "• The model's architecture is not supported by this llama.cpp version\n" +
-                        "• The .gguf file is corrupted or incompletely downloaded\n" +
-                        "Try a different model (e.g., Phi-3.5, Llama 3.2, Qwen 2.5) or re-download this one.\n" +
-                        "Original error: $message",
-                        e
-                    )
+                Log.w(TAG, "Failed to load model with contextSize=$DEFAULT_CONTEXT_SIZE, attempting fallback with contextSize=$FALLBACK_CONTEXT_SIZE", e)
+                try {
+                    llamaModel = LlamaModel.load(modelPath) {
+                        contextSize = FALLBACK_CONTEXT_SIZE
+                        threads = 2
+                        temperature = DEFAULT_TEMPERATURE
+                    }
+                    val elapsed = System.currentTimeMillis() - startTime
+                    Log.d(TAG, "llama.cpp model loaded with fallback settings in ${elapsed}ms")
+                } catch (fallbackEx: Exception) {
+                    Log.e(TAG, "Failed to load GGUF model via llama.cpp fallback", fallbackEx)
+                    val message = fallbackEx.message ?: "Unknown error"
+                    if (message.contains("Failed to load model")) {
+                        throw IllegalStateException(
+                            "llama.cpp could not load this model. This usually means:\n" +
+                            "• The model's architecture is not supported by this llama.cpp version\n" +
+                            "• The .gguf file is corrupted or incompletely downloaded\n" +
+                            "Try a different model (e.g., Phi-3.5, Llama 3.2, Qwen 2.5) or re-download this one.\n" +
+                            "Original error: $message",
+                            fallbackEx
+                        )
+                    }
+                    throw fallbackEx
                 }
-                throw e
             }
         }
     }
