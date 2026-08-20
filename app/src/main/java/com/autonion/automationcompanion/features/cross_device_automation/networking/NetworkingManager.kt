@@ -417,13 +417,11 @@ class NetworkingManager(
                                 str.toLong()
                             } catch (_: NumberFormatException) {
                                 try {
-                                    java.time.Instant.parse(str).toEpochMilli()
+                                    val cleanStr = str.substringBefore(".").substringBefore("Z")
+                                    val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
+                                    sdf.parse(cleanStr)?.time ?: System.currentTimeMillis()
                                 } catch (_: Exception) {
-                                    try {
-                                        java.time.LocalDateTime.parse(str).atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
-                                    } catch (_: Exception) {
-                                        System.currentTimeMillis()
-                                    }
+                                    System.currentTimeMillis()
                                 }
                             }
                         }
