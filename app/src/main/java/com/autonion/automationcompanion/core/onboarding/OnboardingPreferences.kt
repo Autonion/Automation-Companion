@@ -23,6 +23,7 @@ object OnboardingPreferences {
     private const val KEY_CHECKLIST_DISMISSED = "is_getting_started_dismissed"
     private const val KEY_HAS_CONNECTED_AI = "has_connected_ai"
     private const val KEY_HAS_CREATED_AUTOMATION = "has_created_first_automation"
+    private const val KEY_LAST_SEEN_WHATS_NEW_VERSION = "last_seen_whats_new_version"
     private const val KEY_TIP_PREFIX = "has_seen_tip_"
 
     @Volatile
@@ -80,6 +81,26 @@ object OnboardingPreferences {
      */
     fun isChecklistComplete(): Boolean {
         return hasConnectedAI && hasCreatedFirstAutomation
+    }
+
+    // ─── What's New Release Card ──────────────────────────
+
+    var lastSeenWhatsNewVersion: Int
+        get() = prefs.getInt(KEY_LAST_SEEN_WHATS_NEW_VERSION, 0)
+        set(value) = prefs.edit().putInt(KEY_LAST_SEEN_WHATS_NEW_VERSION, value).apply()
+
+    /**
+     * Returns true if the user has not dismissed the What's New card for [currentVersionCode].
+     */
+    fun shouldShowWhatsNew(currentVersionCode: Int): Boolean {
+        return lastSeenWhatsNewVersion < currentVersionCode
+    }
+
+    /**
+     * Marks the What's New card as dismissed for [currentVersionCode].
+     */
+    fun markWhatsNewDismissed(currentVersionCode: Int) {
+        lastSeenWhatsNewVersion = currentVersionCode
     }
 
     // ─── Per-Feature Tips ─────────────────────────────────
