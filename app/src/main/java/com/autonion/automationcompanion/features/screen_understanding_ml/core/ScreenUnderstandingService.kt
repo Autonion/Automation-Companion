@@ -996,7 +996,7 @@ class ScreenUnderstandingService : Service() {
                 if (!anchorText.isNullOrBlank()) {
                     // Try YOLO text match first
                     val textMatch = sameLabel.firstOrNull { el ->
-                        !el.text.isNullOrBlank() && el.text.contains(anchorText, ignoreCase = true)
+                        HybridElementMatcher.isTextMatching(el.text, anchorText)
                     }
                     if (textMatch != null) {
                         Log.d(TAG, "waitForElement: Rotated YOLO text fallback: label=${textMatch.label}, text=${textMatch.text}")
@@ -1010,10 +1010,9 @@ class ScreenUnderstandingService : Service() {
                         Log.d(TAG, "waitForElement: Rotated acc text fallback: label=${accMatch.label}, text=${accMatch.text}, bounds=${accMatch.bounds}")
                         return accMatch
                     }
-                }
-                // Last resort for rotation: highest-confidence YOLO of matching label
-                // Only accept if we have NO text to match against (truly ambiguous)
-                if (anchorText.isNullOrBlank()) {
+                } else {
+                    // Last resort for rotation: highest-confidence YOLO of matching label
+                    // Only accept if we have NO text to match against (truly ambiguous)
                     val bestYolo = sameLabel.maxByOrNull { it.confidence }
                     if (bestYolo != null && bestYolo.confidence > 0.5f) {
                         Log.d(TAG, "waitForElement: Rotated confidence fallback (no text): label=${bestYolo.label}, " +
@@ -1039,10 +1038,10 @@ class ScreenUnderstandingService : Service() {
 
                 val fallbackMatch = if (!anchorText.isNullOrBlank()) {
                     val textMatches = sameLabel.filter { el ->
-                        !el.text.isNullOrBlank() && el.text.contains(anchorText, ignoreCase = true)
+                        HybridElementMatcher.isTextMatching(el.text, anchorText)
                     }
                     textMatches.maxByOrNull { iouFor(it) }
-                        ?: sameLabel.maxByOrNull { iouFor(it) }
+                    // Strict gating: if anchorText is specified and no candidate matches text, return null
                 } else {
                     sameLabel.maxByOrNull { iouFor(it) }
                 }
@@ -1068,47 +1067,21 @@ class ScreenUnderstandingService : Service() {
         screenWidth: Float, screenHeight: Float
     ): UIElement? {
         try {
-            val service = AccessibilityRouter.getService() ?: return null
-            val root = try { service.rootInActiveWindow } catch (_: Exception) { null } ?: return null
-            try {
-                val nodes = root.findAccessibilityNodeInfosByText(text)
-                var bestMatch: UIElement? = null
-                var bestScore = 0f
-                for (node in nodes) {
-                    val bounds = android.graphics.Rect()
-                    node.getBoundsInScreen(bounds)
-                    val boundsF = RectF(bounds)
-                    // Validate bounds are on screen
-                    if (boundsF.right <= 0 || boundsF.bottom <= 0) { node.recycle(); continue }
-                    if (screenWidth > 0 && boundsF.left > screenWidth) { node.recycle(); continue }
-                    if (screenHeight > 0 && boundsF.top > screenHeight) { node.recycle(); continue }
-                    
-                    val nodeText = node.text?.toString() ?: node.contentDescription?.toString() ?: ""
-                    val textMatch = if (nodeText.contains(text, ignoreCase = true)) 1.0f else 0f
-                    val className = node.className?.toString()?.lowercase() ?: ""
-                    val classMatch = when (label.lowercase()) {
-                        "button" -> if (className.contains("button") || node.isClickable) 1.0f else 0f
-                        "input" -> if (className.contains("edittext") || node.isEditable) 1.0f else 0f
-                        "toggle" -> if (className.contains("switch") || className.contains("toggle")) 1.0f else 0f
-                        else -> 0.5f
-                    }
-                    val score = textMatch * 0.7f + classMatch * 0.3f
-                    if (score > bestScore && textMatch > 0f) {
-                        bestScore = score
-                        bestMatch = UIElement(
-                            id = java.util.UUID.randomUUID().toString(),
-                            label = label,
-                            confidence = score,
-                            bounds = boundsF,
-                            text = nodeText
-                        )
-                    }
-                    node.recycle()
-                }
-                return bestMatch
-            } finally {
-                try { root.recycle() } catch (_: Exception) {}
+            val elements = AccessibilityAugmenter.captureAllInteractiveElements()
+            val textMatches = elements.filter { el ->
+                // Validate bounds are on screen
+                if (el.bounds.right <= 0 || el.bounds.bottom <= 0) return@filter false
+                if (screenWidth > 0 && el.bounds.left > screenWidth) return@filter false
+                if (screenHeight > 0 && el.bounds.top > screenHeight) return@filter false
+                HybridElementMatcher.isTextMatching(el.text, text)
             }
+            if (textMatches.isNotEmpty()) {
+                return textMatches.maxByOrNull { el ->
+                    val classMatch = if (el.label.equals(label, ignoreCase = true)) 0.3f else 0f
+                    el.confidence + classMatch
+                }
+            }
+            return null
         } catch (e: Exception) {
             Log.w(TAG, "findAccessibilityElementByText failed: ${e.message}")
             return null
@@ -1142,8 +1115,7 @@ class ScreenUnderstandingService : Service() {
                     // within blocks handles cases where a block was split or merged.
                     for (block in result.blocks) {
                         for (line in block.lines) {
-                            if (line.text.contains(targetText, ignoreCase = true) ||
-                                targetText.contains(line.text, ignoreCase = true)) {
+                            if (HybridElementMatcher.isTextMatching(line.text, targetText)) {
                                 val bounds = line.bounds ?: block.bounds
                                 if (bounds != null) {
                                     Log.d(TAG, "findTextOnScreen: LINE match '${line.text}' for target '$targetText' at $bounds")
@@ -1161,7 +1133,7 @@ class ScreenUnderstandingService : Service() {
 
                     // ── Strategy 2: Block-level exact match (block contains target) ──
                     val matchBlock = result.blocks.firstOrNull { block ->
-                        block.text.contains(targetText, ignoreCase = true)
+                        HybridElementMatcher.isTextMatching(block.text, targetText)
                     }
                     if (matchBlock != null && matchBlock.bounds != null) {
                         Log.d(TAG, "findTextOnScreen: BLOCK match '${matchBlock.text}' for target '$targetText' at ${matchBlock.bounds}")
@@ -1178,7 +1150,7 @@ class ScreenUnderstandingService : Service() {
                     // Handles cases where the originally captured block was large but at
                     // runtime it was split into smaller blocks.
                     val reverseMatch = result.blocks.firstOrNull { block ->
-                        block.text.length >= 3 && targetText.contains(block.text, ignoreCase = true)
+                        block.text.length >= 3 && HybridElementMatcher.isTextMatching(targetText, block.text)
                     }
                     if (reverseMatch != null && reverseMatch.bounds != null) {
                         Log.d(TAG, "findTextOnScreen: REVERSE match '${reverseMatch.text}' for target '$targetText' at ${reverseMatch.bounds}")

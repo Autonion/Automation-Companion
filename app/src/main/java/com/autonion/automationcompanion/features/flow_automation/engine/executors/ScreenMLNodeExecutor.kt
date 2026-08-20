@@ -13,6 +13,7 @@ import com.autonion.automationcompanion.features.flow_automation.model.ScreenMLM
 import com.autonion.automationcompanion.features.flow_automation.model.ScreenMLNode
 import com.autonion.automationcompanion.features.screen_understanding_ml.core.PerceptionLayer
 import com.autonion.automationcompanion.features.screen_understanding_ml.core.AccessibilityAugmenter
+import com.autonion.automationcompanion.features.screen_understanding_ml.core.HybridElementMatcher
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.AutomationStep
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.UIElement
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.ActionIntent
@@ -315,13 +316,10 @@ class ScreenMLNodeExecutor(
                 continue
             }
 
-            // ── Strategy 1: Text + label match (highest priority) ──
+            // ── Strategy 1: Text + label match (highest priority when text is present) ──
             if (!anchorText.isNullOrBlank()) {
                 val textMatches = sameLabel.filter { el ->
-                    !el.text.isNullOrBlank() && (
-                        el.text!!.contains(anchorText, ignoreCase = true) ||
-                        anchorText.contains(el.text!!, ignoreCase = true)
-                    )
+                    HybridElementMatcher.isTextMatching(el.text, anchorText)
                 }
                 if (textMatches.isNotEmpty()) {
                     // Among text matches, pick the one closest to original position
@@ -331,37 +329,38 @@ class ScreenMLNodeExecutor(
                     Log.d(TAG, "findElement: TEXT match '${best.text}' at ${best.bounds} (source=${best.source ?: "yolo"})")
                     return best
                 }
-            }
-
-            // ── Strategy 2: Label + IoU spatial match ──
-            val iouScored = sameLabel.map { el ->
-                val iou = if (useNormalized && normalizedAnchor != null) {
-                    val nEl = android.graphics.RectF(
-                        el.bounds.left / curW, el.bounds.top / curH,
-                        el.bounds.right / curW, el.bounds.bottom / curH
-                    )
-                    calculateIoU(nEl, normalizedAnchor)
-                } else {
-                    calculateIoU(el.bounds, anchorBounds)
+                // HARD GATE: If anchor text was captured, do NOT fall through to spatial/distance matches
+            } else {
+                // ── Strategy 2: Label + IoU spatial match (for textless elements) ──
+                val iouScored = sameLabel.map { el ->
+                    val iou = if (useNormalized && normalizedAnchor != null) {
+                        val nEl = android.graphics.RectF(
+                            el.bounds.left / curW, el.bounds.top / curH,
+                            el.bounds.right / curW, el.bounds.bottom / curH
+                        )
+                        calculateIoU(nEl, normalizedAnchor)
+                    } else {
+                        calculateIoU(el.bounds, anchorBounds)
+                    }
+                    Pair(el, iou)
                 }
-                Pair(el, iou)
-            }
-            val bestIoU = iouScored.maxByOrNull { it.second }
-            if (bestIoU != null && bestIoU.second > 0.1f) {
-                Log.d(TAG, "findElement: IoU match '${bestIoU.first.label}' IoU=${bestIoU.second} at ${bestIoU.first.bounds} (source=${bestIoU.first.source ?: "yolo"})")
-                return bestIoU.first
-            }
+                val bestIoU = iouScored.maxByOrNull { it.second }
+                if (bestIoU != null && bestIoU.second > 0.1f) {
+                    Log.d(TAG, "findElement: IoU match '${bestIoU.first.label}' IoU=${bestIoU.second} at ${bestIoU.first.bounds} (source=${bestIoU.first.source ?: "yolo"})")
+                    return bestIoU.first
+                }
 
-            // ── Strategy 3: Closest distance fallback ──
-            val closest = sameLabel.minByOrNull { el ->
-                normalizedDistance(el, curW, curH, normAnchorCx, normAnchorCy)
-            }
-            if (closest != null) {
-                val dist = normalizedDistance(closest, curW, curH, normAnchorCx, normAnchorCy)
-                // Accept if within 30% of screen diagonal
-                if (dist < 0.3f) {
-                    Log.d(TAG, "findElement: DISTANCE match '${closest.label}' dist=$dist at ${closest.bounds} (source=${closest.source ?: "yolo"})")
-                    return closest
+                // ── Strategy 3: Closest distance fallback (for textless elements) ──
+                val closest = sameLabel.minByOrNull { el ->
+                    normalizedDistance(el, curW, curH, normAnchorCx, normAnchorCy)
+                }
+                if (closest != null) {
+                    val dist = normalizedDistance(closest, curW, curH, normAnchorCx, normAnchorCy)
+                    // Accept if within 30% of screen diagonal
+                    if (dist < 0.3f) {
+                        Log.d(TAG, "findElement: DISTANCE match '${closest.label}' dist=$dist at ${closest.bounds} (source=${closest.source ?: "yolo"})")
+                        return closest
+                    }
                 }
             }
 
@@ -416,8 +415,7 @@ class ScreenMLNodeExecutor(
                     // Strategy 1: Line-level match within blocks
                     for (block in result.blocks) {
                         for (line in block.lines) {
-                            if (line.text.contains(targetText, ignoreCase = true) ||
-                                targetText.contains(line.text, ignoreCase = true)) {
+                            if (HybridElementMatcher.isTextMatching(line.text, targetText)) {
                                 val bounds = line.bounds ?: block.bounds
                                 if (bounds != null) {
                                     Log.d(TAG, "findTextOnScreen: LINE match '${line.text}' at $bounds")
@@ -435,7 +433,7 @@ class ScreenMLNodeExecutor(
 
                     // Strategy 2: Block-level match
                     val matchBlock = result.blocks.firstOrNull { block ->
-                        block.text.contains(targetText, ignoreCase = true)
+                        HybridElementMatcher.isTextMatching(block.text, targetText)
                     }
                     if (matchBlock != null && matchBlock.bounds != null) {
                         Log.d(TAG, "findTextOnScreen: BLOCK match '${matchBlock.text}' at ${matchBlock.bounds}")
@@ -450,7 +448,7 @@ class ScreenMLNodeExecutor(
 
                     // Strategy 3: Reverse containment
                     val reverseMatch = result.blocks.firstOrNull { block ->
-                        block.text.length >= 3 && targetText.contains(block.text, ignoreCase = true)
+                        block.text.length >= 3 && HybridElementMatcher.isTextMatching(targetText, block.text)
                     }
                     if (reverseMatch != null && reverseMatch.bounds != null) {
                         Log.d(TAG, "findTextOnScreen: REVERSE match '${reverseMatch.text}' at ${reverseMatch.bounds}")
@@ -466,35 +464,19 @@ class ScreenMLNodeExecutor(
 
                 // Strategy 4: Accessibility tree fallback
                 try {
-                    val service = com.autonion.automationcompanion.AccessibilityRouter.getService()
-                    if (service != null) {
-                        val root = try { service.rootInActiveWindow } catch (_: Exception) { null }
-                        if (root != null) {
-                            try {
-                                val nodes = root.findAccessibilityNodeInfosByText(targetText)
-                                for (accNode in nodes) {
-                                    val bounds = android.graphics.Rect()
-                                    accNode.getBoundsInScreen(bounds)
-                                    val boundsF = android.graphics.RectF(bounds)
-                                    if (boundsF.width() > 0 && boundsF.height() > 0 &&
-                                        boundsF.right > 0 && boundsF.bottom > 0) {
-                                        val nodeText = accNode.text?.toString() ?: accNode.contentDescription?.toString()
-                                        accNode.recycle()
-                                        Log.d(TAG, "findTextOnScreen: A11Y match for '$targetText' at $boundsF")
-                                        return com.autonion.automationcompanion.features.screen_understanding_ml.model.UIElement(
-                                            id = java.util.UUID.randomUUID().toString(),
-                                            label = "Text",
-                                            confidence = 0.85f,
-                                            bounds = boundsF,
-                                            text = nodeText
-                                        )
-                                    }
-                                    accNode.recycle()
-                                }
-                            } finally {
-                                try { root.recycle() } catch (_: Exception) {}
-                            }
-                        }
+                    val elements = AccessibilityAugmenter.captureAllInteractiveElements()
+                    val match = elements.firstOrNull { el ->
+                        HybridElementMatcher.isTextMatching(el.text, targetText)
+                    }
+                    if (match != null) {
+                        Log.d(TAG, "findTextOnScreen: A11Y match for '$targetText' at ${match.bounds}")
+                        return com.autonion.automationcompanion.features.screen_understanding_ml.model.UIElement(
+                            id = java.util.UUID.randomUUID().toString(),
+                            label = "Text",
+                            confidence = 0.85f,
+                            bounds = match.bounds,
+                            text = match.text
+                        )
                     }
                 } catch (e: Exception) {
                     Log.w(TAG, "Accessibility text search failed: ${e.message}")
@@ -570,23 +552,21 @@ class ScreenMLNodeExecutor(
             // Strategy 1: Text match
             if (!anchorText.isNullOrBlank()) {
                 val textMatch = elements.firstOrNull { el ->
-                    !el.text.isNullOrBlank() && (
-                        el.text!!.contains(anchorText, ignoreCase = true) ||
-                        anchorText.contains(el.text!!, ignoreCase = true)
-                    )
+                    HybridElementMatcher.isTextMatching(el.text, anchorText)
                 }
                 if (textMatch != null) return textMatch
-            }
-
-            // Strategy 2: Label + closest position match
-            val sameLabel = elements.filter { it.label.equals(step.anchor.label, ignoreCase = true) }
-            if (sameLabel.isNotEmpty()) {
-                val closest = sameLabel.minByOrNull { el ->
-                    val dx = (el.bounds.centerX() - step.anchor.bounds.centerX())
-                    val dy = (el.bounds.centerY() - step.anchor.bounds.centerY())
-                    dx * dx + dy * dy
+                // HARD GATE: If anchor text was captured, do NOT fall through to position match
+            } else {
+                // Strategy 2: Label + closest position match (for textless elements)
+                val sameLabel = elements.filter { it.label.equals(step.anchor.label, ignoreCase = true) }
+                if (sameLabel.isNotEmpty()) {
+                    val closest = sameLabel.minByOrNull { el ->
+                        val dx = (el.bounds.centerX() - step.anchor.bounds.centerX())
+                        val dy = (el.bounds.centerY() - step.anchor.bounds.centerY())
+                        dx * dx + dy * dy
+                    }
+                    if (closest != null) return closest
                 }
-                if (closest != null) return closest
             }
 
             kotlinx.coroutines.delay(300)
