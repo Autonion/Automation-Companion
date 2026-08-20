@@ -90,7 +90,7 @@ fun EdgeConditionOverlay(
             ) {
                 Text("Edge Condition", color = editorColors.panelText, fontWeight = FontWeight.Bold, fontSize = 18.sp)
                 TextButton(onClick = onDismiss) {
-                    Text("Done", color = Color(0xFF64FFDA))
+                    Text("Done", color = editorColors.accentTealText)
                 }
             }
 
@@ -119,7 +119,7 @@ fun EdgeConditionOverlay(
                             onUpdateEdge(edge.copy(condition = newCondition))
                         },
                         colors = RadioButtonDefaults.colors(
-                            selectedColor = Color(0xFF64FFDA),
+                            selectedColor = editorColors.accentTeal,
                             unselectedColor = editorColors.panelDimText
                         )
                     )
@@ -360,9 +360,9 @@ fun EdgeConditionOverlay(
 private fun flowTextFieldColors(editorColors: FlowEditorColors = flowEditorColors()) = OutlinedTextFieldDefaults.colors(
     focusedTextColor = editorColors.panelText,
     unfocusedTextColor = editorColors.panelText.copy(alpha = 0.85f),
-    focusedBorderColor = Color(0xFF64FFDA),
+    focusedBorderColor = editorColors.accentTeal,
     unfocusedBorderColor = editorColors.panelText.copy(alpha = 0.25f),
-    focusedLabelColor = Color(0xFF64FFDA),
+    focusedLabelColor = editorColors.accentTealText,
     unfocusedLabelColor = editorColors.panelDimText,
-    cursorColor = Color(0xFF64FFDA)
+    cursorColor = editorColors.accentTeal
 )

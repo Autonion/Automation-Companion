@@ -79,7 +79,7 @@ fun NodeConfigPanel(
                     fontSize = 18.sp
                 )
                 TextButton(onClick = onDismiss) {
-                    Text("Done", color = Color(0xFF64FFDA))
+                    Text("Done", color = editorColors.accentTealText)
                 }
             }
 
@@ -612,7 +612,7 @@ private fun GestureNodeConfig(node: GestureNode, onUpdate: (FlowNode) -> Unit, o
     val editorColors = flowEditorColors()
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     if (node.recordedActionsJson.isNotEmpty()) {
-        Text("✓ Recorded actions available.", color = Color(0xFF64FFDA), fontSize = 12.sp)
+        Text("✓ Recorded actions available.", color = editorColors.accentTealText, fontSize = 12.sp)
         Spacer(Modifier.height(8.dp))
     }
 
@@ -747,7 +747,7 @@ private fun VisualTriggerNodeConfig(node: VisualTriggerNode, onUpdate: (FlowNode
     val editorColors = flowEditorColors()
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     if (node.visionPresetJson.isNotEmpty()) {
-        Text("✓ Vision configuration available.", color = Color(0xFF64FFDA), fontSize = 12.sp)
+        Text("✓ Vision configuration available.", color = editorColors.accentTealText, fontSize = 12.sp)
         Spacer(Modifier.height(8.dp))
     }
 
@@ -901,7 +901,7 @@ private fun ScreenMLNodeConfig(node: ScreenMLNode, onUpdate: (FlowNode) -> Unit,
     if (selectedMode == ScreenMLMode.UI_ATTRIBUTE) {
         Spacer(Modifier.height(2.dp))
         Text("✓ Screen recording only for capture • Flow execution runs directly via Accessibility",
-            color = Color(0xFF64FFDA), fontSize = 11.sp)
+            color = editorColors.accentTealText, fontSize = 11.sp)
     }
 
     Spacer(Modifier.height(10.dp))
@@ -912,7 +912,7 @@ private fun ScreenMLNodeConfig(node: ScreenMLNode, onUpdate: (FlowNode) -> Unit,
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text("✓ Screen Understanding actions configured", color = Color(0xFF64FFDA), fontSize = 12.sp)
+            Text("✓ Screen Understanding actions configured", color = editorColors.accentTealText, fontSize = 12.sp)
             Surface(
                 shape = RoundedCornerShape(8.dp),
                 color = NodeColors.ScreenMLAmber.copy(alpha = 0.2f)
@@ -1150,11 +1150,11 @@ private fun RepeatNodeConfig(node: RepeatNode, onUpdate: (FlowNode) -> Unit) {
 private fun flowTextFieldColors(editorColors: FlowEditorColors = flowEditorColors()) = OutlinedTextFieldDefaults.colors(
     focusedTextColor = editorColors.panelText,
     unfocusedTextColor = editorColors.panelText.copy(alpha = 0.85f),
-    focusedBorderColor = Color(0xFF64FFDA),
+    focusedBorderColor = editorColors.accentTeal,
     unfocusedBorderColor = editorColors.panelText.copy(alpha = 0.25f),
-    focusedLabelColor = Color(0xFF64FFDA),
+    focusedLabelColor = editorColors.accentTealText,
     unfocusedLabelColor = editorColors.panelDimText,
-    cursorColor = Color(0xFF64FFDA)
+    cursorColor = editorColors.accentTeal
 )
 
 private fun nodeColors(node: FlowNode): Pair<Color, Color> {

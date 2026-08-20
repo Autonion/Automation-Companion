@@ -223,13 +223,14 @@ fun NodePalette(
                         transitionSpec = { fadeIn() togetherWith fadeOut() },
                         label = "node_info_content"
                     ) { targetNode ->
+                        val displayColor = if (isDark) targetNode.color else NodeColors.getDarkAccentForType(targetNode.nodeType)
                         Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(top = 12.dp),
                             shape = RoundedCornerShape(16.dp),
-                            color = targetNode.color.copy(alpha = if (isDark) 0.12f else 0.16f),
-                            border = BorderStroke(1.dp, targetNode.color.copy(alpha = if (isDark) 0.35f else 0.5f))
+                            color = displayColor.copy(alpha = if (isDark) 0.12f else 0.12f),
+                            border = BorderStroke(1.dp, displayColor.copy(alpha = if (isDark) 0.35f else 0.45f))
                         ) {
                             Column(
                                 modifier = Modifier.padding(12.dp)
@@ -247,13 +248,13 @@ fun NodePalette(
                                             modifier = Modifier
                                                 .size(26.dp)
                                                 .clip(CircleShape)
-                                                .background(targetNode.color.copy(alpha = if (isDark) 0.25f else 0.35f)),
+                                                .background(displayColor.copy(alpha = if (isDark) 0.25f else 0.18f)),
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Icon(
                                                 imageVector = targetNode.icon,
                                                 contentDescription = null,
-                                                tint = targetNode.color,
+                                                tint = displayColor,
                                                 modifier = Modifier.size(15.dp)
                                             )
                                         }
@@ -268,11 +269,11 @@ fun NodePalette(
                                         // Category Tag
                                         Surface(
                                             shape = RoundedCornerShape(6.dp),
-                                            color = targetNode.color.copy(alpha = if (isDark) 0.2f else 0.25f)
+                                            color = displayColor.copy(alpha = if (isDark) 0.2f else 0.15f)
                                         ) {
                                             Text(
                                                 text = targetNode.category,
-                                                color = targetNode.color,
+                                                color = displayColor,
                                                 fontSize = 10.sp,
                                                 fontWeight = FontWeight.SemiBold,
                                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -310,8 +311,8 @@ fun NodePalette(
                                         onDismiss()
                                     },
                                     colors = ButtonDefaults.buttonColors(
-                                        containerColor = targetNode.color,
-                                        contentColor = Color(0xFF0D0F12)
+                                        containerColor = displayColor,
+                                        contentColor = if (isDark) Color(0xFF0D0F12) else Color.White
                                     ),
                                     shape = RoundedCornerShape(10.dp),
                                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
@@ -348,6 +349,7 @@ fun NodePalette(
             ) {
                 items(nodeTypes) { item ->
                     val isSelected = activeInfoNode?.nodeType == item.nodeType
+                    val itemDisplayColor = if (isDark) item.color else NodeColors.getDarkAccentForType(item.nodeType)
 
                     Box(
                         modifier = Modifier
@@ -355,13 +357,13 @@ fun NodePalette(
                             .aspectRatio(0.88f)
                             .clip(RoundedCornerShape(18.dp))
                             .background(
-                                if (isSelected) item.color.copy(alpha = if (isDark) 0.16f else 0.22f)
+                                if (isSelected) itemDisplayColor.copy(alpha = if (isDark) 0.16f else 0.16f)
                                 else editorColors.panelText.copy(alpha = if (isDark) 0.04f else 0.06f)
                             )
                             .border(
                                 BorderStroke(
                                     width = if (isSelected) 1.5.dp else 1.dp,
-                                    color = if (isSelected) item.color else editorColors.panelText.copy(alpha = if (isDark) 0.07f else 0.10f)
+                                    color = if (isSelected) itemDisplayColor else editorColors.panelText.copy(alpha = if (isDark) 0.07f else 0.10f)
                                 ),
                                 RoundedCornerShape(18.dp)
                             )
@@ -390,7 +392,7 @@ fun NodePalette(
                             Icon(
                                 imageVector = Icons.Rounded.Info,
                                 contentDescription = "Info for ${item.label}",
-                                tint = if (isSelected) item.color else editorColors.panelDimText.copy(alpha = 0.5f),
+                                tint = if (isSelected) itemDisplayColor else editorColors.panelDimText.copy(alpha = 0.5f),
                                 modifier = Modifier.size(15.dp)
                             )
                         }
@@ -407,13 +409,13 @@ fun NodePalette(
                                 modifier = Modifier
                                     .size(38.dp)
                                     .clip(RoundedCornerShape(12.dp))
-                                    .background(item.color.copy(alpha = if (isDark) 0.18f else 0.25f)),
+                                    .background(itemDisplayColor.copy(alpha = if (isDark) 0.18f else 0.18f)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     imageVector = item.icon,
                                     contentDescription = item.label,
-                                    tint = item.color,
+                                    tint = itemDisplayColor,
                                     modifier = Modifier.size(22.dp)
                                 )
                             }

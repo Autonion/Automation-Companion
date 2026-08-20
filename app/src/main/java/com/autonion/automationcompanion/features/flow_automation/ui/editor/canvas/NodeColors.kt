@@ -9,7 +9,7 @@ import com.autonion.automationcompanion.features.flow_automation.model.FlowNodeT
 /**
  * Theme-aware colors for the flow editor.
  * Provides light and dark variants for all editor chrome
- * (canvas background, grid, panels, ports, text, warning badges).
+ * (canvas background, grid, panels, ports, text, warning badges, action accents).
  *
  * Node accent colors (green, blue, purple, amber, grey, teal) remain
  * the same in both themes — backgrounds, surfaces, and text adapt for maximum contrast.
@@ -30,6 +30,9 @@ data class FlowEditorColors(
     val warningText: Color,
     val warningPillBg: Color,
     val warningPillBorder: Color,
+    // Accent action color (Save, Done, Focus borders, Success checks)
+    val accentTeal: Color,
+    val accentTealText: Color,
     // Ports
     val portBg: Color,
     // Panel chrome
@@ -57,6 +60,8 @@ data class FlowEditorColors(
             warningText = Color(0xFFFFB74D),                       // Crisp amber on dark node
             warningPillBg = Color(0xFFE65100).copy(alpha = 0.35f), // Dark orange pill
             warningPillBorder = Color(0xFFFF9800).copy(alpha = 0.5f),
+            accentTeal = Color(0xFF64FFDA),                        // Neon cyan on dark
+            accentTealText = Color(0xFF64FFDA),
             portBg = Color(0xFF1A1C20),
             panelBg = Color(0xFF1A1C1E),
             panelText = Color.White,
@@ -80,6 +85,8 @@ data class FlowEditorColors(
             warningText = Color(0xFFBF360C),                       // Deep burnt orange (WCAG AAA high contrast on light bg)
             warningPillBg = Color(0xFFFFE0B2),                     // Soft warm peach pill
             warningPillBorder = Color(0xFFFF9800).copy(alpha = 0.6f),
+            accentTeal = Color(0xFF00897B),                        // Rich primary teal (WCAG AAA high contrast on light bg)
+            accentTealText = Color(0xFF00796B),                    // Deep teal for crisp text/borders
             portBg = Color(0xFFE8EAED),
             panelBg = Color(0xFFF0F1F5),
             panelText = Color(0xFF1A1C1E),
@@ -110,7 +117,7 @@ fun flowEditorColors(): FlowEditorColors {
  * Color-coding: Green=Start, Orange=AI/ML, Blue=Action, Purple=Vision, Grey=Utility
  */
 object NodeColors {
-    // ── Node type colors (header accent) — same in both themes ──
+    // ── Node type colors (header accent) — vivid in dark mode ──
     val StartGreen      = Color(0xFF4ADE80)
     val StartGreenBg    = Color(0xFF0F1A14)
     val GestureBlue     = Color(0xFF60A5FA)
@@ -130,7 +137,7 @@ object NodeColors {
     val InputPink       = Color(0xFFF48FB1)
     val InputPinkBg     = Color(0xFF1F1216)
 
-    // ── Dark accent variants for crisp subtitle text in Light mode ──
+    // ── Dark accent variants for crisp subtitle text & badges in Light mode ──
     val StartGreenDarkVariant        = Color(0xFF15803D)
     val GestureBlueDarkVariant       = Color(0xFF1D4ED8)
     val VisualTriggerPurpleDarkVariant = Color(0xFF7E22CE)
