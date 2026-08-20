@@ -453,26 +453,6 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
                 Log.d(TAG, "Clipboard sync state updated from desktop: $enabled")
                 return
             }
-
-            // Existing logic for RawEvent/Events
-            // Note: NetworkingManager now tries to parse and send to EventReceiver directly if it looks like an event.
-            // But if we want to handle it here explicitly or if NetworkingManager failed to parse it as an event:
-            if (type.startsWith("clipboard.") || type.contains("event")) {
-                 try {
-                     val event = com.google.gson.Gson().fromJson(message, com.autonion.automationcompanion.features.cross_device_automation.domain.RawEvent::class.java)
-                     if (event != null) {
-                        if (event.type == "clipboard.text_copied") {
-                             onExternalEvent(event) // Special handling for clipboard
-                        } else {
-                             scope.launch {
-                                 eventPipeline.onEventReceived(event)
-                             }
-                        }
-                     }
-                 } catch (e: Exception) {
-                     Log.w("CrossDeviceManager", "Failed to parse as event in onMessageReceived: ${e.message}")
-                 }
-            }
         } catch (e: Exception) {
             Log.e("CrossDeviceManager", "Error parsing message", e)
         }

@@ -366,11 +366,24 @@ class NetworkingManager(
                         return
                     }
 
-                    // 4. Handle Data Events
-                    // Only try to parse as RawEvent if it looks like one, or let the listener handle it exclusively?
-                    // For now, we still try to parse standard events for the eventPipeline.
-                    if (type.startsWith("clipboard.") || type.contains("event")) {
-                        val event = gson.fromJson(text, RawEvent::class.java)
+                    // 4. Handle Control & Non-Data Messages (Early Exit)
+                    if (type == "clipboard.sync_state_changed" ||
+                        type == "clipboard.set_sync_enabled" ||
+                        type == "clipboard.get_sync_state" ||
+                        type == "rule_triggered" ||
+                        type.startsWith("flow_")
+                    ) {
+                        // Handled by listener?.onMessageReceived
+                        return
+                    }
+
+                    // 5. Handle Data Events (clipboard text/image sync, external events, etc.)
+                    if (type == "clipboard.text_copied" ||
+                        type == "clipboard.image_copied" ||
+                        type.endsWith(".event") ||
+                        type == "generic_event"
+                    ) {
+                        val event = parseRawEventSafely(jsonObject, device.id)
                         scope.launch {
                             eventReceiver.onEventReceived(event)
                         }
@@ -384,6 +397,62 @@ class NetworkingManager(
                         TAG
                     )
                 }
+            }
+
+            private fun parseRawEventSafely(jsonObject: com.google.gson.JsonObject, defaultDeviceId: String): RawEvent {
+                val id = jsonObject.get("id")?.asString ?: java.util.UUID.randomUUID().toString()
+                val type = jsonObject.get("type")?.asString ?: ""
+                val sourceDeviceId = jsonObject.get("sourceDeviceId")?.asString
+                    ?: jsonObject.get("source_device_id")?.asString
+                    ?: defaultDeviceId
+
+                val timestamp: Long = try {
+                    val tsElement = jsonObject.get("timestamp")
+                    when {
+                        tsElement == null || tsElement.isJsonNull -> System.currentTimeMillis()
+                        tsElement.isJsonPrimitive && tsElement.asJsonPrimitive.isNumber -> tsElement.asLong
+                        tsElement.isJsonPrimitive && tsElement.asJsonPrimitive.isString -> {
+                            val str = tsElement.asString
+                            try {
+                                str.toLong()
+                            } catch (_: NumberFormatException) {
+                                try {
+                                    java.time.Instant.parse(str).toEpochMilli()
+                                } catch (_: Exception) {
+                                    try {
+                                        java.time.LocalDateTime.parse(str).atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+                                    } catch (_: Exception) {
+                                        System.currentTimeMillis()
+                                    }
+                                }
+                            }
+                        }
+                        else -> System.currentTimeMillis()
+                    }
+                } catch (_: Exception) {
+                    System.currentTimeMillis()
+                }
+
+                val payload = mutableMapOf<String, String>()
+                try {
+                    val payloadObj = jsonObject.getAsJsonObject("payload")
+                    if (payloadObj != null) {
+                        for (entry in payloadObj.entrySet()) {
+                            val value = entry.value
+                            if (value != null && !value.isJsonNull) {
+                                payload[entry.key] = if (value.isJsonPrimitive) value.asString else value.toString()
+                            }
+                        }
+                    }
+                } catch (_: Exception) { }
+
+                return RawEvent(
+                    id = id,
+                    timestamp = timestamp,
+                    type = type,
+                    sourceDeviceId = sourceDeviceId,
+                    payload = payload
+                )
             }
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
