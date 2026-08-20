@@ -235,6 +235,9 @@ fun BatteryConfigScreen(
         label = "percentAnim"
     )
 
+    val scrollState = rememberScrollState()
+    val isScrolled by remember { derivedStateOf { scrollState.value > 0 } }
+
     AuroraBackground {
         Scaffold(
             topBar = {
@@ -258,7 +261,10 @@ fun BatteryConfigScreen(
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Color.Transparent,
+                        containerColor = if (isScrolled) {
+                            if (isDark) Color(0xFF1E2228).copy(alpha = 0.95f)
+                            else MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
+                        } else Color.Transparent,
                         titleContentColor = MaterialTheme.colorScheme.onSurface,
                         navigationIconContentColor = MaterialTheme.colorScheme.onSurface
                     )
@@ -269,8 +275,8 @@ fun BatteryConfigScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
                     .padding(padding)
+                    .verticalScroll(scrollState)
                     .padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
@@ -535,6 +541,7 @@ private fun saveBatterySlot(
                     android.util.Log.i("BatteryConfig", "Immediately triggering slot $savedId (battery=$currentLevel%, threshold=$batteryPercentage%)")
                     com.autonion.automationcompanion.features.system_context_automation.shared.executor.SlotExecutor.execute(context, savedId)
                 }
+                dao.updateLastTriggerState(savedId, shouldTrigger)
             }
 
             android.os.Handler(android.os.Looper.getMainLooper()).post {

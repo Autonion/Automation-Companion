@@ -15,7 +15,9 @@ object AppInitManager {
     private fun scheduleTimeTick(context: Context) {
         val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 
-        val intent = Intent(context, TimeTickReceiver::class.java)
+        val intent = Intent(context, TimeTickReceiver::class.java).apply {
+            action = TimeTickReceiver.ACTION_INTERNAL_TIME_TICK
+        }
         val pi = PendingIntent.getBroadcast(
             context,
             2001,

@@ -212,20 +212,12 @@
 
         <receiver
             android:name=".features.system_context_automation.location.engine.time.TimeTickReceiver"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.intent.action.TIME_TICK" />
-            </intent-filter>
-        </receiver>
+            android:exported="false" />
 
-        <!-- Battery Trigger Receiver -->
+        <!-- Battery Trigger Receiver (Registered dynamically in BatteryMonitoringService) -->
         <receiver
             android:name=".features.system_context_automation.battery.engine.BatteryBroadcastReceiver"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.intent.action.BATTERY_CHANGED" />
-            </intent-filter>
-        </receiver>
+            android:exported="false" />
 
         <!-- Time-of-Day Trigger Receiver -->
         <receiver

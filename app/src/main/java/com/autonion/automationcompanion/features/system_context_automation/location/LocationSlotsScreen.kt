@@ -230,9 +230,11 @@ fun LocationSlotsScreen(
                                                         "LocationSlotsScreen"
                                                     )
 
+                                                    snackbarHostState.currentSnackbarData?.dismiss()
                                                     val result = snackbarHostState.showSnackbar(
                                                         message = "Slot deleted",
-                                                        actionLabel = "Undo"
+                                                        actionLabel = "Undo",
+                                                        duration = SnackbarDuration.Short
                                                     )
                                                     if (result == SnackbarResult.ActionPerformed) {
                                                         recentlyDeleted?.let {

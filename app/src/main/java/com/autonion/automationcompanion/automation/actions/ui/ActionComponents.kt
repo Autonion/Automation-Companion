@@ -218,8 +218,9 @@ internal fun BrightnessActionConfig(
     onActionChanged: (ConfiguredAction.Brightness) -> Unit
 ) {
     Column {
+        val percentage = (action.level * 100 / 255)
         Text(
-            "Brightness: ${action.level}",
+            "Brightness: ${action.level} ($percentage%)",
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Medium,
             color = LocalContentColor.current
@@ -228,9 +229,9 @@ internal fun BrightnessActionConfig(
         Slider(
             value = action.level.toFloat(),
             onValueChange = { newValue ->
-                onActionChanged(action.copy(level = newValue.toInt()))
+                onActionChanged(action.copy(level = kotlin.math.round(newValue).toInt()))
             },
-            valueRange = 10f..255f,
+            valueRange = 0f..255f,
             modifier = Modifier.fillMaxWidth()
         )
     }

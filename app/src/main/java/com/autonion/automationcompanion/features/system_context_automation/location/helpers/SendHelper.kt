@@ -73,6 +73,12 @@ object SendHelper {
                 is AutomationAction.SendSms -> {
                     if (!canSendSms) {
                         Log.w(TAG, "SEND_SMS not granted, skipping SMS")
+                        DebugLogger.warning(
+                            context, LogCategory.SYSTEM_CONTEXT,
+                            "SMS skipped",
+                            "SEND_SMS permission not granted",
+                            TAG
+                        )
                         return@forEach
                     }
 
@@ -102,6 +108,12 @@ object SendHelper {
                 is AutomationAction.SetBrightness -> {
                     if (!canWriteSettings) {
                         Log.w(TAG, "WRITE_SETTINGS not granted, skipping brightness")
+                        DebugLogger.warning(
+                            context, LogCategory.SYSTEM_CONTEXT,
+                            "Brightness skipped",
+                            "WRITE_SETTINGS permission not granted",
+                            TAG
+                        )
                         return@forEach
                     }
                     executeSetBrightness(context, action)
@@ -110,6 +122,12 @@ object SendHelper {
                 is AutomationAction.SetDnd -> {
                     if (!canAccessDnd) {
                         Log.w(TAG, "ACCESS_NOTIFICATION_POLICY not granted, skipping DND")
+                        DebugLogger.warning(
+                            context, LogCategory.SYSTEM_CONTEXT,
+                            "DND skipped",
+                            "ACCESS_NOTIFICATION_POLICY (DND) permission not granted",
+                            TAG
+                        )
                         return@forEach
                     }
                     executeSetDnd(context, action)
@@ -120,6 +138,12 @@ object SendHelper {
                 is AutomationAction.SetAutoRotate -> {
                     if (!canWriteSettings) {
                         Log.w(TAG, "WRITE_SETTINGS not granted, skipping auto-rotate")
+                        DebugLogger.warning(
+                            context, LogCategory.SYSTEM_CONTEXT,
+                            "Auto-rotate skipped",
+                            "WRITE_SETTINGS permission not granted",
+                            TAG
+                        )
                         return@forEach
                     }
                     executeSetAutoRotate(context, action)
@@ -128,6 +152,12 @@ object SendHelper {
                 is AutomationAction.SetScreenTimeout -> {
                     if (!canWriteSettings) {
                         Log.w(TAG, "WRITE_SETTINGS not granted, skipping screen timeout")
+                        DebugLogger.warning(
+                            context, LogCategory.SYSTEM_CONTEXT,
+                            "Screen timeout skipped",
+                            "WRITE_SETTINGS permission not granted",
+                            TAG
+                        )
                         return@forEach
                     }
                     executeSetScreenTimeout(context, action)
@@ -148,6 +178,12 @@ object SendHelper {
                 is AutomationAction.SetBatterySaver -> {
                     if (!canWriteSettings) {
                         Log.w(TAG, "WRITE_SETTINGS not granted, skipping battery saver")
+                        DebugLogger.warning(
+                            context, LogCategory.SYSTEM_CONTEXT,
+                            "Battery saver skipped",
+                            "WRITE_SETTINGS permission not granted",
+                            TAG
+                        )
                         return@forEach
                     }
                     executeSetBatterySaver(context, action)
@@ -160,23 +196,121 @@ object SendHelper {
 
     private fun executeSetVolume(context: Context, action: AutomationAction.SetVolume) {
         try {
-            // Delegate to foreground service
-            TrackingForegroundService.startVolumeChange(
-                context,
-                action.ring,
-                action.media,
-                action.alarm,
-                action.ringerMode
-            )
-            Log.i(TAG, "Delegated volume change with ringer mode: ${action.ringerMode}")
+            val am = context.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+
+            val ringMax = am.getStreamMaxVolume(android.media.AudioManager.STREAM_RING)
+            val mediaMax = am.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)
+            val alarmMax = am.getStreamMaxVolume(android.media.AudioManager.STREAM_ALARM)
+
+            val ringVolume = action.ring.coerceIn(0, ringMax)
+            val mediaVolume = action.media.coerceIn(0, mediaMax)
+            val alarmVolume = action.alarm.coerceIn(0, alarmMax)
+
+            // Set ringer mode if DND access allows it
+            try {
+                when (action.ringerMode) {
+                    com.autonion.automationcompanion.automation.actions.models.RingerMode.NORMAL -> {
+                        am.ringerMode = android.media.AudioManager.RINGER_MODE_NORMAL
+                    }
+                    com.autonion.automationcompanion.automation.actions.models.RingerMode.VIBRATE -> {
+                        am.ringerMode = android.media.AudioManager.RINGER_MODE_VIBRATE
+                    }
+                    com.autonion.automationcompanion.automation.actions.models.RingerMode.SILENT -> {
+                        am.ringerMode = android.media.AudioManager.RINGER_MODE_SILENT
+                    }
+                }
+            } catch (se: SecurityException) {
+                Log.w(TAG, "Could not set ringer mode (ACCESS_NOTIFICATION_POLICY may be needed): ${se.message}")
+            }
+
+            // Realme / ColorOS / Android 10+ workaround: brief audio track to ensure media focus
+            try {
+                val silentAudio = android.media.AudioTrack(
+                    android.media.AudioAttributes.Builder()
+                        .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                        .build(),
+                    android.media.AudioFormat.Builder()
+                        .setEncoding(android.media.AudioFormat.ENCODING_PCM_16BIT)
+                        .setSampleRate(44100)
+                        .setChannelMask(android.media.AudioFormat.CHANNEL_OUT_MONO)
+                        .build(),
+                    android.media.AudioTrack.getMinBufferSize(44100, android.media.AudioFormat.CHANNEL_OUT_MONO, android.media.AudioFormat.ENCODING_PCM_16BIT),
+                    android.media.AudioTrack.MODE_STREAM,
+                    android.media.AudioManager.AUDIO_SESSION_ID_GENERATE
+                )
+                silentAudio.play()
+                Thread.sleep(50)
+                silentAudio.stop()
+                silentAudio.release()
+            } catch (e: Exception) {
+                Log.w(TAG, "Silent audio focus trick failed (non-fatal): ${e.message}")
+            }
+
+            // Request Audio Focus before adjusting background media volume
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                val afAttr = android.media.AudioAttributes.Builder()
+                    .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .build()
+
+                val focusRequest = android.media.AudioFocusRequest.Builder(
+                    android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
+                ).setAudioAttributes(afAttr)
+                    .setAcceptsDelayedFocusGain(false)
+                    .setOnAudioFocusChangeListener { /* no-op */ }
+                    .build()
+
+                am.requestAudioFocus(focusRequest)
+
+                am.setStreamVolume(android.media.AudioManager.STREAM_RING, ringVolume, android.media.AudioManager.FLAG_SHOW_UI)
+                am.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, mediaVolume, android.media.AudioManager.FLAG_SHOW_UI)
+                am.setStreamVolume(android.media.AudioManager.STREAM_ALARM, alarmVolume, android.media.AudioManager.FLAG_SHOW_UI)
+
+                if (mediaVolume == 0) {
+                    try {
+                        am.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, android.media.AudioManager.ADJUST_MUTE, 0)
+                    } catch (_: Exception) {}
+                } else {
+                    try {
+                        am.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, android.media.AudioManager.ADJUST_UNMUTE, 0)
+                    } catch (_: Exception) {}
+                }
+
+                am.abandonAudioFocusRequest(focusRequest)
+            } else {
+                @Suppress("DEPRECATION")
+                val afListener = android.media.AudioManager.OnAudioFocusChangeListener { }
+                @Suppress("DEPRECATION")
+                am.requestAudioFocus(afListener, android.media.AudioManager.STREAM_MUSIC, android.media.AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+
+                am.setStreamVolume(android.media.AudioManager.STREAM_RING, ringVolume, android.media.AudioManager.FLAG_SHOW_UI)
+                am.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, mediaVolume, android.media.AudioManager.FLAG_SHOW_UI)
+                am.setStreamVolume(android.media.AudioManager.STREAM_ALARM, alarmVolume, android.media.AudioManager.FLAG_SHOW_UI)
+
+                if (mediaVolume == 0 && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                    try {
+                        am.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, android.media.AudioManager.ADJUST_MUTE, 0)
+                    } catch (_: Exception) {}
+                } else if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                    try {
+                        am.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, android.media.AudioManager.ADJUST_UNMUTE, 0)
+                    } catch (_: Exception) {}
+                }
+
+                @Suppress("DEPRECATION")
+                am.abandonAudioFocus(afListener)
+            }
+
+            Log.i(TAG, "Volume set: Ring=$ringVolume, Media=$mediaVolume, Alarm=$alarmVolume, Ringer=${action.ringerMode}")
             DebugLogger.success(
                 context, LogCategory.SYSTEM_CONTEXT,
                 "Volume set",
-                "Ring=${action.ring}, Media=${action.media}, Alarm=${action.alarm}, Ringer=${action.ringerMode}",
+                "Ring=$ringVolume, Media=$mediaVolume, Alarm=$alarmVolume, Ringer=${action.ringerMode}",
                 TAG
             )
+            notifySuccess(context, "Volume updated")
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to delegate volume change", e)
+            Log.e(TAG, "Failed to set volume", e)
             DebugLogger.error(
                 context, LogCategory.SYSTEM_CONTEXT,
                 "Volume change failed",
@@ -190,7 +324,7 @@ object SendHelper {
 
     private fun executeSetBrightness(context: Context, action: AutomationAction.SetBrightness) {
         try {
-            val brightness = action.level.coerceIn(10, 255)
+            val brightness = action.level.coerceIn(0, 255)
             Settings.System.putInt(
                 context.contentResolver,
                 Settings.System.SCREEN_BRIGHTNESS,
@@ -222,11 +356,11 @@ object SendHelper {
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             nm.setInterruptionFilter(
                 if (action.enabled)
-                    NotificationManager.INTERRUPTION_FILTER_NONE
+                    NotificationManager.INTERRUPTION_FILTER_PRIORITY
                 else
                     NotificationManager.INTERRUPTION_FILTER_ALL
             )
-            val status = if (action.enabled) "enabled" else "disabled"
+            val status = if (action.enabled) "enabled (Priority)" else "disabled"
             Log.i(TAG, "DND $status")
             DebugLogger.success(
                 context, LogCategory.SYSTEM_CONTEXT,
@@ -293,11 +427,11 @@ object SendHelper {
     private fun executeSetKeepScreenAwake(context: Context, action: AutomationAction.SetKeepScreenAwake) {
         try {
             if (action.enabled) {
-                TrackingForegroundService.acquirePartialWakeLock(context)
+                WakeLockHelper.acquire(context)
                 Log.i(TAG, "Keep screen awake activated")
                 notifySuccess(context, "Keep screen awake activated")
             } else {
-                TrackingForegroundService.releasePartialWakeLock(context)
+                WakeLockHelper.release()
                 Log.i(TAG, "Keep screen awake deactivated")
                 notifySuccess(context, "Keep screen awake deactivated")
             }

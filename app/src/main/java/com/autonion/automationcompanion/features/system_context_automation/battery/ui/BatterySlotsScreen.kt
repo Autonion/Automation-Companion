@@ -158,12 +158,20 @@ fun BatterySlotsScreen(
                                 BatterySlotCard(
                                     slot = slot,
                                     onToggleEnabled = { enabled ->
-                                        scope.launch { dao.setEnabled(slot.id, enabled) }
+                                        scope.launch {
+                                            dao.setEnabled(slot.id, enabled)
+                                            if (enabled) {
+                                                com.autonion.automationcompanion.features.system_context_automation.battery.engine.BatteryServiceManager.startMonitoringIfNeeded(context)
+                                            } else {
+                                                com.autonion.automationcompanion.features.system_context_automation.battery.engine.BatteryServiceManager.stopMonitoringIfNeeded(context)
+                                            }
+                                        }
                                     },
                                     onEdit = { onEditClicked(slot.id) },
                                     onDelete = {
                                         scope.launch {
                                             dao.delete(slot)
+                                            com.autonion.automationcompanion.features.system_context_automation.battery.engine.BatteryServiceManager.stopMonitoringIfNeeded(context)
                                             recentlyDeleted = slot
 
                                             // Log deletion
@@ -174,13 +182,16 @@ fun BatterySlotsScreen(
                                                 "BatterySlotsScreen"
                                             )
 
+                                            snackbarHostState.currentSnackbarData?.dismiss()
                                             val result = snackbarHostState.showSnackbar(
                                                 message = "Slot deleted",
-                                                actionLabel = "Undo"
+                                                actionLabel = "Undo",
+                                                duration = SnackbarDuration.Short
                                             )
                                             if (result == SnackbarResult.ActionPerformed) {
                                                 recentlyDeleted?.let { 
-                                                    val newId = dao.insert(it.copy(id = 0)) 
+                                                    val newId = dao.insert(it.copy(id = 0))
+                                                    com.autonion.automationcompanion.features.system_context_automation.battery.engine.BatteryServiceManager.startMonitoringIfNeeded(context)
                                                     
                                                     // Log undo
                                                     com.autonion.automationcompanion.features.automation_debugger.DebugLogger.success(
