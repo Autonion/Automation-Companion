@@ -31,5 +31,8 @@ data class Slot(
     val isInsideGeofence: Boolean = false,
 
     // Execution lock (ONE per day)
-    val lastExecutedDay: String? = null // "2026-01-12"
+    val lastExecutedDay: String? = null, // "2026-01-12"
+
+    // Edge-trigger state (for continuous triggers like BATTERY: true when condition was met on last eval)
+    val lastTriggerState: Boolean? = null
 )

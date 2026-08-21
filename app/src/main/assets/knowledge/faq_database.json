@@ -1,7 +1,7 @@
 [
   {
     "question": "How do I connect my desktop to the Android app?",
-    "answer": "To connect your desktop:\n1. Install and run the Autonion Desktop Agent on your PC/Mac.\n2. Make sure both devices are on the same Wi-Fi network.\n3. Open the Autonion app on Android and go to Cross-Device Automation.\n4. The desktop should appear automatically via mDNS discovery.\n5. Tap the device name to connect. You'll see a 'Connected' status.\n\nIf auto-discovery fails, you can manually enter the IP address shown in the Desktop Agent window.",
+    "answer": "To connect your desktop:\n1. Install and run the Autonion Desktop Agent on your PC.\n2. Make sure both devices are on the same Wi-Fi network.\n3. On the Desktop Agent, go to the Connect tab and ensure 'Allow New Pairings' is on.\n4. Open the Autonion app on Android and go to Cross-Device Automation > Devices tab.\n5. The desktop should appear automatically via mDNS discovery.\n6. Tap the device name. A 6-digit PIN will appear on the Desktop Agent screen.\n7. Enter the PIN on your Android device within 120 seconds to complete pairing.\n8. You'll see a 'Connected' status. Future connections are automatic — no PIN needed again.\n\nIf auto-discovery fails, you can manually enter the IP address shown in the Desktop Agent window.",
     "tags": [
       "connection",
       "setup",
@@ -51,7 +51,7 @@
   },
   {
     "question": "What automations can I create?",
-    "answer": "Autonion supports several automation types:\n\n\ud83c\udfaf **Direct Actions**: Press keys, toggle settings (wifi, bluetooth, etc.)\n\ud83e\udd16 **Semantic Automation**: AI-driven app interactions ('search shoes on Flipkart')\n\ud83d\udd17 **Cross-Device**: Send commands to your desktop ('on my laptop open Chrome')\n\u23f1\ufe0f **Scheduled Tasks**: Repeat actions on a timer ('click next every 1 minute')\n\ud83d\udccb **Flow Builder**: Create visual automation workflows with drag-and-drop\n\ud83d\udc4b **Gesture Recording**: Record and replay touch gestures\n\ud83d\udce1 **System Context**: Location-aware automations\n\ud83d\udd0d **Visual Triggers**: Screen-pattern-based automations",
+    "answer": "Autonion supports several automation types:\n\n🎯 **Direct Actions**: Press keys, toggle settings (wifi, bluetooth, etc.)\n🤖 **Semantic Automation**: AI-driven app interactions ('search shoes on Flipkart')\n🔗 **Cross-Device**: Send commands to your desktop ('on my laptop open Chrome')\n⏱️ **Scheduled Tasks**: Repeat actions on a timer ('click next every 1 minute')\n📋 **Flow Builder**: Create visual automation workflows with drag-and-drop. Includes Screen Understanding nodes with 3 modes.\n👋 **Gesture Recording**: Record and replay touch gestures\n📡 **System Context**: Location, battery, time, WiFi, and app-based automations\n🔍 **Visual Triggers**: Screen-pattern-based automations\n🔀 **Desktop Flows**: Create and run visual node-based workflows on the Desktop Agent. Trigger them remotely from your phone.\n🔓 **Desktop Unlock**: Unlock your Windows PC remotely from your phone, even before login.",
     "tags": [
       "features",
       "overview",
@@ -60,7 +60,7 @@
   },
   {
     "question": "How to use the Flow Builder?",
-    "answer": "The Flow Builder lets you create visual automation workflows:\n1. Go to Flow Builder from the home screen.\n2. Tap '+' to create a new flow.\n3. Add trigger events (e.g., time-based, app launch, notification).\n4. Add action blocks (e.g., open app, type text, press button).\n5. Connect triggers to actions by dragging connections.\n6. Tap 'Run' to execute or 'Schedule' for automatic execution.\n\nTip: Enable the Accessibility Service before running flows that interact with UI elements.",
+    "answer": "The Flow Builder lets you create visual automation workflows. It's available on both Android and Desktop:\n\n**Android Flow Builder:**\n1. Go to Flow Builder from the home screen.\n2. Tap '+' to create a new flow.\n3. Add a Start node, then action nodes (Gesture, Screen Understanding, Delay, Launch App, etc.).\n4. Connect nodes by dragging between connection points.\n5. Tap 'Run' to execute.\n\n**Screen Understanding node** (formerly Screen ML) has 3 modes:\n- 🔲 **Elements**: YOLO + UI Attributes — best for complex UIs\n- 🧩 **UI Attribute**: Accessibility-only — lightweight, no screenshot needed\n- 📝 **OCR**: Text recognition — find and interact with text on screen\n\n**Desktop Flow Builder** (in the Autonion Desktop Agent) supports 18+ node types including Click, Type, Keyboard hotkeys, Launch App, Conditional, Visual Trigger, UI Detect, Unlock, and Data Iterator. Desktop flows can be triggered remotely from the Android app's Cross-Device > Flows tab.",
     "tags": [
       "flow",
       "builder",
@@ -178,7 +178,7 @@
   },
   {
     "question": "How do I connect my Android app to the Desktop Agent?",
-    "answer": "Ensure both devices are on the same Wi-Fi network. Open the Android app, go to Cross-Device, and select your desktop from the list of discovered devices. If it doesn't appear, you can manually enter the desktop's IP. \n\nSee 'How do I connect my desktop to the Android app?' for more details.",
+    "answer": "1. Ensure both devices are on the same Wi-Fi network.\n2. On the Desktop Agent, go to the Connect tab and turn on 'Allow New Pairings'.\n3. Open the Android app, go to Cross-Device > Devices tab.\n4. Your desktop should appear via mDNS discovery.\n5. Tap the device name. A 6-digit PIN appears on the Desktop Agent screen.\n6. Enter the PIN on your Android device within 120 seconds.\n7. Once verified, the devices are paired and connected automatically for future sessions.\n\nIf auto-discovery fails, manually enter the desktop's IP address.",
     "tags": [
       "connect",
       "android",
@@ -227,7 +227,7 @@
   },
   {
     "question": "Which LLM model should I use?",
-    "answer": "For most users with a mid-range PC, 'qwen2.5:3b' or 'gemma:2b' offers a good balance of speed and accuracy. If you have a powerful GPU (8GB+ VRAM), 'qwen2.5:7b' or 'llama3' will provide much better reasoning capabilities.",
+    "answer": "It depends on your setup:\n\n**Server LLM (Ollama on PC):**\n- Speed: qwen3.5:4b — responds in 2-5 seconds\n- Accuracy: qwen3.5:7b — best for complex multi-step tasks\n\n**Cloud API (no PC needed):**\n- OpenAI GPT-4o-mini — fast and affordable\n- Google Gemini 2.0 Flash — great free option\n- Groq Llama 3.3 70B — ultra-fast with free tier\n- DeepSeek Chat — high quality at very low cost\n\n**On-Device GGUF (fully offline):**\n- Qwen 2.5 3B (Q4_K_M) — best balance of speed and quality (~2GB)\n- Phi-3.5 Mini (Q4_K_M) — strong reasoning (~2.2GB)\n- Llama 3.2 3B (Q4_K_M) — good general purpose (~2GB)\n- Gemma 4 / Gemma 3n — Google's latest\n\n**Legacy MediaPipe (on-device):**\n- Gemma 2B — lightweight (~1.35GB)\n\nRecommendation: Server LLM gives the best results. Cloud API is great if you don't have a local PC. GGUF is best for fully offline use.",
     "tags": [
       "llm",
       "model",
@@ -1595,6 +1595,155 @@
       "github",
       "releases",
       "link"
+    ]
+  },
+  {
+    "question": "How does OTP/PIN pairing work for cross-device?",
+    "answer": "OTP-based pairing secures the connection between your Android device and the Desktop Agent:\n\n1. Tap a discovered device in the Cross-Device > Devices tab.\n2. A 6-digit PIN appears on the Desktop Agent screen in a pairing dialog.\n3. Enter this PIN on your Android device within 120 seconds.\n4. If the PIN matches, the devices are paired. A unique encrypted secret is exchanged and stored.\n5. Future connections are automatic — no PIN needed again.\n\nThe PIN prevents unauthorized devices from connecting to your desktop. If the PIN expires, tap the device again to generate a new one. The Desktop Agent must have 'Allow New Pairings' enabled for first-time connections.",
+    "tags": [
+      "otp",
+      "pin",
+      "pairing",
+      "security",
+      "cross-device"
+    ]
+  },
+  {
+    "question": "How do I revoke a paired device?",
+    "answer": "To revoke a previously paired device:\n1. Open the Autonion Desktop Agent on your PC.\n2. Go to the Connect tab.\n3. You'll see a list of all paired companion devices.\n4. Click 'Revoke' next to the device you want to remove.\n5. The device will be disconnected and its pairing secret deleted.\n\nAfter revoking, the Android device will need to pair again with a new PIN to reconnect. You can also toggle 'Allow New Pairings' off to prevent any new devices from pairing.",
+    "tags": [
+      "revoke",
+      "unpair",
+      "device management",
+      "security",
+      "cross-device"
+    ]
+  },
+  {
+    "question": "What is the Flows tab in Cross-Device?",
+    "answer": "The Flows tab is a new tab in the Cross-Device Automation screen on Android. It lets you browse and remotely control automation flows created on the Desktop Agent.\n\nThe Cross-Device screen now has 4 tabs:\n- **Devices**: Discover and pair desktop devices\n- **Rules**: Create automation trigger rules\n- **Flows**: Browse and trigger Desktop Flows remotely\n- **Ask**: Send natural language commands\n\nThe Flows tab fetches the list of flows saved on the Desktop Agent via WebSocket. Each flow card shows its name, description, node count, and trigger type. You can trigger a flow to start, monitor its real-time progress (step by step), and stop it remotely.",
+    "tags": [
+      "flows",
+      "cross-device",
+      "remote",
+      "tab",
+      "desktop flows"
+    ]
+  },
+  {
+    "question": "How do I trigger a desktop flow from my phone?",
+    "answer": "To trigger a Desktop Flow from your Android phone:\n1. Make sure your phone is connected to the Desktop Agent (paired and connected).\n2. Open Cross-Device Automation in the Android app.\n3. Switch to the Flows tab.\n4. The list of flows saved on the desktop will load automatically.\n5. Tap on a flow card to trigger it.\n6. You'll see real-time progress updates showing which node is executing.\n7. To stop a running flow, tap the stop button.\n\nNote: The Desktop Agent must be running on your PC. If it's in pre-login mode (lock screen), only Unlock flows will be available.",
+    "tags": [
+      "trigger",
+      "desktop flow",
+      "remote",
+      "cross-device",
+      "tutorial"
+    ]
+  },
+  {
+    "question": "What is GGUF and how do I use GGUF models?",
+    "answer": "GGUF is a model format used by llama.cpp for running large language models efficiently on consumer hardware. Autonion now supports GGUF models for on-device AI inference.\n\n**How to use GGUF models:**\n1. Open the AI Engine Hub (gear icon in Semantic Automation).\n2. Browse the model catalog — GGUF models are shown with a 'GGUF' badge.\n3. Tap 'Download' to go to HuggingFace and download the .gguf file.\n4. Import the file via 'Import .gguf / .bin' in the Installed Models section.\n5. Set it as active and switch to On-Device SLM mode.\n\n**Advantages over legacy MediaPipe models:**\n- Better quality at similar sizes\n- Supports modern architectures (Qwen, Phi, Llama, Gemma)\n- Wider model selection on HuggingFace\n- The engine includes RAM safety guards and adaptive thread limits for mobile CPUs.",
+    "tags": [
+      "gguf",
+      "model",
+      "on-device",
+      "slm",
+      "llama.cpp"
+    ]
+  },
+  {
+    "question": "What models are supported in the GGUF engine?",
+    "answer": "The GGUF engine supports any model compatible with llama.cpp. Recommended models:\n\n- **Qwen 2.5 3B Instruct (Q4_K_M)**: Best balance of speed and quality. ~2GB.\n- **Phi-3.5 Mini Instruct (Q4_K_M)**: Strong reasoning. ~2.2GB.\n- **Llama 3.2 3B Instruct (Q4_K_M)**: Good general-purpose. ~2GB.\n- **Gemma 4 / Gemma 3n**: Google's latest Gemma models in GGUF format.\n\nYou can also import any compatible .gguf file downloaded from HuggingFace. The engine validates the file's GGUF magic header to prevent crashes from corrupted files.\n\nMinimum RAM: 4GB for 3B models, 8GB for 7B models.",
+    "tags": [
+      "gguf",
+      "models",
+      "qwen",
+      "phi",
+      "llama",
+      "gemma",
+      "supported"
+    ]
+  },
+  {
+    "question": "How do I create flows on the Desktop Agent?",
+    "answer": "The Desktop Agent (Autonion-Agent) has a dedicated Flows tab with a visual node-based flow builder:\n\n1. Open the Desktop Agent and click the Flows tab in the navigation rail.\n2. Click '+' to create a new flow.\n3. Add nodes from the palette: Start, Click, Type Text, Keyboard, Launch App, Delay, Screenshot, Scroll, Conditional, etc.\n4. Connect nodes by dragging between ports.\n5. Configure each node's properties (coordinates, text, hotkey combo, etc.).\n6. Set a trigger: Manual, Hotkey (e.g., Ctrl+Shift+F1), Element Appears, or Scheduled.\n7. Save the flow.\n\nFlows are stored as JSON files at ~/.autonion/flows/ and can be triggered remotely from the Android app.",
+    "tags": [
+      "desktop",
+      "flow builder",
+      "create",
+      "tutorial",
+      "desktop agent"
+    ]
+  },
+  {
+    "question": "What node types are available in the Desktop Flow Builder?",
+    "answer": "The Desktop Flow Builder supports 18+ node types:\n\n**Basic Actions**: Start, Click, Double Click, Right Click, Type Text\n**Input**: Keyboard (hotkey combos like Ctrl+S, Alt+Tab, with Press & Release, Hold, Release, Type Sequence actions)\n**System**: Launch App, Delay, Screenshot\n**Navigation**: Scroll, Swipe\n**Logic**: Repeat (loop), Conditional (if/else branching)\n**AI/Detection**: Visual Trigger (image matching), UI Detect (Windows UIA attribute matching by automation ID, class name, role)\n**Special**: Unlock (remotely unlock Windows desktop), Data Iterator (iterate through accessibility tree elements), Done (marks completion)\n\nEach node can target elements via Screen Coordinates, UIA Attribute Match, or Stable Element ID.",
+    "tags": [
+      "desktop",
+      "flow builder",
+      "nodes",
+      "node types",
+      "reference"
+    ]
+  },
+  {
+    "question": "Can I unlock my PC from my phone?",
+    "answer": "Yes! The Desktop Unlock feature lets you remotely unlock your Windows PC from your Android phone.\n\n**How it works:**\n1. The Desktop Agent runs a background service that stays active even on the Windows lock screen (pre-login mode).\n2. On your Android app, go to Cross-Device > Flows tab.\n3. Trigger an Unlock flow that was created on the Desktop Agent.\n4. The Desktop Agent executes the unlock sequence on the PC.\n\nThis works because the Desktop Agent's background service can accept WebSocket connections before Windows login. The Flows tab shows a 'Pre-login Mode' banner when connected this way.",
+    "tags": [
+      "unlock",
+      "remote",
+      "desktop",
+      "pre-login",
+      "cross-device"
+    ]
+  },
+  {
+    "question": "What is the Paired Devices screen?",
+    "answer": "The Paired Devices screen is part of the Desktop Agent's Connect tab. It shows all Android devices that have successfully completed OTP pairing.\n\n**Features:**\n- View all paired companion devices with their names and IP addresses\n- Toggle 'Allow New Pairings' on/off to control whether new devices can pair\n- Revoke individual device pairings\n- See connection status for each paired device\n\nPaired device secrets are stored securely using flutter_secure_storage (encrypted). Once paired, devices reconnect automatically whenever they're on the same network.",
+    "tags": [
+      "paired devices",
+      "device management",
+      "connect",
+      "desktop agent",
+      "security"
+    ]
+  },
+  {
+    "question": "What are the Screen Understanding modes in Flow Builder?",
+    "answer": "The Screen Understanding node (formerly 'Screen ML') in the Flow Builder has three operating modes:\n\n🔲 **Elements mode (YOLO + UI Attributes)**: Combines YOLO object detection with accessibility tree augmentation. Takes a screenshot and runs ML detection, then enriches results with accessibility data. Best for complex UIs.\n\n🧩 **UI Attribute mode (Accessibility-only)**: Uses only the Android accessibility tree. No screenshot needed. Lightweight and fast. Best for standard apps with good accessibility labels.\n\n📝 **OCR mode (Text Recognition)**: Uses ML Kit text recognition to find text on screen. Can search for specific strings and interact with text elements. Best for custom-drawn text or game UIs.\n\nAll modes support multi-step automation playback with intelligent element matching that adapts to layout changes.",
+    "tags": [
+      "screen understanding",
+      "screen ml",
+      "modes",
+      "flow builder",
+      "yolo",
+      "ocr",
+      "accessibility"
+    ]
+  },
+  {
+    "question": "How do I set up Cloud API for AI features?",
+    "answer": "Cloud API lets you use powerful cloud LLMs without a local PC:\n\n1. Open the AI Engine Hub (gear icon in Semantic Automation).\n2. Switch to 'Cloud API' mode in the Inference Engine section.\n3. Accept the privacy disclaimer (Cloud API sends screen data to external servers).\n4. Choose your provider: OpenAI, Google Gemini, Groq, DeepSeek, Mistral, Together AI, OpenRouter, Ollama Cloud, or Custom.\n5. Enter your API key from the provider's dashboard.\n6. Select a model from the suggestions or enter a custom model name.\n7. Tap 'Save & Test Connection'.\n\n**Free options:** Groq offers a free tier. OpenRouter has free models (Gemini Flash, Llama 3.3). Google Gemini has a free API tier.\n\n**Privacy note:** Cloud API is the only mode that sends data outside your local network. It's entirely opt-in.",
+    "tags": [
+      "cloud api",
+      "setup",
+      "openai",
+      "gemini",
+      "groq",
+      "deepseek",
+      "inference"
+    ]
+  },
+  {
+    "question": "What is Hardware Remote and how do I use it?",
+    "answer": "Hardware Remote lets you use your phone's physical volume buttons as a wireless remote control for your PC.\n\n**How to use it:**\n1. Connect to your Desktop Agent (via Cross-Device Automation).\n2. Tap the remote icon (🎮) in the Cross-Device top bar.\n3. Configure your mappings:\n   - **Volume Up**: Map single tap, double tap, and long press to different desktop keys\n   - **Volume Down**: Same — single tap, double tap, and long press\n4. Available keys: Enter, Space, Up/Down/Left/Right Arrow, Escape, Backspace\n5. Tap 'Start Remote' to activate.\n\n**Key features:**\n- Works with the phone screen off (runs as a foreground service)\n- Each volume button supports 3 gestures = up to 6 different desktop key actions\n- Perfect for presentations (next/previous slide), media control, or hands-free navigation\n- Mappings are saved and persist across sessions\n\nTo stop, tap 'Stop Remote' in the Hardware Remote sheet or dismiss the persistent notification.",
+    "tags": [
+      "hardware remote",
+      "volume buttons",
+      "remote control",
+      "presentation",
+      "cross-device"
     ]
   }
 ]

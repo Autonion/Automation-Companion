@@ -198,7 +198,7 @@ class LocalServerLLMEngine private constructor(
 
         try {
             val okHttpClient = OkHttpClient.Builder()
-                .connectTimeout(120, TimeUnit.SECONDS)
+                .connectTimeout(8, TimeUnit.SECONDS)
                 .readTimeout(300, TimeUnit.SECONDS)
                 .writeTimeout(300, TimeUnit.SECONDS)
                 .build()

@@ -1,7 +1,8 @@
 [versions]
-agp = "9.2.1"
+agp = "9.3.1"
 biometric = "1.1.0"
-composeBom = "2026.02.00"
+composeBom = "2026.08.00"
+gson = "2.14.0"
 kotlin = "2.3.10"
 coreKtx = "1.17.0"
 junit = "4.13.2"
@@ -21,11 +22,11 @@ constraintlayout = "2.2.1"
 osmdroidAndroid = "6.1.20"
 playServicesLocation = "21.3.0"
 preference = "1.2.1"
-runtime = "1.10.3"
+runtime = "1.12.0"
 navigationCompose = "2.9.7"
 material3 = "1.4.0"
 savedstate = "1.4.0"
-ui = "1.10.3"
+ui = "1.12.0"
 room = "2.8.4"
 workRuntimeKtx = "2.11.1"
 tensorflowLite = "2.17.0"
@@ -41,6 +42,9 @@ javaWebsocket = "1.5.3"
 securityCrypto = "1.1.0-alpha06"
 llamaKotlinAndroid = "0.1.1"
 coreSplashScreen = "1.0.1"
+playAgeSignals = "0.0.4"
+playAppUpdate = "2.1.0"
+coroutinesPlayServices = "1.7.3"
 
 [libraries]
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activity" }
@@ -57,6 +61,7 @@ androidx-ui = { module = "androidx.compose.ui:ui", version.ref = "ui" }
 androidx-ui-tooling = { module = "androidx.compose.ui:ui-tooling", version.ref = "ui" }
 androidx-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview", version.ref = "ui" }
 dev-langchain4j-ollama = { module = "dev.langchain4j:langchain4j-ollama", version.ref = "langchain4jOllama" }
+gson = { module = "com.google.code.gson:gson", version.ref = "gson" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
 androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
 androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
@@ -96,9 +101,13 @@ java-websocket = { module = "org.java-websocket:Java-WebSocket", version.ref = "
 androidx-security-crypto = { module = "androidx.security:security-crypto", version.ref = "securityCrypto" }
 llama-kotlin-android = { module = "org.codeshipping:llama-kotlin-android", version.ref = "llamaKotlinAndroid" }
 androidx-core-splashscreen = { group = "androidx.core", name = "core-splashscreen", version.ref = "coreSplashScreen" }
+play-age-signals = { module = "com.google.android.play:age-signals", version.ref = "playAgeSignals" }
+play-app-update = { module = "com.google.android.play:app-update", version.ref = "playAppUpdate" }
+play-app-update-ktx = { module = "com.google.android.play:app-update-ktx", version.ref = "playAppUpdate" }
+kotlinx-coroutines-play-services = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-play-services", version.ref = "coroutinesPlayServices" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
-compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version = "2.3.10" }
+compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 kotlin-serialization = { id= "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin"}
 

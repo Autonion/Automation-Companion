@@ -247,7 +247,7 @@ object WalkthroughRegistry {
         "cross_device" to WalkthroughScript(
             featureId = "cross_device",
             featureName = "Cross-Device Automation",
-            description = "Control your desktop from your phone and create cross-device automation rules.",
+            description = "Control your desktop from your phone with secure OTP pairing, remote flows, and cross-device automation rules.",
             steps = listOf(
                 WalkthroughStep(
                     instruction = "Opening Cross-Device Automation…",
@@ -268,38 +268,70 @@ object WalkthroughRegistry {
                     stepType = StepType.OBSERVE
                 ),
                 WalkthroughStep(
-                    instruction = "This screen has multiple tabs. The \"Chat\" tab lets you send direct commands " +
-                            "to your desktop. The \"Desktop\" tab lets you create URL-based automation rules.",
+                    instruction = "This screen has four tabs: \"Devices\" for pairing and managing connections, " +
+                            "\"Rules\" for creating automation triggers, " +
+                            "\"Flows\" for remotely triggering Desktop flows, " +
+                            "and \"Ask\" for sending natural language commands to your desktop.",
                     stepType = StepType.OBSERVE
                 ),
                 WalkthroughStep(
-                    instruction = "Go to the \"Devices\" tab and make sure your desktop is connected. " +
-                            "Your desktop needs to be running the Autonion Desktop Agent and connected to the same network.",
+                    instruction = "Go to the \"Devices\" tab. Make sure the Desktop Agent is running " +
+                            "and both devices are on the same WiFi network. " +
+                            "Your desktop should appear automatically via mDNS discovery.",
                     stepType = StepType.ACTION,
                     highlightHint = "Devices tab"
                 ),
                 WalkthroughStep(
-                    instruction = "Once connected, switch to the \"Chat\" tab. Type a command like " +
-                            "\"open Chrome\" or \"search for flights on Google\" and tap Send. " +
-                            "The desktop agent will execute it!",
+                    instruction = "Tap your desktop's name to start pairing. A 6-digit PIN will appear " +
+                            "on the Desktop Agent screen. Enter this PIN here within 120 seconds " +
+                            "to securely pair the devices. Future connections will be automatic! 🔐",
                     stepType = StepType.ACTION,
-                    highlightHint = "Chat tab + input bar"
+                    highlightHint = "Device card"
                 ),
                 WalkthroughStep(
-                    instruction = "The \"Desktop\" tab lets you create automation rules. " +
+                    instruction = "Once paired, switch to the \"Ask\" tab. Type a command like " +
+                            "\"open Chrome\" or \"search for flights on Google\" and tap Send. " +
+                            "The Desktop Agent will execute it on your PC!",
+                    stepType = StepType.ACTION,
+                    highlightHint = "Ask tab + input bar"
+                ),
+                WalkthroughStep(
+                    instruction = "The \"Rules\" tab lets you create automation trigger rules. " +
                             "Tap \"New Rule\" to create rules like: " +
                             "\"When a meeting URL is detected → enable DND on phone.\"",
                     stepType = StepType.ACTION,
                     highlightHint = "New Rule button"
                 ),
                 WalkthroughStep(
-                    instruction = "Clipboard sync is automatic — anything you copy on one device " +
-                            "appears on the other! Text and images are synced seamlessly. 📋",
+                    instruction = "The \"Flows\" tab shows automation workflows saved on your Desktop Agent. " +
+                            "You can trigger, monitor, and stop these flows remotely from your phone! " +
+                            "Real-time progress updates show you which step is executing. 🔀",
+                    stepType = StepType.ACTION,
+                    highlightHint = "Flows tab"
+                ),
+                WalkthroughStep(
+                    instruction = "You can even unlock your PC remotely! If the Desktop Agent has an " +
+                            "Unlock flow, you can trigger it from the Flows tab — it works even " +
+                            "when your PC is on the lock screen (pre-login mode). 🔓",
                     stepType = StepType.OBSERVE
                 ),
                 WalkthroughStep(
+                    instruction = "Clipboard sync is automatic — any text you copy on one device " +
+                            "appears on the other! Only text is synced over your local WiFi. 📋",
+                    stepType = StepType.OBSERVE
+                ),
+                WalkthroughStep(
+                    instruction = "Tap the remote icon in the top bar to open Hardware Remote. " +
+                            "Map your phone's volume buttons to send keyboard commands to your PC — " +
+                            "single tap, double tap, and long press each get their own mapping. " +
+                            "It even works with your screen off! 🎮",
+                    stepType = StepType.ACTION,
+                    highlightHint = "Remote icon"
+                ),
+                WalkthroughStep(
                     instruction = "That covers Cross-Device Automation! Your phone and desktop " +
-                            "work together as one unified workspace. 🔗",
+                            "work together as one unified workspace with secure OTP pairing, " +
+                            "remote flows, desktop unlock, hardware remote, and clipboard sync. 🔗",
                     stepType = StepType.OBSERVE
                 )
             )

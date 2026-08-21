@@ -5,11 +5,11 @@ import kotlinx.serialization.json.JsonObject
 
 @Serializable
 data class RawEvent(
-    val id: String,
-    val timestamp: Long,
-    val type: String, // e.g., "clipboard.text_copied"
-    val sourceDeviceId: String,
-    val payload: Map<String, String> // Simplified payload for now
+    val id: String = "",
+    val timestamp: Long = System.currentTimeMillis(),
+    val type: String = "", // e.g., "clipboard.text_copied"
+    val sourceDeviceId: String = "",
+    val payload: Map<String, String> = emptyMap() // Simplified payload for now
 )
 
 data class EnrichedEvent(

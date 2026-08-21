@@ -1,5 +1,7 @@
 package com.autonion.automationcompanion.features.flow_automation.ui.editor.panels
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -19,6 +21,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.autonion.automationcompanion.features.flow_automation.model.EdgeCondition
 import com.autonion.automationcompanion.features.flow_automation.model.FlowEdge
+import com.autonion.automationcompanion.features.flow_automation.ui.editor.canvas.FlowEditorColors
+import com.autonion.automationcompanion.features.flow_automation.ui.editor.canvas.flowEditorColors
 
 private enum class ConditionType(val label: String) {
     NONE("No Condition"),
@@ -45,6 +49,9 @@ fun EdgeConditionOverlay(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val editorColors = flowEditorColors()
+    val isDark = isSystemInDarkTheme()
+
     var selectedType by remember(edge.id) {
         mutableStateOf(
             when (edge.condition) {
@@ -72,7 +79,8 @@ fun EdgeConditionOverlay(
             .fillMaxWidth()
             .heightIn(max = maxHeight),
         shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1C1E))
+        colors = CardDefaults.cardColors(containerColor = editorColors.panelBg),
+        border = BorderStroke(1.dp, editorColors.panelText.copy(alpha = 0.08f))
     ) {
         Column(modifier = Modifier.padding(20.dp).verticalScroll(rememberScrollState())) {
             val focusManager = LocalFocusManager.current
@@ -80,9 +88,9 @@ fun EdgeConditionOverlay(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text("Edge Condition", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text("Edge Condition", color = editorColors.panelText, fontWeight = FontWeight.Bold, fontSize = 18.sp)
                 TextButton(onClick = onDismiss) {
-                    Text("Done", color = Color(0xFF64FFDA))
+                    Text("Done", color = editorColors.accentTealText)
                 }
             }
 
@@ -111,13 +119,13 @@ fun EdgeConditionOverlay(
                             onUpdateEdge(edge.copy(condition = newCondition))
                         },
                         colors = RadioButtonDefaults.colors(
-                            selectedColor = Color(0xFF64FFDA),
-                            unselectedColor = Color.White.copy(alpha = 0.5f)
+                            selectedColor = editorColors.accentTeal,
+                            unselectedColor = editorColors.panelDimText
                         )
                     )
                     Text(
                         type.label,
-                        color = Color.White,
+                        color = editorColors.panelText,
                         modifier = Modifier.padding(top = 12.dp),
                         fontSize = 14.sp
                     )
@@ -140,71 +148,129 @@ fun EdgeConditionOverlay(
                         label = { Text("Seconds") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
                         keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                        colors = flowTextFieldColors()
+                        colors = flowTextFieldColors(editorColors)
                     )
                 }
                 is EdgeCondition.IfTextContains -> {
                     var key by remember(edge.id) { mutableStateOf(condition.contextKey) }
-                    var text by remember(edge.id) { mutableStateOf(condition.substring) }
+                    var substring by remember(edge.id) { mutableStateOf(condition.substring) }
                     OutlinedTextField(
                         value = key,
                         onValueChange = {
                             key = it
-                            onUpdateEdge(edge.copy(condition = EdgeCondition.IfTextContains(it, condition.substring)))
+                            onUpdateEdge(edge.copy(condition = EdgeCondition.IfTextContains(it, substring)))
                         },
                         label = { Text("Context Key") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                        colors = flowTextFieldColors()
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                        colors = flowTextFieldColors(editorColors)
                     )
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
-                        value = text,
+                        value = substring,
                         onValueChange = {
-                            text = it
-                            onUpdateEdge(edge.copy(condition = EdgeCondition.IfTextContains(condition.contextKey, it)))
+                            substring = it
+                            onUpdateEdge(edge.copy(condition = EdgeCondition.IfTextContains(key, it)))
                         },
-                        label = { Text("Contains Text") },
+                        label = { Text("Target Substring") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                         keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                        colors = flowTextFieldColors()
+                        colors = flowTextFieldColors(editorColors)
+                    )
+                }
+                is EdgeCondition.IfNotTextContains -> {
+                    var key by remember(edge.id) { mutableStateOf(condition.contextKey) }
+                    var substring by remember(edge.id) { mutableStateOf(condition.substring) }
+                    OutlinedTextField(
+                        value = key,
+                        onValueChange = {
+                            key = it
+                            onUpdateEdge(edge.copy(condition = EdgeCondition.IfNotTextContains(it, substring)))
+                        },
+                        label = { Text("Context Key") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                        colors = flowTextFieldColors(editorColors)
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = substring,
+                        onValueChange = {
+                            substring = it
+                            onUpdateEdge(edge.copy(condition = EdgeCondition.IfNotTextContains(key, it)))
+                        },
+                        label = { Text("Target Substring") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                        colors = flowTextFieldColors(editorColors)
                     )
                 }
                 is EdgeCondition.IfContextEquals -> {
                     var key by remember(edge.id) { mutableStateOf(condition.key) }
-                    var value by remember(edge.id) { mutableStateOf(condition.value) }
+                    var expectedValue by remember(edge.id) { mutableStateOf(condition.value) }
                     OutlinedTextField(
                         value = key,
                         onValueChange = {
                             key = it
-                            onUpdateEdge(edge.copy(condition = EdgeCondition.IfContextEquals(it, condition.value)))
+                            onUpdateEdge(edge.copy(condition = EdgeCondition.IfContextEquals(it, expectedValue)))
                         },
                         label = { Text("Context Key") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                        colors = flowTextFieldColors()
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                        colors = flowTextFieldColors(editorColors)
                     )
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
-                        value = value,
+                        value = expectedValue,
                         onValueChange = {
-                            value = it
-                            onUpdateEdge(edge.copy(condition = EdgeCondition.IfContextEquals(condition.key, it)))
+                            expectedValue = it
+                            onUpdateEdge(edge.copy(condition = EdgeCondition.IfContextEquals(key, it)))
                         },
                         label = { Text("Expected Value") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                         keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                        colors = flowTextFieldColors()
+                        colors = flowTextFieldColors(editorColors)
+                    )
+                }
+                is EdgeCondition.IfNotContextEquals -> {
+                    var key by remember(edge.id) { mutableStateOf(condition.key) }
+                    var value by remember(edge.id) { mutableStateOf(condition.value) }
+                    OutlinedTextField(
+                        value = key,
+                        onValueChange = {
+                            key = it
+                            onUpdateEdge(edge.copy(condition = EdgeCondition.IfNotContextEquals(it, value)))
+                        },
+                        label = { Text("Context Key") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                        colors = flowTextFieldColors(editorColors)
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = value,
+                        onValueChange = {
+                            value = it
+                            onUpdateEdge(edge.copy(condition = EdgeCondition.IfNotContextEquals(key, it)))
+                        },
+                        label = { Text("Rejected Value") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                        colors = flowTextFieldColors(editorColors)
                     )
                 }
                 is EdgeCondition.IfImageFound -> {
@@ -215,74 +281,12 @@ fun EdgeConditionOverlay(
                             key = it
                             onUpdateEdge(edge.copy(condition = EdgeCondition.IfImageFound(it)))
                         },
-                        label = { Text("Context Key (from Image Match node)") },
+                        label = { Text("Image Result Key") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                         keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                        colors = flowTextFieldColors()
-                    )
-                }
-                is EdgeCondition.IfNotTextContains -> {
-                    var key by remember(edge.id) { mutableStateOf(condition.contextKey) }
-                    var text by remember(edge.id) { mutableStateOf(condition.substring) }
-                    OutlinedTextField(
-                        value = key,
-                        onValueChange = {
-                            key = it
-                            onUpdateEdge(edge.copy(condition = EdgeCondition.IfNotTextContains(it, condition.substring)))
-                        },
-                        label = { Text("Context Key") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                        colors = flowTextFieldColors()
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = text,
-                        onValueChange = {
-                            text = it
-                            onUpdateEdge(edge.copy(condition = EdgeCondition.IfNotTextContains(condition.contextKey, it)))
-                        },
-                        label = { Text("Does Not Contain Text") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                        colors = flowTextFieldColors()
-                    )
-                }
-                is EdgeCondition.IfNotContextEquals -> {
-                    var key by remember(edge.id) { mutableStateOf(condition.key) }
-                    var value by remember(edge.id) { mutableStateOf(condition.value) }
-                    OutlinedTextField(
-                        value = key,
-                        onValueChange = {
-                            key = it
-                            onUpdateEdge(edge.copy(condition = EdgeCondition.IfNotContextEquals(it, condition.value)))
-                        },
-                        label = { Text("Context Key") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                        colors = flowTextFieldColors()
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = value,
-                        onValueChange = {
-                            value = it
-                            onUpdateEdge(edge.copy(condition = EdgeCondition.IfNotContextEquals(condition.key, it)))
-                        },
-                        label = { Text("Must Not Equal Value") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                        colors = flowTextFieldColors()
+                        colors = flowTextFieldColors(editorColors)
                     )
                 }
                 is EdgeCondition.IfNotImageFound -> {
@@ -293,45 +297,44 @@ fun EdgeConditionOverlay(
                             key = it
                             onUpdateEdge(edge.copy(condition = EdgeCondition.IfNotImageFound(it)))
                         },
-                        label = { Text("Context Key (from Image Match node)") },
+                        label = { Text("Image Result Key") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                         keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                        colors = flowTextFieldColors()
+                        colors = flowTextFieldColors(editorColors)
                     )
                 }
                 is EdgeCondition.Retry -> {
-                    var attempts by remember(edge.id) { mutableStateOf(condition.maxAttempts.toString()) }
-                    var delay by remember(edge.id) { mutableStateOf(condition.delayMs.toString()) }
+                    var maxAttempts by remember(edge.id) { mutableStateOf(condition.maxAttempts.toString()) }
+                    var delayMs by remember(edge.id) { mutableStateOf(condition.delayMs.toString()) }
                     OutlinedTextField(
-                        value = attempts,
+                        value = maxAttempts,
                         onValueChange = {
-                            attempts = it
-                            val a = it.toIntOrNull() ?: return@OutlinedTextField
-                            onUpdateEdge(edge.copy(condition = EdgeCondition.Retry(a, condition.delayMs)))
+                            maxAttempts = it
+                            val r = it.toIntOrNull() ?: return@OutlinedTextField
+                            onUpdateEdge(edge.copy(condition = condition.copy(maxAttempts = r)))
                         },
                         label = { Text("Max Attempts") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                        colors = flowTextFieldColors()
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+                        colors = flowTextFieldColors(editorColors)
                     )
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
-                        value = delay,
+                        value = delayMs,
                         onValueChange = {
-                            delay = it
+                            delayMs = it
                             val d = it.toLongOrNull() ?: return@OutlinedTextField
-                            onUpdateEdge(edge.copy(condition = EdgeCondition.Retry(condition.maxAttempts, d)))
+                            onUpdateEdge(edge.copy(condition = condition.copy(delayMs = d)))
                         },
                         label = { Text("Delay Between Retries (ms)") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
                         keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                        colors = flowTextFieldColors()
+                        colors = flowTextFieldColors(editorColors)
                     )
                 }
                 else -> { /* No config needed */ }
@@ -342,22 +345,24 @@ fun EdgeConditionOverlay(
             Button(
                 onClick = onDeleteEdge,
                 modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5A1A1A)),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isDark) Color(0xFF5A1A1A) else Color(0xFFFFEBEE)
+                ),
                 shape = RoundedCornerShape(12.dp)
             ) {
-                Text("Delete Edge", color = Color(0xFFEF5350))
+                Text("Delete Edge", color = Color(0xFFEF5350), fontWeight = FontWeight.SemiBold)
             }
         }
     }
 }
 
 @Composable
-private fun flowTextFieldColors() = OutlinedTextFieldDefaults.colors(
-    focusedTextColor = Color.White,
-    unfocusedTextColor = Color.White.copy(alpha = 0.8f),
-    focusedBorderColor = Color(0xFF64FFDA),
-    unfocusedBorderColor = Color.White.copy(alpha = 0.3f),
-    focusedLabelColor = Color(0xFF64FFDA),
-    unfocusedLabelColor = Color.White.copy(alpha = 0.5f),
-    cursorColor = Color(0xFF64FFDA)
+private fun flowTextFieldColors(editorColors: FlowEditorColors = flowEditorColors()) = OutlinedTextFieldDefaults.colors(
+    focusedTextColor = editorColors.panelText,
+    unfocusedTextColor = editorColors.panelText.copy(alpha = 0.85f),
+    focusedBorderColor = editorColors.accentTeal,
+    unfocusedBorderColor = editorColors.panelText.copy(alpha = 0.25f),
+    focusedLabelColor = editorColors.accentTealText,
+    unfocusedLabelColor = editorColors.panelDimText,
+    cursorColor = editorColors.accentTeal
 )

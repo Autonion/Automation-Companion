@@ -98,10 +98,6 @@ class TrackingForegroundService : Service() {
         }
 
         fun startVolumeChange(context: Context, ring: Int, media: Int, alarm: Int, ringerMode: RingerMode) {
-            if (!hasLocationPermission(context)) {
-                Log.w("TrackingService", "Missing location permissions. Cannot start service.")
-                return
-            }
             val i = Intent(context, TrackingForegroundService::class.java).apply {
                 action = ACTION_PERFORM_VOLUME
                 putExtra("ring", ring)
@@ -133,10 +129,6 @@ class TrackingForegroundService : Service() {
          * Graceful: If WAKE_LOCK permission not granted, logs warning but does not crash.
          */
         fun acquirePartialWakeLock(context: Context) {
-            if (!hasLocationPermission(context)) {
-                Log.w("TrackingService", "Missing location permissions. Cannot start service.")
-                return
-            }
             try {
                 val i = Intent(context, TrackingForegroundService::class.java).apply {
                     action = "ACTION_ACQUIRE_WAKE_LOCK"

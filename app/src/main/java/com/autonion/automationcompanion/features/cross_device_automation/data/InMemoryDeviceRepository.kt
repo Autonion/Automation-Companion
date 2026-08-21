@@ -26,8 +26,14 @@ class InMemoryDeviceRepository : DeviceRepository {
             if (existingIndex >= 0) {
                 val existing = currentList[existingIndex]
                 val mutableList = currentList.toMutableList()
-                // Preserve isSelected from existing device unless explicitly changed
-                mutableList[existingIndex] = device.copy(isSelected = existing.isSelected)
+                // Discovery refreshes should not overwrite explicit user/auth state.
+                mutableList[existingIndex] = device.copy(
+                    role = existing.role,
+                    isSelected = existing.isSelected,
+                    agentId = existing.agentId,
+                    isPaired = existing.isPaired,
+                    isPairingRequired = existing.isPairingRequired
+                )
                 mutableList
             } else {
                 // Auto-select if this is the first and only device
@@ -38,6 +44,12 @@ class InMemoryDeviceRepository : DeviceRepository {
                 }
                 currentList + updatedDevice
             }
+        }
+    }
+
+    override suspend fun updateDevice(device: Device) {
+        _devices.update { currentList ->
+            currentList.map { if (it.id == device.id) device else it }
         }
     }
 
@@ -63,5 +75,9 @@ class InMemoryDeviceRepository : DeviceRepository {
         _devices.update { currentList ->
             currentList.map { it.copy(isSelected = false) }
         }
+    }
+
+    override suspend fun clearAllDevices() {
+        _devices.value = emptyList()
     }
 }

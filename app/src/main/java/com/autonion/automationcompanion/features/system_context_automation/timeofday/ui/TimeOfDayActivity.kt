@@ -177,7 +177,20 @@ fun TimeOfDaySlotsScreen(
                                 TimeOfDaySlotCard(
                                     slot = slot,
                                     onToggleEnabled = { enabled ->
-                                        scope.launch { dao.setEnabled(slot.id, enabled) }
+                                        scope.launch {
+                                            dao.setEnabled(slot.id, enabled)
+                                            if (enabled) {
+                                                val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+                                                val config = try {
+                                                    slot.triggerConfigJson?.let { json.decodeFromString<com.autonion.automationcompanion.features.system_context_automation.shared.models.TriggerConfig.TimeOfDay>(it) }
+                                                } catch (_: Exception) { null }
+                                                config?.let {
+                                                    TimeOfDayReceiver.scheduleAlarm(context, slot.id, it.hour, it.minute)
+                                                }
+                                            } else {
+                                                TimeOfDayReceiver.cancelAlarm(context, slot.id)
+                                            }
+                                        }
                                     },
                                     onEdit = { onEditClicked(slot.id) },
                                     onDelete = {
@@ -194,13 +207,24 @@ fun TimeOfDaySlotsScreen(
                                                 "TimeOfDaySlotsScreen"
                                             )
 
+                                            snackbarHostState.currentSnackbarData?.dismiss()
                                             val result = snackbarHostState.showSnackbar(
                                                 message = "Slot deleted",
-                                                actionLabel = "Undo"
+                                                actionLabel = "Undo",
+                                                duration = SnackbarDuration.Short
                                             )
                                             if (result == SnackbarResult.ActionPerformed) {
                                                 recentlyDeleted?.let { 
                                                     val newId = dao.insert(it.copy(id = 0)) 
+                                                    if (it.enabled) {
+                                                        val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+                                                        val config = try {
+                                                            it.triggerConfigJson?.let { raw -> json.decodeFromString<com.autonion.automationcompanion.features.system_context_automation.shared.models.TriggerConfig.TimeOfDay>(raw) }
+                                                        } catch (_: Exception) { null }
+                                                        config?.let { c ->
+                                                            TimeOfDayReceiver.scheduleAlarm(context, newId, c.hour, c.minute)
+                                                        }
+                                                    }
                                                     
                                                     // Log undo
                                                     com.autonion.automationcompanion.features.automation_debugger.DebugLogger.success(
@@ -647,6 +671,9 @@ fun TimeOfDayConfigScreen(
         )
     }
 
+    val scrollState = rememberScrollState()
+    val isScrolled by remember { derivedStateOf { scrollState.value > 0 } }
+
     AuroraBackground {
         Scaffold(
             topBar = {
@@ -670,7 +697,10 @@ fun TimeOfDayConfigScreen(
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Color.Transparent,
+                        containerColor = if (isScrolled) {
+                            if (isDark) Color(0xFF1E2228).copy(alpha = 0.95f)
+                            else MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
+                        } else Color.Transparent,
                         titleContentColor = MaterialTheme.colorScheme.onSurface,
                         navigationIconContentColor = MaterialTheme.colorScheme.onSurface
                     )
@@ -681,8 +711,8 @@ fun TimeOfDayConfigScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
                     .padding(padding)
+                    .verticalScroll(scrollState)
                     .padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {

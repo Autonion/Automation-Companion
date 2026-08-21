@@ -66,7 +66,7 @@ class UIStateBuilder(private val context: Context) {
                     if (state.elements.isNotEmpty()) {
                         Log.d(TAG, "Built UI state from Extension DOM (${state.elements.size} elements)")
                         DebugLogger.info(
-                            context, LogCategory.UI_RECOGNITION_AI,
+                            context, LogCategory.SEMANTIC_AUTOMATION,
                             "UI State: Extension DOM",
                             "Using browser DOM snapshot (${state.elements.size} elements) for this automation step",
                             TAG
@@ -76,7 +76,7 @@ class UIStateBuilder(private val context: Context) {
                 }
                 Log.d(TAG, "Extension connected but DOM snapshot empty/unavailable, falling back to Accessibility")
                 DebugLogger.warning(
-                    context, LogCategory.UI_RECOGNITION_AI,
+                    context, LogCategory.SEMANTIC_AUTOMATION,
                     "DOM Snapshot Empty",
                     "Extension is connected but DOM snapshot is empty/unavailable. Falling back to Accessibility tree.",
                     TAG

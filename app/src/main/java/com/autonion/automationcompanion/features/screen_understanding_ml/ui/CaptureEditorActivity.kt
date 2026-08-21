@@ -80,6 +80,7 @@ class CaptureEditorActivity : ComponentActivity() {
     
     // Track which tab the user is on (Elements = Object Detection, Text = OCR)
     private var currentDisplayMode: EditorDisplayMode = EditorDisplayMode.ELEMENTS
+    private var isA11yOnlyMode = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -88,6 +89,7 @@ class CaptureEditorActivity : ComponentActivity() {
         presetName = intent.getStringExtra("PRESET_NAME") ?: "Untitled"
         isFlowMode = intent.getBooleanExtra(FlowOverlayContract.EXTRA_FLOW_MODE, false)
         flowNodeId = intent.getStringExtra(FlowOverlayContract.EXTRA_FLOW_NODE_ID)
+        isA11yOnlyMode = intent.getBooleanExtra("A11Y_ONLY_MODE", false)
         currentImagePath = imagePath
         
         // Parse pre-captured accessibility text from service
@@ -126,7 +128,7 @@ class CaptureEditorActivity : ComponentActivity() {
         }
         
         sourceBitmap = BitmapFactory.decodeFile(file.absolutePath)
-        perceptionLayer = PerceptionLayer(this)
+        perceptionLayer = if (isA11yOnlyMode) null else PerceptionLayer(this)
         
         // Handle Back Press explicitly
         onBackPressedDispatcher.addCallback(this) {
@@ -138,8 +140,6 @@ class CaptureEditorActivity : ComponentActivity() {
                 CaptureEditorScreen()
             }
         }
-        
-        runDetection()
     }
     
     @Composable
@@ -165,7 +165,10 @@ class CaptureEditorActivity : ComponentActivity() {
                 if (sourceBitmap != null) {
                     AndroidView(
                         factory = { context ->
-                            EditorView(context, sourceBitmap!!).also { editorViewInput = it }
+                            EditorView(context, sourceBitmap!!).also {
+                                editorViewInput = it
+                                runDetection()
+                            }
                         },
                         modifier = Modifier.fillMaxSize()
                     )
@@ -195,40 +198,42 @@ class CaptureEditorActivity : ComponentActivity() {
                             labelColor = Color.White.copy(alpha = 0.7f)
                         )
                     )
-                    FilterChip(
-                        selected = displayMode == EditorDisplayMode.TEXT,
-                        onClick = {
-                            displayMode = EditorDisplayMode.TEXT
-                            currentDisplayMode = EditorDisplayMode.TEXT
-                            editorViewInput?.setDisplayMode(EditorDisplayMode.TEXT)
-                            // Run OCR on first switch (cached after that)
-                            if (ocrElements == null && !ocrLoading) {
-                                ocrLoading = true
-                                runOcr { ocrLoading = false }
-                            }
-                        },
-                        label = {
-                            if (ocrLoading) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(14.dp),
-                                        strokeWidth = 2.dp,
-                                        color = Color.White
-                                    )
-                                    Spacer(Modifier.width(6.dp))
-                                    Text("Scanning...", fontSize = 13.sp)
+                    if (!isA11yOnlyMode) {
+                        FilterChip(
+                            selected = displayMode == EditorDisplayMode.TEXT,
+                            onClick = {
+                                displayMode = EditorDisplayMode.TEXT
+                                currentDisplayMode = EditorDisplayMode.TEXT
+                                editorViewInput?.setDisplayMode(EditorDisplayMode.TEXT)
+                                // Run OCR on first switch (cached after that)
+                                if (ocrElements == null && !ocrLoading) {
+                                    ocrLoading = true
+                                    runOcr { ocrLoading = false }
                                 }
-                            } else {
-                                Text("📝 Text", fontSize = 13.sp)
-                            }
-                        },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = Color(0xFF00BCD4),
-                            selectedLabelColor = Color.White,
-                            containerColor = Color.Transparent,
-                            labelColor = Color.White.copy(alpha = 0.7f)
+                            },
+                            label = {
+                                if (ocrLoading) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(14.dp),
+                                            strokeWidth = 2.dp,
+                                            color = Color.White
+                                        )
+                                        Spacer(Modifier.width(6.dp))
+                                        Text("Scanning...", fontSize = 13.sp)
+                                    }
+                                } else {
+                                    Text("📝 Text", fontSize = 13.sp)
+                                }
+                            },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = Color(0xFF00BCD4),
+                                selectedLabelColor = Color.White,
+                                containerColor = Color.Transparent,
+                                labelColor = Color.White.copy(alpha = 0.7f)
+                            )
                         )
-                    )
+                    }
                 }
             }
         }
@@ -299,6 +304,59 @@ class CaptureEditorActivity : ComponentActivity() {
     
     private fun runDetection() {
         val flowMlJson = intent.getStringExtra("EXTRA_FLOW_ML_JSON")
+        if (isA11yOnlyMode) {
+            val finalElements = preCapturedA11yElements.toMutableList()
+
+            // Fallback: If preCapturedA11yElements is empty, use preCapturedTextNodes
+            if (finalElements.isEmpty() && preCapturedTextNodes.isNotEmpty()) {
+                for (node in preCapturedTextNodes) {
+                    finalElements.add(
+                        UIElement(
+                            id = "a11y_${java.util.UUID.randomUUID().toString().take(8)}",
+                            label = "button",
+                            confidence = 0.85f,
+                            bounds = android.graphics.RectF(node.boundsLeft, node.boundsTop, node.boundsRight, node.boundsBottom),
+                            text = node.text,
+                            source = "accessibility"
+                        )
+                    )
+                }
+            }
+
+            var loadedStates: List<SelectionState>? = null
+
+            if (!flowMlJson.isNullOrEmpty()) {
+                try {
+                    val steps = Json.decodeFromString<List<AutomationStep>>(flowMlJson)
+                    val savedElements = steps.map { it.anchor }
+                    for (saved in savedElements) {
+                        if (finalElements.none { it.id == saved.id }) {
+                            finalElements.add(saved)
+                        }
+                    }
+                    loadedStates = steps.map { step ->
+                        SelectionState(
+                            element = step.anchor,
+                            isOptional = step.isOptional,
+                            actionType = step.actionType,
+                            inputText = step.inputText
+                        )
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("CaptureEditor", "Failed to parse EXTRA_FLOW_ML_JSON", e)
+                }
+            }
+
+            if (finalElements.isEmpty()) {
+                Toast.makeText(this@CaptureEditorActivity, "No interactive elements found — try Retake", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this@CaptureEditorActivity, "Found ${finalElements.size} UI elements", Toast.LENGTH_SHORT).show()
+                editorViewInput?.setElements(finalElements)
+                loadedStates?.let { editorViewInput?.setSelectionStates(it) }
+            }
+            return
+        }
+
         Toast.makeText(this, "Detecting UI elements...", Toast.LENGTH_SHORT).show()
         lifecycleScope.launch(Dispatchers.Default) {
              // 1. Run YOLO detection on the screenshot
@@ -457,7 +515,7 @@ class CaptureEditorActivity : ComponentActivity() {
             if (service != null) {
                 service.addStepsFromEditor(steps)
                 // Store latest image path and editor mode for the eventual broadcast
-                service.updateFlowMetadata(currentImagePath, currentDisplayMode.name)
+                service.updateFlowMetadata(currentImagePath, if (isA11yOnlyMode) "A11Y_ONLY" else currentDisplayMode.name)
                 // Go back to target app to continue capturing
                 moveTaskToBack(true)
                 finish()
@@ -935,10 +993,10 @@ class CaptureEditorActivity : ComponentActivity() {
                     val paint = if (state.isOptional) paintDashed else paintSelected
                     canvas.drawRect(element.bounds, paint)
                     drawSelectionBadge(canvas, element, state, index)
-                } else if (element.source == "accessibility") {
-                    // Accessibility gap-fill: cyan dashed box with [A11y] tag
+                } else if (element.source == "accessibility" || isA11yOnlyMode) {
+                    // Accessibility element: cyan bounding box with label/text
                     canvas.drawRect(element.bounds, paintBoxA11y)
-                    val label = "${element.label} [A11y]"
+                    val label = (element.text?.take(20) ?: element.label)
                     canvas.drawText(label, element.bounds.left, element.bounds.top - 5f * invScale, paintLabelA11y)
                 } else {
                     canvas.drawRect(element.bounds, paintBox)

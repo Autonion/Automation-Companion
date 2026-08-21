@@ -32,7 +32,8 @@ import java.util.concurrent.TimeUnit
 class NetworkingManager(
     private val context: Context,
     private val deviceRepository: DeviceRepository,
-    private val eventReceiver: EventReceiver
+    private val eventReceiver: EventReceiver,
+    private val deviceAuthManager: com.autonion.automationcompanion.features.cross_device_automation.data.DeviceAuthManager
 ) {
     companion object {
         private const val TAG = "NetworkingManager"
@@ -42,6 +43,14 @@ class NetworkingManager(
         fun onDeviceConnected(device: Device)
         fun onDeviceDisconnected(deviceId: String)
         fun onMessageReceived(deviceId: String, rawJson: String)
+        /** Called once when the desktop agent sends its version in auth_result/connection_ack. Null = old agent. */
+        fun onAgentVersionReceived(deviceId: String, agentVersion: String?, minCompanionVersion: String?) {}
+        /** Called when desktop agent requests 6-digit PIN pairing. */
+        fun onPairingRequired(deviceId: String, deviceName: String) {}
+        /** Called when pairing succeeds and device is authenticated. */
+        fun onPairingSuccess(deviceId: String) {}
+        /** Called when pairing fails or is rejected. */
+        fun onPairingFailed(deviceId: String, error: String) {}
     }
 
     private val client = OkHttpClient.Builder()
@@ -52,6 +61,7 @@ class NetworkingManager(
     private val activeConnections = ConcurrentHashMap<String, WebSocket>()
     private val connectedEndpoints = ConcurrentHashMap.newKeySet<String>() // Tracks IP:port to prevent duplicate connections
     private val reconnectingDevices = ConcurrentHashMap.newKeySet<String>() // Prevents duplicate reconnect coroutines
+    private val revocationCleanupDevices = ConcurrentHashMap.newKeySet<String>() // Ensures revoke cleanup runs once per device
     private val gson = Gson()
     private val scope = CoroutineScope(Dispatchers.IO)
 
@@ -94,7 +104,22 @@ class NetworkingManager(
         }
     }
 
-
+    fun submitPairingPin(deviceId: String, pin: String) {
+        val ws = activeConnections[deviceId]
+        if (ws != null) {
+            val payload = gson.toJson(mapOf(
+                "type" to "pairing_submit",
+                "pin" to pin.trim(),
+                "deviceId" to deviceAuthManager.deviceId,
+                "deviceName" to deviceAuthManager.deviceName,
+                "deviceSecret" to deviceAuthManager.deviceSecret
+            ))
+            ws.send(payload)
+            Log.d(TAG, "Sent pairing_submit to device $deviceId")
+        } else {
+            Log.e(TAG, "Cannot submit PIN: no active connection for $deviceId")
+        }
+    }
 
     private fun connectToDevice(device: Device): Boolean {
         val endpoint = "${device.ipAddress}:${device.port}"
@@ -138,6 +163,24 @@ class NetworkingManager(
                 connectedEndpoints.add(endpoint)
                 reconnectingDevices.remove(device.id)
                 this@NetworkingManager.listener?.onDeviceConnected(device)
+
+                // Send our full identity & version info to desktop
+                try {
+                    val appVersion = context.packageManager
+                        .getPackageInfo(context.packageName, 0).versionName ?: "unknown"
+                    val clientInfo = gson.toJson(mapOf(
+                        "type" to "client_info",
+                        "app" to "AutomationCompanion",
+                        "version" to appVersion,
+                        "deviceId" to deviceAuthManager.deviceId,
+                        "deviceName" to deviceAuthManager.deviceName,
+                        "deviceSecret" to deviceAuthManager.deviceSecret
+                    ))
+                    webSocket.send(clientInfo)
+                    Log.d(TAG, "Sent client_info v$appVersion (id=${deviceAuthManager.deviceId}) to ${device.name}")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to send client_info: ${e.message}")
+                }
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -166,15 +209,113 @@ class NetworkingManager(
                         return
                     }
 
-                    // 2. Handle Control Messages
-                    if (type == "connection_ack") {
-                        Log.d(TAG, "Handshake received from ${device.name}: $text")
+                    // 2. Handle Control & Authentication Messages
+                    if (type == "auth_result" || type == "connection_ack") {
+                        Log.d(TAG, "Auth response received from ${device.name}: $text")
                         DebugLogger.info(
                             context, LogCategory.CROSS_DEVICE_SYNC,
-                            "Connection Acknowledged",
-                            "Handshake received from ${device.name}: $text",
+                            "Authentication Response",
+                            "Received $type from ${device.name}: $text",
                             TAG
                         )
+
+                        val status = jsonObject.get("status")?.asString ?: "unknown"
+                        val agentId = jsonObject.get("agent_id")?.asString
+                        val agentVersion = jsonObject.get("version")?.asString
+                        val minCompanion = jsonObject.get("min_companion_version")?.asString
+
+                        if (agentVersion != null) {
+                            this@NetworkingManager.listener?.onAgentVersionReceived(
+                                device.id, agentVersion, minCompanion
+                            )
+                        }
+
+                        // Parse agent/prelogin to verify isServiceOnly
+                        val agentField = jsonObject.get("agent")?.asString ?: ""
+                        val preloginField = jsonObject.get("prelogin")?.asBoolean ?: false
+                        val isServiceOnly = preloginField
+                                || agentField.contains("prelogin", ignoreCase = true)
+
+                        when (status) {
+                            "authenticated", "connected" -> {
+                                revocationCleanupDevices.remove(device.id)
+                                if (!agentId.isNullOrBlank()) {
+                                    deviceAuthManager.markAgentPaired(agentId)
+                                }
+                                scope.launch {
+                                    val existing = deviceRepository.getDeviceById(device.id)
+                                    if (existing != null) {
+                                        deviceRepository.updateDevice(
+                                            existing.copy(
+                                                isPaired = true,
+                                                isPairingRequired = false,
+                                                agentId = agentId ?: existing.agentId,
+                                                isServiceOnly = isServiceOnly
+                                            )
+                                        )
+                                    }
+                                }
+                                this@NetworkingManager.listener?.onPairingSuccess(device.id)
+                            }
+                            "pairing_required" -> {
+                                scope.launch {
+                                    val existing = deviceRepository.getDeviceById(device.id)
+                                    if (existing != null) {
+                                        deviceRepository.updateDevice(
+                                            existing.copy(
+                                                isPaired = false,
+                                                isPairingRequired = true,
+                                                agentId = agentId ?: existing.agentId
+                                            )
+                                        )
+                                    }
+                                }
+                                this@NetworkingManager.listener?.onPairingRequired(device.id, device.name)
+                            }
+                            "paired_success" -> {
+                                revocationCleanupDevices.remove(device.id)
+                                if (!agentId.isNullOrBlank()) {
+                                    deviceAuthManager.markAgentPaired(agentId)
+                                }
+                                scope.launch {
+                                    val existing = deviceRepository.getDeviceById(device.id)
+                                    if (existing != null) {
+                                        deviceRepository.updateDevice(
+                                            existing.copy(
+                                                isPaired = true,
+                                                isPairingRequired = false,
+                                                agentId = agentId ?: existing.agentId
+                                            )
+                                        )
+                                    }
+                                }
+                                this@NetworkingManager.listener?.onPairingSuccess(device.id)
+                            }
+                            "pairing_failed" -> {
+                                val error = jsonObject.get("error")?.asString ?: "Invalid PIN"
+                                this@NetworkingManager.listener?.onPairingFailed(device.id, error)
+                            }
+                            "pairing_busy" -> {
+                                val msg = jsonObject.get("message")?.asString ?: "Another pairing is in progress on this desktop."
+                                this@NetworkingManager.listener?.onPairingFailed(device.id, msg)
+                            }
+                            "pairing_disabled" -> {
+                                val msg = jsonObject.get("message")?.asString ?: "New device pairing is disabled on this desktop."
+                                this@NetworkingManager.listener?.onPairingFailed(device.id, msg)
+                            }
+                            "pairing_expired" -> {
+                                val msg = jsonObject.get("message")?.asString ?: "Pairing timed out."
+                                this@NetworkingManager.listener?.onPairingFailed(device.id, msg)
+                            }
+                            "pairing_rejected" -> {
+                                val msg = jsonObject.get("message")?.asString ?: "Pairing declined by desktop user."
+                                this@NetworkingManager.listener?.onPairingFailed(device.id, msg)
+                            }
+                            "pairing_revoked" -> {
+                                handlePairingRevoked(device.id)
+                            }
+                        }
+
                         return // Don't try to parse as RawEvent
                     }
 
@@ -198,10 +339,17 @@ class NetworkingManager(
                             ResponseStatus.IN_PROGRESS
                         }
 
+                        // Parse optional data map (e.g. action_history for Save as Flow)
+                        val dataMap: Map<String, String>? = try {
+                            val dataObj = jsonObject.getAsJsonObject("data")
+                            dataObj?.entrySet()?.associate { it.key to it.value.asString }
+                        } catch (_: Exception) { null }
+
                         val response = PromptResponse(
                             transactionId = transactionId,
                             status = responseStatus,
-                            message = message
+                            message = message,
+                            data = dataMap
                         )
 
                         scope.launch {
@@ -218,11 +366,24 @@ class NetworkingManager(
                         return
                     }
 
-                    // 4. Handle Data Events
-                    // Only try to parse as RawEvent if it looks like one, or let the listener handle it exclusively?
-                    // For now, we still try to parse standard events for the eventPipeline.
-                    if (type.startsWith("clipboard.") || type.contains("event")) {
-                        val event = gson.fromJson(text, RawEvent::class.java)
+                    // 4. Handle Control & Non-Data Messages (Early Exit)
+                    if (type == "clipboard.sync_state_changed" ||
+                        type == "clipboard.set_sync_enabled" ||
+                        type == "clipboard.get_sync_state" ||
+                        type == "rule_triggered" ||
+                        type.startsWith("flow_")
+                    ) {
+                        // Handled by listener?.onMessageReceived
+                        return
+                    }
+
+                    // 5. Handle Data Events (clipboard text/image sync, external events, etc.)
+                    if (type == "clipboard.text_copied" ||
+                        type == "clipboard.image_copied" ||
+                        type.endsWith(".event") ||
+                        type == "generic_event"
+                    ) {
+                        val event = parseRawEventSafely(jsonObject, device.id)
                         scope.launch {
                             eventReceiver.onEventReceived(event)
                         }
@@ -238,8 +399,62 @@ class NetworkingManager(
                 }
             }
 
+            private fun parseRawEventSafely(jsonObject: com.google.gson.JsonObject, defaultDeviceId: String): RawEvent {
+                val id = jsonObject.get("id")?.asString ?: java.util.UUID.randomUUID().toString()
+                val type = jsonObject.get("type")?.asString ?: ""
+                val sourceDeviceId = jsonObject.get("sourceDeviceId")?.asString
+                    ?: jsonObject.get("source_device_id")?.asString
+                    ?: defaultDeviceId
+
+                val timestamp: Long = try {
+                    val tsElement = jsonObject.get("timestamp")
+                    when {
+                        tsElement == null || tsElement.isJsonNull -> System.currentTimeMillis()
+                        tsElement.isJsonPrimitive && tsElement.asJsonPrimitive.isNumber -> tsElement.asLong
+                        tsElement.isJsonPrimitive && tsElement.asJsonPrimitive.isString -> {
+                            val str = tsElement.asString
+                            try {
+                                str.toLong()
+                            } catch (_: NumberFormatException) {
+                                try {
+                                    val cleanStr = str.substringBefore(".").substringBefore("Z")
+                                    val sdf = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
+                                    sdf.parse(cleanStr)?.time ?: System.currentTimeMillis()
+                                } catch (_: Exception) {
+                                    System.currentTimeMillis()
+                                }
+                            }
+                        }
+                        else -> System.currentTimeMillis()
+                    }
+                } catch (_: Exception) {
+                    System.currentTimeMillis()
+                }
+
+                val payload = mutableMapOf<String, String>()
+                try {
+                    val payloadObj = jsonObject.getAsJsonObject("payload")
+                    if (payloadObj != null) {
+                        for (entry in payloadObj.entrySet()) {
+                            val value = entry.value
+                            if (value != null && !value.isJsonNull) {
+                                payload[entry.key] = if (value.isJsonPrimitive) value.asString else value.toString()
+                            }
+                        }
+                    }
+                } catch (_: Exception) { }
+
+                return RawEvent(
+                    id = id,
+                    timestamp = timestamp,
+                    type = type,
+                    sourceDeviceId = sourceDeviceId,
+                    payload = payload
+                )
+            }
+
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
-                Log.d(TAG, "Closing: $reason")
+                Log.d(TAG, "Closing: $reason (code=$code)")
                 DebugLogger.warning(
                     context, LogCategory.CROSS_DEVICE_SYNC,
                     "WebSocket closing",
@@ -247,10 +462,12 @@ class NetworkingManager(
                     TAG
                 )
                 webSocket.close(1000, null)
-                activeConnections.remove(device.id)
-                connectedEndpoints.remove("${device.ipAddress}:${device.port}")
-                this@NetworkingManager.listener?.onDeviceDisconnected(device.id)
-                // Don't reconnect on graceful close (user-initiated or deselect)
+                handleDisconnection(device.id, code, reason)
+            }
+
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                Log.d(TAG, "Closed: $reason (code=$code)")
+                handleDisconnection(device.id, code, reason)
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
@@ -261,9 +478,7 @@ class NetworkingManager(
                     "Connection to ${device.name} failed: ${t.message}",
                     TAG
                 )
-                activeConnections.remove(device.id)
-                connectedEndpoints.remove("${device.ipAddress}:${device.port}")
-                this@NetworkingManager.listener?.onDeviceDisconnected(device.id)
+                handleDisconnection(device.id, 1006, t.message ?: "Connection failure")
                 // Auto-reconnect if this device is still selected
                 scheduleReconnect(device)
             }
@@ -271,6 +486,54 @@ class NetworkingManager(
 
         client.newWebSocket(request, listener)
         return true
+    }
+
+    private fun handleDisconnection(deviceId: String, code: Int, reason: String) {
+        val wasConnected = activeConnections.remove(deviceId) != null
+        reconnectingDevices.remove(deviceId)
+        scope.launch {
+            val device = deviceRepository.getDeviceById(deviceId)
+            if (device != null) {
+                connectedEndpoints.remove("${device.ipAddress}:${device.port}")
+            }
+        }
+        if (code == 4001) {
+            handlePairingRevoked(deviceId)
+        }
+        if (wasConnected) {
+            this@NetworkingManager.listener?.onDeviceDisconnected(deviceId)
+        }
+    }
+
+    fun disconnectDevice(deviceId: String) {
+        val ws = activeConnections[deviceId]
+        ws?.close(1000, "Device unpaired")
+        handleDisconnection(deviceId, 1000, "Device unpaired")
+    }
+
+    private fun handlePairingRevoked(deviceId: String) {
+        if (!revocationCleanupDevices.add(deviceId)) {
+            Log.d(TAG, "Pairing revocation cleanup already handled for $deviceId")
+            return
+        }
+
+        Log.i(TAG, "Device $deviceId pairing revoked")
+        scope.launch {
+            deviceAuthManager.rotateSecret()
+            val device = deviceRepository.getDeviceById(deviceId)
+            if (device != null) {
+                device.agentId?.let { deviceAuthManager.unpairAgent(it) }
+                deviceRepository.updateDevice(
+                    device.copy(
+                        isPaired = false,
+                        isPairingRequired = true,
+                        isSelected = false,
+                        agentId = null
+                    )
+                )
+            }
+        }
+        this@NetworkingManager.listener?.onPairingFailed(deviceId, "Pairing revoked by desktop host.")
     }
 
     fun sendCommand(deviceId: String, command: Any) {

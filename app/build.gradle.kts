@@ -8,15 +8,15 @@ plugins {
 android {
     namespace = "com.autonion.automationcompanion"
     compileSdk {
-        version = release(36)
+        version = release(37)
     }
 
     defaultConfig {
         applicationId = "com.autonion.automationcompanion"
         minSdk = 24
         targetSdk = 36
-        versionCode = 8
-        versionName = "1.0.9"
+        versionCode = 9
+        versionName = "1.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -56,6 +56,7 @@ android {
     buildFeatures {
         viewBinding = true
         compose = true
+        buildConfig = true
     }
 
     androidResources {
@@ -126,7 +127,7 @@ dependencies {
     implementation(libs.litert.support.api)
     
     // Gson for JSON parsing
-    implementation("com.google.code.gson:gson:2.13.2")
+    implementation(libs.gson)
     implementation(libs.okhttp)
 
     // ML Kit Text Recognition (OCR)
@@ -156,6 +157,14 @@ dependencies {
 
     // Security — Encrypted SharedPreferences for API key storage
     implementation(libs.androidx.security.crypto)
+
+    // Play Age Signals API (Texas SB 2420 compliance)
+    implementation(libs.play.age.signals)
+    implementation(libs.kotlinx.coroutines.play.services)
+
+    // Play In-App Updates (remind users when a new version is available)
+    implementation(libs.play.app.update)
+    implementation(libs.play.app.update.ktx)
 
     // llama.cpp Kotlin wrapper (for GGUF on-device SLM inference)
     implementation(libs.llama.kotlin.android)

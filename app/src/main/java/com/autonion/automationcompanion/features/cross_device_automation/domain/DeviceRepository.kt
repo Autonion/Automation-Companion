@@ -7,7 +7,9 @@ interface DeviceRepository {
     fun getSelectedDevices(): Flow<List<Device>>
     suspend fun getDeviceById(id: String): Device?
     suspend fun addOrUpdateDevice(device: Device)
+    suspend fun updateDevice(device: Device)
     suspend fun removeDevice(id: String)
     suspend fun toggleDeviceSelection(id: String)
     suspend fun deselectAllDevices()
+    suspend fun clearAllDevices()
 }

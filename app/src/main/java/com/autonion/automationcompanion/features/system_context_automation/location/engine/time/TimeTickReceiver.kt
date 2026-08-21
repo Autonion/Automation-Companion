@@ -15,8 +15,12 @@ import java.util.Calendar
 
 class TimeTickReceiver : BroadcastReceiver() {
 
+    companion object {
+        const val ACTION_INTERNAL_TIME_TICK = "com.autonion.automationcompanion.action.INTERNAL_TIME_TICK"
+    }
+
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action != Intent.ACTION_TIME_TICK) return
+        if (intent.action != ACTION_INTERNAL_TIME_TICK && intent.action != Intent.ACTION_TIME_TICK) return
 
         CoroutineScope(Dispatchers.IO).launch {
             val dao = AppDatabase.get(context).slotDao()

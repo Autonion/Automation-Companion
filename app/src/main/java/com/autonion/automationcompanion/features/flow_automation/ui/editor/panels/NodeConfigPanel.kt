@@ -5,14 +5,18 @@ import android.content.pm.PackageManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -24,10 +28,13 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.autonion.automationcompanion.features.flow_automation.model.*
+import com.autonion.automationcompanion.features.flow_automation.ui.editor.canvas.FlowEditorColors
 import com.autonion.automationcompanion.features.flow_automation.ui.editor.canvas.NodeColors
+import com.autonion.automationcompanion.features.flow_automation.ui.editor.canvas.flowEditorColors
 
 /**
  * Bottom sheet panel for configuring a selected node's properties.
+ * Fully adapts to Light & Dark themes with high-contrast text and inputs.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,6 +46,8 @@ fun NodeConfigPanel(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val editorColors = flowEditorColors()
+    val isDark = isSystemInDarkTheme()
     val (_, accentColor) = nodeColors(node)
     val focusManager = LocalFocusManager.current
 
@@ -50,7 +59,8 @@ fun NodeConfigPanel(
             .fillMaxWidth()
             .heightIn(max = maxHeight),
         shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1C1E))
+        colors = CardDefaults.cardColors(containerColor = editorColors.panelBg),
+        border = BorderStroke(1.dp, editorColors.panelText.copy(alpha = 0.08f))
     ) {
         Column(
             modifier = Modifier
@@ -69,7 +79,40 @@ fun NodeConfigPanel(
                     fontSize = 18.sp
                 )
                 TextButton(onClick = onDismiss) {
-                    Text("Done", color = Color(0xFF64FFDA))
+                    Text("Done", color = editorColors.accentTealText)
+                }
+            }
+
+            // Warning banner if node attributes are unconfigured
+            val warning = node.configurationWarning()
+            if (warning != null) {
+                Spacer(Modifier.height(12.dp))
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = if (isDark) Color(0xFF3E2723) else Color(0xFFFFF3E0),
+                    border = BorderStroke(1.dp, Color(0xFFFF9800)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text("⚠", fontSize = 18.sp, color = Color(0xFFFF9800))
+                        Column {
+                            Text(
+                                "Setup Required",
+                                color = if (isDark) Color(0xFFFF9800) else Color(0xFFE65100),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
+                            )
+                            Text(
+                                warning,
+                                color = if (isDark) Color.White.copy(alpha = 0.85f) else Color(0xFF5D4037),
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
                 }
             }
 
@@ -88,7 +131,7 @@ fun NodeConfigPanel(
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                colors = flowTextFieldColors()
+                colors = flowTextFieldColors(editorColors)
             )
 
             Spacer(Modifier.height(12.dp))
@@ -114,11 +157,11 @@ fun NodeConfigPanel(
                     onClick = onDeleteNode,
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF5A1A1A)
+                        containerColor = if (isDark) Color(0xFF5A1A1A) else Color(0xFFFFEBEE)
                     ),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    Text("Delete Node", color = Color(0xFFEF5350))
+                    Text("Delete Node", color = Color(0xFFEF5350), fontWeight = FontWeight.SemiBold)
                 }
             }
         }
@@ -147,6 +190,8 @@ private fun AppPickerDropdown(
     accentColor: Color,
     modifier: Modifier = Modifier
 ) {
+    val editorColors = flowEditorColors()
+    val isDark = isSystemInDarkTheme()
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     val context = LocalContext.current
     val installedApps = remember {
@@ -185,14 +230,23 @@ private fun AppPickerDropdown(
         }
     }
 
-    val darkColorScheme = darkColorScheme(
-        surface = Color(0xFF1E2024),
-        onSurface = Color.White,
-        surfaceVariant = Color(0xFF2A2D33),
-        onSurfaceVariant = Color.White.copy(alpha = 0.7f)
-    )
+    val themeColorScheme = if (isDark) {
+        darkColorScheme(
+            surface = Color(0xFF1E2024),
+            onSurface = Color.White,
+            surfaceVariant = Color(0xFF2A2D33),
+            onSurfaceVariant = Color.White.copy(alpha = 0.7f)
+        )
+    } else {
+        lightColorScheme(
+            surface = Color.White,
+            onSurface = Color(0xFF1A1C1E),
+            surfaceVariant = Color(0xFFF0F1F5),
+            onSurfaceVariant = Color(0xFF1A1C1E).copy(alpha = 0.7f)
+        )
+    }
 
-    MaterialTheme(colorScheme = darkColorScheme) {
+    MaterialTheme(colorScheme = themeColorScheme) {
         ExposedDropdownMenuBox(
             expanded = expanded,
             onExpandedChange = { expanded = it },
@@ -209,9 +263,9 @@ private fun AppPickerDropdown(
                 placeholder = { Text("Search apps…") },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .menuAnchor(),
+                    .menuAnchor(ExposedDropdownMenuAnchorType.PrimaryEditable),
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                colors = flowTextFieldColors(),
+                colors = flowTextFieldColors(editorColors),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { 
                     expanded = false
@@ -242,7 +296,7 @@ private fun AppPickerDropdown(
                             expanded = false
                         }
                     )
-                    HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                    HorizontalDivider(color = editorColors.panelText.copy(alpha = 0.1f))
                 }
 
                 filteredApps.take(30).forEach { app ->
@@ -251,13 +305,13 @@ private fun AppPickerDropdown(
                             Column {
                                 Text(
                                     app.appName,
-                                    color = Color.White,
+                                    color = editorColors.panelText,
                                     fontWeight = FontWeight.Medium,
                                     fontSize = 14.sp
                                 )
                                 Text(
                                     app.packageName,
-                                    color = Color.White.copy(alpha = 0.5f),
+                                    color = editorColors.panelDimText,
                                     fontSize = 11.sp
                                 )
                             }
@@ -278,6 +332,7 @@ private fun AppPickerDropdown(
 
 @Composable
 private fun StartNodeConfig(node: StartNode, onUpdate: (FlowNode) -> Unit) {
+    val editorColors = flowEditorColors()
     AppPickerDropdown(
         selectedPackage = node.appPackageName ?: "",
         onAppSelected = { pkg ->
@@ -289,13 +344,14 @@ private fun StartNodeConfig(node: StartNode, onUpdate: (FlowNode) -> Unit) {
     Spacer(Modifier.height(4.dp))
     Text(
         "Optional — leave empty to start flow without launching an app",
-        color = Color.White.copy(alpha = 0.4f),
+        color = editorColors.panelDimText,
         fontSize = 11.sp
     )
 }
 
 @Composable
 private fun LaunchAppNodeConfig(node: LaunchAppNode, onUpdate: (FlowNode) -> Unit) {
+    val editorColors = flowEditorColors()
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     AppPickerDropdown(
         selectedPackage = node.appPackageName,
@@ -319,21 +375,22 @@ private fun LaunchAppNodeConfig(node: LaunchAppNode, onUpdate: (FlowNode) -> Uni
         modifier = Modifier.fillMaxWidth(),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
         keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-        colors = flowTextFieldColors()
+        colors = flowTextFieldColors(editorColors)
     )
     Text(
         "Time to wait for the app to fully open",
-        color = Color.White.copy(alpha = 0.4f),
+        color = editorColors.panelDimText,
         fontSize = 11.sp
     )
 }
 
 @Composable
 private fun ClipboardNodeConfig(node: ClipboardNode, onUpdate: (FlowNode) -> Unit) {
+    val editorColors = flowEditorColors()
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     
     // Operation Type
-    Text("Operation", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
+    Text("Operation", color = editorColors.panelDimText, fontSize = 12.sp)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         ClipboardOperation.entries.forEach { op ->
             FilterChip(
@@ -341,26 +398,13 @@ private fun ClipboardNodeConfig(node: ClipboardNode, onUpdate: (FlowNode) -> Uni
                 onClick = {
                     val updatedNode = if (op == ClipboardOperation.WRITE) {
                         val source = when (val currentSource = node.inputSource) {
-                            is InputSource.Static -> {
-                                if (currentSource.text.isEmpty()) {
-                                    InputSource.FromContext(node.contextKey.ifBlank { "clipboard_text" })
-                                } else {
-                                    currentSource
-                                }
-                            }
-                            is InputSource.FromContext -> {
-                                val key = node.contextKey.ifBlank {
-                                    currentSource.key.ifBlank { "clipboard_text" }
-                                }
-                                InputSource.FromContext(key)
-                            }
-                            is InputSource.Clipboard -> {
-                                InputSource.FromContext(node.contextKey.ifBlank { "clipboard_text" })
-                            }
+                            is InputSource.Static -> currentSource
+                            is InputSource.FromContext -> currentSource
+                            is InputSource.Clipboard -> InputSource.Static("")
                         }
                         node.copy(operation = op, inputSource = source)
                     } else {
-                        node.copy(operation = op)
+                        node.copy(operation = op, inputSource = InputSource.Clipboard)
                     }
                     onUpdate(updatedNode)
                 },
@@ -384,15 +428,15 @@ private fun ClipboardNodeConfig(node: ClipboardNode, onUpdate: (FlowNode) -> Uni
             singleLine = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-            colors = flowTextFieldColors()
+            colors = flowTextFieldColors(editorColors)
         )
         Text(
             "Key to store clipboard content in context",
-            color = Color.White.copy(alpha = 0.4f),
+            color = editorColors.panelDimText,
             fontSize = 11.sp
         )
     } else {
-        Text("Write Source", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
+        Text("Write Source", color = editorColors.panelDimText, fontSize = 12.sp)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val isStatic = node.inputSource is InputSource.Static
             val isFromContext = node.inputSource is InputSource.FromContext
@@ -430,7 +474,7 @@ private fun ClipboardNodeConfig(node: ClipboardNode, onUpdate: (FlowNode) -> Uni
                     modifier = Modifier.fillMaxWidth(),
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                    colors = flowTextFieldColors()
+                    colors = flowTextFieldColors(editorColors)
                 )
             }
             is InputSource.FromContext -> {
@@ -445,7 +489,7 @@ private fun ClipboardNodeConfig(node: ClipboardNode, onUpdate: (FlowNode) -> Uni
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                    colors = flowTextFieldColors()
+                    colors = flowTextFieldColors(editorColors)
                 )
             }
             is InputSource.Clipboard -> {
@@ -460,7 +504,7 @@ private fun ClipboardNodeConfig(node: ClipboardNode, onUpdate: (FlowNode) -> Uni
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                    colors = flowTextFieldColors()
+                    colors = flowTextFieldColors(editorColors)
                 )
             }
         }
@@ -469,10 +513,11 @@ private fun ClipboardNodeConfig(node: ClipboardNode, onUpdate: (FlowNode) -> Uni
 
 @Composable
 private fun InputNodeConfig(node: InputNode, onUpdate: (FlowNode) -> Unit) {
+    val editorColors = flowEditorColors()
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     
     // Source Type
-    Text("Input Source", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
+    Text("Input Source", color = editorColors.panelDimText, fontSize = 12.sp)
     val isStatic = node.inputSource is InputSource.Static
     val isFromContext = node.inputSource is InputSource.FromContext
     val isClipboard = node.inputSource is InputSource.Clipboard
@@ -524,7 +569,7 @@ private fun InputNodeConfig(node: InputNode, onUpdate: (FlowNode) -> Unit) {
                 modifier = Modifier.fillMaxWidth(),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                colors = flowTextFieldColors()
+                colors = flowTextFieldColors(editorColors)
             )
         }
         is InputSource.FromContext -> {
@@ -538,13 +583,13 @@ private fun InputNodeConfig(node: InputNode, onUpdate: (FlowNode) -> Unit) {
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                colors = flowTextFieldColors()
+                colors = flowTextFieldColors(editorColors)
             )
         }
         is InputSource.Clipboard -> {
             Text(
                 "Pastes clipboard into the focused field",
-                color = Color.White.copy(alpha = 0.4f),
+                color = editorColors.panelDimText,
                 fontSize = 11.sp
             )
         }
@@ -558,15 +603,16 @@ private fun InputNodeConfig(node: InputNode, onUpdate: (FlowNode) -> Unit) {
             onCheckedChange = { onUpdate(node.copy(submitAfterInput = it)) },
             colors = CheckboxDefaults.colors(checkedColor = NodeColors.InputPink)
         )
-        Text("Submit after input (Press Enter/Done)", color = Color.White, fontSize = 14.sp)
+        Text("Submit after input (Press Enter/Done)", color = editorColors.panelText, fontSize = 14.sp)
     }
 }
 
 @Composable
 private fun GestureNodeConfig(node: GestureNode, onUpdate: (FlowNode) -> Unit, onLaunchOverlay: (FlowNode) -> Unit) {
+    val editorColors = flowEditorColors()
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     if (node.recordedActionsJson.isNotEmpty()) {
-        Text("✓ Recorded actions available.", color = Color(0xFF64FFDA), fontSize = 12.sp)
+        Text("✓ Recorded actions available.", color = editorColors.accentTealText, fontSize = 12.sp)
         Spacer(Modifier.height(8.dp))
     }
 
@@ -576,7 +622,7 @@ private fun GestureNodeConfig(node: GestureNode, onUpdate: (FlowNode) -> Unit, o
         colors = ButtonDefaults.buttonColors(containerColor = NodeColors.GestureBlue),
         shape = RoundedCornerShape(12.dp)
     ) {
-        Text(if (node.recordedActionsJson.isEmpty()) "Record Gesture" else "Re-record Gesture", color = Color.White)
+        Text(if (node.recordedActionsJson.isEmpty()) "Record Gesture" else "Re-record Gesture", color = Color.White, fontWeight = FontWeight.SemiBold)
     }
 
     // ── Collapsible Advanced Settings ──
@@ -589,7 +635,7 @@ private fun GestureNodeConfig(node: GestureNode, onUpdate: (FlowNode) -> Unit, o
     ) {
         Text(
             if (showAdvanced) "▾ Advanced Settings" else "▸ Advanced Settings",
-            color = Color.White.copy(alpha = 0.5f),
+            color = editorColors.panelDimText,
             fontSize = 12.sp
         )
     }
@@ -602,7 +648,7 @@ private fun GestureNodeConfig(node: GestureNode, onUpdate: (FlowNode) -> Unit, o
         Column {
             Text(
                 "Fallback config — used only if no recorded gesture is available",
-                color = Color.White.copy(alpha = 0.35f),
+                color = editorColors.panelDimText,
                 fontSize = 11.sp
             )
             Spacer(Modifier.height(8.dp))
@@ -642,7 +688,7 @@ private fun GestureNodeConfig(node: GestureNode, onUpdate: (FlowNode) -> Unit, o
                             modifier = Modifier.weight(1f),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
                             keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                            colors = flowTextFieldColors()
+                            colors = flowTextFieldColors(editorColors)
                         )
                         OutlinedTextField(
                             value = y,
@@ -655,7 +701,7 @@ private fun GestureNodeConfig(node: GestureNode, onUpdate: (FlowNode) -> Unit, o
                             modifier = Modifier.weight(1f),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
                             keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                            colors = flowTextFieldColors()
+                            colors = flowTextFieldColors(editorColors)
                         )
                     }
                 }
@@ -671,7 +717,7 @@ private fun GestureNodeConfig(node: GestureNode, onUpdate: (FlowNode) -> Unit, o
                         modifier = Modifier.fillMaxWidth(),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                         keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                        colors = flowTextFieldColors()
+                        colors = flowTextFieldColors(editorColors)
                     )
                 }
             }
@@ -690,7 +736,7 @@ private fun GestureNodeConfig(node: GestureNode, onUpdate: (FlowNode) -> Unit, o
                 modifier = Modifier.fillMaxWidth(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                colors = flowTextFieldColors()
+                colors = flowTextFieldColors(editorColors)
             )
         }
     }
@@ -698,9 +744,10 @@ private fun GestureNodeConfig(node: GestureNode, onUpdate: (FlowNode) -> Unit, o
 
 @Composable
 private fun VisualTriggerNodeConfig(node: VisualTriggerNode, onUpdate: (FlowNode) -> Unit, onLaunchOverlay: (FlowNode) -> Unit) {
+    val editorColors = flowEditorColors()
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     if (node.visionPresetJson.isNotEmpty()) {
-        Text("✓ Vision configuration available.", color = Color(0xFF64FFDA), fontSize = 12.sp)
+        Text("✓ Vision configuration available.", color = editorColors.accentTealText, fontSize = 12.sp)
         Spacer(Modifier.height(8.dp))
     }
 
@@ -710,7 +757,7 @@ private fun VisualTriggerNodeConfig(node: VisualTriggerNode, onUpdate: (FlowNode
         colors = ButtonDefaults.buttonColors(containerColor = NodeColors.VisualTriggerPurple),
         shape = RoundedCornerShape(12.dp)
     ) {
-        Text(if (node.visionPresetJson.isEmpty()) "Identify Target Regions" else "Re-configure Target Regions", color = Color.White)
+        Text(if (node.visionPresetJson.isEmpty()) "Identify Target Regions" else "Re-configure Target Regions", color = Color.White, fontWeight = FontWeight.SemiBold)
     }
 
     Spacer(Modifier.height(16.dp))
@@ -718,7 +765,7 @@ private fun VisualTriggerNodeConfig(node: VisualTriggerNode, onUpdate: (FlowNode
     var threshold by remember(node.id) { mutableStateOf(node.threshold) }
     var outputKey by remember(node.id) { mutableStateOf(node.outputContextKey) }
 
-    Text("Threshold: ${String.format("%.2f", threshold)}", color = Color.White, fontSize = 13.sp)
+    Text("Threshold: ${String.format("%.2f", threshold)}", color = editorColors.panelText, fontSize = 13.sp)
     Slider(
         value = threshold,
         onValueChange = {
@@ -744,7 +791,7 @@ private fun VisualTriggerNodeConfig(node: VisualTriggerNode, onUpdate: (FlowNode
         modifier = Modifier.fillMaxWidth(),
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
         keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-        colors = flowTextFieldColors()
+        colors = flowTextFieldColors(editorColors)
     )
 
     // ── Collapsible Advanced Settings ──
@@ -758,7 +805,7 @@ private fun VisualTriggerNodeConfig(node: VisualTriggerNode, onUpdate: (FlowNode
         ) {
             Text(
                 if (showAdvanced) "▾ Advanced Settings" else "▸ Advanced Settings",
-                color = Color.White.copy(alpha = 0.5f),
+                color = editorColors.panelDimText,
                 fontSize = 12.sp
             )
         }
@@ -776,7 +823,7 @@ private fun VisualTriggerNodeConfig(node: VisualTriggerNode, onUpdate: (FlowNode
                 }
 
                 if (preset != null) {
-                    Text("Execution Mode", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
+                    Text("Execution Mode", color = editorColors.panelDimText, fontSize = 12.sp)
                     Spacer(Modifier.height(4.dp))
 
                     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -802,9 +849,62 @@ private fun VisualTriggerNodeConfig(node: VisualTriggerNode, onUpdate: (FlowNode
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ScreenMLNodeConfig(node: ScreenMLNode, onUpdate: (FlowNode) -> Unit, onLaunchOverlay: (FlowNode) -> Unit) {
+    val editorColors = flowEditorColors()
+    val isDark = isSystemInDarkTheme()
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+
+    // ── Mode selector ──
+    var selectedMode by remember(node.id) { mutableStateOf(node.mode) }
+
+    Text("Detection Mode", color = editorColors.panelDimText, fontSize = 12.sp)
+    Spacer(Modifier.height(4.dp))
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        listOf(
+            ScreenMLMode.OBJECT_DETECTION,
+            ScreenMLMode.UI_ATTRIBUTE,
+            ScreenMLMode.OCR
+        ).forEach { mode ->
+            FilterChip(
+                selected = selectedMode == mode,
+                onClick = {
+                    selectedMode = mode
+                    onUpdate(node.copy(mode = mode))
+                },
+                label = {
+                    Text(
+                        when (mode) {
+                            ScreenMLMode.OBJECT_DETECTION -> "🔲 Elements"
+                            ScreenMLMode.UI_ATTRIBUTE -> "🧩 UI Attribute"
+                            ScreenMLMode.OCR -> "📝 OCR"
+                        },
+                        fontSize = 11.5.sp
+                    )
+                },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = NodeColors.ScreenMLAmber,
+                    selectedLabelColor = Color.Black,
+                    containerColor = if (isDark) Color(0xFF2A2D33) else Color(0xFFE0E2E8),
+                    labelColor = editorColors.panelText
+                )
+            )
+        }
+    }
+
+    if (selectedMode == ScreenMLMode.UI_ATTRIBUTE) {
+        Spacer(Modifier.height(2.dp))
+        Text("✓ Screen recording only for capture • Flow execution runs directly via Accessibility",
+            color = editorColors.accentTealText, fontSize = 11.sp)
+    }
+
+    Spacer(Modifier.height(10.dp))
 
     // ── Status indicator ──
     if (node.automationStepsJson.isNotEmpty()) {
@@ -812,7 +912,7 @@ private fun ScreenMLNodeConfig(node: ScreenMLNode, onUpdate: (FlowNode) -> Unit,
             verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text("✓ Screen ML actions configured", color = Color(0xFF64FFDA), fontSize = 12.sp)
+            Text("✓ Screen Understanding actions configured", color = editorColors.accentTealText, fontSize = 12.sp)
             Surface(
                 shape = RoundedCornerShape(8.dp),
                 color = NodeColors.ScreenMLAmber.copy(alpha = 0.2f)
@@ -821,6 +921,7 @@ private fun ScreenMLNodeConfig(node: ScreenMLNode, onUpdate: (FlowNode) -> Unit,
                     when (node.mode) {
                         ScreenMLMode.OCR -> "OCR"
                         ScreenMLMode.OBJECT_DETECTION -> "ELEMENTS"
+                        ScreenMLMode.UI_ATTRIBUTE -> "UI ATTR"
                     },
                     color = NodeColors.ScreenMLAmber,
                     fontSize = 11.sp,
@@ -839,12 +940,20 @@ private fun ScreenMLNodeConfig(node: ScreenMLNode, onUpdate: (FlowNode) -> Unit,
         colors = ButtonDefaults.buttonColors(containerColor = NodeColors.ScreenMLAmber),
         shape = RoundedCornerShape(12.dp)
     ) {
-        Text(if (node.automationStepsJson.isEmpty()) "Capture & Detect Screen" else "Re-capture Screen", color = Color.Black)
+        val btnText = if (node.mode == ScreenMLMode.UI_ATTRIBUTE) {
+            if (node.automationStepsJson.isEmpty()) "Capture UI Attributes" else "Re-capture UI Attributes"
+        } else {
+            if (node.automationStepsJson.isEmpty()) "Capture & Detect Screen" else "Re-capture Screen"
+        }
+        Text(btnText, color = Color.Black, fontWeight = FontWeight.SemiBold)
     }
     Spacer(Modifier.height(4.dp))
     Text(
-        "Use the Elements or Text tab in the editor to choose detection mode",
-        color = Color.White.copy(alpha = 0.35f),
+        if (node.mode == ScreenMLMode.UI_ATTRIBUTE)
+            "Captures accessibility elements directly without MediaProjection"
+        else
+            "Use the Elements or Text tab in the editor to choose detection mode",
+        color = editorColors.panelDimText,
         fontSize = 11.sp
     )
 
@@ -861,7 +970,7 @@ private fun ScreenMLNodeConfig(node: ScreenMLNode, onUpdate: (FlowNode) -> Unit,
         modifier = Modifier.fillMaxWidth(),
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
         keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-        colors = flowTextFieldColors()
+        colors = flowTextFieldColors(editorColors)
     )
 
     // ── Collapsible Advanced Settings ──
@@ -874,7 +983,7 @@ private fun ScreenMLNodeConfig(node: ScreenMLNode, onUpdate: (FlowNode) -> Unit,
     ) {
         Text(
             if (showAdvanced) "▾ Advanced Settings" else "▸ Advanced Settings",
-            color = Color.White.copy(alpha = 0.5f),
+            color = editorColors.panelDimText,
             fontSize = 12.sp
         )
     }
@@ -897,15 +1006,16 @@ private fun ScreenMLNodeConfig(node: ScreenMLNode, onUpdate: (FlowNode) -> Unit,
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                colors = flowTextFieldColors()
+                colors = flowTextFieldColors(editorColors)
             )
             Spacer(Modifier.height(4.dp))
             Text(
                 when (node.mode) {
                     ScreenMLMode.OCR -> "If set, the node will search for this text and report found/not-found"
                     ScreenMLMode.OBJECT_DETECTION -> "If set (without steps), the node will look for this element type"
+                    ScreenMLMode.UI_ATTRIBUTE -> "If set (without steps), the node will look for this element label or text via accessibility"
                 },
-                color = Color.White.copy(alpha = 0.35f),
+                color = editorColors.panelDimText,
                 fontSize = 11.sp
             )
         }
@@ -914,6 +1024,7 @@ private fun ScreenMLNodeConfig(node: ScreenMLNode, onUpdate: (FlowNode) -> Unit,
 
 @Composable
 private fun DelayNodeConfig(node: DelayNode, onUpdate: (FlowNode) -> Unit) {
+    val editorColors = flowEditorColors()
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     var delay by remember(node.id) { mutableStateOf(node.delayMs.toString()) }
 
@@ -928,20 +1039,21 @@ private fun DelayNodeConfig(node: DelayNode, onUpdate: (FlowNode) -> Unit) {
         modifier = Modifier.fillMaxWidth(),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
         keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-        colors = flowTextFieldColors()
+        colors = flowTextFieldColors(editorColors)
     )
 
     Spacer(Modifier.height(8.dp))
 
     Text(
         "≈ ${(node.delayMs / 1000f)}s",
-        color = Color.White.copy(alpha = 0.5f),
+        color = editorColors.panelDimText,
         fontSize = 12.sp
     )
 }
 
 @Composable
 private fun RepeatNodeConfig(node: RepeatNode, onUpdate: (FlowNode) -> Unit) {
+    val editorColors = flowEditorColors()
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     var isInfinite by remember(node.id) { mutableStateOf(node.repeatCount == 0) }
     var countText by remember(node.id) { mutableStateOf(if (node.repeatCount == 0) "" else node.repeatCount.toString()) }
@@ -953,7 +1065,7 @@ private fun RepeatNodeConfig(node: RepeatNode, onUpdate: (FlowNode) -> Unit) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
     ) {
-        Text("Repeat Forever", color = Color.White, fontSize = 14.sp)
+        Text("Repeat Forever", color = editorColors.panelText, fontSize = 14.sp)
         Switch(
             checked = isInfinite,
             onCheckedChange = { checked ->
@@ -977,7 +1089,7 @@ private fun RepeatNodeConfig(node: RepeatNode, onUpdate: (FlowNode) -> Unit) {
     Text(
         if (isInfinite) "Will run until manually stopped"
         else "Will run the downstream nodes this many times",
-        color = Color.White.copy(alpha = 0.4f),
+        color = editorColors.panelDimText,
         fontSize = 11.sp
     )
 
@@ -1000,7 +1112,7 @@ private fun RepeatNodeConfig(node: RepeatNode, onUpdate: (FlowNode) -> Unit) {
                 modifier = Modifier.fillMaxWidth(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                colors = flowTextFieldColors()
+                colors = flowTextFieldColors(editorColors)
             )
         }
     }
@@ -1019,14 +1131,14 @@ private fun RepeatNodeConfig(node: RepeatNode, onUpdate: (FlowNode) -> Unit) {
         modifier = Modifier.fillMaxWidth(),
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
         keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-        colors = flowTextFieldColors()
+        colors = flowTextFieldColors(editorColors)
     )
 
     if (node.delayBetweenMs > 0) {
         Spacer(Modifier.height(4.dp))
         Text(
             "≈ ${(node.delayBetweenMs / 1000f)}s between each iteration",
-            color = Color.White.copy(alpha = 0.5f),
+            color = editorColors.panelDimText,
             fontSize = 12.sp
         )
     }
@@ -1035,14 +1147,14 @@ private fun RepeatNodeConfig(node: RepeatNode, onUpdate: (FlowNode) -> Unit) {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 @Composable
-private fun flowTextFieldColors() = OutlinedTextFieldDefaults.colors(
-    focusedTextColor = Color.White,
-    unfocusedTextColor = Color.White.copy(alpha = 0.8f),
-    focusedBorderColor = Color(0xFF64FFDA),
-    unfocusedBorderColor = Color.White.copy(alpha = 0.3f),
-    focusedLabelColor = Color(0xFF64FFDA),
-    unfocusedLabelColor = Color.White.copy(alpha = 0.5f),
-    cursorColor = Color(0xFF64FFDA)
+private fun flowTextFieldColors(editorColors: FlowEditorColors = flowEditorColors()) = OutlinedTextFieldDefaults.colors(
+    focusedTextColor = editorColors.panelText,
+    unfocusedTextColor = editorColors.panelText.copy(alpha = 0.85f),
+    focusedBorderColor = editorColors.accentTeal,
+    unfocusedBorderColor = editorColors.panelText.copy(alpha = 0.25f),
+    focusedLabelColor = editorColors.accentTealText,
+    unfocusedLabelColor = editorColors.panelDimText,
+    cursorColor = editorColors.accentTeal
 )
 
 private fun nodeColors(node: FlowNode): Pair<Color, Color> {

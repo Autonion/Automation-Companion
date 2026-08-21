@@ -244,9 +244,11 @@ fun WiFiSlotsScreen(
                                                 "WiFiSlotsScreen"
                                             )
 
+                                            snackbarHostState.currentSnackbarData?.dismiss()
                                             val result = snackbarHostState.showSnackbar(
                                                 message = "Slot deleted",
-                                                actionLabel = "Undo"
+                                                actionLabel = "Undo",
+                                                duration = SnackbarDuration.Short
                                             )
                                             if (result == SnackbarResult.ActionPerformed) {
                                                 recentlyDeleted?.let { 
@@ -704,15 +706,11 @@ fun WiFiConfigScreen(
     }
 
     val handleActionsChanged: (List<ConfiguredAction>) -> Unit = { newActions ->
-        val filtered = newActions.filter { action ->
-            when (action) {
-                is ConfiguredAction.Brightness -> checkAndRequestWriteSettings()
-                is ConfiguredAction.Dnd -> checkAndRequestDndAccess()
-                else -> true
-            }
-        }
-        onActionsChanged(filtered)
+        onActionsChanged(newActions)
     }
+
+    val scrollState = rememberScrollState()
+    val isScrolled by remember { derivedStateOf { scrollState.value > 0 } }
 
     AuroraBackground {
         Scaffold(
@@ -734,7 +732,10 @@ fun WiFiConfigScreen(
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Color.Transparent,
+                        containerColor = if (isScrolled) {
+                            if (isDark) Color(0xFF1E2228).copy(alpha = 0.95f)
+                            else MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
+                        } else Color.Transparent,
                         titleContentColor = MaterialTheme.colorScheme.onSurface,
                         navigationIconContentColor = MaterialTheme.colorScheme.onSurface
                     )
@@ -745,8 +746,8 @@ fun WiFiConfigScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
                     .padding(padding)
+                    .verticalScroll(scrollState)
                     .padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {

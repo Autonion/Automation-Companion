@@ -37,22 +37,26 @@ class HostManager(
                     override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
                         Log.d(discoveryTag, "Resolve Succeeded. $serviceInfo")
                         
-                        // Treat as a new device found
                         val host = serviceInfo.host
                         val port = serviceInfo.port
                         val serviceName = serviceInfo.serviceName
 
-                        // In a real app, we'd handshake here. For now, we auto-add.
-                        // Assuming serviceName contains some unique ID or we generate one.
-                        // Ideally the agent advertises its UUID in TXT records, but NsdServiceInfo parsing varies.
+                        // Read mDNS TXT attributes to distinguish full agent from background service
+                        val attributes = serviceInfo.attributes
+                        val agentAttr = attributes?.get("agent")?.let { String(it) } ?: ""
+                        val preloginAttr = attributes?.get("prelogin")?.let { String(it) } ?: ""
+                        val isServiceOnly = preloginAttr.equals("true", ignoreCase = true)
+                                || agentAttr.contains("prelogin", ignoreCase = true)
+                        Log.d(discoveryTag, "TXT: agent=$agentAttr, prelogin=$preloginAttr, isServiceOnly=$isServiceOnly")
                         
                         CoroutineScope(Dispatchers.IO).launch {
                             val device = Device(
-                                id = UUID.nameUUIDFromBytes(serviceName.toByteArray()).toString(), // Deterministic UUID from name for now
+                                id = UUID.nameUUIDFromBytes(serviceName.toByteArray()).toString(),
                                 name = serviceName,
                                 ipAddress = host.hostAddress ?: "",
                                 port = port,
-                                status = DeviceStatus.ONLINE
+                                status = DeviceStatus.ONLINE,
+                                isServiceOnly = isServiceOnly
                             )
                             deviceRepository.addOrUpdateDevice(device)
                         }

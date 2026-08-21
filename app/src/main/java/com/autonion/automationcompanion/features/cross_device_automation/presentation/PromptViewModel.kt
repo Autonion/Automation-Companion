@@ -6,9 +6,13 @@ import com.autonion.automationcompanion.features.agent_core.models.AgentRequest
 import com.autonion.automationcompanion.features.agent_core.models.AgentRequestContext
 import com.autonion.automationcompanion.features.cross_device_automation.CrossDeviceAutomationManager
 import com.autonion.automationcompanion.features.cross_device_automation.domain.ResponseStatus
+import com.autonion.automationcompanion.features.cross_device_automation.domain.DeviceStatus
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.UUID
 import android.content.Context
@@ -42,6 +46,12 @@ class PromptViewModel(
     private val _isAutomationActive = MutableStateFlow(false)
     val isAutomationActive: StateFlow<Boolean> = _isAutomationActive.asStateFlow()
 
+    private val _stopRequested = MutableStateFlow(false)
+    val stopRequested: StateFlow<Boolean> = _stopRequested.asStateFlow()
+
+    private var _lastTransactionId: String? = null
+    private var _stopTimeoutJob: Job? = null
+
     private val chatMemory = AutomationChatMemory.getInstance(context)
     private val chatDao = AppDatabase.get(context).omniChatDao()
 
@@ -53,6 +63,16 @@ class PromptViewModel(
 
     private val _chatHistorySessions = MutableStateFlow<List<OmniChatSessionEntity>>(emptyList())
     val chatHistorySessions: StateFlow<List<OmniChatSessionEntity>> = _chatHistorySessions.asStateFlow()
+
+    // ─── Save as Flow State ─────────────────────────────────
+    private val _showSaveAsFlow = MutableStateFlow(false)
+    val showSaveAsFlow: StateFlow<Boolean> = _showSaveAsFlow.asStateFlow()
+
+    private val _lastActionHistory = MutableStateFlow<String?>(null)
+    val lastActionHistory: StateFlow<String?> = _lastActionHistory.asStateFlow()
+
+    private val _lastUserPrompt = MutableStateFlow<String?>(null)
+    val lastUserPrompt: StateFlow<String?> = _lastUserPrompt.asStateFlow()
 
     init {
         // Collect chat history sessions for this module
@@ -73,9 +93,31 @@ class PromptViewModel(
                         ResponseStatus.CANCELLED -> "Cancelled"
                         else -> response.status.name.lowercase().replaceFirstChar { it.uppercase() }
                     }
-                    
-                    if (response.status == ResponseStatus.COMPLETED || response.status == ResponseStatus.FAILED || response.status == ResponseStatus.CANCELLED) {
+
+                    val isTerminal = response.status == ResponseStatus.COMPLETED ||
+                            response.status == ResponseStatus.FAILED ||
+                            response.status == ResponseStatus.CANCELLED
+
+                    // When stop was requested, ignore non-terminal messages (they are
+                    // from the tail of execution that was still in-flight). Only process
+                    // terminal responses so the UI properly resets.
+                    if (_stopRequested.value && !isTerminal) {
+                        return@collect
+                    }
+
+                    if (isTerminal) {
                         _isAutomationActive.value = false
+                        _stopRequested.value = false
+                        _stopTimeoutJob?.cancel()
+                    }
+
+                    // Capture action history for "Save as Flow" feature
+                    if (response.status == ResponseStatus.COMPLETED) {
+                        val actionHistoryJson = response.data?.get("action_history")
+                        if (!actionHistoryJson.isNullOrBlank()) {
+                            _lastActionHistory.value = actionHistoryJson
+                            _showSaveAsFlow.value = true
+                        }
                     }
 
                     addMessage(ChatMessage(
@@ -98,6 +140,23 @@ class PromptViewModel(
         if (promptText.isBlank()) return
 
         viewModelScope.launch {
+            // Guard: block if only background service is connected (no full agent)
+            val devices = manager.deviceRepository.getAllDevices().first()
+            val hasFullAgent = devices.any {
+                it.isSelected && it.status == DeviceStatus.ONLINE && !it.isServiceOnly
+            }
+            val hasServiceOnly = devices.any {
+                it.isSelected && it.status == DeviceStatus.ONLINE && it.isServiceOnly
+            }
+            if (!hasFullAgent && hasServiceOnly) {
+                addMessage(ChatMessage(
+                    text = "Cannot send prompt: Autonion Agent app is closed on your PC. " +
+                            "Use the Flows tab for Screen Unlock, or open the Autonion Agent app to execute AI prompts.",
+                    isUser = false
+                ))
+                return@launch
+            }
+
             // Add user message
             addMessage(ChatMessage(text = promptText, isUser = true))
 
@@ -121,12 +180,22 @@ class PromptViewModel(
             // This keeps legacy prompt/transactionId fields while adding the
             // agent_request envelope for newer Desktop Agents.
             val transactionId = UUID.randomUUID().toString()
+            _lastTransactionId = transactionId
+            _stopRequested.value = false
             val contextSummary = chatMemory.buildContextSummary()
+
+            // Build structured conversation history for cross-device context.
+            val recentMessages = _messages.value.take(10).reversed()
+            val conversationHistory = recentMessages.mapNotNull { msg ->
+                mapOf("role" to if (msg.isUser) "user" else "assistant", "content" to msg.text.take(500))
+            }
+
             val prompt = AgentRequest(
                 transactionId = transactionId,
                 prompt = promptText,
                 timestamp = System.currentTimeMillis(),
                 context = contextSummary,
+                conversationHistory = conversationHistory,
                 agentContext = AgentRequestContext(
                     conversationSummary = contextSummary,
                     preferredModelMode = "desktop_default",
@@ -136,14 +205,31 @@ class PromptViewModel(
 
             manager.networkingManager.broadcast(prompt)
             _isAutomationActive.value = true
+            _lastUserPrompt.value = promptText
             _inputQuery.value = ""
         }
     }
     
     fun stopAutomation() {
-        _isAutomationActive.value = false
+        _stopRequested.value = true
+        // Keep _isAutomationActive = true so the button stays visible in "Stopping..." state
         addMessage(ChatMessage(text = "Stopping automation...", isUser = false))
-        manager.stopRemoteAutomation()
+        manager.stopRemoteAutomation(_lastTransactionId)
+
+        // Safety timeout: if the desktop never sends a terminal response (e.g. it
+        // disconnected), auto-reset the UI after 10 seconds.
+        _stopTimeoutJob?.cancel()
+        _stopTimeoutJob = viewModelScope.launch {
+            delay(10_000L)
+            if (_stopRequested.value) {
+                _stopRequested.value = false
+                _isAutomationActive.value = false
+                addMessage(ChatMessage(
+                    text = "[Timeout] Stop not confirmed by desktop — UI reset.",
+                    isUser = false
+                ))
+            }
+        }
     }
 
     // ─── Direct Keyboard Intent Parser ──────────────────────────
@@ -343,5 +429,32 @@ class PromptViewModel(
         current.add(0, message) // Add to top (for reverseLayout)
         _messages.value = current
         persistSessionAndMessage(message)
+    }
+
+    // ─── Save as Flow ───────────────────────────────────────
+
+    fun saveAsFlow(flowName: String) {
+        val actionHistory = _lastActionHistory.value ?: return
+        viewModelScope.launch {
+            val transactionId = UUID.randomUUID().toString()
+            val command = mapOf(
+                "type" to "save_prompt_as_flow",
+                "transactionId" to transactionId,
+                "flowName" to flowName,
+                "actionHistory" to actionHistory
+            )
+            manager.networkingManager.broadcast(command)
+            addMessage(ChatMessage(
+                text = "💾 Saving as flow: \"$flowName\"...",
+                isUser = false
+            ))
+            _showSaveAsFlow.value = false
+            _lastActionHistory.value = null
+        }
+    }
+
+    fun dismissSaveAsFlow() {
+        _showSaveAsFlow.value = false
+        _lastActionHistory.value = null
     }
 }

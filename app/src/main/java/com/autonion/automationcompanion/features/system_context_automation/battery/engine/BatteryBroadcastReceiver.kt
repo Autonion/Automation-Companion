@@ -101,7 +101,10 @@ class BatteryBroadcastReceiver : BroadcastReceiver() {
                 TriggerConfig.Battery.ThresholdType.REACHES_OR_ABOVE -> currentLevel >= triggerConfig.batteryPercentage
             }
 
-            if (shouldTrigger) {
+            // Edge detection: only fire when transitioning into the threshold (false -> true or first check)
+            val isEdgeTrigger = shouldTrigger && (slot.lastTriggerState != true)
+
+            if (isEdgeTrigger) {
                 Log.i(TAG, "Battery slot ${slot.id} triggered (level=$currentLevel, threshold=${triggerConfig.batteryPercentage})")
                 DebugLogger.success(
                     context, LogCategory.SYSTEM_CONTEXT,
@@ -110,6 +113,11 @@ class BatteryBroadcastReceiver : BroadcastReceiver() {
                     TAG
                 )
                 SlotExecutor.execute(context, slot.id)
+            }
+
+            // Update persisted state whenever transition occurs to re-arm or lock
+            if (slot.lastTriggerState != shouldTrigger) {
+                dao.updateLastTriggerState(slot.id, shouldTrigger)
             }
         }
     }

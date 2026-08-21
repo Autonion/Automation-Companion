@@ -1,6 +1,8 @@
 @file:OptIn(ExperimentalMaterial3Api::class)
 package com.autonion.automationcompanion.ui
 
+import com.autonion.automationcompanion.BuildConfig
+
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -140,8 +142,10 @@ private fun CompactHomeLayout(
                     title = "Autonion",
                     subtitle = null,
                     onNotificationClick = null,
+                    onWhatsNewClick = { onOpen("settings/whats_new") },
                     onExclusionClick = { onOpen("settings/exclusion") },
                     onBackupClick = { onOpen("settings/backup_restore") },
+                    onAgeComplianceClick = { onOpen("settings/age_compliance") },
                     onBugReportEmail = onBugReportEmail,
                     onBugReportGithub = onBugReportGithub
                 )
@@ -152,9 +156,27 @@ private fun CompactHomeLayout(
         item {
             StaggeredEntry(index = 1) {
                 Column(modifier = Modifier.fillMaxWidth()) {
-                    // ── Getting Started Checklist ──
                     val context = LocalContext.current
                     val onboardingPrefs = remember { OnboardingPreferences.getInstance(context) }
+                    val currentVersionCode = BuildConfig.VERSION_CODE
+                    val currentVersionName = BuildConfig.VERSION_NAME
+
+                    // ── What's New Card ──
+                    var showWhatsNew by remember { mutableStateOf(onboardingPrefs.shouldShowWhatsNew(currentVersionCode)) }
+
+                    if (showWhatsNew) {
+                        WhatsNewCard(
+                            versionName = currentVersionName,
+                            onDismiss = {
+                                onboardingPrefs.markWhatsNewDismissed(currentVersionCode)
+                                showWhatsNew = false
+                            },
+                            onNavigate = onOpen
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                    }
+
+                    // ── Getting Started Checklist ──
                     var isDismissed by remember { mutableStateOf(onboardingPrefs.isGettingStartedDismissed) }
                     val isAIConnected = onboardingPrefs.hasConnectedAI
                     val hasCreatedAutomation = onboardingPrefs.hasCreatedFirstAutomation
@@ -180,7 +202,7 @@ private fun CompactHomeLayout(
                         ),
                         modifier = Modifier.padding(
                             start = 24.dp,
-                            top = if (isDismissed) 24.dp else 12.dp,
+                            top = if (isDismissed && !showWhatsNew) 24.dp else 12.dp,
                             bottom = 16.dp
                         )
                     )
@@ -342,8 +364,10 @@ private fun MediumHomeLayout(
             DashboardHeader(
                 title = "Autonion",
                 subtitle = "AI-Powered Automation",
+                onWhatsNewClick = { onOpen("settings/whats_new") },
                 onExclusionClick = { onOpen("settings/exclusion") },
                 onBackupClick = { onOpen("settings/backup_restore") },
+                onAgeComplianceClick = { onOpen("settings/age_compliance") },
                 onBugReportEmail = onBugReportEmail,
                 onBugReportGithub = onBugReportGithub
             )
@@ -351,11 +375,32 @@ private fun MediumHomeLayout(
 
         // Intro Text (Full Width)
         item(span = { GridItemSpan(2) }) {
-            Text(
-                text = "Record gestures, build visual flows, and let AI agents automate tasks — all on-device with optional cloud power.",
-                style = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
-                modifier = Modifier.padding(bottom = 16.dp, start = 8.dp, end = 8.dp)
-            )
+            val context = LocalContext.current
+            val onboardingPrefs = remember { OnboardingPreferences.getInstance(context) }
+            val currentVersionCode = BuildConfig.VERSION_CODE
+            val currentVersionName = BuildConfig.VERSION_NAME
+
+            var showWhatsNew by remember { mutableStateOf(onboardingPrefs.shouldShowWhatsNew(currentVersionCode)) }
+
+            Column {
+                if (showWhatsNew) {
+                    WhatsNewCard(
+                        versionName = currentVersionName,
+                        onDismiss = {
+                            onboardingPrefs.markWhatsNewDismissed(currentVersionCode)
+                            showWhatsNew = false
+                        },
+                        onNavigate = onOpen
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+
+                Text(
+                    text = "Record gestures, build visual flows, and let AI agents automate tasks — all on-device with optional cloud power.",
+                    style = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                    modifier = Modifier.padding(bottom = 16.dp, start = 8.dp, end = 8.dp)
+                )
+            }
         }
 
         // Feature Cards (2 Columns)
@@ -503,8 +548,10 @@ private fun ExpandedHomeLayout(
 
         // Left Panel — Branding (32%)
         TabletBrandingPanel(
+            onWhatsNewClick = { onOpen("settings/whats_new") },
             onExclusionClick = { onOpen("settings/exclusion") },
             onBackupClick = { onOpen("settings/backup_restore") },
+            onAgeComplianceClick = { onOpen("settings/age_compliance") },
             onBugReportEmail = onBugReportEmail,
             onBugReportGithub = onBugReportGithub,
             modifier = Modifier
@@ -525,14 +572,35 @@ private fun ExpandedHomeLayout(
         ) {
             // Section Title — spans 2 columns
             item(span = { GridItemSpan(2) }) {
-                Text(
-                    "Tools & Features",
-                    style = MaterialTheme.typography.titleLarge.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onBackground
-                    ),
-                    modifier = Modifier.padding(bottom = 4.dp)
-                )
+                val context = LocalContext.current
+                val onboardingPrefs = remember { OnboardingPreferences.getInstance(context) }
+                val currentVersionCode = BuildConfig.VERSION_CODE
+                val currentVersionName = BuildConfig.VERSION_NAME
+
+                var showWhatsNew by remember { mutableStateOf(onboardingPrefs.shouldShowWhatsNew(currentVersionCode)) }
+
+                Column {
+                    if (showWhatsNew) {
+                        WhatsNewCard(
+                            versionName = currentVersionName,
+                            onDismiss = {
+                                onboardingPrefs.markWhatsNewDismissed(currentVersionCode)
+                                showWhatsNew = false
+                            },
+                            onNavigate = onOpen
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
+
+                    Text(
+                        "Tools & Features",
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onBackground
+                        ),
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                }
             }
 
             // Feature cards
@@ -671,7 +739,7 @@ private fun HomeFooter() {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = "v1.0.9",
+            text = "v1.1.0",
             style = MaterialTheme.typography.bodySmall.copy(
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 fontSize = 12.sp

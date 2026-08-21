@@ -2,20 +2,20 @@
 
 ## Overview
 
-Autonion Automation Companion is an Android application that enables intelligent device automation through natural language commands, gesture recording, cross-device control, and AI-powered task execution. It runs entirely locally with no cloud dependencies - all AI inference happens on your local network via Ollama, and all cross-device communication stays on your local WiFi.
+Autonion Automation Companion is an Android application that enables intelligent device automation through natural language commands, gesture recording, cross-device control, and AI-powered task execution. It supports three AI inference modes: Server LLM (via Ollama on your local network), On-Device SLM (GGUF models running locally on your phone), and Cloud API (OpenAI, Gemini, Groq, DeepSeek, Mistral, Together AI, OpenRouter, Ollama Cloud, or any OpenAI-compatible endpoint). Cross-device communication stays on your local WiFi with secure OTP-based device pairing.
 
 ## Feature Summary
 
 Autonion has 8 core features. Here is a complete list:
 
 1. Omni-Chat (Unified Chatbot Interface) - The main interaction point. Accessible via the floating action button (FAB). Routes commands to the appropriate engine using on-device NLU.
-2. Semantic Automation (AI-Powered Agent) - Autonomous multi-step task execution powered by LLM. Uses an agentic loop to interact with device UI.
-3. Cross-Device Automation - Send commands from Android to a desktop computer. Requires the Autonion Desktop Agent app to be installed on the target device. Source code is available at github.com/Autonion/Autonion-Agent.
+2. Semantic Automation (AI-Powered Agent) - Autonomous multi-step task execution powered by LLM. Uses an agentic loop to interact with device UI. Supports Server LLM (Ollama), On-Device SLM (GGUF), and Cloud API inference modes.
+3. Cross-Device Automation - Send commands from Android to a desktop computer with secure OTP-based pairing. Includes remote Desktop Flow triggering, clipboard sync, and rule-based automation. Requires the Autonion Desktop Agent (github.com/Autonion/Autonion-Agent).
 4. Gesture Recording and Playback - Record touch interactions (taps, swipes, long presses, drags) and replay them automatically. Coordinate-based replay.
-5. Flow Builder - Visual drag-and-drop automation workflow builder. Create flows with triggers, actions, conditions, and connections.
+5. Flow Builder - Visual drag-and-drop automation workflow builder. Create flows with triggers, actions, conditions, and connections. Includes Screen Understanding nodes with YOLO+UI attribute, UI attribute-only, and OCR modes.
 6. System Context Automation - Automations that respond to system-level context changes including location (geofence), time schedules, battery percentage levels, WiFi connectivity changes, and app-specific automations that trigger when a specific app is opened or closed.
 7. Visual Trigger Automation - Screen-pattern-based automations that use image matching to detect specific visual elements on screen and trigger actions automatically. This is the feature for triggering automation based on images.
-8. UI Recognition AI (Screen ML) - AI-powered screen understanding using YOLO object detection and OCR (Optical Character Recognition). Detects UI elements dynamically, handles UI changes, and can automate clicks and interactions based on recognized text and visual elements.
+8. Screen Understanding AI - AI-powered screen understanding with three modes: Elements mode (YOLO object detection + UI attributes), UI Attribute mode (accessibility-tree-only matching), and OCR mode (text recognition). Detects UI elements dynamically, handles UI changes, and can automate clicks and interactions based on recognized text and visual elements.
 
 ## Core Architecture
 
@@ -87,7 +87,8 @@ Action prediction (multi-tier fallback):
 The engine tries these prediction tiers in order until one succeeds:
 - Tier 0: Deterministic Task Planner - handles standard flows (search, play) without the LLM. Reserved for common patterns.
 - Tier 1 (Server LLM mode): Ollama server via REST API. Sends a system prompt, user prompt with screen elements, and step history. Receives structured JSON with the action type, target element index, and input text.
-- Tier 1 (Local SLM mode): On-device Gemma 2B model. Same logic but runs directly on phone. Slower and less accurate than server LLM.
+- Tier 1 (Cloud API mode): Cloud LLM via OpenAI-compatible API. Supports OpenAI (GPT-4o), Google Gemini, Groq, DeepSeek, Mistral, Together AI, OpenRouter, Ollama Cloud, or any custom OpenAI-compatible endpoint. Same prompt format as Server LLM.
+- Tier 1 (Local SLM mode): On-device GGUF model (Qwen 2.5, Phi-3.5, Llama 3.2, Gemma 4, etc.) or legacy MediaPipe model. Runs directly on phone with no network. Slower than server/cloud but fully offline.
 - Tier 2: TFLite ML Model. A lightweight classification model for fast predictions. Biased toward common actions.
 - Tier 3: Rule-based heuristic fallback. Looks for keyword matches in element names (e.g., "search" -> click on search bar).
 
@@ -109,7 +110,7 @@ Supported command types:
 
 Requirements for Semantic Automation:
 - The Accessibility Service must be enabled in Android Settings > Accessibility > Autonion
-- An Ollama server must be running on your local network for AI-powered commands
+- At least one AI inference source must be configured: Server LLM (Ollama on your local network), Cloud API (any supported provider with an API key), or On-Device SLM (a downloaded GGUF model on your phone)
 - A compatible browser with the Autonion extension is needed for web automation tasks (Kiwi Browser, Lemur Browser, or Firefox Nightly are supported)
 
 ### NLU Intent Classifier (How Commands Are Routed)
@@ -136,17 +137,31 @@ Important: For browser-based cross-device tasks (such as web searches, opening w
 
 How cross-device communication works:
 1. Discovery: The Desktop Agent broadcasts its presence on the local network using mDNS (Bonjour service type: _autonion._tcp). The Android app scans for this service automatically.
-2. Connection: A WebSocket connection is established between the devices on port 4545 (or a dynamic fallback port). The WebSocket endpoint is ws://<IP>:4545/automation.
-3. Command routing: When you send a command, the Android NLU classifies the intent. If it detects cross-device keywords ("on my laptop", "on desktop", "on my pc"), the command is sent to the Desktop Agent via WebSocket.
-4. Two-way feedback: The Desktop Agent sends status updates back to Android in real-time: started, in_progress (with step descriptions), completed, failed, scheduled, or cancelled. These appear as messages in Omni-Chat.
-5. Transaction tracking: Every command gets a unique transaction ID. This ensures status updates are matched to the right command and duplicate responses are filtered out.
+2. OTP Pairing: When you tap a discovered device for the first time, a 6-digit PIN is displayed on the Desktop Agent screen. You must enter this PIN on your Android device to establish a trusted connection. The PIN expires after 120 seconds. This OTP-based pairing ensures only authorized devices can connect.
+3. Trusted Connection: Once paired, the device is saved as a trusted companion. Future connections are automatic — no PIN is required again unless the pairing is revoked. Paired devices are stored with encrypted secrets.
+4. WebSocket Link: A secure WebSocket connection is established between the devices on port 4545 (or a dynamic fallback port). The WebSocket endpoint is ws://<IP>:4545/automation.
+5. Command routing: When you send a command, the Android NLU classifies the intent. If it detects cross-device keywords ("on my laptop", "on desktop", "on my pc"), the command is sent to the Desktop Agent via WebSocket.
+6. Two-way feedback: The Desktop Agent sends status updates back to Android in real-time: started, in_progress (with step descriptions), completed, failed, scheduled, or cancelled. These appear as messages in Omni-Chat.
+7. Transaction tracking: Every command gets a unique transaction ID. This ensures status updates are matched to the right command and duplicate responses are filtered out.
+
+Cross-device screen tabs:
+The Cross-Device Automation screen on Android has four tabs:
+- Devices tab: Discover, pair, and manage connected desktop devices. Shows connection status and allows OTP pairing.
+- Rules tab: Create and manage automation trigger rules that execute on the Desktop when conditions are met. Requires a full agent connection.
+- Flows tab: Browse and remotely trigger Desktop Flows created on the Autonion Desktop Agent. See the "Desktop Flows" section below.
+- Ask tab: Send natural language commands to the desktop and receive real-time responses.
 
 Cross-device features:
 - Natural language commands sent to the desktop and executed by the Desktop Agent
+- Secure OTP-based device pairing with 6-digit PIN verification
+- Paired device management: View paired devices, revoke pairings, toggle "Allow New Pairings" on/off from the Desktop Agent
+- Remote Desktop Flow triggering from the Flows tab (list, trigger, stop, real-time progress)
+- Desktop unlock from phone — unlock your Windows PC remotely, even before login (pre-login service mode)
 - Clipboard sync between devices. Text copied on one device automatically appears on the other. Only text is supported, not images or files. Works only over local WiFi.
 - Rule-based automation triggers. You can register trigger rules from Android that execute on the Desktop when conditions are met.
 - Scheduled/recurring actions. Example: "press next every 30 seconds on desktop" starts a timer on the Desktop that executes the key press repeatedly.
-- Structured commands. For simple key presses, the command is sent with structured data (key name, key code) so the Desktop can execute it directly without LLM involvement. This is faster and more reliable.
+- Structured commands. For simple key presses, the command is sent with structured data (key name, key code) so the Desktop can execute it directly without LLM involvement. This is faster and more reliable.\r
+- Hardware Remote. Map your phone's physical volume buttons to send keyboard commands to the desktop (e.g., Volume Up → Next slide, Volume Down → Previous slide). Supports single tap, double tap, and long press gestures — each can be mapped to different desktop key actions (Enter, Space, Arrow keys, Escape, Backspace). Runs as a foreground service so it works even with the phone screen off. Ideal for presentations, media control, or hands-free desktop navigation. Access it via the remote icon in the Cross-Device top bar.
 
 Setup steps:
 1. Download and install the Autonion Desktop Agent from github.com/Autonion/Autonion-Agent/releases on your Windows PC (Flutter-based app, also called Autonion-Agent).
@@ -154,8 +169,27 @@ Setup steps:
 3. Run the Desktop Agent on your PC. Make sure both your Android device and PC are on the same WiFi network.
 4. Open Cross-Device Automation in the Android app.
 5. The desktop should appear automatically via mDNS discovery within a few seconds.
-6. Tap the device name to connect. You will see a "Connected" status.
-7. If auto-discovery fails, tap manual entry and type the IP address and port shown in the Desktop Agent window.
+6. Tap the device name. A 6-digit PIN will appear on the Desktop Agent screen.
+7. Enter the PIN on your Android device to complete pairing. You will see a "Connected" status.
+8. If auto-discovery fails, tap manual entry and type the IP address and port shown in the Desktop Agent window.
+
+Managing paired devices:
+- On the Desktop Agent, go to the Connect tab to see all paired companion devices.
+- Toggle "Allow New Pairings" on/off to control whether new devices can pair.
+- Revoke a device's pairing to disconnect it permanently.
+- Paired devices reconnect automatically when both are on the same network.
+
+#### Desktop Flows (Remote Flow Triggering)
+The Flows tab in the Cross-Device screen lets you browse and control automation flows created on the Desktop Agent.
+
+How it works:
+1. The Android app requests the list of saved desktop flows via WebSocket.
+2. Each flow shows its name, description, node count, and trigger type.
+3. Tap a flow card to trigger it on the Desktop Agent remotely.
+4. Real-time progress updates show step-by-step execution: which node is running, current step, total steps.
+5. You can stop a running flow at any time.
+
+Desktop Flows support a special "Pre-login Mode" — when your PC is on the lock screen (not yet logged in), the Android app can still connect to the Desktop Agent's background service and trigger Unlock flows to unlock your PC remotely.
 
 ### Gesture Recording and Playback
 Record touch interactions on your screen and replay them automatically.
@@ -176,23 +210,57 @@ Important notes:
 - Great for repetitive tasks like farming in games, filling out forms, or clicking through sequences
 
 ### Flow Builder
-Create visual automation workflows using a drag-and-drop interface.
+Create visual automation workflows using a drag-and-drop interface. Available on both Android (Automation Companion app) and Desktop (Autonion Desktop Agent).
 
-Components:
-- Triggers: Events that start the flow (time-based, app launch, notification received, system event)
-- Actions: Tasks to perform (open app, type text, click specific element, press key, run automation)
-- Conditions: Logic gates that branch the flow (if/else based on screen content, system state, or variable values)
-- Connections: Visual links between triggers, conditions, and actions that define the execution order
+#### Android Flow Builder
+Node types available on Android:
+- Start: Entry point for every flow
+- Gesture: Tap, long press, swipe, or custom gesture at specific coordinates or from context
+- Screen Understanding: AI-powered screen analysis with three modes (see below)
+- Visual Trigger: Image template matching to detect and act on visual patterns
+- Delay: Wait for a specified duration before continuing
+- Launch App: Open a specific application
+- Repeat: Loop a section of the flow a specified number of times
+- Clipboard: Read or write clipboard content
+- Input: Type text from a static string or dynamic context variable
 
-How to create a flow:
+Screen Understanding node (formerly "Screen ML") has three modes:
+- Elements mode (YOLO + UI Attributes): Uses YOLO object detection combined with accessibility tree augmentation. Best for complex UIs where visual detection and accessibility data complement each other. Can identify buttons, text fields, icons, and other UI components.
+- UI Attribute mode (Accessibility-only): Uses only the Android accessibility tree to find and interact with elements. No screenshot or ML model required. Lightweight and fast, works well for apps with good accessibility support.
+- OCR mode (Text Recognition): Uses ML Kit text recognition to read text on screen. Can search for specific text, extract all visible text, and interact with elements identified by their text content.
+
+Other components:
+- Edge conditions: Conditional branching between nodes based on context variable values
+- Connections: Visual links between nodes that define the execution order
+
+How to create a flow on Android:
 1. Open Flow Builder from the home screen.
 2. Tap "+" to create a new flow.
-3. Add a trigger block (defines when the flow starts).
-4. Add action blocks (defines what happens).
-5. Optionally add condition blocks for branching logic.
-6. Connect blocks by dragging between their connection points.
+3. Add a Start node (entry point).
+4. Add action nodes from the palette (gesture, screen understanding, delay, etc.).
+5. Connect nodes by dragging between their connection points.
+6. Configure each node (e.g., set tap coordinates, choose Screen Understanding mode, enter text).
 7. Tap "Save" to save the flow.
-8. Tap "Run" to execute immediately, or "Schedule" for automatic execution when the trigger fires.
+8. Tap "Run" to execute immediately.
+
+#### Desktop Flow Builder (Autonion Desktop Agent)
+The Autonion Desktop Agent has its own Flows tab with a full visual node-based workflow editor. Desktop flows support 18+ node types:
+- Start, Click, Double Click, Right Click, Type Text, Keyboard (hotkey combos like Ctrl+S, Alt+Tab)
+- Launch App, Delay, Screenshot, Scroll, Swipe
+- Repeat, Conditional (if/else branching based on UI state)
+- Visual Trigger (image template matching on desktop screen)
+- UI Detect (Windows UIA attribute matching by automation ID, class name, role)
+- Unlock (remotely unlock the Windows desktop)
+- Data Iterator (iterate through lists/grids/tables using the accessibility tree)
+- Done (marks flow completion)
+
+Desktop flow triggers:
+- Manual: User clicks "Run" in the UI
+- Hotkey: A global OS hotkey fires the flow (e.g., Ctrl+Shift+F1)
+- Element Appears: A UIA element matching specific attributes appears on screen
+- Scheduled: Timed/recurring execution at set intervals
+
+Desktop flows can be triggered remotely from the Android app's Cross-Device > Flows tab.
 
 Tip: Enable the Accessibility Service before running flows that interact with UI elements.
 
@@ -228,16 +296,21 @@ Important notes:
 - Works with any app or screen on the device
 - Can be combined with other automations like Flow Builder for complex workflows
 
-### UI Recognition AI (Screen ML)
-AI-powered screen understanding using machine learning models. This feature uses YOLO (You Only Look Once) object detection model and OCR (Optical Character Recognition) to understand and interact with screen content dynamically.
+### Screen Understanding AI (formerly UI Recognition / Screen ML)
+AI-powered screen understanding using machine learning models. This feature has three operating modes that can be selected in both the Flow Builder and the standalone Screen Understanding interface.
 
-Key capabilities:
-- YOLO object detection: Detects and classifies UI elements on screen in real-time using a trained YOLO model. Can identify buttons, text fields, images, icons, and other UI components even when the accessibility tree is unavailable or incomplete.
-- OCR text recognition: Reads and recognizes text displayed on screen. Can automate clicks and interactions based on recognized text content. Useful for interacting with elements that lack accessibility labels.
-- Dynamic UI handling: Handles UI changes in real-time. Unlike coordinate-based approaches (gesture recording), Screen ML adapts to layout changes because it visually detects elements rather than relying on fixed positions.
-- Element detection: Identifies interactive elements visually, providing an alternative to the accessibility tree for element detection.
+Three operating modes:
+1. Elements mode (YOLO + UI Attributes): Combines YOLO (You Only Look Once) object detection with accessibility tree augmentation. The YOLO model detects UI elements visually (buttons, text fields, images, icons) and the accessibility tree provides additional text, labels, and roles. This hybrid approach gives the most complete picture of the screen. Best for complex UIs or apps with incomplete accessibility support.
+2. UI Attribute mode (Accessibility-only): Uses only the Android accessibility tree to discover interactive elements. No screenshot or ML model is needed. Lightweight and fast. Works well for standard Android apps with proper accessibility labels. Does not require screen capture permission.
+3. OCR mode (Text Recognition): Uses ML Kit text recognition to read and locate text on screen. Can search for specific text strings, extract all visible text, and identify text position for interaction. Useful for interacting with custom-drawn text, game UIs, or elements that lack accessibility labels.
 
-How UI Recognition AI helps with automation:
+Key capabilities across all modes:
+- Dynamic UI handling: Handles UI changes in real-time. Unlike coordinate-based approaches (gesture recording), Screen Understanding adapts to layout changes because it re-detects elements each time rather than relying on fixed positions.
+- Multi-strategy element matching: When replaying automation steps, the engine uses a cascade of matching strategies: (1) Text + label exact match, (2) Label + IoU spatial match, (3) Label + closest distance fallback. This makes automations resilient to minor layout changes.
+- Resolution-independent matching: Normalizes coordinates so automations recorded on one device can replay on different screen sizes.
+- Accessibility tree fallback: OCR mode falls back to the accessibility tree if ML Kit cannot find the target text, ensuring reliability.
+
+How Screen Understanding helps with automation:
 - Can automate clicks on elements identified by OCR text recognition
 - Provides visual element detection as a fallback when the accessibility tree does not expose certain elements
 - Handles dynamic and changing UIs because it re-detects elements each time rather than using stored coordinates
@@ -248,6 +321,7 @@ Use cases:
 - Detecting and interacting with UI elements in apps that have poor accessibility support
 - Handling dynamic UIs that change layout frequently
 - Supplementing the Semantic Automation engine with visual element detection
+- Creating reliable automation steps in Flow Builder that work across app updates
 
 ### Browser Automation (Extension Bridge)
 For web browsing tasks, Autonion supports an extension-based approach that provides direct access to web page content through the browser DOM. This is the primary method for browser-based automation and produces significantly better results than the accessibility tree fallback.
@@ -376,36 +450,68 @@ Important: Use your PC's local network IP (starts with 192.168.x.x or 10.x.x.x),
 - For speed: qwen3.5:4b or qwen3:4b - responds in 2-5 seconds, handles most tasks
 - For accuracy: qwen3.5:7b - responds in 5-15 seconds, better at complex multi-step tasks
 - For vision: models with vision support can use screenshots alongside the accessibility tree
-- Inference Mode: SERVER_LLM (uses Ollama) is recommended over LOCAL_SLM (on-device) for better quality
+- Inference Mode: SERVER_LLM (uses Ollama) is recommended for best quality. CLOUD_API is a great alternative if you don't have a local PC. LOCAL_SLM (on-device GGUF) works fully offline.
+
+### Cloud API Setup (Using Cloud LLMs)
+If you don't have a local PC with Ollama or want to use premium cloud models, you can connect to any OpenAI-compatible Cloud API provider.
+
+Supported Cloud API providers:
+- OpenAI: GPT-4o-mini, GPT-4o, GPT-4.1-mini, GPT-4.1-nano, o4-mini. Most popular choice.
+- Google Gemini: Gemini 2.0 Flash, Gemini 2.5 Flash, Gemini 2.5 Pro. Via OpenAI-compatible endpoint.
+- Groq: Llama 3.3 70B, Llama 3.1 8B, Gemma2 9B, Mixtral 8x7B. Ultra-fast inference with free tier.
+- DeepSeek: DeepSeek Chat, DeepSeek Reasoner. High-quality reasoning at very low cost.
+- Mistral AI: Mistral Small, Medium, Large. Strong multilingual support.
+- Together AI: Llama 3.3 70B Turbo, Qwen 2.5 72B Turbo, Gemma 2 27B. Run open-source models in the cloud.
+- OpenRouter: Aggregator that provides access to any model with one key. Includes free tier models.
+- Ollama Cloud: Your personal cloud LLM. Models fetched automatically.
+- Custom: Any OpenAI-compatible endpoint. Enter your own base URL.
+
+Step-by-step Cloud API setup:
+1. Open the AI Engine Hub: From the home screen, go to Semantic Automation and tap the gear/SLM Hub icon.
+2. Switch to Cloud API mode: In the "Inference Engine" section, tap "Cloud API".
+3. A privacy disclaimer will appear since Cloud API sends screen data to external servers. Read and accept to proceed.
+4. Select your provider: Choose from the list of supported providers.
+5. Enter your API key: Paste the API key from your provider's dashboard.
+6. Select a model: Choose from suggested models or enter a custom model name.
+7. Tap "Save & Test Connection" to verify it works.
+8. Once connected, a green "Connected" badge appears.
+
+Important: Cloud API sends screen element data to external servers. This is the only mode that transmits data outside your local network. You must accept the privacy disclaimer before enabling it.
 
 ### On-Device SLM Setup (Installing SLM on Mobile)
-To run AI models directly on your Android phone without any server, you can install an on-device Small Language Model (SLM). This is called Local SLM mode and it runs entirely on your phone with no network connection needed.
+To run AI models directly on your Android phone without any server, you can install an on-device Small Language Model (SLM). This is called Local SLM mode and it runs entirely on your phone with no network connection needed. The app supports two model formats: GGUF (via llama.cpp) and MediaPipe (.bin/.task).
 
 Step-by-step guide to install an SLM model on your mobile device:
 1. Open the AI Engine Hub: From the home screen, go to Semantic Automation and tap the gear/SLM Hub icon in the top-right corner. Alternatively, open Omni-Chat settings (gear icon in chat header) and switch to "On-Device SLM" mode to see instructions.
-2. Check your device hardware: The AI Engine Hub shows your device's total RAM. Models require a minimum amount of RAM to run. Gemma 2B needs at least 4GB RAM. Gemma 7B needs at least 8GB RAM.
-3. Browse the model catalog: The AI Engine Hub lists available models with their size, RAM requirements, quantization type, and runtime (CPU or GPU). Models marked as "Recommended for your device" are the best fit for your hardware.
-4. Download the model file: Tap the "Download" button on a compatible model. This opens the model's page on Kaggle or HuggingFace in your browser. Download the .bin model file to your phone's storage. The download size ranges from 1.3GB to 3.8GB depending on the model.
-5. Import the model: Go back to the AI Engine Hub in the app. Scroll down to the "Installed Models" section and tap "Import .bin/.task". Use the file picker to select the downloaded .bin file. The app will copy the model into its internal storage. This may take a minute depending on the file size.
-6. Set the model as active: After import, the model appears in the "Installed Models" list. Tap on it to set it as the active model. It will show an "ACTIVE" badge.
-7. Switch to On-Device SLM mode: In the "Inference Engine" section at the top of the AI Engine Hub, tap "On-Device SLM" to switch from Server LLM to local inference. You can also switch modes from Omni-Chat settings.
+2. Check your device hardware: The AI Engine Hub shows your device's total RAM. Models require a minimum amount of RAM to run. 3B models need at least 4GB RAM. 7B models need at least 8GB RAM.
+3. Browse the model catalog: The AI Engine Hub lists available models with their size, RAM requirements, quantization type, and format (GGUF or MediaPipe). Models marked as "Recommended for your device" are the best fit for your hardware.
+4. Download the model file: Tap the "Download" button on a compatible model. For GGUF models, this opens HuggingFace where you can download the .gguf file. For MediaPipe models, this opens Kaggle. Download the model file to your phone's storage.
+5. Import the model: Go back to the AI Engine Hub in the app. Scroll down to the "Installed Models" section and tap "Import .gguf / .bin". Use the file picker to select the downloaded file. The app validates the file (for GGUF, it checks the magic header) and copies it into its internal storage.
+6. Set the model as active: After import, the model appears in the "Installed Models" list with a GGUF or TFLite format badge. Tap on it to set it as the active model. It will show an "ACTIVE" badge.
+7. Switch to On-Device SLM mode: In the "Inference Engine" section at the top of the AI Engine Hub, tap "On-Device SLM" to switch from Server LLM or Cloud API to local inference.
 8. Start using it: The SLM model is now ready. Go to Omni-Chat or Semantic Automation and give a command. The on-device model will process it locally.
 
-Available SLM models for mobile:
-- Gemma 2B IT (CPU): Lightweight, fast. Best for devices with 4-6GB RAM. About 1.35GB download.
-- Gemma 2B IT (GPU): Same model but GPU-accelerated for faster inference. Requires a device with GPU support.
-- Gemma 7B IT (CPU): Significantly smarter reasoning. Needs 8GB+ RAM. About 3.8GB download.
-- Gemma 7B IT (GPU): Best quality with GPU acceleration. For flagship devices with 12GB+ RAM.
-- Gemma 2 2B IT: Next-generation Gemma with better reasoning at the same size as Gemma 2B.
-- Phi-2: Microsoft's compact model with strong code and reasoning skills. About 1.6GB download.
+Available GGUF models (recommended):
+- Qwen 2.5 3B Instruct (Q4_K_M): Fast and capable. Best balance of speed and quality. About 2GB download from HuggingFace.
+- Phi-3.5 Mini Instruct (Q4_K_M): Microsoft's compact model with strong reasoning. About 2.2GB download from HuggingFace.
+- Llama 3.2 3B Instruct (Q4_K_M): Meta's latest compact model. Good general-purpose performance. About 2GB download from HuggingFace.
+- Gemma 4 / Gemma 3n: Google's latest Gemma models. Available in GGUF format.
+- Any compatible GGUF file: The engine supports any GGUF model using a supported architecture (LLaMA, Phi, Qwen, Gemma, etc.).
+
+Available MediaPipe models (legacy):
+- Gemma 2B IT (CPU/GPU): Lightweight, fast. Best for devices with 4-6GB RAM. About 1.35GB.
+- Gemma 7B IT (CPU/GPU): Smarter reasoning. Needs 8GB+ RAM. About 3.8GB.
+- Gemma 2 2B IT: Next-generation Gemma. Better reasoning at 2B size.
 
 Important notes about on-device SLM:
 - SLM runs entirely on your phone. No WiFi, no server, no PC needed.
-- SLM inference is slower than Server LLM (Ollama). Expect 10-30 seconds per response depending on your device.
-- SLM is less accurate than larger server models for complex multi-step tasks. For best results, use simple commands.
+- The GGUF engine uses llama.cpp with optimized settings: 1024 context window, adaptive thread limits for mobile big.LITTLE CPUs, and pre-allocation RAM guard to prevent crashes.
+- GGUF models offer significantly better quality than legacy MediaPipe models at similar sizes.
+- SLM inference is slower than Server LLM (Ollama) or Cloud API. Expect 10-30 seconds per response depending on your device and model.
+- SLM is less accurate than larger server/cloud models for complex multi-step tasks. For best results, use simple commands.
 - The model file stays in app storage. You can delete it from the AI Engine Hub if you need space.
 - If your device has less than 4GB RAM, SLM models may cause crashes or extreme slowness.
-- For faster and more accurate AI, use Server LLM mode with Ollama on your PC instead.
+- If a GGUF model file is corrupted or truncated, the app will detect this and show an error rather than crashing.
 
 ### Connecting to Desktop Agent
 To use cross-device automation, you must install the Autonion Desktop Agent app on your computer. Download it from github.com/Autonion/Autonion-Agent/releases.
@@ -413,9 +519,15 @@ To use cross-device automation, you must install the Autonion Desktop Agent app 
 1. Install the Autonion Desktop Agent on your Windows PC (download the installer from github.com/Autonion/Autonion-Agent/releases).
 2. Run the Desktop Agent. It will show its WebSocket server port and local IP addresses.
 3. Make sure both devices are on the same WiFi network.
-4. In the Android app, go to Cross-Device Automation. The desktop should appear automatically.
-5. If it does not appear, use manual IP entry with the address shown in the Desktop Agent window.
-6. For browser-based tasks on the desktop, also install the Autonion Extension in Chrome (see the Browser Automation section above).
+4. On the Desktop Agent, go to the Connect tab and make sure "Allow New Pairings" is turned on.
+5. In the Android app, go to Cross-Device Automation > Devices tab. The desktop should appear automatically via mDNS.
+6. Tap the device name. A 6-digit PIN will be displayed on the Desktop Agent screen in a pairing dialog.
+7. Enter the PIN on your Android device within 120 seconds. If the PIN expires, tap the device again to generate a new one.
+8. Once the PIN is verified, the devices are paired and connected. Future connections are automatic.
+9. If the device does not appear via mDNS, use manual IP entry with the address shown in the Desktop Agent window.
+10. For browser-based tasks on the desktop, also install the Autonion Extension in Chrome (see the Browser Automation section above).
+
+The Desktop Agent has 7 navigation tabs: Dashboard, Connect, Automate, Flows, AI, Logs, and Settings.
 
 ## Troubleshooting
 
@@ -431,10 +543,18 @@ This is usually caused by the LLM making poor predictions:
 - Make sure the Autonion Desktop Agent (from github.com/Autonion/Autonion-Agent/releases) is installed and running on your PC.
 - Ensure both devices are on the same WiFi network. Mobile data or different networks will not work.
 - Check if the Desktop Agent is running and shows a port number and IP address in its window.
+- Make sure "Allow New Pairings" is enabled on the Desktop Agent's Connect tab (for first-time pairing).
 - Try manual IP entry if mDNS auto-discovery does not find the desktop.
 - Check Windows Firewall settings. The Desktop Agent needs to accept incoming connections.
 - Make sure the WebSocket port (default 4545) is not blocked by your router or firewall.
 - Try restarting both the Android app and the Desktop Agent.
+
+### PIN pairing issues
+- If the PIN does not appear on the Desktop Agent screen, make sure "Allow New Pairings" is turned on in the Connect tab.
+- The PIN expires after 120 seconds. If it expires, tap the device again on Android to generate a new PIN.
+- If you enter the wrong PIN, an error message appears. Re-enter the correct PIN shown on the Desktop screen.
+- Too many failed PIN attempts will temporarily block the pairing request. Wait a moment and try again.
+- If a device was previously paired and revoked, you need to pair again with a new PIN.
 
 ### LLM server connection fails
 - Verify Ollama is running: open http://localhost:11434 in your PC's web browser. You should see "Ollama is running."
@@ -480,7 +600,9 @@ Android aggressively kills background services to save battery. To prevent this:
 ## Privacy and Security
 
 Autonion is designed with privacy as a core principle:
-- 100% Local Processing: All AI inference happens on your local network via Ollama. No data is sent to cloud servers.
+- Local-First Processing: AI inference defaults to your local network (Ollama) or on-device (GGUF). No data is sent to cloud servers unless you explicitly opt into Cloud API mode.
+- Cloud API Opt-in: Cloud API mode is entirely optional and requires explicit user consent via a privacy disclaimer. When enabled, screen element data is sent to your chosen cloud provider (OpenAI, Gemini, Groq, etc.). This is the only mode that transmits data outside your local network.
+- Secure Device Pairing: Cross-device connections use OTP-based PIN verification. Paired device secrets are stored using encrypted storage (flutter_secure_storage on Desktop, EncryptedSharedPreferences on Android).
 - No Telemetry: The app does not collect or send any usage data, analytics, or crash reports to external servers.
 - Local Network Only: Cross-device communication uses your local WiFi. No internet relay servers.
 - No Account Required: No sign-up, login, or cloud account is needed.

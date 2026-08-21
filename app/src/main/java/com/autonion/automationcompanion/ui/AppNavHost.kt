@@ -17,8 +17,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalView
@@ -45,7 +43,10 @@ import com.autonion.automationcompanion.features.semantic_automation.ml.ModelSto
 import com.autonion.automationcompanion.features.semantic_automation.ui.ModelManagerScreen
 import com.autonion.automationcompanion.features.system_context_automation.SystemContextMainScreen
 import com.autonion.automationcompanion.core.onboarding.OnboardingPreferences
+import com.autonion.automationcompanion.core.age_signals.AgeSignalsRepository
 import com.autonion.automationcompanion.ui.onboarding.OnboardingScreen
+import com.autonion.automationcompanion.ui.components.ParentalBlockScreen
+import androidx.compose.runtime.collectAsState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -72,6 +73,7 @@ object AutomationRoutes {
     const val FLOW_BUILDER = "feature/flow_builder"
     const val SEMANTIC_AUTOMATION = "feature/semantic_automation"
     const val MODEL_MANAGER = "feature/model_manager"
+    const val WHATS_NEW = "settings/whats_new"
 }
 
 @Composable
@@ -81,22 +83,15 @@ fun AppNavHost() {
     val currentRoute = navBackStackEntry?.destination?.route
     val view = LocalView.current
     val activity = view.context as? Activity
-    val colorScheme = MaterialTheme.colorScheme
     val isDark = isSystemInDarkTheme()
     val context = LocalContext.current
 
+    // enableEdgeToEdge() in MainActivity makes system bars transparent;
+    // only control status-bar icon contrast here per route.
     SideEffect {
         activity?.let { act ->
             val window = act.window
-            if (currentRoute == ROUTE_HOME || currentRoute == AutomationRoutes.SEMANTIC_AUTOMATION || currentRoute == AutomationRoutes.CROSS_DEVICE) {
-                WindowCompat.setDecorFitsSystemWindows(window, false)
-                window.statusBarColor = Color.Transparent.toArgb()
-                WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !isDark
-            } else {
-                WindowCompat.setDecorFitsSystemWindows(window, true)
-                window.statusBarColor = colorScheme.primary.toArgb()
-                WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = isDark
-            }
+            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !isDark
         }
     }
 
@@ -141,6 +136,15 @@ fun AppNavHost() {
     // Determine start destination based on onboarding state
     val onboardingPrefs = remember { OnboardingPreferences.getInstance(context) }
     val startDest = if (onboardingPrefs.hasCompletedOnboarding) ROUTE_HOME else ROUTE_ONBOARDING
+
+    // ── Age Signals: check for parental block (Texas SB 2420) ──
+    val ageRepo = remember { AgeSignalsRepository.getInstance(context) }
+    val ageState by ageRepo.ageSignalState.collectAsState()
+
+    if (ageRepo.isParentallyBlocked()) {
+        ParentalBlockScreen()
+        return
+    }
 
     // ── Wrap everything in OmniChatbot scaffold ──
     OmniChatbotScaffold(
@@ -387,6 +391,19 @@ fun AppNavHost() {
         composable("settings/backup_restore") {
             com.autonion.automationcompanion.features.settings.BackupRestoreScreen(
                 onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable("settings/age_compliance") {
+            com.autonion.automationcompanion.features.settings.AgeComplianceScreen(
+                onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(AutomationRoutes.WHATS_NEW) {
+            com.autonion.automationcompanion.features.settings.WhatsNewScreen(
+                onBack = { navController.popBackStack() },
+                onNavigate = { route -> navController.navigate(route) }
             )
         }
 

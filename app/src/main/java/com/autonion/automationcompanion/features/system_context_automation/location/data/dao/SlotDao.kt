@@ -40,4 +40,10 @@ interface SlotDao {
     @Query("UPDATE slots SET lastExecutedDay = :day WHERE id = :slotId")
     suspend fun updateLastExecutedDay(slotId: Long, day: String)
 
+    @Query("UPDATE slots SET lastTriggerState = :state WHERE id = :slotId")
+    suspend fun updateLastTriggerState(slotId: Long, state: Boolean?)
+
+    @Query("SELECT * FROM slots WHERE enabled = 1 AND triggerType = :type")
+    suspend fun getEnabledSlotsByType(type: String): List<Slot>
+
 }
