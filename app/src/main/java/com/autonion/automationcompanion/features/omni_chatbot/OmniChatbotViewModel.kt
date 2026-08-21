@@ -305,7 +305,9 @@ class OmniChatbotViewModel(
 
     fun expand() {
         _isExpanded.value = true
-        llmEngine.autoConnectIfNeeded()
+        if (_inferenceMode.value == com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.SERVER_LLM) {
+            llmEngine.autoConnectIfNeeded()
+        }
     }
 
     fun updateRoute(route: String?) {

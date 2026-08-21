@@ -110,7 +110,9 @@ class SemanticAutomationEngine(private val context: Context) {
     private val stepHistory = mutableListOf<StepRecord>()
 
     init {
-        localServerEngine.autoConnectIfNeeded()
+        if (inferenceMode == InferenceMode.SERVER_LLM) {
+            localServerEngine.autoConnectIfNeeded()
+        }
     }
 
     /**

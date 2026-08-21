@@ -145,9 +145,10 @@ fun ModelManagerScreen(
     val crossDeviceManager = remember { CrossDeviceAutomationManager.getInstance(context) }
     val isCrossDeviceEnabled = remember { crossDeviceManager.isFeatureEnabled() }
     
-    // Auto-fill IP from cross-device discovery if connected
+    // Auto-fill IP from cross-device discovery if connected (only for Server LLM mode)
     val connectedDevices by crossDeviceManager.deviceRepository.getAllDevices().collectAsState(initial = emptyList())
-    LaunchedEffect(connectedDevices) {
+    LaunchedEffect(connectedDevices, inferenceMode) {
+        if (inferenceMode != SemanticAutomationEngine.InferenceMode.SERVER_LLM) return@LaunchedEffect
         val onlineDevice = connectedDevices.firstOrNull { it.status == com.autonion.automationcompanion.features.cross_device_automation.domain.DeviceStatus.ONLINE }
         if (onlineDevice != null && manualIpInput.isBlank() && serverUrl.isBlank()) {
             val ip = onlineDevice.ipAddress
