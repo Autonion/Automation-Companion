@@ -73,6 +73,7 @@ object AutomationRoutes {
     const val FLOW_BUILDER = "feature/flow_builder"
     const val SEMANTIC_AUTOMATION = "feature/semantic_automation"
     const val MODEL_MANAGER = "feature/model_manager"
+    const val WHATS_NEW = "settings/whats_new"
 }
 
 @Composable
@@ -396,6 +397,13 @@ fun AppNavHost() {
         composable("settings/age_compliance") {
             com.autonion.automationcompanion.features.settings.AgeComplianceScreen(
                 onBack = { navController.popBackStack() }
+            )
+        }
+
+        composable(AutomationRoutes.WHATS_NEW) {
+            com.autonion.automationcompanion.features.settings.WhatsNewScreen(
+                onBack = { navController.popBackStack() },
+                onNavigate = { route -> navController.navigate(route) }
             )
         }
 

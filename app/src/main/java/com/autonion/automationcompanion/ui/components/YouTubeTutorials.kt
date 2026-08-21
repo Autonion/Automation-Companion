@@ -10,6 +10,7 @@ object YouTubeTutorials {
     const val SYSTEM_CONTEXT = "https://youtu.be/-0E6HDqMrvQ"
     const val CROSS_DEVICE = "https://youtu.be/8lM1ibF_swM"
     const val OMNI_CHAT = "https://youtu.be/EnItA5BEKrU"
+    const val WHATS_NEW = "https://youtu.be/l80pbQT2vrI"
 
     fun getUrl(featureId: String): String? {
         return when (featureId) {
@@ -21,6 +22,7 @@ object YouTubeTutorials {
             "system_context" -> SYSTEM_CONTEXT
             "cross_device" -> CROSS_DEVICE
             "omni_chat" -> OMNI_CHAT
+            "whats_new" -> WHATS_NEW
             else -> null
         }
     }

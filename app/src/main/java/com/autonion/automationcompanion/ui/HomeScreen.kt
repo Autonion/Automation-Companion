@@ -142,6 +142,7 @@ private fun CompactHomeLayout(
                     title = "Autonion",
                     subtitle = null,
                     onNotificationClick = null,
+                    onWhatsNewClick = { onOpen("settings/whats_new") },
                     onExclusionClick = { onOpen("settings/exclusion") },
                     onBackupClick = { onOpen("settings/backup_restore") },
                     onAgeComplianceClick = { onOpen("settings/age_compliance") },
@@ -363,6 +364,7 @@ private fun MediumHomeLayout(
             DashboardHeader(
                 title = "Autonion",
                 subtitle = "AI-Powered Automation",
+                onWhatsNewClick = { onOpen("settings/whats_new") },
                 onExclusionClick = { onOpen("settings/exclusion") },
                 onBackupClick = { onOpen("settings/backup_restore") },
                 onAgeComplianceClick = { onOpen("settings/age_compliance") },
@@ -546,6 +548,7 @@ private fun ExpandedHomeLayout(
 
         // Left Panel — Branding (32%)
         TabletBrandingPanel(
+            onWhatsNewClick = { onOpen("settings/whats_new") },
             onExclusionClick = { onOpen("settings/exclusion") },
             onBackupClick = { onOpen("settings/backup_restore") },
             onAgeComplianceClick = { onOpen("settings/age_compliance") },

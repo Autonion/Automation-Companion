@@ -1,12 +1,6 @@
 @file:OptIn(ExperimentalMaterial3Api::class)
 package com.autonion.automationcompanion.ui.components
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -23,29 +17,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.autonion.automationcompanion.ui.AutomationRoutes
 
 private val AccentPurple = Color(0xFF7C4DFF)
-private val AccentCyan = Color(0xFF00BCD4)
 private val AccentBlue = Color(0xFF2979FF)
-private val AccentGreen = Color(0xFF00C853)
-private val AccentOrange = Color(0xFFFF9100)
-
 private val CardBgDark = Color(0xFF14172B)
 private val CardBgLight = Color(0xFFF7F5FD)
-
-data class WhatsNewItem(
-    val title: String,
-    val category: String,
-    val description: String,
-    val icon: ImageVector,
-    val iconTint: Color,
-    val route: String? = null
-)
 
 /**
  * A modern, polished "What's New" card displaying latest features and upgrades.
@@ -62,53 +43,14 @@ fun WhatsNewCard(
     val textColor = if (isDark) Color.White else Color(0xFF1B1B2F)
     val subtextColor = if (isDark) Color(0xFFB0B4CE) else Color(0xFF555770)
     val rowBg = if (isDark) Color(0xFF1D213B) else Color.White
+    val uriHandler = LocalUriHandler.current
 
     var isExpanded by remember { mutableStateOf(false) }
 
-    val features = remember {
-        listOf(
-            WhatsNewItem(
-                title = "Screen Understanding Node (3 Modes)",
-                category = "Flow Builder",
-                description = "Renamed from Screen ML. Choose Elements (YOLO + A11y), UI Attribute (A11y-only), or OCR (Text recognition).",
-                icon = Icons.Default.AccountTree,
-                iconTint = AccentPurple,
-                route = AutomationRoutes.FLOW_BUILDER
-            ),
-            WhatsNewItem(
-                title = "OTP-Based Device Pairing",
-                category = "Cross-Device Sync",
-                description = "Secure 6-digit PIN verification for pairing phone and PC. Automatically reconnects once paired.",
-                icon = Icons.Default.VpnKey,
-                iconTint = AccentBlue,
-                route = AutomationRoutes.CROSS_DEVICE
-            ),
-            WhatsNewItem(
-                title = "Desktop Flows Tab",
-                category = "Cross-Device Sync",
-                description = "Browse, remotely trigger, and monitor step-by-step execution of Desktop Flows directly from phone.",
-                icon = Icons.Default.PlayCircle,
-                iconTint = AccentCyan,
-                route = AutomationRoutes.CROSS_DEVICE
-            ),
-            WhatsNewItem(
-                title = "On-Device GGUF SLM Engine",
-                category = "Semantic AI",
-                description = "Run local models (Qwen 2.5, Phi-3.5, Llama 3.2, Gemma 4) on-device with zero cloud dependencies.",
-                icon = Icons.Default.Memory,
-                iconTint = AccentOrange,
-                route = AutomationRoutes.SEMANTIC_AUTOMATION
-            ),
-            WhatsNewItem(
-                title = "Remote Desktop Unlock",
-                category = "Cross-Device Sync",
-                description = "Unlock your Windows PC remotely from your phone via the Flows tab, even on lock screen.",
-                icon = Icons.Default.LockOpen,
-                iconTint = AccentGreen,
-                route = AutomationRoutes.CROSS_DEVICE
-            )
-        )
+    val release = remember(versionName) {
+        WhatsNewRepository.getCurrentRelease(versionName)
     }
+    val features = release.features
 
     Surface(
         modifier = Modifier
@@ -131,7 +73,7 @@ fun WhatsNewCard(
         Column(
             modifier = Modifier.padding(16.dp)
         ) {
-            // Header: Sparkle + Title + Version Tag + Close Button
+            // Header: Sparkle + Title + Version Tag + Video Icon + Close Button
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -167,7 +109,7 @@ fun WhatsNewCard(
                             color = AccentPurple.copy(alpha = if (isDark) 0.25f else 0.12f)
                         ) {
                             Text(
-                                text = "v$versionName",
+                                text = "v${release.versionName}",
                                 color = AccentPurple,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
@@ -180,6 +122,26 @@ fun WhatsNewCard(
                         color = subtextColor,
                         fontSize = 12.sp
                     )
+                }
+
+                // Video Icon beside Close Icon
+                if (release.youtubeUrl.isNotBlank()) {
+                    IconButton(
+                        onClick = {
+                            try {
+                                uriHandler.openUri(release.youtubeUrl)
+                            } catch (_: Exception) {}
+                        },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.PlayCircle,
+                            contentDescription = "Watch Video",
+                            tint = AccentPurple,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(4.dp))
                 }
 
                 IconButton(
@@ -303,13 +265,30 @@ private fun WhatsNewRow(
             verticalArrangement = Arrangement.Center
         ) {
             // Category Tag
-            Text(
-                text = item.category.uppercase(),
-                color = item.iconTint,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.5.sp
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = item.category.uppercase(),
+                    color = item.iconTint,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.5.sp
+                )
+                if (item.tag != null) {
+                    Spacer(Modifier.width(6.dp))
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = item.iconTint.copy(alpha = if (isDark) 0.22f else 0.12f)
+                    ) {
+                        Text(
+                            text = item.tag,
+                            color = item.iconTint,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                        )
+                    }
+                }
+            }
 
             Spacer(Modifier.height(1.dp))
 

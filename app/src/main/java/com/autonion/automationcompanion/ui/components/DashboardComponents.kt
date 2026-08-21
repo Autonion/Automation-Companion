@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Email
@@ -92,6 +93,7 @@ fun SecondaryButton(text: String, icon: ImageVector, onClick: () -> Unit, modifi
 fun SettingsDropdownMenu(
     expanded: Boolean,
     onDismissRequest: () -> Unit,
+    onWhatsNewClick: () -> Unit = {},
     onExclusionClick: () -> Unit,
     onBackupClick: () -> Unit,
     onAgeComplianceClick: () -> Unit,
@@ -127,6 +129,17 @@ fun SettingsDropdownMenu(
                 color = sectionHeaderColor
             ),
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp)
+        )
+
+        SettingsDropdownItem(
+            title = "What's New",
+            subtitle = "Latest features & video",
+            icon = Icons.Default.AutoAwesome,
+            accentColor = Color(0xFF7C4DFF),
+            onClick = {
+                onDismissRequest()
+                onWhatsNewClick()
+            }
         )
 
         SettingsDropdownItem(
@@ -284,6 +297,7 @@ fun DashboardHeader(
     title: String,
     subtitle: String? = null,
     onNotificationClick: (() -> Unit)? = null,
+    onWhatsNewClick: () -> Unit = {},
     onExclusionClick: () -> Unit = {},
     onBackupClick: () -> Unit = {},
     onAgeComplianceClick: () -> Unit = {},
@@ -344,6 +358,7 @@ fun DashboardHeader(
                 SettingsDropdownMenu(
                     expanded = showSettingsMenu,
                     onDismissRequest = { showSettingsMenu = false },
+                    onWhatsNewClick = onWhatsNewClick,
                     onExclusionClick = onExclusionClick,
                     onBackupClick = onBackupClick,
                     onAgeComplianceClick = onAgeComplianceClick,
@@ -710,6 +725,7 @@ fun StaggeredEntry(
 
 @Composable
 fun TabletBrandingPanel(
+    onWhatsNewClick: () -> Unit = {},
     onExclusionClick: () -> Unit = {},
     onBackupClick: () -> Unit = {},
     onAgeComplianceClick: () -> Unit = {},
@@ -793,6 +809,7 @@ fun TabletBrandingPanel(
                 SettingsDropdownMenu(
                     expanded = showSettingsMenu,
                     onDismissRequest = { showSettingsMenu = false },
+                    onWhatsNewClick = onWhatsNewClick,
                     onExclusionClick = onExclusionClick,
                     onBackupClick = onBackupClick,
                     onAgeComplianceClick = onAgeComplianceClick,
