@@ -739,7 +739,7 @@ private fun HomeFooter() {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = "v1.1.0",
+            text = "v1.1.1",
             style = MaterialTheme.typography.bodySmall.copy(
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 fontSize = 12.sp
