@@ -761,7 +761,7 @@ fun TabletBrandingPanel(
             )
             Spacer(modifier = Modifier.height(24.dp))
             Text(
-                text = "Record gestures, build visual flows, and let AI agents automate tasks — all on-device with optional cloud power.",
+                text = "Record gestures, build visual flows, and automate tasks with natural language — all on-device with optional cloud power.",
                 style = MaterialTheme.typography.bodyLarge.copy(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 24.sp

@@ -24,8 +24,8 @@ object FeatureMatcher {
             "gesture replay", "tap recording", "swipe recording", "record actions"
         ),
         "semantic_automation" to listOf(
-            "semantic", "ai agent", "semantic automation", "semantic ai",
-            "smart automation", "ai automation", "agentic"
+            "semantic", "semantic automation", "semantic ai",
+            "smart automation", "ai automation"
         ),
         "cross_device" to listOf(
             "cross device", "cross-device", "desktop agent", "desktop automation",

@@ -757,7 +757,7 @@ class SemanticAutomationEngine(private val context: Context) {
                 val rawPrompt = rGoal.rawCommand ?: goal.rawCommand
                 val taskType = rGoal.task ?: goal.task
 
-                // Always launch the base domain. The agentic loop will wait for the extension
+                // Always launch the base domain. The automation loop will wait for the extension
                 // to connect and provide the DOM to click the website's search box and interact.
                 val urlToLaunch = baseDomain
 

@@ -190,21 +190,21 @@ object WalkthroughRegistry {
         ),
 
         // ───────────────────────────────────────────────
-        //  Semantic AI Agent
+        //  Semantic Automation
         // ───────────────────────────────────────────────
         "semantic_automation" to WalkthroughScript(
             featureId = "semantic_automation",
-            featureName = "Semantic AI Agent",
-            description = "An AI-powered agent that understands and executes complex on-device tasks.",
+            featureName = "Semantic Automation",
+            description = "Natural language automation that carries out multi-step tasks on your device.",
             steps = listOf(
                 WalkthroughStep(
-                    instruction = "Taking you to the Semantic AI Agent screen…",
+                    instruction = "Taking you to the Semantic Automation screen…",
                     targetRoute = AutomationRoutes.SEMANTIC_AUTOMATION,
                     stepType = StepType.NAVIGATE
                 ),
                 WalkthroughStep(
-                    instruction = "This is the AI Agent chat interface. Here you describe a task in natural language, " +
-                            "and the AI will autonomously navigate your phone to complete it.",
+                    instruction = "This is the Semantic Automation interface. Here you describe a task in natural language, " +
+                            "and Autonion will carry out the steps to complete your task.",
                     stepType = StepType.OBSERVE
                 ),
                 WalkthroughStep(
@@ -223,19 +223,19 @@ object WalkthroughRegistry {
                 ),
                 WalkthroughStep(
                     instruction = "After you send a command, watch the Live Status card — it shows " +
-                            "what the agent is doing in real time: parsing your goal, capturing the screen, " +
-                            "deciding the next action, and executing it. You can toggle this card with the 👁 icon.",
+                            "the process in real time: parsing your goal, inspecting the screen, " +
+                            "and performing the requested steps. You can toggle this card with the 👁 icon.",
                     stepType = StepType.OBSERVE
                 ),
                 WalkthroughStep(
-                    instruction = "If the agent needs clarification, it will ask you a question with " +
-                            "clickable options. You can also stop the agent at any time using the ■ Stop button " +
+                    instruction = "If clarification is needed, a prompt will appear with " +
+                            "clickable options. You can also stop the process at any time using the ■ Stop button " +
                             "in the status card.",
                     stepType = StepType.OBSERVE
                 ),
                 WalkthroughStep(
-                    instruction = "That's the Semantic AI Agent! It's the most powerful automation tool — " +
-                            "it can handle multi-step, cross-app tasks using AI-driven screen understanding. 🤖",
+                    instruction = "That's Semantic Automation! It's a powerful natural language tool — " +
+                            "helping you complete multi-step tasks using screen understanding. 💡",
                     stepType = StepType.OBSERVE
                 )
             )
@@ -436,7 +436,7 @@ object WalkthroughRegistry {
                 ),
                 WalkthroughStep(
                     instruction = "The Debugger shows logs from all your automation modules — " +
-                            "Gesture, Visual Trigger, Flow Builder, AI Agent, and more.",
+                            "Gesture, Visual Trigger, Flow Builder, Semantic Automation, and more.",
                     stepType = StepType.OBSERVE
                 ),
                 WalkthroughStep(

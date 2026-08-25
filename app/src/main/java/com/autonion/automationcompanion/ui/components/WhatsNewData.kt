@@ -24,8 +24,8 @@ data class WhatsNewItem(
 )
 
 data class WhatsNewRelease(
-    val versionName: String = "1.1.0",
-    val versionCode: Int = 9,
+    val versionName: String = "1.1.1",
+    val versionCode: Int = 10,
     val releaseDate: String = "August 2026",
     val headline: String = "Cross-Device Flows, SLM Inference & Enhanced Nodes",
     val description: String = "Experience faster local AI inference, seamless desktop pairing, remote desktop unlocks, and powerful new node modes in the Flow Builder.",
@@ -34,10 +34,10 @@ data class WhatsNewRelease(
 )
 
 object WhatsNewRepository {
-    fun getCurrentRelease(versionName: String = "1.1.0"): WhatsNewRelease {
+    fun getCurrentRelease(versionName: String = "1.1.1"): WhatsNewRelease {
         return WhatsNewRelease(
             versionName = versionName,
-            versionCode = 9,
+            versionCode = 10,
             releaseDate = "August 2026",
             headline = "Cross-Device Flows, SLM Inference & Enhanced Nodes",
             description = "Experience faster local AI inference, seamless desktop pairing, remote desktop unlocks, and powerful new node modes in the Flow Builder.",

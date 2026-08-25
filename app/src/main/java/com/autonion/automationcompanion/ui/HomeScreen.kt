@@ -274,8 +274,8 @@ private fun CompactHomeLayout(
         item {
             StaggeredEntry(index = 6) {
                 ListCard(
-                    title = "Semantic AI Agent",
-                    description = "Natural language automation — describe a task and let the AI agent execute it.",
+                    title = "Semantic Automation",
+                    description = "Natural language automation — describe a task and run the requested steps.",
                     icon = Icons.Default.AutoAwesome,
                     iconColor = Color.White,
                     iconContainerColor = AccentOrange,
@@ -396,7 +396,7 @@ private fun MediumHomeLayout(
                 }
 
                 Text(
-                    text = "Record gestures, build visual flows, and let AI agents automate tasks — all on-device with optional cloud power.",
+                    text = "Record gestures, build visual flows, and automate tasks with natural language — all on-device with optional cloud power.",
                     style = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
                     modifier = Modifier.padding(bottom = 16.dp, start = 8.dp, end = 8.dp)
                 )
@@ -467,8 +467,8 @@ private fun MediumHomeLayout(
         item {
             StaggeredEntry(index = 4) {
                 GridCard(
-                    title = "Semantic AI Agent",
-                    description = "Natural language automation — describe a task and let AI execute it.",
+                    title = "Semantic Automation",
+                    description = "Natural language automation — describe a task and run the requested steps.",
                     icon = Icons.Default.AutoAwesome,
                     iconColor = Color.White,
                     iconContainerColor = AccentOrange,
@@ -667,8 +667,8 @@ private fun ExpandedHomeLayout(
             item {
                 StaggeredEntry(index = 4) {
                     GridCard(
-                        title = "Semantic AI Agent",
-                        description = "Describe a task and let the AI agent execute it.",
+                        title = "Semantic Automation",
+                        description = "Describe a task and run the requested steps.",
                         icon = Icons.Default.AutoAwesome,
                         iconColor = Color.White,
                         iconContainerColor = AccentOrange,
@@ -739,7 +739,7 @@ private fun HomeFooter() {
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = "v1.1.0",
+            text = "v1.1.1",
             style = MaterialTheme.typography.bodySmall.copy(
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 fontSize = 12.sp
