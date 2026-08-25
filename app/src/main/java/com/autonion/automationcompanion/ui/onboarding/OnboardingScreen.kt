@@ -262,7 +262,7 @@ private fun WelcomePage() {
         // Benefits
         BenefitRow(Icons.Default.TouchApp, "Record & replay gestures across any app")
         Spacer(Modifier.height(16.dp))
-        BenefitRow(Icons.Default.SmartToy, "AI agent that automates tasks with natural language")
+        BenefitRow(Icons.Default.SmartToy, "Smart automation that assists with natural language tasks")
         Spacer(Modifier.height(16.dp))
         BenefitRow(Icons.Default.Devices, "Control your desktop from your phone")
     }
@@ -333,7 +333,7 @@ private fun AISetupPage() {
         Spacer(Modifier.height(8.dp))
 
         Text(
-            "Connecting to an AI model unlocks Omni-Chat,\nSemantic AI Agent, and smarter automation.",
+            "Connecting to an AI model unlocks Omni-Chat,\nSemantic Automation, and smarter assistance.",
             color = Color.White.copy(alpha = 0.5f),
             fontSize = 14.sp,
             textAlign = TextAlign.Center,
@@ -462,7 +462,7 @@ private fun QuickStartPage(
         Spacer(Modifier.height(12.dp))
         QuickStartCard(
             emoji = "🤖",
-            title = "Try AI Agent",
+            title = "Try Semantic Automation",
             subtitle = "Automate with natural language commands",
             color = Color(0xFFFF9800),
             onClick = { onPickFeature("feature/semantic_automation") }

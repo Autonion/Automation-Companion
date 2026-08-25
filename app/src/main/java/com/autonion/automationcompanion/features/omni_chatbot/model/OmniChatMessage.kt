@@ -88,11 +88,11 @@ object ContextualFAQs {
     )
 
     private val semanticChips = listOf(
-        FAQChip("How does the AI agent work?", "How AI works"),
+        FAQChip("How does Semantic Automation work?", "How AI works"),
         FAQChip("Why is automation doing random things?", "Random actions fix"),
         FAQChip("How to change the AI model?", "Change model"),
         FAQChip("What prompts work best?", "Best prompts"),
-        FAQChip("How to stop the agent?", "Stop agent")
+        FAQChip("How to stop automation?", "Stop automation")
     )
 
     private val crossDeviceChips = listOf(

@@ -11,7 +11,7 @@
   },
   {
     "question": "What is Semantic Automation?",
-    "answer": "Semantic Automation is Autonion's AI-powered feature that understands natural language commands and executes them on your device. For example, you can say 'search for shoes on Flipkart' and the AI agent will open Flipkart, find the search bar, type your query, and submit it \u2014 all autonomously.\n\nIt uses a combination of:\n- On-device accessibility tree reading to understand screen elements\n- LLM (Large Language Model) via local Ollama for action prediction\n- Rule-based heuristics for common tasks like search, toggle, and navigation",
+    "answer": "Semantic Automation is Autonion's AI-powered feature that understands natural language commands and executes them on your device. For example, you can say 'search for shoes on Flipkart' and the AI will open Flipkart, find the search bar, type your query, and submit it \u2014 all based on your request.\n\nIt uses a combination of:\n- On-device accessibility tree reading to understand screen elements\n- LLM (Large Language Model) via local Ollama for action prediction\n- Rule-based heuristics for common tasks like search, toggle, and navigation",
     "tags": [
       "semantic",
       "automation",
@@ -80,7 +80,7 @@
   },
   {
     "question": "How does the browser extension work?",
-    "answer": "The Autonion browser extension enables web automation:\n1. Install the extension in your browser (Lemur/Chrome-based browsers work best).\n2. The extension connects to the Desktop Agent via WebSocket.\n3. When you send a browser-related command, the extension captures the webpage DOM.\n4. The AI agent reads the page structure and interacts with elements (clicks, types, scrolls).\n5. Results are sent back to your Android app.\n\nThe extension is needed because the Accessibility Service can only see native Android UI elements, not web page content.",
+    "answer": "The Autonion browser extension enables web automation:\n1. Install the extension in your browser (Lemur/Chrome-based browsers work best).\n2. The extension connects to the Desktop Agent via WebSocket.\n3. When you send a browser-related command, the extension captures the webpage DOM.\n4. The engine reads the page structure and carries out requested interactions with elements (clicks, types, scrolls).\n5. Results are sent back to your Android app.\n\nThe extension is needed because the Accessibility Service can only see native Android UI elements, not web page content.",
     "tags": [
       "browser",
       "extension",
@@ -353,7 +353,7 @@
   },
   {
     "question": "How does the Python Bridge work on Desktop?",
-    "answer": "The Desktop Agent uses a background Python process (the 'bridge') to interact with the OS. It uses libraries like `uiautomation` and `pyautogui` to scan the UI elements, read the screen, and execute mouse/keyboard events autonomously.",
+    "answer": "The Desktop Agent uses a background Python process (the 'bridge') to interact with the OS. It uses libraries like `uiautomation` and `pyautogui` to scan the UI elements, read the screen, and execute mouse/keyboard events based on your configured tasks.",
     "tags": [
       "python bridge",
       "desktop agent",
@@ -437,7 +437,7 @@
   },
   {
     "question": "What is the difference between Direct Action and Semantic Automation?",
-    "answer": "A Direct Action is a hardcoded response to a command (like turning bluetooth on/off). Semantic Automation involves the AI Agent analyzing the screen, planning steps, and actually simulating taps/swipes to accomplish a complex goal like 'order an uber'.",
+    "answer": "A Direct Action is a hardcoded response to a command (like turning bluetooth on/off). Semantic Automation uses your connected AI model to interpret your request and assist with step-by-step UI interactions.",
     "tags": [
       "direct action",
       "semantic automation",
@@ -534,8 +534,8 @@
     ]
   },
   {
-    "question": "How do I make the agent type text?",
-    "answer": "You don't need to do anything special. Just describe the task (e.g., 'send a message to John saying Hello'). The AI agent will detect the input field, focus it, and automatically invoke the type action.",
+    "question": "How do I make the app type text?",
+    "answer": "You don't need to do anything special. Just describe the task (e.g., 'send a message to John saying Hello'). Autonion will locate the input field, focus it, and perform the requested text entry.",
     "tags": [
       "type",
       "text",
@@ -555,7 +555,7 @@
   },
   {
     "question": "How do I chain multiple actions?",
-    "answer": "Autonion's agentic loop is designed to automatically chain actions. If you say 'Find a recipe for lasagna and save it', the agent will search, wait for the page to load, click the result, and then try to find a save button over multiple steps.",
+    "answer": "Autonion's automation loop is designed to chain actions step by step. If you say 'Find a recipe for lasagna and save it', the engine will search, wait for the page to load, click the result, and then try to find a save button over multiple steps.",
     "tags": [
       "chain",
       "multiple",
@@ -564,8 +564,8 @@
     ]
   },
   {
-    "question": "What is the maximum number of steps an agent will take?",
-    "answer": "To prevent runaway loops, the Semantic Automation agent has a hard limit of 15 consecutive steps. If it hasn't achieved the goal by then, it will stop and notify you.",
+    "question": "What is the maximum number of steps an automation will take?",
+    "answer": "To prevent runaway loops, Semantic Automation has a hard limit of 15 consecutive steps. If it hasn't achieved the goal by then, it will stop and notify you.",
     "tags": [
       "limit",
       "steps",
@@ -574,8 +574,8 @@
     ]
   },
   {
-    "question": "How does the agent know when it's done?",
-    "answer": "After every action, the agent re-evaluates the screen. If it detects UI elements confirming success (like a 'Sent' message or the target app's home screen) or if its reasoning output declares the goal achieved, it emits a 'terminate' action.",
+    "question": "How does automation know when it's done?",
+    "answer": "After every action, the screen is re-evaluated. If it detects UI elements confirming success (like a 'Sent' message or the target app's home screen) or if the model declares the goal achieved, it emits a 'terminate' action.",
     "tags": [
       "done",
       "terminate",
@@ -767,17 +767,17 @@
     ]
   },
   {
-    "question": "How does the Agentic Loop recover from errors?",
-    "answer": "If an action fails (e.g., clicking a button that just vanished), the loop captures a fresh screen snapshot and replans. It adjusts its strategy based on the new UI state.",
+    "question": "How does the Automation Loop recover from errors?",
+    "answer": "If an action fails (e.g., clicking a button that just vanished), the system checks the updated screen and retries the current step when needed.",
     "tags": [
-      "agentic loop",
+      "automation loop",
       "error recovery",
-      "replanning"
+      "retry"
     ]
   },
   {
     "question": "What is a 'Scroll' action?",
-    "answer": "If the agent determines that the target element might be off-screen, it emits a 'scroll' action. The engine then simulates a swipe up/down and sends the newly revealed UI state back to the model.",
+    "answer": "If the model determines that the target element might be off-screen, it emits a 'scroll' action. The engine then simulates a swipe up/down and sends the newly revealed UI state back to the model.",
     "tags": [
       "scroll",
       "swipe",
@@ -1209,7 +1209,7 @@
     ]
   },
   {
-    "question": "Can I use Autonion to buy things autonomously?",
+    "question": "Can I use Autonion to buy things automatically?",
     "answer": "Yes, but this is dangerous because AI hallucinations might lead to incorrect purchases or quantities. It is highly recommended to ONLY use Autonion for read-only or low-risk tasks, or ensure manual confirmation steps exist in your flows.",
     "tags": [
       "purchase",
@@ -1544,7 +1544,7 @@
   },
   {
     "question": "How does the browser extension connect to the app?",
-    "answer": "The Autonion Android Extension connects via WebSocket:\n1. The Autonion app runs a WebSocket server on port 54321 (ExtensionBridgeServer).\n2. When you open a supported browser with the extension installed, it automatically connects to ws://localhost:54321.\n3. The extension captures the webpage DOM and sends it to the app.\n4. The AI agent reads the DOM elements and sends action commands back through the extension.\n\nThis all happens locally on your device — no internet required.",
+    "answer": "The Autonion Android Extension connects via WebSocket:\n1. The Autonion app runs a WebSocket server on port 54321 (ExtensionBridgeServer).\n2. When you open a supported browser with the extension installed, it automatically connects to ws://localhost:54321.\n3. The extension captures the webpage DOM and sends it to the app.\n4. The engine reads the DOM elements and performs the requested actions through the extension.\n\nThis all happens locally on your device — no internet required.",
     "tags": [
       "extension",
       "websocket",
@@ -1566,7 +1566,7 @@
   },
   {
     "question": "What is the difference between Autonion Extension and Autonion Android Extension?",
-    "answer": "They are two separate extensions for different platforms:\n\n- Autonion Extension (Desktop): Runs in Chrome/Edge on your PC. Connects to the Autonion Desktop Agent. Used for cross-device browser automation — controlling the desktop browser from your phone.\n\n- Autonion Android Extension: Runs in Kiwi/Lemur/Firefox Nightly on your phone. Connects directly to the Autonion Android app. Used for on-device browser automation — the AI agent controls the mobile browser.\n\nBoth provide DOM access for web page interaction, but they connect to different apps.",
+    "answer": "They are two separate extensions for different platforms:\n\n- Autonion Extension (Desktop): Runs in Chrome/Edge on your PC. Connects to the Autonion Desktop Agent. Used for cross-device browser automation — controlling the desktop browser from your phone.\n\n- Autonion Android Extension: Runs in Kiwi/Lemur/Firefox Nightly on your phone. Connects directly to the Autonion Android app. Used for on-device browser automation — helps navigate web content on your mobile browser.\n\nBoth provide DOM access for web page interaction, but they connect to different apps.",
     "tags": [
       "extension",
       "difference",
@@ -1577,7 +1577,7 @@
   },
   {
     "question": "Do I need the extension for web automation?",
-    "answer": "Yes, the browser extension is essential for effective web automation. Without it, the AI agent can only use the Android Accessibility Service, which sees browser UI elements (address bar, tabs) but cannot read or interact with actual web page content like links, buttons, and text fields inside the page. The extension captures the full DOM (Document Object Model) of the webpage, giving the agent precise control over page elements.",
+    "answer": "Yes, the browser extension is essential for effective web automation. Without it, Autonion can only use the Android Accessibility Service, which sees browser UI elements (address bar, tabs) but cannot read or interact with actual web page content like links, buttons, and text fields inside the page. The extension captures the full DOM (Document Object Model) of the webpage, giving the engine precise access to page elements.",
     "tags": [
       "extension",
       "web automation",

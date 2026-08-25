@@ -9,7 +9,7 @@ Autonion Automation Companion is an Android application that enables intelligent
 Autonion has 8 core features. Here is a complete list:
 
 1. Omni-Chat (Unified Chatbot Interface) - The main interaction point. Accessible via the floating action button (FAB). Routes commands to the appropriate engine using on-device NLU.
-2. Semantic Automation (AI-Powered Agent) - Autonomous multi-step task execution powered by LLM. Uses an agentic loop to interact with device UI. Supports Server LLM (Ollama), On-Device SLM (GGUF), and Cloud API inference modes.
+2. Semantic Automation - Smart multi-step task execution powered by LLM. Uses a step-by-step automation loop to interact with device UI. Supports Server LLM (Ollama), On-Device SLM (GGUF), and Cloud API inference modes.
 3. Cross-Device Automation - Send commands from Android to a desktop computer with secure OTP-based pairing. Includes remote Desktop Flow triggering, clipboard sync, and rule-based automation. Requires the Autonion Desktop Agent (github.com/Autonion/Autonion-Agent).
 4. Gesture Recording and Playback - Record touch interactions (taps, swipes, long presses, drags) and replay them automatically. Coordinate-based replay.
 5. Flow Builder - Visual drag-and-drop automation workflow builder. Create flows with triggers, actions, conditions, and connections. Includes Screen Understanding nodes with YOLO+UI attribute, UI attribute-only, and OCR modes.
@@ -43,7 +43,7 @@ Omni-Chat modes and what they mean:
 - Desktop (link icon): Command sent to connected desktop computer. Example: "on my laptop open chrome".
 - Timer (clock icon): Scheduled or recurring task with stop control. Example: "click next every 1 minute".
 - FAQ (lightbulb icon): Instant answer from the built-in FAQ database, no LLM required. Example: "how do I connect devices?".
-- Knowledge (book icon): Answer synthesized from documentation using RAG (Retrieval-Augmented Generation). Example: "explain how the agentic loop works".
+- Knowledge (book icon): Answer synthesized from documentation using RAG (Retrieval-Augmented Generation). Example: "explain how the automation loop works".
 - Chat (speech bubble icon): General conversational LLM response.
 - System (gear icon): Error or system notification messages.
 
@@ -68,23 +68,23 @@ LLM settings inside Omni-Chat:
 - You can toggle between Server LLM and Local SLM inference modes.
 - The connection auto-reconnects when the chat is reopened.
 
-### Semantic Automation (AI-Powered Agent)
-The AI-powered automation engine that understands natural language commands and executes complex multi-step tasks on your device autonomously.
+### Semantic Automation
+The AI-powered automation engine that understands natural language commands and helps you execute complex multi-step tasks on your device.
 
 How the Semantic Automation Engine works in detail:
 1. Goal Parsing: Your natural language command (e.g., "search for shoes under 2000 on Flipkart") is sent to the LLM. The LLM extracts structured data: the task type (search, open, enable, etc.), the target app (Flipkart), the search query (shoes under 2000), and the domain (flipkart.com).
 2. Pre-Actions: The engine launches the target app or opens system settings. If the target app is not installed, a dialog asks you to choose between Play Store, Browser fallback, or Cancel.
-3. Screen Loop (the Agentic Loop): This is the core automation cycle that repeats up to 50 iterations:
+3. Screen Loop (the Automation Loop): This is the core automation cycle that repeats up to 50 iterations:
    - Step A: Capture the current screen via screenshot.
    - Step B: Build a ScreenUIState from the accessibility tree. Elements include buttons, text fields, labels with their names, types, and bounding boxes. When a browser with the extension is active, DOM elements are used instead.
    - Step C: Compare with the previous UI state for post-action verification. If the screen has not changed after an action, it counts as a failure.
-   - Step D: Predict the next action using a multi-tier fallback system (see Action Prediction below).
-   - Step E: Execute the predicted action (click, type, scroll, press key, finish).
+   - Step D: Determine the next step using a multi-tier fallback system (see Action Matching below).
+   - Step E: Perform the selected action (click, type, scroll, press key, finish).
    - Step F: Wait 2.5 seconds for the screen to settle, then repeat.
-4. Completion: The loop stops when the LLM predicts a FINISH action, when the user cancels, or when max iterations (50) are reached.
+4. Completion: The loop stops when a FINISH action is reached, when the user cancels, or when max iterations (50) are reached.
 
-Action prediction (multi-tier fallback):
-The engine tries these prediction tiers in order until one succeeds:
+Action matching (multi-tier fallback):
+The engine tries these matching tiers in order until one succeeds:
 - Tier 0: Deterministic Task Planner - handles standard flows (search, play) without the LLM. Reserved for common patterns.
 - Tier 1 (Server LLM mode): Ollama server via REST API. Sends a system prompt, user prompt with screen elements, and step history. Receives structured JSON with the action type, target element index, and input text.
 - Tier 1 (Cloud API mode): Cloud LLM via OpenAI-compatible API. Supports OpenAI (GPT-4o), Google Gemini, Groq, DeepSeek, Mistral, Together AI, OpenRouter, Ollama Cloud, or any custom OpenAI-compatible endpoint. Same prompt format as Server LLM.
@@ -125,7 +125,7 @@ Intent types:
 - DIRECT_KEY_ACTION: Press a specific key or type text. Examples: "press enter", "type hello world"
 - DIRECT_TOGGLE: Turn a system setting on or off. Examples: "turn off wifi", "enable bluetooth"
 - SCHEDULED_ACTION: Repeat an action on a timer. Examples: "click next every 1 minute", "press space 5 times"
-- DEVICE_AUTOMATION: Complex on-device task requiring the AI agent. Examples: "search shoes on Flipkart", "open settings and enable dark mode"
+- DEVICE_AUTOMATION: Complex on-device task using Semantic Automation. Examples: "search shoes on Flipkart", "open settings and enable dark mode"
 - CROSS_DEVICE: Command targeted at the desktop computer. Examples: "on my laptop open chrome", "on desktop open notepad"
 - FAQ: Question that matches the FAQ database. Detected via semantic similarity.
 - Q_AND_A: General knowledge question answered via RAG or LLM. Examples: "what features does this app have?", "how to set up Ollama?"
@@ -332,9 +332,9 @@ How it works on Android:
 3. When the Semantic Engine detects a browser task, it launches the browser with the target URL.
 4. The extension captures the webpage DOM (interactive elements, text, links, buttons).
 5. The DOM elements are sent back to the Android app and presented to the LLM as numbered elements.
-6. The LLM predicts actions (click element, type text, scroll) using element IDs from the DOM snapshot.
+6. The AI model maps the request to the next step (click element, type text, scroll) using element IDs from the DOM snapshot.
 7. The action commands are sent back to the extension which executes them in the webpage.
-8. After each action, the extension automatically captures a fresh DOM snapshot, enabling the agentic loop: DOM Snapshot → LLM Decision → Action Command → DOM Snapshot → repeat.
+8. After each action, the extension automatically captures a fresh DOM snapshot, enabling the automation loop: DOM Snapshot → LLM Decision → Action Command → DOM Snapshot → repeat.
 
 Supported browsers with extensions on Android: Kiwi Browser (recommended), Lemur Browser, Firefox Nightly.
 
@@ -388,7 +388,7 @@ Source code: github.com/Autonion/Autonion-Android-Extension
 
 #### Difference between the two extensions
 - Autonion Extension (Desktop): Runs in Chrome/Edge on your PC. Connects to the Autonion Desktop Agent. Used for cross-device browser automation where you control the desktop browser from your phone.
-- Autonion Android Extension (Mobile): Runs in Kiwi/Lemur/Firefox Nightly on your phone. Connects directly to the Autonion Android app. Used for on-device browser automation where the AI agent controls the mobile browser.
+- Autonion Android Extension (Mobile): Runs in Kiwi/Lemur/Firefox Nightly on your phone. Connects directly to the Autonion Android app. Used for on-device browser automation to help navigate web content in the mobile browser.
 
 ### Automation Debugger
 View detailed, categorized logs of all automation activities.
@@ -396,7 +396,7 @@ View detailed, categorized logs of all automation activities.
 Log categories:
 - Accessibility Events: Raw accessibility service events (node clicks, text changes, window transitions)
 - Cross-Device Sync: WebSocket communication logs (messages sent, received, connection status)
-- Semantic Actions: AI agent action predictions and executions (LLM prompts, predicted actions, execution results, step history)
+- Semantic Actions: Automation step execution history (LLM prompts, selected actions, execution results, step history)
 - System Events: App-level events and errors
 
 How to use:
@@ -537,7 +537,7 @@ This is usually caused by the LLM making poor predictions:
 - Break complex commands into simpler steps. Instead of "open WhatsApp, find Mom's chat, and send her a birthday wish", try "open WhatsApp" first, then "search for Mom" separately.
 - Close unnecessary apps to reduce screen UI noise. The fewer elements on screen, the easier it is for the LLM to identify the right target.
 - Check the Automation Debugger > Semantic Actions to see exactly what the LLM predicted. This helps identify whether the issue is with element detection or action selection.
-- Use Omni-Chat for simple commands (like "press next" or "turn off wifi") which bypass the AI agent entirely and execute instantly.
+- Use Omni-Chat for simple commands (like "press next" or "turn off wifi") which execute instantly via direct actions.
 
 ### Cannot connect to desktop
 - Make sure the Autonion Desktop Agent (from github.com/Autonion/Autonion-Agent/releases) is installed and running on your PC.

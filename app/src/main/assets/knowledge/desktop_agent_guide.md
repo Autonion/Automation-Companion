@@ -188,7 +188,7 @@ Use cases:
 For web automation tasks, the Autonion Extension can be installed in Chrome or Edge on the desktop:
 - The extension captures the webpage DOM (links, buttons, text fields, forms)
 - DOM snapshots are sent to the Desktop Agent, which forwards them to the Android app
-- The AI agent can then predict actions on web content using element IDs from the DOM
+- The engine can then perform requested actions on web content using element IDs from the DOM
 - This is significantly more reliable than using the Windows accessibility tree for web content
 
 Installation:

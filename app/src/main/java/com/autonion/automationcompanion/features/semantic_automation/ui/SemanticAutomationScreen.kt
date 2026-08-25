@@ -101,11 +101,11 @@ fun SemanticAutomationScreen(
 
     if (showTip) {
         FeatureTipSheet(
-            title = "Semantic AI Agent",
+            title = "Semantic Automation",
             tips = listOf(
                 "Connect an **AI model** first via ⚙ Settings in the top bar",
                 "Type a natural language command like **'open YouTube and play music'**",
-                "The AI agent will **take control** of your screen to execute the task"
+                "Autonion will **help perform** the requested steps on your screen"
             ),
             icon = Icons.Default.AutoAwesome,
             iconColor = Color(0xFFFF9800),
@@ -239,7 +239,7 @@ fun SemanticAutomationScreen(
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("Semantic AI Agent", color = headerTextColor, fontWeight = FontWeight.Bold) },
+                    title = { Text("Semantic Automation", color = headerTextColor, fontWeight = FontWeight.Bold) },
                     navigationIcon = {
                         IconButton(onClick = onBack) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = headerTextColor)
