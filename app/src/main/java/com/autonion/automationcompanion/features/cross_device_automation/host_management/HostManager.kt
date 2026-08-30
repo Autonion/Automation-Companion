@@ -9,6 +9,7 @@ import com.autonion.automationcompanion.features.cross_device_automation.domain.
 import com.autonion.automationcompanion.features.cross_device_automation.domain.DeviceStatus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.net.InetAddress
 import java.util.UUID
@@ -21,90 +22,138 @@ class HostManager(
     private val serviceType = "_myautomation._tcp" // Removing .local as Android adds it automatically often, but standard is _type._tcp.
     private val discoveryTag = "HostManager"
 
-    private val discoveryListener = object : NsdManager.DiscoveryListener {
-        override fun onDiscoveryStarted(regType: String) {
-            Log.d(discoveryTag, "Service discovery started")
-        }
+    private var activeDiscoveryListener: NsdManager.DiscoveryListener? = null
+    private var isDiscovering = false
 
-        override fun onServiceFound(service: NsdServiceInfo) {
-            Log.d(discoveryTag, "Service discovery success: $service")
-            if (service.serviceType.contains("_myautomation")) {
-                nsdManager.resolveService(service, object : NsdManager.ResolveListener {
-                    override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
-                        Log.e(discoveryTag, "Resolve failed: $errorCode")
-                    }
+    /** Maximum number of resolve retries on FAILURE_ALREADY_ACTIVE. */
+    private val maxResolveRetries = 2
 
-                    override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
-                        Log.d(discoveryTag, "Resolve Succeeded. $serviceInfo")
-                        
-                        val host = serviceInfo.host
-                        val port = serviceInfo.port
-                        val serviceName = serviceInfo.serviceName
-
-                        // Read mDNS TXT attributes to distinguish full agent from background service
-                        val attributes = serviceInfo.attributes
-                        val agentAttr = attributes?.get("agent")?.let { String(it) } ?: ""
-                        val preloginAttr = attributes?.get("prelogin")?.let { String(it) } ?: ""
-                        val isServiceOnly = preloginAttr.equals("true", ignoreCase = true)
-                                || agentAttr.contains("prelogin", ignoreCase = true)
-                        Log.d(discoveryTag, "TXT: agent=$agentAttr, prelogin=$preloginAttr, isServiceOnly=$isServiceOnly")
-                        
-                        CoroutineScope(Dispatchers.IO).launch {
-                            val device = Device(
-                                id = UUID.nameUUIDFromBytes(serviceName.toByteArray()).toString(),
-                                name = serviceName,
-                                ipAddress = host.hostAddress ?: "",
-                                port = port,
-                                status = DeviceStatus.ONLINE,
-                                isServiceOnly = isServiceOnly
-                            )
-                            deviceRepository.addOrUpdateDevice(device)
-                        }
-                    }
-                })
+    /**
+     * Creates a fresh DiscoveryListener each time discovery starts.
+     * Android's NsdManager does not allow re-registering a stopped listener instance.
+     */
+    private fun createDiscoveryListener(): NsdManager.DiscoveryListener {
+        return object : NsdManager.DiscoveryListener {
+            override fun onDiscoveryStarted(regType: String) {
+                Log.d(discoveryTag, "Service discovery started")
             }
-        }
 
-        override fun onServiceLost(service: NsdServiceInfo) {
-            Log.e(discoveryTag, "service lost: $service")
-            // Mark as offline
-             CoroutineScope(Dispatchers.IO).launch {
-                  val id = UUID.nameUUIDFromBytes(service.serviceName.toByteArray()).toString()
-                  val existing = deviceRepository.getDeviceById(id)
-                  if (existing != null) {
-                      deviceRepository.addOrUpdateDevice(existing.copy(status = DeviceStatus.OFFLINE))
-                  }
-             }
-        }
+            override fun onServiceFound(service: NsdServiceInfo) {
+                Log.d(discoveryTag, "Service discovery success: $service")
+                if (service.serviceType.contains("_myautomation")) {
+                    resolveServiceWithRetry(service, attempt = 0)
+                }
+            }
 
-        override fun onDiscoveryStopped(serviceType: String) {
-            Log.i(discoveryTag, "Discovery stopped: $serviceType")
-        }
+            override fun onServiceLost(service: NsdServiceInfo) {
+                Log.e(discoveryTag, "service lost: $service")
+                // Mark as offline
+                CoroutineScope(Dispatchers.IO).launch {
+                    val id = UUID.nameUUIDFromBytes(service.serviceName.toByteArray()).toString()
+                    val existing = deviceRepository.getDeviceById(id)
+                    if (existing != null) {
+                        deviceRepository.addOrUpdateDevice(existing.copy(status = DeviceStatus.OFFLINE))
+                    }
+                }
+            }
 
-        override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
-            Log.e(discoveryTag, "Discovery failed: Error code:$errorCode")
-            nsdManager.stopServiceDiscovery(this)
-        }
+            override fun onDiscoveryStopped(serviceType: String) {
+                Log.i(discoveryTag, "Discovery stopped: $serviceType")
+                isDiscovering = false
+            }
 
-        override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {
-            Log.e(discoveryTag, "Discovery failed: Error code:$errorCode")
-            nsdManager.stopServiceDiscovery(this)
+            override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
+                Log.e(discoveryTag, "Discovery failed: Error code:$errorCode")
+                isDiscovering = false
+                try {
+                    nsdManager.stopServiceDiscovery(this)
+                } catch (_: Exception) { }
+            }
+
+            override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {
+                Log.e(discoveryTag, "Discovery failed: Error code:$errorCode")
+                isDiscovering = false
+                try {
+                    nsdManager.stopServiceDiscovery(this)
+                } catch (_: Exception) { }
+            }
         }
     }
 
+    /**
+     * Resolves a discovered service, retrying up to [maxResolveRetries] times on
+     * FAILURE_ALREADY_ACTIVE (error code 3) with a short delay between attempts.
+     */
+    private fun resolveServiceWithRetry(service: NsdServiceInfo, attempt: Int) {
+        nsdManager.resolveService(service, object : NsdManager.ResolveListener {
+            override fun onResolveFailed(serviceInfo: NsdServiceInfo, errorCode: Int) {
+                if (errorCode == 3 && attempt < maxResolveRetries) {
+                    // FAILURE_ALREADY_ACTIVE — retry after a short delay
+                    Log.w(discoveryTag, "Resolve failed (ALREADY_ACTIVE), retrying (${attempt + 1}/$maxResolveRetries)...")
+                    CoroutineScope(Dispatchers.IO).launch {
+                        delay(500L * (attempt + 1))
+                        resolveServiceWithRetry(service, attempt + 1)
+                    }
+                } else {
+                    Log.e(discoveryTag, "Resolve failed: errorCode=$errorCode, attempts=${attempt + 1}")
+                }
+            }
+
+            override fun onServiceResolved(serviceInfo: NsdServiceInfo) {
+                Log.d(discoveryTag, "Resolve Succeeded. $serviceInfo")
+
+                val host = serviceInfo.host
+                val port = serviceInfo.port
+                val serviceName = serviceInfo.serviceName
+
+                // Read mDNS TXT attributes to distinguish full agent from background service
+                val attributes = serviceInfo.attributes
+                val agentAttr = attributes?.get("agent")?.let { String(it) } ?: ""
+                val preloginAttr = attributes?.get("prelogin")?.let { String(it) } ?: ""
+                val isServiceOnly = preloginAttr.equals("true", ignoreCase = true)
+                        || agentAttr.contains("prelogin", ignoreCase = true)
+                Log.d(discoveryTag, "TXT: agent=$agentAttr, prelogin=$preloginAttr, isServiceOnly=$isServiceOnly")
+
+                CoroutineScope(Dispatchers.IO).launch {
+                    val device = Device(
+                        id = UUID.nameUUIDFromBytes(serviceName.toByteArray()).toString(),
+                        name = serviceName,
+                        ipAddress = host.hostAddress ?: "",
+                        port = port,
+                        status = DeviceStatus.ONLINE,
+                        isServiceOnly = isServiceOnly
+                    )
+                    deviceRepository.addOrUpdateDevice(device)
+                }
+            }
+        })
+    }
+
     fun startDiscovery() {
+        if (isDiscovering) {
+            Log.d(discoveryTag, "Discovery already active, skipping start")
+            return
+        }
         try {
-            nsdManager.discoverServices(serviceType, NsdManager.PROTOCOL_DNS_SD, discoveryListener)
+            val listener = createDiscoveryListener()
+            activeDiscoveryListener = listener
+            nsdManager.discoverServices(serviceType, NsdManager.PROTOCOL_DNS_SD, listener)
+            isDiscovering = true
         } catch (e: Exception) {
             Log.e(discoveryTag, "Failed to start discovery", e)
+            isDiscovering = false
         }
     }
 
     fun stopDiscovery() {
+        val listener = activeDiscoveryListener ?: return
         try {
-            nsdManager.stopServiceDiscovery(discoveryListener)
+            nsdManager.stopServiceDiscovery(listener)
         } catch (e: Exception) {
             Log.e(discoveryTag, "Failed to stop discovery", e)
         }
+        activeDiscoveryListener = null
+        isDiscovering = false
     }
 }
+

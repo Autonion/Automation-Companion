@@ -1,7 +1,9 @@
 package com.autonion.automationcompanion.features.cross_device_automation.data
 
+import android.util.Log
 import com.autonion.automationcompanion.features.cross_device_automation.domain.Device
 import com.autonion.automationcompanion.features.cross_device_automation.domain.DeviceRepository
+import com.autonion.automationcompanion.features.cross_device_automation.domain.DeviceStatus
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -36,13 +38,31 @@ class InMemoryDeviceRepository : DeviceRepository {
                 )
                 mutableList
             } else {
-                // Auto-select if this is the first and only device
-                val updatedDevice = if (currentList.isEmpty()) {
-                    device.copy(isSelected = true)
-                } else {
-                    device
+                // Deduplicate by IP:port — same network address but different id
+                val ipPortIndex = currentList.indexOfFirst {
+                    it.ipAddress == device.ipAddress && it.port == device.port && it.ipAddress.isNotEmpty()
                 }
-                currentList + updatedDevice
+                if (ipPortIndex >= 0) {
+                    val existing = currentList[ipPortIndex]
+                    val mutableList = currentList.toMutableList()
+                    Log.d("InMemoryDeviceRepo", "Merging device by IP:port (old id=${existing.id}, new id=${device.id})")
+                    mutableList[ipPortIndex] = device.copy(
+                        role = existing.role,
+                        isSelected = existing.isSelected,
+                        agentId = existing.agentId,
+                        isPaired = existing.isPaired,
+                        isPairingRequired = existing.isPairingRequired
+                    )
+                    mutableList
+                } else {
+                    // Auto-select if this is the first and only device
+                    val updatedDevice = if (currentList.isEmpty()) {
+                        device.copy(isSelected = true)
+                    } else {
+                        device
+                    }
+                    currentList + updatedDevice
+                }
             }
         }
     }
@@ -74,6 +94,12 @@ class InMemoryDeviceRepository : DeviceRepository {
     override suspend fun deselectAllDevices() {
         _devices.update { currentList ->
             currentList.map { it.copy(isSelected = false) }
+        }
+    }
+
+    override suspend fun markAllDevicesOffline() {
+        _devices.update { currentList ->
+            currentList.map { it.copy(status = DeviceStatus.OFFLINE) }
         }
     }
 

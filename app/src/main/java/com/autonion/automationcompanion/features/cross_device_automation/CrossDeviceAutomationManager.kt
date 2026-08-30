@@ -184,10 +184,10 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
         hostManager.stopDiscovery()
         networkingManager.stop()
         releaseLocks()
-        // Clear all devices from memory and state so UI and repo reflect that discovery is stopped
+        // Mark all devices offline and deselect — preserves pairing state for reconnection
         scope.launch {
             deviceRepository.deselectAllDevices()
-            deviceRepository.clearAllDevices()
+            deviceRepository.markAllDevicesOffline()
         }
         _compatibilityWarning.value = null
         _activePairingDevice.value = null
