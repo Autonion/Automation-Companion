@@ -54,7 +54,8 @@ class VisionEditorViewModel(application: Application) : AndroidViewModel(applica
         val rect: Rect,
         val color: Int,
         var action: VisionAction = VisionAction.Click,
-        val sourceCapturePath: String? = null  // Which capture page this region belongs to
+        val sourceCapturePath: String? = null,  // Which capture page this region belongs to
+        val matchThreshold: Float = 0.75f
     )
 
     private val _regions = MutableStateFlow<List<TempRegion>>(emptyList())
@@ -76,7 +77,7 @@ class VisionEditorViewModel(application: Application) : AndroidViewModel(applica
     private var appendPresetId: String? = null
     private var loadedPresetName: String? = null
 
-    private val _executionMode = MutableStateFlow(ExecutionMode.MANDATORY_SEQUENTIAL)
+    private val _executionMode = MutableStateFlow(ExecutionMode.DETECT_ONLY)
     val executionMode = _executionMode.asStateFlow()
 
     // All regions across all pages (for saving)
@@ -128,7 +129,8 @@ class VisionEditorViewModel(application: Application) : AndroidViewModel(applica
                     rect = region.toRect(),
                     color = region.color,
                     action = region.action,
-                    sourceCapturePath = region.sourceCapturePath
+                    sourceCapturePath = region.sourceCapturePath,
+                    matchThreshold = region.matchThreshold
                 )
             }
             allRegions.clear()
@@ -255,15 +257,20 @@ class VisionEditorViewModel(application: Application) : AndroidViewModel(applica
                 _displayBitmap.value = display
 
                 // Restore regions
-                _regions.value = preset.regions.map { region ->
+                _executionMode.value = preset.executionMode
+                val tempRegions = preset.regions.map { region ->
                     TempRegion(
                         id = region.id,
                         rect = region.toRect(),
                         color = region.color,
                         action = region.action,
-                        sourceCapturePath = region.sourceCapturePath
+                        sourceCapturePath = region.sourceCapturePath,
+                        matchThreshold = region.matchThreshold
                     )
                 }
+                allRegions.clear()
+                allRegions.addAll(tempRegions)
+                _regions.value = tempRegions
 
                 withContext(Dispatchers.Main) { onResult(true) }
             } catch (e: Exception) {
@@ -291,6 +298,16 @@ class VisionEditorViewModel(application: Application) : AndroidViewModel(applica
         val index = currentList.indexOfFirst { it.id == id }
         if (index != -1) {
             currentList[index] = currentList[index].copy(action = action)
+            _regions.value = currentList
+        }
+    }
+
+    fun updateRegionThreshold(id: Int, threshold: Float) {
+        val boundedThreshold = threshold.coerceIn(0.5f, 1.0f)
+        val currentList = _regions.value.toMutableList()
+        val index = currentList.indexOfFirst { it.id == id }
+        if (index != -1) {
+            currentList[index] = currentList[index].copy(matchThreshold = boundedThreshold)
             _regions.value = currentList
         }
     }
@@ -385,7 +402,8 @@ class VisionEditorViewModel(application: Application) : AndroidViewModel(applica
                                 templatePath = templateFile.absolutePath,
                                 action = temp.action,
                                 color = temp.color,
-                                sourceCapturePath = appendCaptureFile.absolutePath
+                                sourceCapturePath = appendCaptureFile.absolutePath,
+                                matchThreshold = temp.matchThreshold
                             )
                         }
 
@@ -430,7 +448,8 @@ class VisionEditorViewModel(application: Application) : AndroidViewModel(applica
                             templatePath = templateFile.absolutePath,
                             action = temp.action,
                             color = temp.color,
-                            sourceCapturePath = temp.sourceCapturePath
+                            sourceCapturePath = temp.sourceCapturePath,
+                            matchThreshold = temp.matchThreshold
                         )
                     }
 
@@ -473,7 +492,8 @@ class VisionEditorViewModel(application: Application) : AndroidViewModel(applica
                         templatePath = templateFile.absolutePath,
                         action = temp.action,
                         color = temp.color,
-                        sourceCapturePath = captureFile.absolutePath
+                        sourceCapturePath = captureFile.absolutePath,
+                        matchThreshold = temp.matchThreshold
                     )
                 }
 
@@ -531,7 +551,8 @@ class VisionEditorViewModel(application: Application) : AndroidViewModel(applica
                         templatePath = templateFile.absolutePath,
                         action = temp.action,
                         color = temp.color,
-                        sourceCapturePath = captureFile.absolutePath
+                        sourceCapturePath = captureFile.absolutePath,
+                        matchThreshold = temp.matchThreshold
                     )
                 }
 

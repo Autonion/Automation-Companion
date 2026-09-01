@@ -13,9 +13,9 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import kotlinx.coroutines.channels.BufferOverflow
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.receiveAsFlow
 
 class VisionMediaProjection(
     private val context: Context,
@@ -30,11 +30,14 @@ class VisionMediaProjection(
     @Volatile
     private var stoppedByUser = false
     
-    private val _screenCaptureFlow = MutableSharedFlow<Bitmap>(
-        replay = 1, 
-        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    private val screenCaptureChannel = Channel<Bitmap>(
+        capacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+        onUndeliveredElement = { bitmap ->
+            if (!bitmap.isRecycled) bitmap.recycle()
+        }
     )
-    val screenCaptureFlow: SharedFlow<Bitmap> = _screenCaptureFlow.asSharedFlow()
+    val screenCaptureFlow: Flow<Bitmap> = screenCaptureChannel.receiveAsFlow()
 
     fun startProjection(resultCode: Int, data: Intent, width: Int, height: Int, density: Int) {
         stoppedByUser = false
@@ -88,11 +91,13 @@ class VisionMediaProjection(
                         bitmap
                     } else {
                         val cropped = Bitmap.createBitmap(bitmap, 0, 0, width, height)
-                        // bitmap.recycle() // Don't recycle if createBitmap returns same instance, but here it returns new
+                        bitmap.recycle() // Safe: createBitmap returned a new instance when cropping
                         cropped
                     }
 
-                    _screenCaptureFlow.tryEmit(finalBitmap)
+                    if (screenCaptureChannel.trySend(finalBitmap).isFailure && !finalBitmap.isRecycled) {
+                        finalBitmap.recycle()
+                    }
                 } catch (e: Exception) {
                     Log.e("VisionProjection", "Error converting image", e)
                 } finally {
@@ -106,6 +111,7 @@ class VisionMediaProjection(
     private fun releaseResources() {
         virtualDisplay?.release()
         imageReader?.close()
+        screenCaptureChannel.close()
         virtualDisplay = null
         imageReader = null
     }

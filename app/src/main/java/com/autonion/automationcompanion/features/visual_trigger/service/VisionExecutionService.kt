@@ -40,6 +40,8 @@ class VisionExecutionService : Service() {
         private const val TAG = "VisionExecution"
         private const val CHANNEL_ID = "vision_execution_channel"
         private const val NOTIFICATION_ID = 1002
+        private const val STUCK_FULLSCREEN_FALLBACK_MS = 10_000L  // 10s → fallback to full-screen search
+        private const val STUCK_RESTART_MS = 30_000L               // 30s → restart sequence from step 0
     }
 
     private val job = SupervisorJob()
@@ -249,13 +251,21 @@ class VisionExecutionService : Service() {
             Log.d(TAG, "▶ Starting execution: '${activePreset?.name}', ${activePreset?.regions?.size} regions, mode=${activePreset?.executionMode}")
             DebugLogger.info(applicationContext, LogCategory.VISUAL_TRIGGER, "Execution Started", "Preset: '${activePreset?.name}', ${activePreset?.regions?.size} regions, mode=${activePreset?.executionMode}", TAG)
 
-            VisionNativeBridge.nativeClearTemplates()
+            VisionNativeBridge.clearTemplates()
 
             activePreset?.regions?.forEach { region ->
                 val bitmap = android.graphics.BitmapFactory.decodeFile(region.templatePath)
                 if (bitmap != null) {
-                    Log.d(TAG, "  ✓ Template ID=${region.id}: ${bitmap.width}x${bitmap.height}")
-                    VisionNativeBridge.addTemplate(region.id, bitmap)
+                    try {
+                        Log.d(TAG, "  ✓ Template ID=${region.id}: ${bitmap.width}x${bitmap.height}, ROI=(${region.x},${region.y},${region.width},${region.height}), threshold=${region.matchThreshold}")
+                        VisionNativeBridge.addTemplate(
+                            region.id, bitmap,
+                            region.x, region.y, region.width, region.height,
+                            region.matchThreshold
+                        )
+                    } finally {
+                        bitmap.recycle()
+                    }
                 } else {
                     Log.e(TAG, "  ✗ Failed to decode template: ${region.templatePath}")
                     DebugLogger.warning(applicationContext, LogCategory.VISUAL_TRIGGER, "Template Decode Failed", "Path: ${region.templatePath}", TAG)
@@ -288,18 +298,35 @@ class VisionExecutionService : Service() {
             }
 
             var frameCount = 0
+            val targetCycleMs = 400L  // Target ~2.5 fps scanning
+            var previousBitmap: Bitmap? = null
 
-            visionProjection?.screenCaptureFlow?.collect { bitmap ->
-                frameCount++
-                if (!isPaused && isRunning) {
-                    if (frameCount <= 5 || frameCount % 20 == 0) {
-                        Log.d(TAG, "Frame #$frameCount: ${bitmap.width}x${bitmap.height}")
+            try {
+                visionProjection?.screenCaptureFlow?.collect { bitmap ->
+                    // Consumer-side recycle: recycle the previous bitmap after
+                    // processFrame has returned and bitmap_to_mat deep-copied it.
+                    previousBitmap?.let { if (!it.isRecycled) it.recycle() }
+                    previousBitmap = bitmap
+
+                    frameCount++
+                    if (!isPaused && isRunning) {
+                        if (frameCount <= 5 || frameCount % 20 == 0) {
+                            Log.d(TAG, "Frame #$frameCount: ${bitmap.width}x${bitmap.height}")
+                        }
+                        val matchStart = System.currentTimeMillis()
+                        processFrame(bitmap)
+                        val elapsed = System.currentTimeMillis() - matchStart
+                        val sleepMs = (targetCycleMs - elapsed).coerceAtLeast(50L)
+                        delay(sleepMs)
+                    } else if (isPaused && frameCount % 50 == 0) {
+                        Log.d(TAG, "Skipping frame #$frameCount (paused)")
+                        delay(targetCycleMs)
+                    } else {
+                        delay(targetCycleMs)
                     }
-                    processFrame(bitmap)
-                } else if (isPaused && frameCount % 50 == 0) {
-                    Log.d(TAG, "Skipping frame #$frameCount (paused)")
                 }
-                delay(500)
+            } finally {
+                previousBitmap?.let { if (!it.isRecycled) it.recycle() }
             }
         }
     }
@@ -327,7 +354,7 @@ class VisionExecutionService : Service() {
                 ExecutionMode.DETECT_ONLY -> {
                     val matches = results.filter { it.matched }
                     if (matches.isEmpty()) {
-                        Log.d(TAG, "  No matches above threshold (need score≥0.75)")
+                        Log.d(TAG, "  No matches above configured thresholds")
                     }
                     matches.forEach { match ->
                         val region = preset.regions.find { it.id == match.id }
@@ -355,6 +382,10 @@ class VisionExecutionService : Service() {
 
     private var currentStepIndex = 0
     private var lastActionTime = 0L
+    private var stepStuckSince = 0L              // When current step first failed to match
+    private var fullscreenFallbackRequested = false  // Trigger native full-screen search for stuck step
+
+
 
     private suspend fun handleSequentialExecution(
         preset: VisionPreset,
@@ -365,6 +396,8 @@ class VisionExecutionService : Service() {
 
         if (currentStepIndex >= preset.regions.size) {
             currentStepIndex = 0
+            stepStuckSince = 0L
+            fullscreenFallbackRequested = false
             return
         }
 
@@ -377,11 +410,40 @@ class VisionExecutionService : Service() {
             if (success) {
                 currentStepIndex++
                 lastActionTime = System.currentTimeMillis()
+                stepStuckSince = 0L
+                fullscreenFallbackRequested = false
             }
         } else if (skipOnMiss) {
             Log.d(TAG, "Sequential step $currentStepIndex not matched: ID ${targetRegion.id}, skipping (Optional Sequential)")
             currentStepIndex++
             lastActionTime = System.currentTimeMillis()
+            stepStuckSince = 0L
+            fullscreenFallbackRequested = false
+        } else {
+            // MANDATORY_SEQUENTIAL: step didn't match — track how long it's been stuck
+            val now = System.currentTimeMillis()
+            if (stepStuckSince == 0L) {
+                stepStuckSince = now
+            }
+            val stuckDuration = now - stepStuckSince
+
+            if (stuckDuration >= STUCK_RESTART_MS) {
+                // Phase 2: 30s stuck → restart the entire sequence
+                Log.w(TAG, "Step $currentStepIndex (region ID=${targetRegion.id}) stuck for ${stuckDuration}ms — restarting sequence")
+                DebugLogger.warning(applicationContext, LogCategory.VISUAL_TRIGGER,
+                    "Step Timeout",
+                    "Step $currentStepIndex (region ID=${targetRegion.id}) stuck for 30s — restarting sequence from beginning", TAG)
+                currentStepIndex = 0
+                stepStuckSince = 0L
+                fullscreenFallbackRequested = false
+            } else if (stuckDuration >= STUCK_FULLSCREEN_FALLBACK_MS && !fullscreenFallbackRequested) {
+                VisionNativeBridge.requestFullscreenSearch(targetRegion.id)
+                Log.w(TAG, "Step $currentStepIndex (region ID=${targetRegion.id}) stuck for ${stuckDuration}ms — requested full-screen search")
+                DebugLogger.warning(applicationContext, LogCategory.VISUAL_TRIGGER,
+                    "Step Stuck",
+                    "Step $currentStepIndex (region ID=${targetRegion.id}) hasn't matched for 10s. Full-screen search requested.", TAG)
+                fullscreenFallbackRequested = true
+            }
         }
     }
 

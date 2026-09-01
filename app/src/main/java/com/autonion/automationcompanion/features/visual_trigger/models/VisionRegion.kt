@@ -13,7 +13,8 @@ data class VisionRegion(
     val templatePath: String,
     val action: VisionAction = VisionAction.Click,
     val color: Int,
-    val sourceCapturePath: String? = null  // Which screenshot this region was drawn on
+    val sourceCapturePath: String? = null,  // Which screenshot this region was drawn on
+    val matchThreshold: Float = 0.75f       // Per-region match threshold (0.5–1.0)
 ) {
     // Helper to convert to Android Rect
     fun toRect(): Rect = Rect(x, y, x + width, y + height)
@@ -25,7 +26,8 @@ data class VisionRegion(
             templatePath: String,
             action: VisionAction,
             color: Int,
-            sourceCapturePath: String? = null
+            sourceCapturePath: String? = null,
+            matchThreshold: Float = 0.75f
         ): VisionRegion {
             return VisionRegion(
                 id = id,
@@ -36,7 +38,8 @@ data class VisionRegion(
                 templatePath = templatePath,
                 action = action,
                 color = color,
-                sourceCapturePath = sourceCapturePath
+                sourceCapturePath = sourceCapturePath,
+                matchThreshold = matchThreshold
             )
         }
     }

@@ -749,6 +749,28 @@ fun VisionEditorScreen(
 
                     Spacer(modifier = Modifier.height(4.dp))
 
+                    Text(
+                        text = "Match threshold: ${String.format("%.2f", region.matchThreshold)}",
+                        color = Color.White.copy(alpha = 0.7f),
+                        fontSize = 13.sp
+                    )
+                    Slider(
+                        value = region.matchThreshold,
+                        onValueChange = { value ->
+                            val snapped = (Math.round(value * 20f) / 20f).coerceIn(0.5f, 1.0f)
+                            viewModel.updateRegionThreshold(region.id, snapped)
+                            dialogRegion = dialogRegion!!.copy(matchThreshold = snapped)
+                        },
+                        valueRange = 0.5f..1.0f,
+                        steps = 9,
+                        colors = SliderDefaults.colors(
+                            thumbColor = Color(0xFF00C853),
+                            activeTrackColor = Color(0xFF00C853)
+                        )
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
                     Surface(
                         onClick = { showDeleteConfirm = true },
                         shape = RoundedCornerShape(12.dp),

@@ -55,8 +55,16 @@ class VisualTriggerNodeExecutor(
             // 3. Load template into the native bridge with a unique ID
             // Use hashCode as integer ID for the native bridge
             val templateId = vtNode.id.hashCode()
-            VisionNativeBridge.nativeClearTemplates()
-            VisionNativeBridge.addTemplate(templateId, templateBitmap)
+            VisionNativeBridge.clearTemplates()
+            VisionNativeBridge.addTemplate(
+                templateId,
+                templateBitmap,
+                vtNode.searchRegionX,
+                vtNode.searchRegionY,
+                vtNode.searchRegionWidth,
+                vtNode.searchRegionHeight,
+                vtNode.threshold
+            )
 
             // 4. Run native template matching
             val results = VisionNativeBridge.match(screenBitmap)
@@ -64,7 +72,7 @@ class VisualTriggerNodeExecutor(
             // 5. Find our template result
             val match = results.firstOrNull { it.id == templateId }
 
-            if (match != null && match.matched && match.score >= vtNode.threshold) {
+            if (match != null && match.matched) {
                 Log.d(TAG, "  ✓ Match found: score=${match.score}, at=(${match.x},${match.y}), size=${match.width}x${match.height}")
 
                 // Write match coordinates to FlowContext
@@ -88,8 +96,8 @@ class VisualTriggerNodeExecutor(
             }
         } finally {
             templateBitmap.recycle()
-            // Don't recycle screenBitmap — it's managed by the VisionMediaProjection flow
-            VisionNativeBridge.nativeClearTemplates()
+            screenBitmap.recycle()
+            VisionNativeBridge.clearTemplates()
         }
     }
 
@@ -120,12 +128,12 @@ class VisualTriggerNodeExecutor(
                 }
                 
                 try {
-                    VisionNativeBridge.nativeClearTemplates()
-                    VisionNativeBridge.addTemplate(region.id, templateBitmap)
+                    VisionNativeBridge.clearTemplates()
+                    VisionNativeBridge.addTemplate(region.id, templateBitmap, region.x, region.y, region.width, region.height, region.matchThreshold)
                     val results = VisionNativeBridge.match(screenBitmap)
                     val match = results.firstOrNull { it.id == region.id }
                     
-                    if (match != null && match.matched && match.score >= node.threshold) {
+                    if (match != null && match.matched) {
                         val cx = match.x + match.width / 2f
                         val cy = match.y + match.height / 2f
                         Log.d(TAG, "Region ${region.id} matched at ($cx, $cy) score: ${match.score}")
@@ -139,19 +147,16 @@ class VisualTriggerNodeExecutor(
                         context.put("${node.outputContextKey}_score", match.score)
                         context.put(node.outputContextKey, "${cx},${cy}")
                         
-                        if (preset.executionMode != ExecutionMode.DETECT_ONLY) {
-                            val success = VisionActionExecutor.execute(region.action, android.graphics.PointF(cx, cy))
-                            if (!success) {
-                                Log.w(TAG, "Failed to execute action for region ${region.id}")
-                            }
-                        } else {
-                            Log.d(TAG, "DETECT_ONLY mode: Skipping action execution for region ${region.id}")
+                        val success = VisionActionExecutor.execute(region.action, android.graphics.PointF(cx, cy))
+                        if (!success) {
+                            Log.w(TAG, "Failed to execute action for region ${region.id}")
                         }
                         
                         // Add delay to let UI settle before next region
                         kotlinx.coroutines.delay(500)
                     } else {
-                        Log.d(TAG, "Region ${region.id} not found above threshold")
+                        val score = match?.score ?: 0f
+                        Log.d(TAG, "Region ${region.id} not found above threshold (score=$score, need≥${region.matchThreshold})")
                         context.put("${node.outputContextKey}_found", false)
                         
                         if (preset.executionMode == ExecutionMode.MANDATORY_SEQUENTIAL) {
@@ -161,7 +166,8 @@ class VisualTriggerNodeExecutor(
                     }
                 } finally {
                     templateBitmap.recycle()
-                    VisionNativeBridge.nativeClearTemplates()
+                    screenBitmap.recycle()
+                    VisionNativeBridge.clearTemplates()
                 }
             }
             

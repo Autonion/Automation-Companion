@@ -9,7 +9,7 @@ data class VisionPreset(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
     val regions: List<VisionRegion> = emptyList(),
-    val executionMode: ExecutionMode = ExecutionMode.MANDATORY_SEQUENTIAL,
+    val executionMode: ExecutionMode = ExecutionMode.DETECT_ONLY,
     val isActive: Boolean = false,
     val captureImagePath: String? = null
 )
