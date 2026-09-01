@@ -1,7 +1,9 @@
 package com.autonion.automationcompanion.features.visual_trigger.ui
 
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
+import com.autonion.automationcompanion.core.util.BitmapUtils
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -57,6 +59,12 @@ fun VisionPresetDetailSheet(
     val isDark = isSystemInDarkTheme()
     val primary = MaterialTheme.colorScheme.primary
 
+    // Screen metrics for downsampling targets
+    val screenWidthPx = with(LocalDensity.current) {
+        LocalConfiguration.current.screenWidthDp.dp.roundToPx()
+    }
+    val dp300Px = with(LocalDensity.current) { 300.dp.roundToPx() }
+
     // Load capture image + region crops asynchronously
     var captureBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var regionDetails by remember { mutableStateOf<List<RegionDetail>>(emptyList()) }
@@ -64,17 +72,17 @@ fun VisionPresetDetailSheet(
 
     LaunchedEffect(preset.id) {
         withContext(Dispatchers.IO) {
-            // Load main capture image
+            // Load main capture image (downsampled — display only)
             val capPath = preset.captureImagePath
             val capBmp = if (capPath != null && File(capPath).exists()) {
-                BitmapFactory.decodeFile(capPath)
+                BitmapUtils.decodeSampledBitmapFromFile(capPath, screenWidthPx, dp300Px)
             } else null
             captureBitmap = capBmp
 
-            // Load each region template crop
+            // Load each region template crop (downsampled — display only)
             val details = preset.regions.mapIndexed { index, region ->
                 val bmp = if (File(region.templatePath).exists()) {
-                    BitmapFactory.decodeFile(region.templatePath)
+                    BitmapUtils.decodeSampledBitmapFromFile(region.templatePath, 400, 400)
                 } else null
                 RegionDetail(region, bmp, index)
             }

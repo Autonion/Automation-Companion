@@ -3,6 +3,7 @@ package com.autonion.automationcompanion.features.visual_trigger.ui
 import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import com.autonion.automationcompanion.core.util.BitmapUtils
 import android.graphics.Rect
 import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
@@ -25,8 +26,28 @@ import java.util.UUID
 class VisionEditorViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = VisionRepository(application.applicationContext)
 
-    private val _imageBitmap = MutableStateFlow<Bitmap?>(null)
-    val imageBitmap = _imageBitmap.asStateFlow()
+    // Display metrics for downsampling targets
+    private val displayWidth: Int
+    private val displayHeight: Int
+    init {
+        val metrics = application.resources.displayMetrics
+        displayWidth = metrics.widthPixels
+        displayHeight = metrics.heightPixels
+    }
+
+    // Full resolution — used by savePreset()/saveForFlowMode() for cropping
+    private val _fullResBitmap = MutableStateFlow<Bitmap?>(null)
+
+    // Full-res dimensions — exposed so VisionEditorScreen can compute
+    // region rects in full-res coordinate space regardless of what's displayed
+    private val _fullResWidth = MutableStateFlow(0)
+    val fullResWidth = _fullResWidth.asStateFlow()
+    private val _fullResHeight = MutableStateFlow(0)
+    val fullResHeight = _fullResHeight.asStateFlow()
+
+    // Downsampled — used by Compose UI for display only
+    private val _displayBitmap = MutableStateFlow<Bitmap?>(null)
+    val imageBitmap = _displayBitmap.asStateFlow()
 
     data class TempRegion(
         val id: Int,
@@ -64,10 +85,15 @@ class VisionEditorViewModel(application: Application) : AndroidViewModel(applica
     fun loadImage(path: String) {
         currentImagePath = path
         viewModelScope.launch {
-            val bitmap = withContext(Dispatchers.IO) {
-                BitmapFactory.decodeFile(path)
+            val (fullRes, display) = withContext(Dispatchers.IO) {
+                val full = BitmapFactory.decodeFile(path)
+                val sampled = BitmapUtils.decodeSampledBitmapFromFile(path, displayWidth, displayHeight)
+                full to sampled
             }
-            _imageBitmap.value = bitmap
+            _fullResBitmap.value = fullRes
+            _fullResWidth.value = fullRes?.width ?: 0
+            _fullResHeight.value = fullRes?.height ?: 0
+            _displayBitmap.value = display
         }
     }
 
@@ -154,10 +180,15 @@ class VisionEditorViewModel(application: Application) : AndroidViewModel(applica
         currentImagePath = pagePath
 
         viewModelScope.launch {
-            val bitmap = withContext(Dispatchers.IO) {
-                BitmapFactory.decodeFile(pagePath)
+            val (fullRes, display) = withContext(Dispatchers.IO) {
+                val full = BitmapFactory.decodeFile(pagePath)
+                val sampled = BitmapUtils.decodeSampledBitmapFromFile(pagePath, displayWidth, displayHeight)
+                full to sampled
             }
-            _imageBitmap.value = bitmap
+            _fullResBitmap.value = fullRes
+            _fullResWidth.value = fullRes?.width ?: 0
+            _fullResHeight.value = fullRes?.height ?: 0
+            _displayBitmap.value = display
 
             // Show only regions belonging to this page
             val defaultCapturePath = if (pages.size == 1) pagePath else null
@@ -213,10 +244,15 @@ class VisionEditorViewModel(application: Application) : AndroidViewModel(applica
                 }
 
                 currentImagePath = capturePath
-                val bitmap = withContext(Dispatchers.IO) {
-                    BitmapFactory.decodeFile(capturePath)
+                val (fullRes, display) = withContext(Dispatchers.IO) {
+                    val full = BitmapFactory.decodeFile(capturePath)
+                    val sampled = BitmapUtils.decodeSampledBitmapFromFile(capturePath, displayWidth, displayHeight)
+                    full to sampled
                 }
-                _imageBitmap.value = bitmap
+                _fullResBitmap.value = fullRes
+                _fullResWidth.value = fullRes?.width ?: 0
+                _fullResHeight.value = fullRes?.height ?: 0
+                _displayBitmap.value = display
 
                 // Restore regions
                 _regions.value = preset.regions.map { region ->
@@ -295,7 +331,7 @@ class VisionEditorViewModel(application: Application) : AndroidViewModel(applica
     }
 
     fun savePreset(name: String, onComplete: (String) -> Unit) {
-        val bitmap = _imageBitmap.value ?: return
+        val bitmap = _fullResBitmap.value ?: return
         if (currentImagePath == null) return
         val normalizedName = if (editingPresetId != null && name == "New Automation") {
             loadedPresetName?.trim().orEmpty()
@@ -463,7 +499,7 @@ class VisionEditorViewModel(application: Application) : AndroidViewModel(applica
      * without permanent DB storage.
      */
     fun saveForFlowMode(flowNodeId: String, onComplete: (String) -> Unit) {
-        val bitmap = _imageBitmap.value ?: return
+        val bitmap = _fullResBitmap.value ?: return
         if (currentImagePath == null) return
 
         viewModelScope.launch {
@@ -518,5 +554,13 @@ class VisionEditorViewModel(application: Application) : AndroidViewModel(applica
                 onComplete(tempFilePath)
             }
         }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        _fullResBitmap.value?.recycle()
+        _fullResBitmap.value = null
+        _displayBitmap.value?.recycle()
+        _displayBitmap.value = null
     }
 }

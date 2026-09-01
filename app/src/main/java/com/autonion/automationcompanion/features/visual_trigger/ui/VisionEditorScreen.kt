@@ -90,6 +90,8 @@ fun VisionEditorScreen(
     }
 
     val bitmap by viewModel.imageBitmap.collectAsState()
+    val fullResWidth by viewModel.fullResWidth.collectAsState()
+    val fullResHeight by viewModel.fullResHeight.collectAsState()
     val regions by viewModel.regions.collectAsState()
     val executionMode by viewModel.executionMode.collectAsState()
     val capturePages by viewModel.capturePages.collectAsState()
@@ -135,8 +137,8 @@ fun VisionEditorScreen(
     ) {
         if (bitmap != null) {
             val imageBitmap = bitmap!!.asImageBitmap()
-            val imageWidth = bitmap!!.width
-            val imageHeight = bitmap!!.height
+            val imageWidth = fullResWidth    // coordinate space = full-res
+            val imageHeight = fullResHeight  // coordinate space = full-res
 
             Canvas(
                 modifier = Modifier
