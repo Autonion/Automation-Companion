@@ -3,6 +3,7 @@
 
 #include <jni.h>
 #include <condition_variable>
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <mutex>
@@ -17,7 +18,8 @@ bool bitmap_to_mat(JNIEnv *env, jobject bitmap, cv::Mat &dst);
 
 void vision_init();
 void vision_add_template(int id, const cv::Mat &templ, int roi_x, int roi_y,
-                         int roi_w, int roi_h, float threshold);
+                         int roi_w, int roi_h, float threshold,
+                         bool allow_fullscreen_fallback);
 void vision_clear_templates();
 void vision_destroy();
 void vision_request_fullscreen_search(int id);
@@ -36,6 +38,8 @@ struct TemplateData {
   cv::Rect roi;      // Expected screen location (from editor)
   float threshold;   // Per-region match threshold (default 0.75)
   int miss_count;    // Consecutive ROI misses (triggers fullscreen fallback)
+  int64_t last_fullscreen_search_ms;
+  bool allow_fullscreen_fallback;
   bool force_fullscreen_once;
 };
 
@@ -50,7 +54,7 @@ Java_com_autonion_automationcompanion_core_vision_VisionNativeBridge_nativeInit(
 JNIEXPORT void JNICALL
 Java_com_autonion_automationcompanion_core_vision_VisionNativeBridge_nativeAddTemplate(
     JNIEnv *env, jobject thiz, jint id, jobject bitmap, jint roiX, jint roiY,
-    jint roiW, jint roiH, jfloat threshold);
+    jint roiW, jint roiH, jfloat threshold, jboolean allowFullscreenFallback);
 
 JNIEXPORT void JNICALL
 Java_com_autonion_automationcompanion_core_vision_VisionNativeBridge_nativeClearTemplates(

@@ -3,6 +3,7 @@
 #include <android/log.h>
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <exception>
 #include <future>
 #include <mutex>
@@ -15,6 +16,59 @@
 
 std::map<int, TemplateData> g_templates;
 std::mutex g_mutex; // Protects g_templates from concurrent access
+
+static constexpr int ROI_MISSES_BEFORE_FULLSCREEN = 4;
+static constexpr int64_t FULLSCREEN_FALLBACK_COOLDOWN_MS = 5000;
+
+static int64_t monotonic_ms() {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+             std::chrono::steady_clock::now().time_since_epoch())
+      .count();
+}
+
+static bool auto_fullscreen_allowed(const TemplateData &tdata,
+                                    int64_t now_ms) {
+  bool has_roi = tdata.roi.width > 0 && tdata.roi.height > 0;
+  return has_roi && tdata.allow_fullscreen_fallback &&
+         tdata.miss_count >= ROI_MISSES_BEFORE_FULLSCREEN &&
+         now_ms - tdata.last_fullscreen_search_ms >=
+             FULLSCREEN_FALLBACK_COOLDOWN_MS;
+}
+
+static void limit_auto_fullscreen_fallbacks(
+    std::map<int, TemplateData> &templates_snapshot) {
+  int selected_id = -1;
+  int selected_miss_count = -1;
+  int64_t selected_last_fullscreen_ms = 0;
+  int64_t now_ms = monotonic_ms();
+
+  for (const auto &pair : templates_snapshot) {
+    const TemplateData &tdata = pair.second;
+    if (tdata.force_fullscreen_once ||
+        !auto_fullscreen_allowed(tdata, now_ms)) {
+      continue;
+    }
+
+    if (selected_id == -1 || tdata.miss_count > selected_miss_count ||
+        (tdata.miss_count == selected_miss_count &&
+         tdata.last_fullscreen_search_ms < selected_last_fullscreen_ms)) {
+      selected_id = pair.first;
+      selected_miss_count = tdata.miss_count;
+      selected_last_fullscreen_ms = tdata.last_fullscreen_search_ms;
+    }
+  }
+
+  if (selected_id == -1)
+    return;
+
+  for (auto &pair : templates_snapshot) {
+    TemplateData &tdata = pair.second;
+    if (!tdata.force_fullscreen_once &&
+        auto_fullscreen_allowed(tdata, now_ms) && pair.first != selected_id) {
+      tdata.allow_fullscreen_fallback = false;
+    }
+  }
+}
 
 // ── Thread pool ───────────────────────────────────────────────────────
 
@@ -132,7 +186,8 @@ void vision_init() {
 }
 
 void vision_add_template(int id, const cv::Mat &templ, int roi_x, int roi_y,
-                         int roi_w, int roi_h, float threshold) {
+                         int roi_w, int roi_h, float threshold,
+                         bool allow_fullscreen_fallback) {
   if (templ.empty())
     return;
   cv::Mat gray;
@@ -151,12 +206,16 @@ void vision_add_template(int id, const cv::Mat &templ, int roi_x, int roi_y,
                        ? std::max(0.5f, std::min(1.0f, threshold))
                        : 0.75f;
   data.miss_count = 0;
+  data.last_fullscreen_search_ms = 0;
+  data.allow_fullscreen_fallback = allow_fullscreen_fallback;
   data.force_fullscreen_once = false;
 
   std::lock_guard<std::mutex> lock(g_mutex);
   g_templates[id] = data;
-  LOGD("Added template ID=%d: %dx%d, ROI=(%d,%d,%d,%d), threshold=%.2f", id,
-       gray.cols, gray.rows, roi_x, roi_y, roi_w, roi_h, data.threshold);
+  LOGD("Added template ID=%d: %dx%d, ROI=(%d,%d,%d,%d), threshold=%.2f, "
+       "autoFullscreen=%s",
+       id, gray.cols, gray.rows, roi_x, roi_y, roi_w, roi_h, data.threshold,
+       data.allow_fullscreen_fallback ? "true" : "false");
 }
 
 void vision_clear_templates() {
@@ -204,14 +263,17 @@ static bool match_one(const cv::Mat &screen_gray, const TemplateData &tdata,
   const cv::Mat &templ_gray = tdata.templ;
 
   // ── Determine search region ──
-  // Use ROI if available and miss_count < 3; otherwise full screen
+  // Prefer ROI; full-screen recovery is reserved for explicit requests or
+  // repeated ROI misses after a cooldown.
   cv::Mat search_region;
   int offset_x = 0, offset_y = 0;
   bool using_roi = false;
 
   bool has_roi = tdata.roi.width > 0 && tdata.roi.height > 0;
+  int64_t now_ms = monotonic_ms();
+  bool auto_fullscreen_allowed_now = auto_fullscreen_allowed(tdata, now_ms);
   bool should_use_roi =
-      has_roi && tdata.miss_count < 3 && !tdata.force_fullscreen_once;
+      has_roi && !tdata.force_fullscreen_once && !auto_fullscreen_allowed_now;
 
   if (should_use_roi) {
     // Proportional padding: 25% of region dimensions, minimum 30px
@@ -242,8 +304,8 @@ static bool match_one(const cv::Mat &screen_gray, const TemplateData &tdata,
   } else {
     if (has_roi && tdata.force_fullscreen_once) {
       LOGD("ID=%d: forced full-screen search for stuck step", id);
-    } else if (has_roi && tdata.miss_count >= 3) {
-      LOGD("ID=%d: ROI miss #%d, falling back to full-screen search", id,
+    } else if (auto_fullscreen_allowed_now) {
+      LOGD("ID=%d: ROI miss #%d, running throttled full-screen fallback", id,
            tdata.miss_count);
     }
     search_region = screen_gray;
@@ -264,9 +326,9 @@ static bool match_one(const cv::Mat &screen_gray, const TemplateData &tdata,
   cv::Point best_loc;
   float best_scale = 1.0f;
 
-  // Reduced multi-scale: 3 scales instead of 7
   float scales[] = {1.0f, 0.95f, 1.05f};
-  int num_scales = 3;
+  int num_scales = using_roi && tdata.threshold <= 0.85f ? 1 : 3;
+  float early_exit_score = std::max(0.85f, tdata.threshold);
 
   for (int s = 0; s < num_scales; s++) {
     float scale = scales[s];
@@ -297,8 +359,8 @@ static bool match_one(const cv::Mat &screen_gray, const TemplateData &tdata,
       best_scale = scale;
     }
 
-    // Early exit on strong match at any scale (improved from s==0 && >0.90)
-    if (best_score >= 0.85f)
+    // Early exit on strong match without skipping higher user thresholds.
+    if (best_score >= early_exit_score)
       break;
   }
 
@@ -340,6 +402,7 @@ std::vector<MatchResult> vision_match_all(const cv::Mat &screen) {
       return results;
     templates_snapshot = g_templates; // Mat uses refcount, TemplateData is cheap
   }
+  limit_auto_fullscreen_fallbacks(templates_snapshot);
 
   LOGD("vision_match_all: screen=%dx%d ch=%d, templates=%zu", screen.cols,
        screen.rows, screen.channels(), templates_snapshot.size());
@@ -372,9 +435,13 @@ std::vector<MatchResult> vision_match_all(const cv::Mat &screen) {
 
     // Update miss count in global templates
     std::lock_guard<std::mutex> lock(g_mutex);
+    int64_t state_now_ms = monotonic_ms();
     auto git = g_templates.find(id);
     if (git != g_templates.end()) {
       git->second.force_fullscreen_once = false;
+      if (used_fullscreen) {
+        git->second.last_fullscreen_search_ms = state_now_ms;
+      }
       if (found) {
         git->second.miss_count = 0;
         git->second.roi = r;
@@ -424,10 +491,14 @@ std::vector<MatchResult> vision_match_all(const cv::Mat &screen) {
 
     // Update miss counts in global templates
     std::lock_guard<std::mutex> lock(g_mutex);
+    int64_t state_now_ms = monotonic_ms();
     for (const auto &res : results) {
       auto git = g_templates.find(res.id);
       if (git != g_templates.end()) {
         git->second.force_fullscreen_once = false;
+        if (res.used_fullscreen) {
+          git->second.last_fullscreen_search_ms = state_now_ms;
+        }
         if (res.matched) {
           git->second.miss_count = 0;
           git->second.roi = res.rect;
@@ -485,12 +556,13 @@ Java_com_autonion_automationcompanion_core_vision_VisionNativeBridge_nativeInit(
 JNIEXPORT void JNICALL
 Java_com_autonion_automationcompanion_core_vision_VisionNativeBridge_nativeAddTemplate(
     JNIEnv *env, jobject, jint id, jobject bitmap, jint roiX, jint roiY,
-    jint roiW, jint roiH, jfloat threshold) {
+    jint roiW, jint roiH, jfloat threshold, jboolean allowFullscreenFallback) {
   cv::Mat mat;
   if (!bitmap_to_mat(env, bitmap, mat))
     return;
   vision_add_template((int)id, mat, (int)roiX, (int)roiY, (int)roiW,
-                      (int)roiH, (float)threshold);
+                      (int)roiH, (float)threshold,
+                      allowFullscreenFallback == JNI_TRUE);
 }
 
 JNIEXPORT void JNICALL

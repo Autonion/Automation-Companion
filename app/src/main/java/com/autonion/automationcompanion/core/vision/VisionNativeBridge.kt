@@ -12,7 +12,16 @@ object VisionNativeBridge {
     private var initialized = false
 
     external fun nativeInit(): String
-    external fun nativeAddTemplate(id: Int, bitmap: Bitmap, roiX: Int, roiY: Int, roiW: Int, roiH: Int, threshold: Float)
+    external fun nativeAddTemplate(
+        id: Int,
+        bitmap: Bitmap,
+        roiX: Int,
+        roiY: Int,
+        roiW: Int,
+        roiH: Int,
+        threshold: Float,
+        allowFullscreenFallback: Boolean
+    )
     external fun nativeClearTemplates()
     external fun nativeDestroy()
     external fun nativeMatch(bitmap: Bitmap): Array<MatchResultNative>
@@ -34,9 +43,27 @@ object VisionNativeBridge {
     }
 
     @Synchronized
-    fun addTemplate(id: Int, bitmap: Bitmap, roiX: Int, roiY: Int, roiW: Int, roiH: Int, threshold: Float = 0.75f) {
+    fun addTemplate(
+        id: Int,
+        bitmap: Bitmap,
+        roiX: Int,
+        roiY: Int,
+        roiW: Int,
+        roiH: Int,
+        threshold: Float = 0.75f,
+        allowFullscreenFallback: Boolean = true
+    ) {
         ensureInitialized()
-        nativeAddTemplate(id, bitmap, roiX, roiY, roiW, roiH, threshold.coerceIn(0.5f, 1.0f))
+        nativeAddTemplate(
+            id,
+            bitmap,
+            roiX,
+            roiY,
+            roiW,
+            roiH,
+            threshold.coerceIn(0.5f, 1.0f),
+            allowFullscreenFallback
+        )
     }
 
     @Synchronized

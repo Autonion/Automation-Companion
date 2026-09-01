@@ -42,6 +42,9 @@ class VisionExecutionService : Service() {
         private const val NOTIFICATION_ID = 1002
         private const val STUCK_FULLSCREEN_FALLBACK_MS = 10_000L  // 10s → fallback to full-screen search
         private const val STUCK_RESTART_MS = 30_000L               // 30s → restart sequence from step 0
+        private const val DETECT_ACTION_COOLDOWN_MS = 1_500L
+        private const val DETECT_RELEASE_MISS_FRAMES = 2
+        private const val DETECT_SKIP_LOG_INTERVAL_MS = 2_000L
     }
 
     private val job = SupervisorJob()
@@ -229,6 +232,9 @@ class VisionExecutionService : Service() {
 
     private fun togglePause() {
         isPaused = !isPaused
+        if (!isPaused) {
+            resetDetectOnlyState()
+        }
         playPauseIcon?.setImageResource(
             if (isPaused) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause
         )
@@ -251,6 +257,7 @@ class VisionExecutionService : Service() {
             Log.d(TAG, "▶ Starting execution: '${activePreset?.name}', ${activePreset?.regions?.size} regions, mode=${activePreset?.executionMode}")
             DebugLogger.info(applicationContext, LogCategory.VISUAL_TRIGGER, "Execution Started", "Preset: '${activePreset?.name}', ${activePreset?.regions?.size} regions, mode=${activePreset?.executionMode}", TAG)
 
+            resetExecutionState()
             VisionNativeBridge.clearTemplates()
 
             activePreset?.regions?.forEach { region ->
@@ -261,7 +268,8 @@ class VisionExecutionService : Service() {
                         VisionNativeBridge.addTemplate(
                             region.id, bitmap,
                             region.x, region.y, region.width, region.height,
-                            region.matchThreshold
+                            region.matchThreshold,
+                            allowFullscreenFallback = true
                         )
                     } finally {
                         bitmap.recycle()
@@ -352,26 +360,7 @@ class VisionExecutionService : Service() {
                     handleSequentialExecution(preset, results, skipOnMiss = true)
                 }
                 ExecutionMode.DETECT_ONLY -> {
-                    val matches = results.filter { it.matched }
-                    if (matches.isEmpty()) {
-                        Log.d(TAG, "  No matches above configured thresholds")
-                    }
-                    matches.forEach { match ->
-                        val region = preset.regions.find { it.id == match.id }
-                        if (region != null) {
-                            val cx = match.x + match.width / 2
-                            val cy = match.y + match.height / 2
-                            Log.d(TAG, "  ▶ Executing ${region.action} at ($cx, $cy)")
-                            DebugLogger.info(applicationContext, LogCategory.VISUAL_TRIGGER, "Action Executing", "${region.action} at ($cx, $cy)", TAG)
-                            val success = executeAction(region, cx, cy)
-                            Log.d(TAG, "  Action result: $success")
-                            if (success) {
-                                DebugLogger.success(applicationContext, LogCategory.VISUAL_TRIGGER, "Action Succeeded", "${region.action} at ($cx, $cy)", TAG)
-                            } else {
-                                DebugLogger.warning(applicationContext, LogCategory.VISUAL_TRIGGER, "Action Failed", "${region.action} at ($cx, $cy) returned false", TAG)
-                            }
-                        }
-                    }
+                    handleDetectOnlyExecution(preset, results)
                 }
             }
         } catch (e: Exception) {
@@ -384,8 +373,99 @@ class VisionExecutionService : Service() {
     private var lastActionTime = 0L
     private var stepStuckSince = 0L              // When current step first failed to match
     private var fullscreenFallbackRequested = false  // Trigger native full-screen search for stuck step
+    private val detectActiveRegionIds = mutableSetOf<Int>()
+    private val detectMissCounts = mutableMapOf<Int, Int>()
+    private val detectLastActionAt = mutableMapOf<Int, Long>()
+    private val detectLastSkipLogAt = mutableMapOf<Int, Long>()
 
+    private fun resetExecutionState() {
+        currentStepIndex = 0
+        lastActionTime = 0L
+        stepStuckSince = 0L
+        fullscreenFallbackRequested = false
+        resetDetectOnlyState()
+    }
 
+    private fun resetDetectOnlyState() {
+        detectActiveRegionIds.clear()
+        detectMissCounts.clear()
+        detectLastActionAt.clear()
+        detectLastSkipLogAt.clear()
+    }
+
+    private suspend fun handleDetectOnlyExecution(
+        preset: VisionPreset,
+        results: Array<com.autonion.automationcompanion.core.vision.MatchResultNative>
+    ) {
+        val matchesById = results.filter { it.matched }.associateBy { it.id }
+        if (matchesById.isEmpty()) {
+            Log.d(TAG, "  No matches above configured thresholds")
+        }
+
+        updateDetectOnlyPresence(preset, matchesById.keys)
+
+        preset.regions.forEach { region ->
+            val match = matchesById[region.id] ?: return@forEach
+            val now = System.currentTimeMillis()
+            val lastActionAt = detectLastActionAt[region.id] ?: 0L
+            val remainingCooldown = DETECT_ACTION_COOLDOWN_MS - (now - lastActionAt)
+
+            if (region.id in detectActiveRegionIds) {
+                logDetectOnlySkip(region.id, "already handled visible match", now)
+                return@forEach
+            }
+
+            if (remainingCooldown > 0) {
+                logDetectOnlySkip(region.id, "action cooldown ${remainingCooldown}ms", now)
+                return@forEach
+            }
+
+            val cx = match.x + match.width / 2
+            val cy = match.y + match.height / 2
+            detectLastActionAt[region.id] = now
+            Log.d(TAG, "  ▶ Executing ${region.action} at ($cx, $cy)")
+            DebugLogger.info(applicationContext, LogCategory.VISUAL_TRIGGER, "Action Executing", "${region.action} at ($cx, $cy)", TAG)
+            val success = executeAction(region, cx, cy)
+            Log.d(TAG, "  Action result: $success")
+            detectLastActionAt[region.id] = System.currentTimeMillis()
+            if (success) {
+                detectActiveRegionIds.add(region.id)
+                DebugLogger.success(applicationContext, LogCategory.VISUAL_TRIGGER, "Action Succeeded", "${region.action} at ($cx, $cy)", TAG)
+            } else {
+                DebugLogger.warning(applicationContext, LogCategory.VISUAL_TRIGGER, "Action Failed", "${region.action} at ($cx, $cy) returned false", TAG)
+            }
+        }
+    }
+
+    private fun updateDetectOnlyPresence(preset: VisionPreset, matchedIds: Set<Int>) {
+        val configuredIds = preset.regions.map { it.id }.toSet()
+        detectActiveRegionIds.retainAll(configuredIds)
+        detectMissCounts.keys.retainAll(configuredIds)
+        detectLastActionAt.keys.retainAll(configuredIds)
+        detectLastSkipLogAt.keys.retainAll(configuredIds)
+
+        preset.regions.forEach { region ->
+            if (region.id in matchedIds) {
+                detectMissCounts[region.id] = 0
+            } else {
+                val misses = (detectMissCounts[region.id] ?: 0) + 1
+                detectMissCounts[region.id] = misses
+                if (misses >= DETECT_RELEASE_MISS_FRAMES) {
+                    detectActiveRegionIds.remove(region.id)
+                    detectLastActionAt.remove(region.id)
+                    detectLastSkipLogAt.remove(region.id)
+                }
+            }
+        }
+    }
+
+    private fun logDetectOnlySkip(regionId: Int, reason: String, now: Long) {
+        val lastLoggedAt = detectLastSkipLogAt[regionId] ?: 0L
+        if (now - lastLoggedAt >= DETECT_SKIP_LOG_INTERVAL_MS) {
+            Log.d(TAG, "  Skipping ID=$regionId: $reason")
+            detectLastSkipLogAt[regionId] = now
+        }
+    }
 
     private suspend fun handleSequentialExecution(
         preset: VisionPreset,
