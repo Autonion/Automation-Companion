@@ -7,13 +7,14 @@ import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
+import android.graphics.PointF
 import android.graphics.PixelFormat
-import android.graphics.drawable.GradientDrawable
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
@@ -23,12 +24,22 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import androidx.core.app.NotificationCompat
 import com.autonion.automationcompanion.R
+import com.autonion.automationcompanion.core.ui.OverlayStyles
+import com.autonion.automationcompanion.core.vision.MatchResultNative
 import com.autonion.automationcompanion.core.vision.VisionNativeBridge
+import com.autonion.automationcompanion.core.vision.VisionCaptureGeometry
+import com.autonion.automationcompanion.core.vision.isFreshVisionFrame
+import com.autonion.automationcompanion.core.vision.TapBounds
+import com.autonion.automationcompanion.core.vision.predictMovingTap
+import com.autonion.automationcompanion.features.visual_trigger.core.VisionFrame
+import com.autonion.automationcompanion.features.visual_trigger.models.VisionMatchMode
 import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
 import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
 import com.autonion.automationcompanion.features.visual_trigger.core.VisionMediaProjection
 import com.autonion.automationcompanion.features.visual_trigger.data.VisionRepository
 import com.autonion.automationcompanion.features.visual_trigger.models.ExecutionMode
+import com.autonion.automationcompanion.features.visual_trigger.models.TapDispatchMode
+import com.autonion.automationcompanion.features.visual_trigger.models.VisionAction
 import com.autonion.automationcompanion.features.visual_trigger.models.VisionPreset
 import com.autonion.automationcompanion.features.visual_trigger.models.VisionRegion
 import kotlinx.coroutines.*
@@ -44,7 +55,7 @@ class VisionExecutionService : Service() {
         private const val STUCK_RESTART_MS = 30_000L               // 30s → restart sequence from step 0
         private const val DETECT_ACTION_COOLDOWN_MS = 1_500L
         private const val DETECT_RELEASE_MISS_FRAMES = 2
-        private const val DETECT_SKIP_LOG_INTERVAL_MS = 2_000L
+        private const val DETECT_POSITION_BUCKET_PX = 32
     }
 
     private val job = SupervisorJob()
@@ -53,12 +64,17 @@ class VisionExecutionService : Service() {
     private var visionProjection: VisionMediaProjection? = null
     private var repository: VisionRepository? = null
     private var activePreset: VisionPreset? = null
+    private var captureGeometry: VisionCaptureGeometry? = null
 
     // Overlay
     private var windowManager: WindowManager? = null
     private var overlayView: View? = null
-    private var isPaused = true  // Start paused — user taps play to begin
+    private var overlayLayoutParams: WindowManager.LayoutParams? = null
+    @Volatile private var isPaused = true
+    @Volatile private var executionGeneration = 0
+    @Volatile private var resetMotionRequested = false
     private var playPauseIcon: ImageView? = null
+    @Volatile private var overlayInteracting = false
 
     @Volatile
     private var isRunning = true
@@ -92,6 +108,9 @@ class VisionExecutionService : Service() {
                     stopSelf()
                 }
             }
+            "ACTION_TOGGLE_PAUSE" -> {
+                togglePause()
+            }
             "ACTION_STOP_EXECUTION" -> stopSelf()
         }
         return START_NOT_STICKY
@@ -108,6 +127,13 @@ class VisionExecutionService : Service() {
         val stopIntent = Intent(this, VisionExecutionService::class.java).apply {
             action = "ACTION_STOP_EXECUTION"
         }
+        val toggleIntent = Intent(this, VisionExecutionService::class.java).apply {
+            action = "ACTION_TOGGLE_PAUSE"
+        }
+        val togglePendingIntent = android.app.PendingIntent.getService(
+            this, 1, toggleIntent,
+            android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
+        )
         val stopPendingIntent = android.app.PendingIntent.getService(
             this, 0, stopIntent,
             android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT
@@ -115,8 +141,13 @@ class VisionExecutionService : Service() {
 
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Vision Automation Running")
-            .setContentText("Scanning screen...")
+            .setContentText(if (isPaused) "Paused" else "Scanning screen...")
             .setSmallIcon(com.autonion.automationcompanion.R.drawable.ic_notification)
+            .addAction(
+                if (isPaused) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause,
+                if (isPaused) "Resume" else "Pause",
+                togglePendingIntent
+            )
             .addAction(android.R.drawable.ic_media_pause, "Stop", stopPendingIntent)
             .build()
 
@@ -133,6 +164,8 @@ class VisionExecutionService : Service() {
     private fun showExecutionOverlay() {
         if (overlayView != null) return
         val dp = resources.displayMetrics.density
+        val panelWidthDp = OverlayStyles.CLOSE_BUTTON_SIZE_DP * 2 +
+            OverlayStyles.BUTTON_SPACING_DP + OverlayStyles.PANEL_PADDING_H_DP * 2
 
         val lp = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -140,56 +173,48 @@ class VisionExecutionService : Service() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
             else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_SECURE,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = resources.displayMetrics.widthPixels - 150
+            x = (resources.displayMetrics.widthPixels - ((panelWidthDp + 16) * dp).toInt()).coerceAtLeast(0)
             y = resources.displayMetrics.heightPixels / 4
         }
 
         val container = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding((12 * dp).toInt(), (8 * dp).toInt(), (12 * dp).toInt(), (8 * dp).toInt())
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
-                cornerRadius = 28 * dp
-                setColor(0xE61A1A2E.toInt())
-                setStroke((1.5f * dp).toInt(), 0x40FFFFFF)
-            }
-            elevation = 8 * dp
+            val horizontalPadding = (OverlayStyles.PANEL_PADDING_H_DP * dp).toInt()
+            val verticalPadding = (OverlayStyles.PANEL_PADDING_V_DP * dp).toInt()
+            setPadding(horizontalPadding, verticalPadding, horizontalPadding, verticalPadding)
+            background = OverlayStyles.createPanelBackground(dp)
+            elevation = OverlayStyles.PANEL_ELEVATION_DP * dp
         }
 
-        val playPauseBtn = ImageView(this).apply {
-            setImageResource(android.R.drawable.ic_media_play)  // Start paused → show play icon
-            setColorFilter(0xFF00C853.toInt())
-            setPadding((8 * dp).toInt(), (8 * dp).toInt(), (8 * dp).toInt(), (8 * dp).toInt())
-            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0x2200C853) }
-        }
-        playPauseBtn.layoutParams = LinearLayout.LayoutParams((40 * dp).toInt(), (40 * dp).toInt())
+        val playPauseBtn = OverlayStyles.createIconButton(
+            this, android.R.drawable.ic_media_play, "Start preset"
+        ) { togglePause() }.apply { background = null }
         playPauseIcon = playPauseBtn
 
         val spacer = View(this)
-        spacer.layoutParams = LinearLayout.LayoutParams((8 * dp).toInt(), 1)
+        spacer.layoutParams = LinearLayout.LayoutParams((OverlayStyles.BUTTON_SPACING_DP * dp).toInt(), 1)
 
-        val exitBtn = ImageView(this).apply {
-            setImageResource(android.R.drawable.ic_menu_close_clear_cancel)
-            setColorFilter(0xFFFF1744.toInt())
-            setPadding((8 * dp).toInt(), (8 * dp).toInt(), (8 * dp).toInt(), (8 * dp).toInt())
-            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0x22FF1744) }
-        }
-        exitBtn.layoutParams = LinearLayout.LayoutParams((40 * dp).toInt(), (40 * dp).toInt())
+        val exitBtn = OverlayStyles.createIconButton(
+            this, android.R.drawable.ic_menu_close_clear_cancel, "Close preset"
+        ) { stopSelf() }.apply { background = null }
 
         container.addView(playPauseBtn)
         container.addView(spacer)
         container.addView(exitBtn)
 
-        // Draggable — handle ALL touch events at container level
+        // Share drag handling with the buttons so they stay accessible and draggable.
         var initialX = 0; var initialY = 0; var touchX = 0f; var touchY = 0f; var isDragging = false
-        container.setOnTouchListener { view, event ->
-            when (event.action) {
+        val touchSlop = android.view.ViewConfiguration.get(this).scaledTouchSlop
+        val dragListener = View.OnTouchListener { view, event ->
+            when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
+                    overlayInteracting = true
                     initialX = lp.x; initialY = lp.y
                     touchX = event.rawX; touchY = event.rawY
                     isDragging = false
@@ -197,52 +222,81 @@ class VisionExecutionService : Service() {
                 }
                 MotionEvent.ACTION_MOVE -> {
                     val dx = event.rawX - touchX; val dy = event.rawY - touchY
-                    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) isDragging = true
+                    if (Math.abs(dx) > touchSlop || Math.abs(dy) > touchSlop) isDragging = true
                     if (isDragging) {
-                        lp.x = initialX + dx.toInt()
-                        lp.y = initialY + dy.toInt()
+                        val displayFrame = android.graphics.Rect()
+                        container.getWindowVisibleDisplayFrame(displayFrame)
+                        lp.x = (initialX + dx.toInt()).coerceIn(0, (displayFrame.width() - container.width).coerceAtLeast(0))
+                        lp.y = (initialY + dy.toInt()).coerceIn(0, (displayFrame.height() - container.height).coerceAtLeast(0))
                         windowManager?.updateViewLayout(container, lp)
                     }
                     true
                 }
                 MotionEvent.ACTION_UP -> {
-                    if (!isDragging) {
-                        // It was a tap — find which child was hit
-                        val x = event.x.toInt()
-                        val y = event.y.toInt()
-                        val playRect = android.graphics.Rect()
-                        playPauseBtn.getHitRect(playRect)
-                        val exitRect = android.graphics.Rect()
-                        exitBtn.getHitRect(exitRect)
-
-                        when {
-                            playRect.contains(x, y) -> togglePause()
-                            exitRect.contains(x, y) -> stopSelf()
-                        }
-                    }
+                    overlayInteracting = false
+                    if (!isDragging) view.performClick()
+                    true
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    overlayInteracting = false
+                    isDragging = false
                     true
                 }
                 else -> false
             }
         }
 
+        container.setOnTouchListener(dragListener)
+        playPauseBtn.setOnTouchListener(dragListener)
+        exitBtn.setOnTouchListener(dragListener)
+
         overlayView = container
+        overlayLayoutParams = lp
         windowManager?.addView(overlayView, lp)
+        updateExecutionOverlayTouchPolicy()
     }
 
     private fun togglePause() {
         isPaused = !isPaused
+        executionGeneration++
         if (!isPaused) {
-            resetDetectOnlyState()
+            resetMotionRequested = true
         }
         playPauseIcon?.setImageResource(
             if (isPaused) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause
         )
+        playPauseIcon?.contentDescription = if (isPaused) "Resume preset" else "Pause preset"
+        updateExecutionOverlayTouchPolicy()
+        startForegroundServiceNotification()
         Log.d(TAG, if (isPaused) "PAUSED" else "RESUMED")
         DebugLogger.info(applicationContext, LogCategory.VISUAL_TRIGGER, if (isPaused) "Paused" else "Resumed", if (isPaused) "Execution paused by user" else "Execution resumed by user", TAG)
     }
 
+    private fun updateExecutionOverlayTouchPolicy() {
+        val view = overlayView ?: return
+        val lp = overlayLayoutParams ?: return
+        lp.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+            WindowManager.LayoutParams.FLAG_SECURE
+        view.visibility = View.VISIBLE
+        view.alpha = 1.0f
+        try {
+            windowManager?.updateViewLayout(view, lp)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to update execution overlay touch policy", e)
+        }
+    }
+
     // ── Execution Logic ───────────────────────────────────────────────
+
+    // Called on Main immediately before dispatch; layout coordinates alone omit system insets.
+    private fun overlapsExecutionOverlay(x: Float, y: Float, verticalRadius: Float = 0f): Boolean {
+        val view = overlayView ?: return false
+        if (!view.isShown) return false
+        val location = IntArray(2)
+        view.getLocationOnScreen(location)
+        return x >= location[0] && x <= location[0] + view.width &&
+            y + verticalRadius >= location[1] && y - verticalRadius <= location[1] + view.height
+    }
 
     private fun startExecution(resultCode: Int, resultData: Intent, presetId: String) {
         scope.launch {
@@ -258,19 +312,68 @@ class VisionExecutionService : Service() {
             DebugLogger.info(applicationContext, LogCategory.VISUAL_TRIGGER, "Execution Started", "Preset: '${activePreset?.name}', ${activePreset?.regions?.size} regions, mode=${activePreset?.executionMode}", TAG)
 
             resetExecutionState()
+            val invalidMovingRegion = activePreset?.regions?.firstOrNull {
+                it.matchMode == VisionMatchMode.MOVING &&
+                    (it.customSearchRect() == null || it.action !is VisionAction.Click ||
+                        activePreset?.executionMode != ExecutionMode.DETECT_ONLY)
+            }
+            if (invalidMovingRegion != null) {
+                withContext(Dispatchers.Main) {
+                    android.widget.Toast.makeText(this@VisionExecutionService,
+                        "Moving objects require Detect Only, Tap, and a search area", android.widget.Toast.LENGTH_LONG).show()
+                }
+                stopSelf()
+                return@launch
+            }
             VisionNativeBridge.clearTemplates()
+
+            val metrics = getRealDisplayMetrics()
+            val preset = activePreset ?: return@launch
+            val geometry = VisionCaptureGeometry.create(metrics.width, metrics.height,
+                preset.regions.minOfOrNull { minOf(it.width, it.height) } ?: 24,
+                allowScaling = preset.executionMode == ExecutionMode.DETECT_ONLY &&
+                    preset.regions.none { it.matchMode == VisionMatchMode.MOVING })
+            captureGeometry = geometry
+            Log.i(TAG, "Vision config: pipeline=fast-v1 screen=${metrics.width}x${metrics.height} capture=${geometry.captureWidth}x${geometry.captureHeight} dispatch=${preset.tapDispatchMode}")
 
             activePreset?.regions?.forEach { region ->
                 val bitmap = android.graphics.BitmapFactory.decodeFile(region.templatePath)
                 if (bitmap != null) {
                     try {
-                        Log.d(TAG, "  ✓ Template ID=${region.id}: ${bitmap.width}x${bitmap.height}, ROI=(${region.x},${region.y},${region.width},${region.height}), threshold=${region.matchThreshold}")
-                        VisionNativeBridge.addTemplate(
-                            region.id, bitmap,
-                            region.x, region.y, region.width, region.height,
-                            region.matchThreshold,
-                            allowFullscreenFallback = true
+                        val hasCustomSearchRect = region.customSearchRect() != null
+                        val isDetectOnly = activePreset?.executionMode == ExecutionMode.DETECT_ONLY
+                        val searchRect = if (isDetectOnly && !hasCustomSearchRect) {
+                            android.graphics.Rect(0, 0, metrics.width, metrics.height)
+                        } else region.toSearchRect()
+                        val scaledRect = android.graphics.Rect(
+                            geometry.captureX(searchRect.left), geometry.captureY(searchRect.top),
+                            geometry.captureRight(searchRect.right), geometry.captureBottom(searchRect.bottom))
+                        require(scaledRect.width() > 0 && scaledRect.height() > 0) { "Search area is outside the screen" }
+                        val trackRoiToMatch = !isDetectOnly && !hasCustomSearchRect
+                        val allowFullscreenFallback = !isDetectOnly && !hasCustomSearchRect
+                        Log.d(TAG, "Template ID=${region.id}: ${bitmap.width}x${bitmap.height}, ROI=$searchRect, mode=${region.matchMode}, threshold=${region.effectiveThreshold}, rotation=${region.rotationDegrees}, trackRoi=$trackRoiToMatch")
+                        val scaledTemplate = Bitmap.createScaledBitmap(bitmap,
+                            geometry.templateWidth(bitmap.width), geometry.templateHeight(bitmap.height), true)
+                        try {
+                            VisionNativeBridge.addTemplate(
+                            region.id, scaledTemplate,
+                            scaledRect.left, scaledRect.top, scaledRect.width(), scaledRect.height(),
+                            region.effectiveThreshold,
+                            allowFullscreenFallback = allowFullscreenFallback,
+                            trackRoiToMatch = trackRoiToMatch,
+                            moving = region.matchMode == VisionMatchMode.MOVING
                         )
+                        } finally {
+                            if (scaledTemplate !== bitmap) scaledTemplate.recycle()
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Cannot load target ${region.id}", e)
+                        withContext(Dispatchers.Main) {
+                            android.widget.Toast.makeText(this@VisionExecutionService,
+                                "Cannot load target ${region.id}: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                        }
+                        stopSelf()
+                        return@launch
                     } finally {
                         bitmap.recycle()
                     }
@@ -280,8 +383,7 @@ class VisionExecutionService : Service() {
                 }
             }
 
-            val metrics = resources.displayMetrics
-            Log.d(TAG, "Screen: ${metrics.widthPixels}x${metrics.heightPixels}")
+            Log.d(TAG, "Screen: ${metrics.width}x${metrics.height}")
 
             val mpManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
             visionProjection = VisionMediaProjection(this@VisionExecutionService, mpManager) {
@@ -296,7 +398,7 @@ class VisionExecutionService : Service() {
                 }
                 stopSelf()
             }
-            visionProjection?.startProjection(resultCode, resultData, metrics.widthPixels, metrics.heightPixels, metrics.densityDpi)
+            visionProjection?.startProjection(resultCode, resultData, geometry.captureWidth, geometry.captureHeight, metrics.densityDpi)
 
             Log.d(TAG, "Projection started, collecting frames...")
             val connected = VisionActionExecutor.isConnected()
@@ -305,67 +407,115 @@ class VisionExecutionService : Service() {
                 DebugLogger.warning(applicationContext, LogCategory.VISUAL_TRIGGER, "No Accessibility", "AccessibilityService not connected — actions may fail", TAG)
             }
 
-            var frameCount = 0
-            val targetCycleMs = 400L  // Target ~2.5 fps scanning
-            var previousBitmap: Bitmap? = null
-
-            try {
-                visionProjection?.screenCaptureFlow?.collect { bitmap ->
-                    // Consumer-side recycle: recycle the previous bitmap after
-                    // processFrame has returned and bitmap_to_mat deep-copied it.
-                    previousBitmap?.let { if (!it.isRecycled) it.recycle() }
-                    previousBitmap = bitmap
-
-                    frameCount++
-                    if (!isPaused && isRunning) {
-                        if (frameCount <= 5 || frameCount % 20 == 0) {
-                            Log.d(TAG, "Frame #$frameCount: ${bitmap.width}x${bitmap.height}")
-                        }
-                        val matchStart = System.currentTimeMillis()
-                        processFrame(bitmap)
-                        val elapsed = System.currentTimeMillis() - matchStart
-                        val sleepMs = (targetCycleMs - elapsed).coerceAtLeast(50L)
-                        delay(sleepMs)
-                    } else if (isPaused && frameCount % 50 == 0) {
-                        Log.d(TAG, "Skipping frame #$frameCount (paused)")
-                        delay(targetCycleMs)
-                    } else {
-                        delay(targetCycleMs)
-                    }
+            val moving = activePreset?.regions?.any { it.matchMode == VisionMatchMode.MOVING } == true
+            val targetCycleMs = if (moving) 33L else if (
+                activePreset?.executionMode == ExecutionMode.DETECT_ONLY
+            ) 0L else 400L
+            visionProjection?.frames?.collect { frame ->
+                if (resetMotionRequested) {
+                    resetMotionRequested = false
+                    resetDetectOnlyState()
+                    movingAttempts.clear()
+                    VisionNativeBridge.resetMotion()
                 }
-            } finally {
-                previousBitmap?.let { if (!it.isRecycled) it.recycle() }
+                val startedAt = SystemClock.uptimeMillis()
+                if (!isPaused && isRunning) processFrame(frame)
+                frame.close()
+                val remaining = targetCycleMs - (SystemClock.uptimeMillis() - startedAt)
+                if (remaining > 0) delay(remaining)
             }
         }
     }
 
-    private suspend fun processFrame(bitmap: Bitmap) {
-        if (!isRunning) return
+    private var lastTimingLogMs = 0L
+    private val movingAttempts = mutableMapOf<Pair<Int, Int>, Pair<Long, Int>>()
+
+    private suspend fun processFrame(frame: VisionFrame) {
+        if (!isRunning || isPaused) return
         val preset = activePreset ?: return
-
+        val geometry = captureGeometry ?: return
+        val generation = executionGeneration
         try {
-            val results = VisionNativeBridge.match(bitmap)
-            if (!isRunning) return
-
-            // Log match results
-            results.forEach { match ->
-                Log.d(TAG, "  Match ID=${match.id}: matched=${match.matched}, score=${match.score}, at=(${match.x},${match.y}), size=${match.width}x${match.height}")
+            val plane = frame.image.planes[0]
+            require(plane.pixelStride == 4) { "Unsupported capture pixel stride" }
+            val startedAt = SystemClock.uptimeMillis()
+            val results = try {
+                VisionNativeBridge.matchRgba(plane.buffer, frame.width, frame.height, plane.rowStride, frame.observedAtMs)
+                    .map(geometry::toScreen).toTypedArray()
+            } finally {
+                frame.close()
             }
-
+            if (!isRunning || isPaused || generation != executionGeneration) return
+            val now = SystemClock.uptimeMillis()
+            if (now - lastTimingLogMs >= 2000) {
+                Log.i(TAG, "Vision timing: match=${now - startedAt}ms frameAge=${now - frame.observedAtMs}ms captureQueue=${frame.acquiredAtMs - frame.observedAtMs}ms clock=${frame.timestampSource} hits=${results.count { it.matched }} best=${results.maxOfOrNull { it.score }}")
+                lastTimingLogMs = now
+            }
             when (preset.executionMode) {
-                ExecutionMode.MANDATORY_SEQUENTIAL -> {
-                    handleSequentialExecution(preset, results, skipOnMiss = false)
-                }
-                ExecutionMode.OPTIONAL_SEQUENTIAL -> {
-                    handleSequentialExecution(preset, results, skipOnMiss = true)
-                }
+                ExecutionMode.MANDATORY_SEQUENTIAL -> handleSequentialExecution(preset, results, skipOnMiss = false)
+                ExecutionMode.OPTIONAL_SEQUENTIAL -> handleSequentialExecution(preset, results, skipOnMiss = true)
                 ExecutionMode.DETECT_ONLY -> {
-                    handleDetectOnlyExecution(preset, results)
+                    handleMovingExecution(preset, results, frame.observedAtMs, generation, geometry.screenWidth, geometry.screenHeight)
+                    if (!isPaused && isRunning && generation == executionGeneration) {
+                        val staticIds = preset.regions.filter { it.matchMode == VisionMatchMode.STATIC }.map { it.id }.toSet()
+                        if (staticIds.isNotEmpty()) {
+                            handleDetectOnlyExecution(preset, results.filter { it.id in staticIds }.toTypedArray(), frame.observedAtMs, generation)
+                        }
+                    }
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Error in processFrame", e)
             DebugLogger.error(applicationContext, LogCategory.VISUAL_TRIGGER, "Frame Error", "Error processing frame: ${e.message}", TAG)
+        }
+    }
+
+    private suspend fun handleMovingExecution(
+        preset: VisionPreset,
+        results: Array<MatchResultNative>,
+        observedAt: Long,
+        generation: Int,
+        screenWidth: Int,
+        screenHeight: Int
+    ) {
+        val now = SystemClock.uptimeMillis()
+        movingAttempts.entries.removeAll { now - it.value.first > 2000 }
+        val regionsById = preset.regions.associateBy { it.id }
+        val pending = results.filter { match ->
+            val region = regionsById[match.id]
+            val attempt = movingAttempts[match.id to match.trackId]
+            region?.matchMode == VisionMatchMode.MOVING && region.action is VisionAction.Click &&
+                match.matched && match.observations >= 2 &&
+                (attempt == null || (attempt.second < 3 && now - attempt.first >= 200))
+        }
+        val batchSize = if (preset.tapDispatchMode == TapDispatchMode.CONCURRENT) VisionActionExecutor.maxConcurrentTapCount() else 1
+        for (batch in pending.chunked(batchSize)) {
+            // Recompute immediately before each gesture. A prior tap may have
+            // used most of the freshness budget for a sequential batch.
+            val dispatched = withContext(Dispatchers.Main.immediate) {
+                if (isPaused || !isRunning || overlayInteracting || generation != executionGeneration) return@withContext emptyList<MatchResultNative>()
+                val taps = batch.mapNotNull { hit ->
+                    val region = regionsById.getValue(hit.id)
+                    val roi = region.toSearchRect()
+                    val point = predictMovingTap(hit, observedAt, SystemClock.uptimeMillis(),
+                        TapBounds(maxOf(0, roi.left), maxOf(0, roi.top), minOf(screenWidth, roi.right), minOf(screenHeight, roi.bottom)),
+                        region.tapLeadMs) ?: return@mapNotNull null
+                    if (overlapsExecutionOverlay(point.x, point.y)) return@mapNotNull null
+                    hit to PointF(point.x, point.y)
+                }.distinctBy { (_, point) -> point.x.toInt() / 12 to point.y.toInt() / 12 }
+                if (taps.isEmpty()) return@withContext emptyList<MatchResultNative>()
+                Log.i(TAG, "Moving tap: tracks=${taps.map { it.first.trackId }}, acquired-frame-age=${SystemClock.uptimeMillis() - observedAt}ms, points=${taps.map { it.second }}")
+                val accepted = VisionActionExecutor.executeMultiTap(taps.map { it.second }, durationMs = 32)
+                Log.i(TAG, "Moving gesture completed=$accepted (game hit is not confirmed by Android)")
+                taps.map { it.first }
+            }
+            val completedAt = SystemClock.uptimeMillis()
+            dispatched.forEach {
+                val key = it.id to it.trackId
+                movingAttempts[key] = completedAt to ((movingAttempts[key]?.second ?: 0) + 1)
+            }
         }
     }
 
@@ -373,10 +523,22 @@ class VisionExecutionService : Service() {
     private var lastActionTime = 0L
     private var stepStuckSince = 0L              // When current step first failed to match
     private var fullscreenFallbackRequested = false  // Trigger native full-screen search for stuck step
-    private val detectActiveRegionIds = mutableSetOf<Int>()
-    private val detectMissCounts = mutableMapOf<Int, Int>()
-    private val detectLastActionAt = mutableMapOf<Int, Long>()
-    private val detectLastSkipLogAt = mutableMapOf<Int, Long>()
+    private val detectActiveMatchKeys = mutableSetOf<DetectMatchKey>()
+    private val detectMissCounts = mutableMapOf<DetectMatchKey, Int>()
+    private val detectLastActionAt = mutableMapOf<DetectMatchKey, Long>()
+
+    private data class DetectMatchKey(
+        val regionId: Int,
+        val bucketX: Int,
+        val bucketY: Int
+    )
+
+    private data class PendingDetectAction(
+        val region: VisionRegion,
+        val centerX: Int,
+        val centerY: Int,
+        val key: DetectMatchKey
+    )
 
     private fun resetExecutionState() {
         currentStepIndex = 0
@@ -387,84 +549,113 @@ class VisionExecutionService : Service() {
     }
 
     private fun resetDetectOnlyState() {
-        detectActiveRegionIds.clear()
+        detectActiveMatchKeys.clear()
         detectMissCounts.clear()
         detectLastActionAt.clear()
-        detectLastSkipLogAt.clear()
     }
 
     private suspend fun handleDetectOnlyExecution(
         preset: VisionPreset,
-        results: Array<com.autonion.automationcompanion.core.vision.MatchResultNative>
+        results: Array<MatchResultNative>,
+        observedAt: Long,
+        generation: Int
     ) {
-        val matchesById = results.filter { it.matched }.associateBy { it.id }
-        if (matchesById.isEmpty()) {
-            Log.d(TAG, "  No matches above configured thresholds")
+        val now = SystemClock.uptimeMillis()
+        val regions = preset.regions.associateBy { it.id }
+        val seen = mutableSetOf<DetectMatchKey>()
+        val pending = results.filter { it.matched }.mapNotNull { hit ->
+            val region = regions[hit.id] ?: return@mapNotNull null
+            val x = hit.x + hit.width / 2
+            val y = hit.y + hit.height / 2
+            val key = detectMatchKey(region, x, y)
+            seen.add(key)
+            if (key in detectActiveMatchKeys ||
+                now - (detectLastActionAt[key] ?: -DETECT_ACTION_COOLDOWN_MS) < DETECT_ACTION_COOLDOWN_MS) {
+                return@mapNotNull null
+            }
+            PendingDetectAction(region, x, y, key)
         }
+        updateDetectOnlyPresence(preset, seen)
+        if (pending.isEmpty()) return
 
-        updateDetectOnlyPresence(preset, matchesById.keys)
-
-        preset.regions.forEach { region ->
-            val match = matchesById[region.id] ?: return@forEach
-            val now = System.currentTimeMillis()
-            val lastActionAt = detectLastActionAt[region.id] ?: 0L
-            val remainingCooldown = DETECT_ACTION_COOLDOWN_MS - (now - lastActionAt)
-
-            if (region.id in detectActiveRegionIds) {
-                logDetectOnlySkip(region.id, "already handled visible match", now)
-                return@forEach
+        val dispatched = withContext(Dispatchers.Main.immediate) {
+            if (isPaused || !isRunning || overlayInteracting || generation != executionGeneration)
+                return@withContext emptyList<PendingDetectAction>()
+            val dispatchAt = SystemClock.uptimeMillis()
+            if (!isFreshVisionFrame(observedAt, dispatchAt)) {
+                if (dispatchAt - lastStaleLogMs >= 2000) {
+                    Log.w(TAG, "Vision tap skipped: stale frame age=${dispatchAt - observedAt}ms pending=${pending.size}")
+                    lastStaleLogMs = dispatchAt
+                }
+                return@withContext emptyList<PendingDetectAction>()
             }
-
-            if (remainingCooldown > 0) {
-                logDetectOnlySkip(region.id, "action cooldown ${remainingCooldown}ms", now)
-                return@forEach
-            }
-
-            val cx = match.x + match.width / 2
-            val cy = match.y + match.height / 2
-            detectLastActionAt[region.id] = now
-            Log.d(TAG, "  ▶ Executing ${region.action} at ($cx, $cy)")
-            DebugLogger.info(applicationContext, LogCategory.VISUAL_TRIGGER, "Action Executing", "${region.action} at ($cx, $cy)", TAG)
-            val success = executeAction(region, cx, cy)
-            Log.d(TAG, "  Action result: $success")
-            detectLastActionAt[region.id] = System.currentTimeMillis()
-            if (success) {
-                detectActiveRegionIds.add(region.id)
-                DebugLogger.success(applicationContext, LogCategory.VISUAL_TRIGGER, "Action Succeeded", "${region.action} at ($cx, $cy)", TAG)
+            val safe = pending.filterNot {
+                val radius = if (it.region.action is VisionAction.Scroll) resources.displayMetrics.heightPixels * 0.25f else 0f
+                overlapsExecutionOverlay(it.centerX.toFloat(), it.centerY.toFloat(), radius)
+            }.distinctBy { it.centerX / 12 to it.centerY / 12 }
+            val first = safe.firstOrNull() ?: return@withContext emptyList<PendingDetectAction>()
+            val taps = if (first.region.action is VisionAction.Click) {
+                val limit = if (preset.tapDispatchMode == TapDispatchMode.CONCURRENT) VisionActionExecutor.maxConcurrentTapCount() else 1
+                safe.filter { it.region.action is VisionAction.Click }.take(limit)
+            } else listOf(first)
+            Log.i(TAG, "Vision tap: mode=${preset.tapDispatchMode} count=${taps.size} frameAge=${dispatchAt - observedAt}ms points=${taps.map { it.centerX to it.centerY }} deferred=${safe.size - taps.size}")
+            val success = if (first.region.action is VisionAction.Click) {
+                VisionActionExecutor.executeMultiTap(taps.map { PointF(it.centerX.toFloat(), it.centerY.toFloat()) }, durationMs = 32)
             } else {
-                DebugLogger.warning(applicationContext, LogCategory.VISUAL_TRIGGER, "Action Failed", "${region.action} at ($cx, $cy) returned false", TAG)
+                VisionActionExecutor.execute(first.region.action, PointF(first.centerX.toFloat(), first.centerY.toFloat()))
             }
+            Log.i(TAG, "Vision tap result: completed=$success elapsed=${SystemClock.uptimeMillis() - dispatchAt}ms (Android completion, not game-hit confirmation)")
+            if (success) taps else emptyList()
         }
+        val completedAt = SystemClock.uptimeMillis()
+        dispatched.forEach {
+            detectLastActionAt[it.key] = completedAt
+            detectActiveMatchKeys.add(it.key)
+        }
+        // Never drain an old frame after a gesture or retry its stale coordinates.
+        // Undispatched matches are eligible again on the next captured frame.
     }
 
-    private fun updateDetectOnlyPresence(preset: VisionPreset, matchedIds: Set<Int>) {
-        val configuredIds = preset.regions.map { it.id }.toSet()
-        detectActiveRegionIds.retainAll(configuredIds)
-        detectMissCounts.keys.retainAll(configuredIds)
-        detectLastActionAt.keys.retainAll(configuredIds)
-        detectLastSkipLogAt.keys.retainAll(configuredIds)
+    private var lastStaleLogMs = 0L
 
-        preset.regions.forEach { region ->
-            if (region.id in matchedIds) {
-                detectMissCounts[region.id] = 0
+    private fun detectMatchKey(region: VisionRegion, centerX: Int, centerY: Int): DetectMatchKey {
+        val bucketSize = maxOf(
+            DETECT_POSITION_BUCKET_PX,
+            (minOf(region.width, region.height) / 2).coerceAtLeast(1)
+        )
+        return DetectMatchKey(
+            regionId = region.id,
+            bucketX = centerX / bucketSize,
+            bucketY = centerY / bucketSize
+        )
+    }
+
+    private fun updateDetectOnlyPresence(preset: VisionPreset, seenKeys: Set<DetectMatchKey>) {
+        val configuredIds = preset.regions.map { it.id }.toSet()
+        val trackedKeys = (detectActiveMatchKeys + detectMissCounts.keys + detectLastActionAt.keys).toSet()
+
+        trackedKeys.forEach { key ->
+            if (key.regionId !in configuredIds) {
+                clearDetectMatchKey(key)
+                return@forEach
+            }
+
+            if (key in seenKeys) {
+                detectMissCounts[key] = 0
             } else {
-                val misses = (detectMissCounts[region.id] ?: 0) + 1
-                detectMissCounts[region.id] = misses
+                val misses = (detectMissCounts[key] ?: 0) + 1
+                detectMissCounts[key] = misses
                 if (misses >= DETECT_RELEASE_MISS_FRAMES) {
-                    detectActiveRegionIds.remove(region.id)
-                    detectLastActionAt.remove(region.id)
-                    detectLastSkipLogAt.remove(region.id)
+                    clearDetectMatchKey(key)
                 }
             }
         }
     }
 
-    private fun logDetectOnlySkip(regionId: Int, reason: String, now: Long) {
-        val lastLoggedAt = detectLastSkipLogAt[regionId] ?: 0L
-        if (now - lastLoggedAt >= DETECT_SKIP_LOG_INTERVAL_MS) {
-            Log.d(TAG, "  Skipping ID=$regionId: $reason")
-            detectLastSkipLogAt[regionId] = now
-        }
+    private fun clearDetectMatchKey(key: DetectMatchKey) {
+        detectActiveMatchKeys.remove(key)
+        detectMissCounts.remove(key)
+        detectLastActionAt.remove(key)
     }
 
     private suspend fun handleSequentialExecution(
@@ -516,7 +707,7 @@ class VisionExecutionService : Service() {
                 currentStepIndex = 0
                 stepStuckSince = 0L
                 fullscreenFallbackRequested = false
-            } else if (stuckDuration >= STUCK_FULLSCREEN_FALLBACK_MS && !fullscreenFallbackRequested) {
+            } else if (stuckDuration >= STUCK_FULLSCREEN_FALLBACK_MS && !fullscreenFallbackRequested && targetRegion.customSearchRect() == null) {
                 VisionNativeBridge.requestFullscreenSearch(targetRegion.id)
                 Log.w(TAG, "Step $currentStepIndex (region ID=${targetRegion.id}) stuck for ${stuckDuration}ms — requested full-screen search")
                 DebugLogger.warning(applicationContext, LogCategory.VISUAL_TRIGGER,
@@ -527,9 +718,32 @@ class VisionExecutionService : Service() {
         }
     }
 
-    private suspend fun executeAction(region: VisionRegion, screenX: Int, screenY: Int): Boolean {
-        val point = android.graphics.PointF(screenX.toFloat(), screenY.toFloat())
-        return VisionActionExecutor.execute(region.action, point)
+    private suspend fun executeAction(region: VisionRegion, screenX: Int, screenY: Int): Boolean =
+        withContext(Dispatchers.Main.immediate) {
+            if (isPaused || !isRunning || overlayInteracting) return@withContext false
+            val point = PointF(screenX.toFloat(), screenY.toFloat())
+            val radius = if (region.action is VisionAction.Scroll) resources.displayMetrics.heightPixels * 0.25f else 0f
+            if (overlapsExecutionOverlay(point.x, point.y, radius)) return@withContext false
+            VisionActionExecutor.execute(region.action, point)
+        }
+
+    private data class CaptureDisplayMetrics(
+        val width: Int,
+        val height: Int,
+        val densityDpi: Int
+    )
+
+    private fun getRealDisplayMetrics(): CaptureDisplayMetrics {
+        val wm = getSystemService(WINDOW_SERVICE) as WindowManager
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val bounds = wm.currentWindowMetrics.bounds
+            CaptureDisplayMetrics(bounds.width(), bounds.height(), resources.configuration.densityDpi)
+        } else {
+            val displayMetrics = android.util.DisplayMetrics()
+            @Suppress("DEPRECATION")
+            wm.defaultDisplay.getRealMetrics(displayMetrics)
+            CaptureDisplayMetrics(displayMetrics.widthPixels, displayMetrics.heightPixels, displayMetrics.densityDpi)
+        }
     }
 
     // ── Lifecycle ─────────────────────────────────────────────────────
@@ -554,13 +768,15 @@ class VisionExecutionService : Service() {
         if (overlayView != null) {
             try { windowManager?.removeView(overlayView) } catch (_: Exception) {}
             overlayView = null
+            overlayLayoutParams = null
         }
 
         // 5. Release native resources after delay (let any in-flight JNI call finish)
         //    The C++ side now uses a mutex, so this is safe as long as
         //    the match call finishes before clear is called.
+        val nativeGeneration = VisionNativeBridge.templateGeneration()
         Handler(Looper.getMainLooper()).postDelayed({
-            try { VisionNativeBridge.release() } catch (_: Exception) {}
+            try { VisionNativeBridge.release(nativeGeneration) } catch (_: Exception) {}
             Log.d(TAG, "Native resources released")
         }, 1000)
     }

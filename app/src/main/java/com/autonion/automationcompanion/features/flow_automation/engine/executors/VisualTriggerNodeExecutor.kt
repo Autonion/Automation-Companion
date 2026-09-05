@@ -1,7 +1,17 @@
 package com.autonion.automationcompanion.features.flow_automation.engine.executors
 
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.PointF
 import android.util.Log
+import android.os.SystemClock
+import com.autonion.automationcompanion.core.vision.MatchResultNative
+import com.autonion.automationcompanion.core.vision.TapBounds
+import com.autonion.automationcompanion.core.vision.predictMovingTap
+import com.autonion.automationcompanion.features.visual_trigger.models.VisionMatchMode
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.autonion.automationcompanion.core.vision.VisionNativeBridge
 import com.autonion.automationcompanion.features.flow_automation.engine.NodeExecutor
 import com.autonion.automationcompanion.features.flow_automation.engine.NodeResult
@@ -11,6 +21,9 @@ import com.autonion.automationcompanion.features.flow_automation.model.FlowNode
 import com.autonion.automationcompanion.features.flow_automation.model.VisualTriggerNode
 import com.autonion.automationcompanion.features.visual_trigger.models.VisionPreset
 import com.autonion.automationcompanion.features.visual_trigger.models.ExecutionMode
+import com.autonion.automationcompanion.features.visual_trigger.models.TapDispatchMode
+import com.autonion.automationcompanion.features.visual_trigger.models.VisionAction
+import com.autonion.automationcompanion.features.visual_trigger.models.VisionRegion
 import com.autonion.automationcompanion.features.visual_trigger.service.VisionActionExecutor
 
 private const val TAG = "VisualTriggerExecutor"
@@ -63,7 +76,9 @@ class VisualTriggerNodeExecutor(
                 vtNode.searchRegionY,
                 vtNode.searchRegionWidth,
                 vtNode.searchRegionHeight,
-                vtNode.threshold
+                vtNode.threshold,
+                allowFullscreenFallback = false,
+                trackRoiToMatch = false
             )
 
             // 4. Run native template matching
@@ -105,8 +120,13 @@ class VisualTriggerNodeExecutor(
         try {
             val preset = kotlinx.serialization.json.Json.decodeFromString<VisionPreset>(node.visionPresetJson)
             Log.d(TAG, "Playing back VisionPreset: ${preset.name} with ${preset.regions.size} regions, mode: ${preset.executionMode}")
-            
-            var anyRegionMatched = false
+
+            if (preset.executionMode == ExecutionMode.DETECT_ONLY) {
+                if (preset.regions.any { it.matchMode == VisionMatchMode.MOVING }) {
+                    return executeMovingPreset(node, preset, provider, context)
+                }
+                return executeDetectOnlyPreset(node, preset, provider, context)
+            }
             
             for (region in preset.regions) {
                 val templateBitmap = BitmapFactory.decodeFile(region.templatePath)
@@ -129,7 +149,18 @@ class VisualTriggerNodeExecutor(
                 
                 try {
                     VisionNativeBridge.clearTemplates()
-                    VisionNativeBridge.addTemplate(region.id, templateBitmap, region.x, region.y, region.width, region.height, region.matchThreshold)
+                    val searchRect = region.toSearchRect()
+                    VisionNativeBridge.addTemplate(
+                        region.id,
+                        templateBitmap,
+                        searchRect.left,
+                        searchRect.top,
+                        searchRect.width(),
+                        searchRect.height(),
+                        region.matchThreshold,
+                        allowFullscreenFallback = region.customSearchRect() == null,
+                        trackRoiToMatch = region.customSearchRect() == null
+                    )
                     val results = VisionNativeBridge.match(screenBitmap)
                     val match = results.firstOrNull { it.id == region.id }
                     
@@ -138,7 +169,6 @@ class VisualTriggerNodeExecutor(
                         val cy = match.y + match.height / 2f
                         Log.d(TAG, "Region ${region.id} matched at ($cx, $cy) score: ${match.score}")
                         
-                        anyRegionMatched = true
                         context.put("${node.outputContextKey}_found", true)
                         context.put("${node.outputContextKey}_x", cx)
                         context.put("${node.outputContextKey}_y", cy)
@@ -162,7 +192,7 @@ class VisualTriggerNodeExecutor(
                         if (preset.executionMode == ExecutionMode.MANDATORY_SEQUENTIAL) {
                             return NodeResult.Failure("Mandatory region ${region.id} not found")
                         }
-                        // OPTIONAL_SEQUENTIAL and DETECT_ONLY: continue to next region
+                        // OPTIONAL_SEQUENTIAL: continue to next region
                     }
                 } finally {
                     templateBitmap.recycle()
@@ -171,17 +201,216 @@ class VisualTriggerNodeExecutor(
                 }
             }
             
-            // For DETECT_ONLY: if no regions matched, return Failure so the engine
-            // follows the failure edge (e.g., scroll → retry loop)
-            return if (preset.executionMode == ExecutionMode.DETECT_ONLY && !anyRegionMatched) {
-                Log.d(TAG, "DETECT_ONLY: no regions matched — returning Failure for failure-edge routing")
-                NodeResult.Failure("No regions matched in DETECT_ONLY mode")
-            } else {
-                NodeResult.Success
-            }
+            return NodeResult.Success
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Failed playing back preset", e)
             return NodeResult.Failure("Malformed vision preset: ${e.message}")
+        }
+    }
+
+    private suspend fun executeDetectOnlyPreset(
+        node: VisualTriggerNode,
+        preset: VisionPreset,
+        provider: ScreenCaptureProvider,
+        context: FlowContext
+    ): NodeResult {
+        val loadedTemplates = mutableListOf<Pair<VisionRegion, Bitmap>>()
+        var screenBitmap: Bitmap? = null
+
+        try {
+            preset.regions.forEach { region ->
+                val templateBitmap = BitmapFactory.decodeFile(region.templatePath)
+                if (templateBitmap == null) {
+                    Log.e(TAG, "Failed to decode region template: ${region.templatePath}")
+                } else {
+                    loadedTemplates.add(region to templateBitmap)
+                }
+            }
+
+            if (loadedTemplates.isEmpty()) {
+                context.put("${node.outputContextKey}_found", false)
+                return NodeResult.Failure("No region templates could be decoded")
+            }
+
+            kotlinx.coroutines.delay(200)
+
+            screenBitmap = provider.captureFrame()
+                ?: return NodeResult.Failure("Failed to capture screen frame")
+
+            VisionNativeBridge.clearTemplates()
+            loadedTemplates.forEach { (region, templateBitmap) ->
+                val searchRect = region.toSearchRect()
+                VisionNativeBridge.addTemplate(
+                    region.id,
+                    templateBitmap,
+                    searchRect.left,
+                    searchRect.top,
+                    searchRect.width(),
+                    searchRect.height(),
+                    region.matchThreshold,
+                    allowFullscreenFallback = false,
+                    trackRoiToMatch = false
+                )
+            }
+
+            val results = VisionNativeBridge.match(screenBitmap)
+            val matchesById = results.filter { it.matched }.groupBy { it.id }
+            val matchedActions = mutableListOf<Pair<VisionRegion, PointF>>()
+
+            preset.regions.forEach { region ->
+                val matches = matchesById[region.id] ?: return@forEach
+                matches.forEach { match ->
+                    val cx = match.x + match.width / 2f
+                    val cy = match.y + match.height / 2f
+                    Log.d(TAG, "Region ${region.id} matched at ($cx, $cy) score: ${match.score}")
+
+                    context.put("${node.outputContextKey}_found", true)
+                    context.put("${node.outputContextKey}_x", cx)
+                    context.put("${node.outputContextKey}_y", cy)
+                    context.put("${node.outputContextKey}_width", match.width)
+                    context.put("${node.outputContextKey}_height", match.height)
+                    context.put("${node.outputContextKey}_score", match.score)
+                    context.put(node.outputContextKey, "${cx},${cy}")
+
+                    matchedActions.add(region to PointF(cx, cy))
+                }
+            }
+
+            if (matchedActions.isEmpty()) {
+                context.put("${node.outputContextKey}_found", false)
+                context.put(node.outputContextKey, "not_found")
+                Log.d(TAG, "DETECT_ONLY: no regions matched")
+                return NodeResult.Failure("No regions matched in DETECT_ONLY mode")
+            }
+            context.put("${node.outputContextKey}_count", matchedActions.size)
+
+            val sequentialActions = matchedActions.toMutableList()
+            val concurrentTaps = matchedActions.filter { (region, _) ->
+                region.action is VisionAction.Click
+            }
+
+            if (preset.tapDispatchMode == TapDispatchMode.CONCURRENT && concurrentTaps.size > 1) {
+                val maxConcurrentTaps = VisionActionExecutor.maxConcurrentTapCount()
+                val dispatchTaps = concurrentTaps.take(maxConcurrentTaps)
+                val overflowCount = concurrentTaps.size - dispatchTaps.size
+                val details = dispatchTaps.joinToString { (region, point) ->
+                    "#${region.id}(${point.x},${point.y})"
+                }
+                if (overflowCount > 0) {
+                    Log.w(
+                        TAG,
+                        "Concurrent tap capped at $maxConcurrentTaps; dropped $overflowCount taps for this flow run"
+                    )
+                }
+                Log.d(TAG, "Executing concurrent tap for flow node: $details")
+                val success = VisionActionExecutor.executeMultiTap(dispatchTaps.map { (_, point) -> point })
+                if (success) {
+                    val concurrentTapSet = concurrentTaps.toSet()
+                    sequentialActions.removeAll { it in concurrentTapSet }
+                    if (sequentialActions.isNotEmpty()) {
+                        kotlinx.coroutines.delay(500)
+                    }
+                } else {
+                    Log.w(TAG, "Concurrent tap failed; falling back to sequential region actions")
+                }
+            }
+
+            for ((region, point) in sequentialActions) {
+                val success = VisionActionExecutor.execute(region.action, point)
+                if (!success) {
+                    Log.w(TAG, "Failed to execute action for region ${region.id}")
+                }
+                kotlinx.coroutines.delay(500)
+            }
+
+            return NodeResult.Success
+        } finally {
+            loadedTemplates.forEach { (_, templateBitmap) ->
+                if (!templateBitmap.isRecycled) templateBitmap.recycle()
+            }
+            screenBitmap?.let { if (!it.isRecycled) it.recycle() }
+            VisionNativeBridge.clearTemplates()
+        }
+    }
+
+    private suspend fun executeMovingPreset(
+        node: VisualTriggerNode, preset: VisionPreset,
+        provider: ScreenCaptureProvider, context: FlowContext
+    ): NodeResult {
+        if (preset.regions.any { it.matchMode == VisionMatchMode.MOVING &&
+                (it.customSearchRect() == null || it.action !is VisionAction.Click) }) {
+            return NodeResult.Failure("Moving objects require a search area and Tap action")
+        }
+        VisionNativeBridge.clearTemplates()
+        try {
+            preset.regions.forEach { region ->
+                val bitmap = BitmapFactory.decodeFile(region.templatePath)
+                    ?: return NodeResult.Failure("Cannot load target ${region.id}")
+                try {
+                    val roi = region.toSearchRect()
+                    VisionNativeBridge.addTemplate(region.id, bitmap, roi.left, roi.top, roi.width(), roi.height(),
+                        region.effectiveThreshold, allowFullscreenFallback = false, trackRoiToMatch = false,
+                        moving = region.matchMode == VisionMatchMode.MOVING)
+                } finally { bitmap.recycle() }
+            }
+            val deadline = SystemClock.uptimeMillis() + 3000
+            val byId = preset.regions.associateBy { it.id }
+            while (SystemClock.uptimeMillis() < deadline) {
+                val sample = provider.withLatestFrame((deadline - SystemClock.uptimeMillis()).coerceAtLeast(1)) { frame ->
+                    val plane = frame.image.planes[0]
+                    require(plane.pixelStride == 4)
+                    val hits = VisionNativeBridge.matchRgba(plane.buffer, frame.width, frame.height, plane.rowStride, frame.acquiredAtMs)
+                    Triple(hits, frame.acquiredAtMs, frame.width to frame.height)
+                } ?: break
+                val hits = sample.first.filter { it.matched }
+                val batchSize = if (preset.tapDispatchMode == TapDispatchMode.CONCURRENT) VisionActionExecutor.maxConcurrentTapCount() else 1
+                var tapped = 0
+                for (batch in hits.chunked(batchSize)) {
+                    withContext(Dispatchers.Main.immediate) {
+                        val taps = batch.mapNotNull { hit ->
+                            val region = byId.getValue(hit.id)
+                            if (region.matchMode == VisionMatchMode.MOVING) {
+                                val roi = region.toSearchRect()
+                                val point = predictMovingTap(hit, sample.second, SystemClock.uptimeMillis(),
+                                    TapBounds(maxOf(0, roi.left), maxOf(0, roi.top), minOf(sample.third.first, roi.right), minOf(sample.third.second, roi.bottom)),
+                                    region.tapLeadMs) ?: return@mapNotNull null
+                                hit to PointF(point.x, point.y)
+                            } else if (region.action is VisionAction.Click) {
+                                hit to PointF(hit.x + hit.width / 2f, hit.y + hit.height / 2f)
+                            } else null
+                        }
+                        if (taps.isNotEmpty() && VisionActionExecutor.executeMultiTap(taps.map { it.second }, 32)) {
+                            tapped += taps.size
+                            val (hit, point) = taps.first()
+                            context.put("${node.outputContextKey}_x", point.x)
+                            context.put("${node.outputContextKey}_y", point.y)
+                            context.put("${node.outputContextKey}_width", hit.width)
+                            context.put("${node.outputContextKey}_height", hit.height)
+                            context.put("${node.outputContextKey}_score", hit.score)
+                            context.put(node.outputContextKey, "${point.x},${point.y}")
+                        }
+                    }
+                }
+                for (hit in hits.filter { byId.getValue(it.id).let { region ->
+                        region.matchMode == VisionMatchMode.STATIC && region.action !is VisionAction.Click } }) {
+                    val region = byId.getValue(hit.id)
+                    val point = PointF(hit.x + hit.width / 2f, hit.y + hit.height / 2f)
+                    if (VisionActionExecutor.execute(region.action, point)) tapped++
+                }
+                if (tapped > 0) {
+                    context.put("${node.outputContextKey}_found", true)
+                    context.put("${node.outputContextKey}_count", tapped)
+                    return NodeResult.Success
+                }
+                kotlinx.coroutines.delay(16)
+            }
+            context.put("${node.outputContextKey}_found", false)
+            context.put(node.outputContextKey, "not_found")
+            return NodeResult.Failure("No fresh moving target verified within 3 seconds")
+        } finally {
+            VisionNativeBridge.clearTemplates()
         }
     }
 }

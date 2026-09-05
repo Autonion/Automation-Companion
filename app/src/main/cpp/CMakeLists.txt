@@ -26,6 +26,8 @@ add_library(
         vision_engine
         SHARED
         vision_engine.cpp
+        fast_matcher.cpp
+        moving_matcher.cpp
 )
 
 # ------------------------------------------------------------

@@ -22,9 +22,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import android.widget.LinearLayout
-import android.widget.ImageView
 import androidx.core.app.NotificationCompat
-import com.autonion.automationcompanion.R
 import com.autonion.automationcompanion.core.ui.OverlayStyles
 import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
 import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
@@ -37,6 +35,7 @@ class CaptureOverlayService : Service() {
 
     companion object {
         private const val TAG = "CaptureOverlay"
+        const val EXTRA_CAPTURE_SESSION_ID = "EXTRA_CAPTURE_SESSION_ID"
     }
 
     private var windowManager: WindowManager? = null
@@ -49,15 +48,7 @@ class CaptureOverlayService : Service() {
 
     private var resultCode: Int = 0
     private var resultData: Intent? = null
-    private var presetName: String = "New Automation"
-
-    // Flow mode state
-    private var isFlowMode = false
-    private var flowNodeId: String? = null
-    private var flowVisionJson: String? = null
-    private var clearOnStart: Boolean = false
-
-    private var activePresetId: String? = null
+    private var session: VisionCaptureSession? = null
     private var doneBtn: View? = null
     private var doneSpacer: View? = null
 
@@ -87,27 +78,31 @@ class CaptureOverlayService : Service() {
                     @Suppress("DEPRECATION")
                     intent.getParcelableExtra("EXTRA_RESULT_DATA")
                 }
-                presetName = intent.getStringExtra("EXTRA_PRESET_NAME") ?: "New Automation"
-                
-                if (intent.getBooleanExtra(FlowOverlayContract.EXTRA_FLOW_MODE, false)) {
-                    isFlowMode = true
-                    flowNodeId = intent.getStringExtra(FlowOverlayContract.EXTRA_FLOW_NODE_ID)
-                    intent.getStringExtra("EXTRA_FLOW_VISION_JSON")?.let { flowVisionJson = it }
-                    intent.getBooleanExtra("EXTRA_CLEAR_ON_START", false).let { if (it) clearOnStart = true }
-                }
+                session = VisionCaptureSession(
+                    presetName = intent.getStringExtra("EXTRA_PRESET_NAME") ?: "New Automation",
+                    isFlowMode = intent.getBooleanExtra(FlowOverlayContract.EXTRA_FLOW_MODE, false),
+                    flowNodeId = intent.getStringExtra(FlowOverlayContract.EXTRA_FLOW_NODE_ID),
+                    flowVisionJson = intent.getStringExtra("EXTRA_FLOW_VISION_JSON"),
+                    clearOnStart = intent.getBooleanExtra("EXTRA_CLEAR_ON_START", false)
+                )
+                stoppedByUser = false
+                doneBtn?.visibility = View.GONE
+                doneSpacer?.visibility = View.GONE
+                Log.d(TAG, "New capture session=${session?.id}, name=${session?.presetName}")
                 
                 startForegroundServiceNotification()
                 // Start projection immediately so frames start caching
                 startProjection()
                 showOverlay()
+                overlayView?.visibility = View.VISIBLE
             }
             "ACTION_SHOW_OVERLAY" -> {
-                // Called after editor finishes — re-show the overlay (not used much in flow mode)
-                intent?.getStringExtra("EXTRA_PRESET_ID")?.let {
-                    activePresetId = it
-                    doneBtn?.visibility = View.VISIBLE
-                    doneSpacer?.visibility = View.VISIBLE
-                }
+                val current = session ?: return START_NOT_STICKY
+                val resultSessionId = intent.getStringExtra(EXTRA_CAPTURE_SESSION_ID)
+                if (resultSessionId != current.id) return START_NOT_STICKY
+                session = current.afterEditorResult(resultSessionId, intent.getStringExtra("EXTRA_PRESET_ID"))
+                doneBtn?.visibility = if (session?.activePresetId != null) View.VISIBLE else View.GONE
+                doneSpacer?.visibility = doneBtn?.visibility ?: View.GONE
                 overlayView?.visibility = View.VISIBLE
             }
         }
@@ -172,9 +167,9 @@ class CaptureOverlayService : Service() {
                 }
             }, Handler(Looper.getMainLooper()))
 
-            val metrics = resources.displayMetrics
-            val width = metrics.widthPixels
-            val height = metrics.heightPixels
+            val metrics = getRealDisplayMetrics()
+            val width = metrics.width
+            val height = metrics.height
             val density = metrics.densityDpi
 
             imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
@@ -228,6 +223,25 @@ class CaptureOverlayService : Service() {
         } catch (e: Exception) {
             Log.e(TAG, "Error starting projection", e)
             DebugLogger.error(applicationContext, LogCategory.VISUAL_TRIGGER, "Projection Error", "Error starting projection: ${e.message}", TAG)
+        }
+    }
+
+    private data class CaptureDisplayMetrics(
+        val width: Int,
+        val height: Int,
+        val densityDpi: Int
+    )
+
+    private fun getRealDisplayMetrics(): CaptureDisplayMetrics {
+        val wm = getSystemService(WINDOW_SERVICE) as WindowManager
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val bounds = wm.currentWindowMetrics.bounds
+            CaptureDisplayMetrics(bounds.width(), bounds.height(), resources.configuration.densityDpi)
+        } else {
+            val displayMetrics = android.util.DisplayMetrics()
+            @Suppress("DEPRECATION")
+            wm.defaultDisplay.getRealMetrics(displayMetrics)
+            CaptureDisplayMetrics(displayMetrics.widthPixels, displayMetrics.heightPixels, displayMetrics.densityDpi)
         }
     }
 
@@ -289,36 +303,18 @@ class CaptureOverlayService : Service() {
         // Done button (hidden until at least one capture is saved)
         doneSpacer = View(this).apply {
             layoutParams = LinearLayout.LayoutParams((OverlayStyles.BUTTON_SPACING_DP * dp).toInt(), 1)
-            visibility = if (activePresetId != null) View.VISIBLE else View.GONE
+            visibility = if (session?.activePresetId != null) View.VISIBLE else View.GONE
         }
-        var doneBtnRef: android.widget.ImageView? = null
         doneBtn = OverlayStyles.createIconButton(
             context = this,
             iconRes = android.R.drawable.ic_menu_save,
             contentDescription = "Done"
         ) {
-            // Animate save confirmation on the button itself
-            val btn = doneBtnRef
-            if (btn != null) {
-                btn.setImageResource(com.autonion.automationcompanion.R.drawable.ic_success)
-                btn.setColorFilter(android.graphics.Color.GREEN)
-                btn.animate()
-                    .scaleX(1.3f).scaleY(1.3f)
-                    .setDuration(150)
-                    .withEndAction {
-                        btn.animate().scaleX(1f).scaleY(1f).setDuration(200).start()
-                    }.start()
-
-                // Revert after 2 seconds
-                btn.postDelayed({
-                    btn.setImageResource(android.R.drawable.ic_menu_save)
-                    btn.setColorFilter(OverlayStyles.ICON_TINT_NORMAL)
-                }, 2000)
-            }
+            // The editor has already persisted the preset. Done ends this capture session.
+            stopSelf()
         }.apply {
-            visibility = if (activePresetId != null) View.VISIBLE else View.GONE
+            visibility = if (session?.activePresetId != null) View.VISIBLE else View.GONE
         }
-        doneBtnRef = doneBtn as? android.widget.ImageView
 
         // Cancel (X) button
         val cancelBtn = OverlayStyles.createIconButton(
@@ -347,6 +343,7 @@ class CaptureOverlayService : Service() {
     }
 
     private fun captureScreen() {
+        val captureSession = session ?: return
         // Hide overlay before capture so it doesn't appear in the screenshot
         overlayView?.visibility = View.GONE
 
@@ -355,10 +352,11 @@ class CaptureOverlayService : Service() {
             // The latestBitmap may still show the overlay since we just hid it.
             // Wait one more frame cycle for a clean frame without the overlay.
             Handler(Looper.getMainLooper()).postDelayed({
+                if (stoppedByUser || session?.id != captureSession.id) return@postDelayed
                 val bitmap = latestBitmap
                 if (bitmap != null) {
                     val copy = bitmap.copy(bitmap.config ?: Bitmap.Config.ARGB_8888, false)
-                    saveAndOpenEditor(copy)
+                    saveAndOpenEditor(copy, captureSession)
                 } else {
                     Log.w(TAG, "No cached frame available yet")
                     android.widget.Toast.makeText(this, "No frame captured yet, try again...", android.widget.Toast.LENGTH_SHORT).show()
@@ -368,24 +366,25 @@ class CaptureOverlayService : Service() {
         }, 200)
     }
 
-    private fun saveAndOpenEditor(bitmap: Bitmap) {
+    private fun saveAndOpenEditor(bitmap: Bitmap, captureSession: VisionCaptureSession) {
         try {
             val file = File(cacheDir, "capture_${System.currentTimeMillis()}.png")
             FileOutputStream(file).use { out ->
-                bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
+                check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)) { "Could not encode capture" }
             }
 
             val intent = Intent(this, VisionEditorActivity::class.java).apply {
                 putExtra("IMAGE_PATH", file.absolutePath)
-                putExtra("EXTRA_PRESET_NAME", presetName)
-                if (activePresetId != null) {
-                    putExtra("EXTRA_APPEND_TO_PRESET_ID", activePresetId)
+                putExtra(EXTRA_CAPTURE_SESSION_ID, captureSession.id)
+                putExtra("EXTRA_PRESET_NAME", captureSession.presetName)
+                if (captureSession.activePresetId != null) {
+                    putExtra("EXTRA_APPEND_TO_PRESET_ID", captureSession.activePresetId)
                 }
-                if (isFlowMode) {
+                if (captureSession.isFlowMode) {
                     putExtra(FlowOverlayContract.EXTRA_FLOW_MODE, true)
-                    putExtra(FlowOverlayContract.EXTRA_FLOW_NODE_ID, flowNodeId)
-                    flowVisionJson?.let { putExtra("EXTRA_FLOW_VISION_JSON", it) }
-                    if (clearOnStart) putExtra("EXTRA_CLEAR_ON_START", true)
+                    putExtra(FlowOverlayContract.EXTRA_FLOW_NODE_ID, captureSession.flowNodeId)
+                    captureSession.flowVisionJson?.let { putExtra("EXTRA_FLOW_VISION_JSON", it) }
+                    if (captureSession.clearOnStart) putExtra("EXTRA_CLEAR_ON_START", true)
                 }
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
@@ -396,6 +395,10 @@ class CaptureOverlayService : Service() {
         } catch (e: Exception) {
             Log.e(TAG, "Error saving capture", e)
             DebugLogger.error(applicationContext, LogCategory.VISUAL_TRIGGER, "Save Error", "Error saving capture: ${e.message}", TAG)
+            android.widget.Toast.makeText(this, "Capture failed. Please try again.", android.widget.Toast.LENGTH_LONG).show()
+            overlayView?.visibility = View.VISIBLE
+        } finally {
+            bitmap.recycle()
         }
     }
 
@@ -412,6 +415,7 @@ class CaptureOverlayService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         stoppedByUser = true
+        session = null
         if (overlayView != null) {
             try { windowManager?.removeView(overlayView) } catch (_: Exception) {}
             overlayView = null

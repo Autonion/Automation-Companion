@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <exception>
 #include <future>
+#include <cmath>
 #include <mutex>
 
 #define LOG_TAG "VisionEngineNative"
@@ -187,20 +188,33 @@ void vision_init() {
 
 void vision_add_template(int id, const cv::Mat &templ, int roi_x, int roi_y,
                          int roi_w, int roi_h, float threshold,
-                         bool allow_fullscreen_fallback) {
+                         bool allow_fullscreen_fallback,
+                         bool track_roi_to_match, bool moving) {
   if (templ.empty())
     return;
-  cv::Mat gray;
+  cv::Mat match_templ;
+  cv::Mat alpha_mask;
   if (templ.channels() == 4) {
-    cv::cvtColor(templ, gray, cv::COLOR_RGBA2GRAY);
+    cv::cvtColor(templ, match_templ, cv::COLOR_RGBA2RGB);
+    std::vector<cv::Mat> channels;
+    cv::split(templ, channels);
+    if (channels.size() == 4) {
+      double min_alpha = 255.0;
+      double max_alpha = 255.0;
+      cv::minMaxLoc(channels[3], &min_alpha, &max_alpha);
+      if (min_alpha < 255.0 && max_alpha > 0.0) {
+        cv::threshold(channels[3], alpha_mask, 200, 255, cv::THRESH_BINARY);
+      }
+    }
   } else if (templ.channels() == 3) {
-    cv::cvtColor(templ, gray, cv::COLOR_RGB2GRAY);
+    match_templ = templ.clone();
   } else {
-    gray = templ.clone();
+    match_templ = templ.clone();
   }
 
   TemplateData data;
-  data.templ = gray;
+  data.templ = match_templ;
+  data.mask = alpha_mask;
   data.roi = cv::Rect(roi_x, roi_y, roi_w, roi_h);
   data.threshold = (threshold > 0.0f)
                        ? std::max(0.5f, std::min(1.0f, threshold))
@@ -209,13 +223,25 @@ void vision_add_template(int id, const cv::Mat &templ, int roi_x, int roi_y,
   data.last_fullscreen_search_ms = 0;
   data.allow_fullscreen_fallback = allow_fullscreen_fallback;
   data.force_fullscreen_once = false;
+  data.track_roi_to_match = track_roi_to_match;
+  if (moving) {
+    data.moving = std::make_shared<MovingMatcher>(match_templ, alpha_mask,
+                                                 data.roi, data.threshold);
+    data.track_roi_to_match = false;
+    data.allow_fullscreen_fallback = false;
+  } else {
+    data.fast = std::make_shared<FastMatcher>(match_templ, alpha_mask, data.threshold);
+  }
 
   std::lock_guard<std::mutex> lock(g_mutex);
   g_templates[id] = data;
   LOGD("Added template ID=%d: %dx%d, ROI=(%d,%d,%d,%d), threshold=%.2f, "
-       "autoFullscreen=%s",
-       id, gray.cols, gray.rows, roi_x, roi_y, roi_w, roi_h, data.threshold,
-       data.allow_fullscreen_fallback ? "true" : "false");
+       "autoFullscreen=%s, mask=%s, trackRoi=%s",
+       id, match_templ.cols, match_templ.rows, roi_x, roi_y, roi_w, roi_h,
+       data.threshold,
+       data.allow_fullscreen_fallback ? "true" : "false",
+       data.mask.empty() ? "false" : "true",
+       data.track_roi_to_match ? "true" : "false");
 }
 
 void vision_clear_templates() {
@@ -251,139 +277,45 @@ void vision_request_fullscreen_search(int id) {
 
 // ── Template matching with ROI restriction ────────────────────────────
 
-// Matches a single template against a (possibly ROI-cropped) screen region.
-// Returns the match rect in FULL SCREEN coordinates.
-static bool match_one(const cv::Mat &screen_gray, const TemplateData &tdata,
-                      cv::Rect &out_rect, float &out_score,
-                      bool &out_used_fullscreen, int id) {
-
-  if (screen_gray.empty() || tdata.templ.empty())
-    return false;
-
-  const cv::Mat &templ_gray = tdata.templ;
-
-  // ── Determine search region ──
-  // Prefer ROI; full-screen recovery is reserved for explicit requests or
-  // repeated ROI misses after a cooldown.
-  cv::Mat search_region;
-  int offset_x = 0, offset_y = 0;
-  bool using_roi = false;
-
-  bool has_roi = tdata.roi.width > 0 && tdata.roi.height > 0;
-  int64_t now_ms = monotonic_ms();
-  bool auto_fullscreen_allowed_now = auto_fullscreen_allowed(tdata, now_ms);
-  bool should_use_roi =
-      has_roi && !tdata.force_fullscreen_once && !auto_fullscreen_allowed_now;
-
-  if (should_use_roi) {
-    // Proportional padding: 25% of region dimensions, minimum 30px
-    int pad_x = std::max(30, (int)(tdata.roi.width * 0.25f));
-    int pad_y = std::max(30, (int)(tdata.roi.height * 0.25f));
-
-    // Expand ROI by padding, clamp to screen bounds
-    int x1 = std::max(0, tdata.roi.x - pad_x);
-    int y1 = std::max(0, tdata.roi.y - pad_y);
-    int x2 =
-        std::min(screen_gray.cols, tdata.roi.x + tdata.roi.width + pad_x);
-    int y2 =
-        std::min(screen_gray.rows, tdata.roi.y + tdata.roi.height + pad_y);
-
-    int crop_w = x2 - x1;
-    int crop_h = y2 - y1;
-
-    // ROI crop must be larger than the template
-    if (crop_w >= templ_gray.cols && crop_h >= templ_gray.rows) {
-      search_region = screen_gray(cv::Rect(x1, y1, crop_w, crop_h));
-      offset_x = x1;
-      offset_y = y1;
-      using_roi = true;
-    } else {
-      // ROI too small (edge case) — fall back to full screen
-      search_region = screen_gray;
-    }
-  } else {
-    if (has_roi && tdata.force_fullscreen_once) {
-      LOGD("ID=%d: forced full-screen search for stuck step", id);
-    } else if (auto_fullscreen_allowed_now) {
-      LOGD("ID=%d: ROI miss #%d, running throttled full-screen fallback", id,
-           tdata.miss_count);
-    }
-    search_region = screen_gray;
+static std::vector<MatchResult>
+match_all_occurrences(const cv::Mat &screen, const TemplateData &data, int id) {
+  if (screen.empty() || !data.fast) return {};
+  cv::Rect roi({}, screen.size());
+  const bool has_roi = data.roi.width > 0 && data.roi.height > 0;
+  const bool using_roi = has_roi && !data.force_fullscreen_once &&
+                         !auto_fullscreen_allowed(data, monotonic_ms());
+  if (using_roi) {
+    const bool adaptive = data.track_roi_to_match || data.allow_fullscreen_fallback;
+    const int px = adaptive ? std::min(30, std::max(8, data.roi.width / 10)) : 0;
+    const int py = adaptive ? std::min(30, std::max(8, data.roi.height / 10)) : 0;
+    roi = cv::Rect(data.roi.x - px, data.roi.y - py,
+                   data.roi.width + 2 * px, data.roi.height + 2 * py) & roi;
   }
-
-  out_used_fullscreen = !using_roi;
-
-  // Template must fit within search region
-  if (templ_gray.cols > search_region.cols ||
-      templ_gray.rows > search_region.rows) {
-    LOGD("ID=%d: template (%dx%d) larger than search region (%dx%d), skip", id,
-         templ_gray.cols, templ_gray.rows, search_region.cols,
-         search_region.rows);
-    return false;
+  if (roi.width < data.templ.cols || roi.height < data.templ.rows)
+    return {{id, false, 0.0f, {}, !using_roi}};
+  float best_score = 0;
+  std::vector<MatchResult> results;
+  for (const auto &hit : data.fast->match(screen(roi), best_score)) {
+    results.push_back({id, true, hit.score, hit.rect + roi.tl(), !using_roi});
   }
-
-  float best_score = -1.0f;
-  cv::Point best_loc;
-  float best_scale = 1.0f;
-
-  float scales[] = {1.0f, 0.95f, 1.05f};
-  int num_scales = using_roi && tdata.threshold <= 0.85f ? 1 : 3;
-  float early_exit_score = std::max(0.85f, tdata.threshold);
-
-  for (int s = 0; s < num_scales; s++) {
-    float scale = scales[s];
-
-    cv::Mat scaled_templ;
-    if (scale == 1.0f) {
-      scaled_templ = templ_gray;
-    } else {
-      int new_w = (int)(templ_gray.cols * scale);
-      int new_h = (int)(templ_gray.rows * scale);
-      if (new_w <= 0 || new_h <= 0 || new_w > search_region.cols ||
-          new_h > search_region.rows)
-        continue;
-      cv::resize(templ_gray, scaled_templ, cv::Size(new_w, new_h));
-    }
-
-    cv::Mat result;
-    cv::matchTemplate(search_region, scaled_templ, result,
-                      cv::TM_CCOEFF_NORMED);
-
-    double minVal, maxVal;
-    cv::Point minLoc, maxLoc;
-    cv::minMaxLoc(result, &minVal, &maxVal, &minLoc, &maxLoc);
-
-    if ((float)maxVal > best_score) {
-      best_score = (float)maxVal;
-      best_loc = maxLoc;
-      best_scale = scale;
-    }
-
-    // Early exit on strong match without skipping higher user thresholds.
-    if (best_score >= early_exit_score)
-      break;
-  }
-
-  out_score = best_score;
-
-  int w = (int)(templ_gray.cols * best_scale);
-  int h = (int)(templ_gray.rows * best_scale);
-
-  // Remap coordinates back to full-screen space
-  out_rect = cv::Rect(best_loc.x + offset_x, best_loc.y + offset_y, w, h);
-
-  bool matched = best_score >= tdata.threshold;
-
-  LOGD("ID=%d: score=%.3f (threshold=%.2f) scale=%.2f at=(%d,%d) %dx%d %s "
-       "[%s]",
-       id, best_score, tdata.threshold, best_scale, out_rect.x, out_rect.y, w,
-       h, matched ? "MATCHED" : "no match",
-       using_roi ? "ROI" : "FULLSCREEN");
-
-  return matched;
+  if (results.empty()) results.push_back({id, false, best_score, {}, !using_roi});
+  return results;
 }
 
-std::vector<MatchResult> vision_match_all(const cv::Mat &screen) {
+static std::vector<MatchResult> match_template(const cv::Mat &screen,
+    const TemplateData &data, int id, int64_t frame_ms) {
+  if (!data.moving) return match_all_occurrences(screen, data, id);
+  cv::Mat rgb = screen;
+  if (screen.channels() == 4) cv::cvtColor(screen, rgb, cv::COLOR_RGBA2RGB);
+  std::vector<MatchResult> results;
+  for (const auto &hit : data.moving->match(rgb, frame_ms)) {
+    results.push_back({id, true, hit.score, hit.rect, false, hit.track_id,
+                       hit.velocity_x, hit.velocity_y, hit.observations});
+  }
+  return results;
+}
+
+std::vector<MatchResult> vision_match_all(const cv::Mat &screen, int64_t frame_ms) {
   std::vector<MatchResult> results;
   if (screen.empty())
     return results;
@@ -404,21 +336,13 @@ std::vector<MatchResult> vision_match_all(const cv::Mat &screen) {
   }
   limit_auto_fullscreen_fallbacks(templates_snapshot);
 
-  LOGD("vision_match_all: screen=%dx%d ch=%d, templates=%zu", screen.cols,
-       screen.rows, screen.channels(), templates_snapshot.size());
-
-  cv::Mat screen_gray;
-  if (screen.channels() == 4) {
-    cv::cvtColor(screen, screen_gray, cv::COLOR_RGBA2GRAY);
-  } else if (screen.channels() == 3) {
-    cv::cvtColor(screen, screen_gray, cv::COLOR_RGB2GRAY);
-  } else {
-    screen_gray = screen;
+  const cv::Mat &screen_match = screen;
+  if (screen.channels() != 4 && screen.channels() != 3 && screen.channels() != 1) {
+    LOGD("vision_match_all: unsupported channel count %d", screen.channels());
+    return results;
   }
 
-  // Pre-allocate results with correct size
   size_t count = templates_snapshot.size();
-  results.resize(count);
 
   if (count == 1) {
     // Single template — run directly, no pool overhead
@@ -426,12 +350,10 @@ std::vector<MatchResult> vision_match_all(const cv::Mat &screen) {
     int id = it->first;
     TemplateData &tdata = it->second;
 
-    cv::Rect r;
-    float score = 0;
-    bool used_fullscreen = false;
-    bool found = match_one(screen_gray, tdata, r, score, used_fullscreen, id);
-
-    results[0] = {id, found, score, r, used_fullscreen};
+    std::vector<MatchResult> template_results =
+        match_template(screen_match, tdata, id, frame_ms);
+    results.insert(results.end(), template_results.begin(),
+                   template_results.end());
 
     // Update miss count in global templates
     std::lock_guard<std::mutex> lock(g_mutex);
@@ -439,12 +361,22 @@ std::vector<MatchResult> vision_match_all(const cv::Mat &screen) {
     auto git = g_templates.find(id);
     if (git != g_templates.end()) {
       git->second.force_fullscreen_once = false;
+      bool used_fullscreen =
+          !template_results.empty() && template_results.front().used_fullscreen;
       if (used_fullscreen) {
         git->second.last_fullscreen_search_ms = state_now_ms;
       }
+      auto best_it = std::max_element(
+          template_results.begin(), template_results.end(),
+          [](const MatchResult &a, const MatchResult &b) {
+            return a.score < b.score;
+          });
+      bool found = best_it != template_results.end() && best_it->matched;
       if (found) {
         git->second.miss_count = 0;
-        git->second.roi = r;
+        if (git->second.track_roi_to_match) {
+          git->second.roi = best_it->rect;
+        }
       } else if (used_fullscreen) {
         git->second.miss_count = 0;
       } else {
@@ -455,7 +387,7 @@ std::vector<MatchResult> vision_match_all(const cv::Mat &screen) {
     // Multiple templates — dispatch to thread pool
     pool_init();
     std::vector<std::future<void>> futures;
-    std::mutex results_mutex;
+    std::vector<std::vector<MatchResult>> per_template_results(count);
     size_t idx = 0;
 
     for (auto &pair : templates_snapshot) {
@@ -463,46 +395,54 @@ std::vector<MatchResult> vision_match_all(const cv::Mat &screen) {
       TemplateData tdata = pair.second; // Copy for thread safety
       size_t result_idx = idx++;
 
-      futures.push_back(pool_submit([&screen_gray, &results, &results_mutex,
-                                     tdata, id, result_idx]() {
-        cv::Rect r;
-        float score = 0;
-        bool used_fullscreen = false;
-        // tdata is a local copy — safe to read in thread
-        bool found =
-            match_one(screen_gray, tdata, r, score, used_fullscreen, id);
-
-        MatchResult res;
-        res.id = id;
-        res.matched = found;
-        res.score = score;
-        res.rect = r;
-        res.used_fullscreen = used_fullscreen;
-
-        std::lock_guard<std::mutex> lock(results_mutex);
-        results[result_idx] = res;
+      futures.push_back(pool_submit([&screen_match, &per_template_results,
+                                     tdata, id, result_idx, frame_ms]() {
+        per_template_results[result_idx] =
+            match_template(screen_match, tdata, id, frame_ms);
       }));
     }
 
     // Wait for all matches to complete
+    std::exception_ptr failure;
     for (auto &f : futures) {
-      f.get();
+      try { f.get(); } catch (...) {
+        if (!failure) failure = std::current_exception();
+      }
+    }
+    if (failure) std::rethrow_exception(failure);
+
+    for (const auto &template_results : per_template_results) {
+      results.insert(results.end(), template_results.begin(),
+                     template_results.end());
     }
 
     // Update miss counts in global templates
     std::lock_guard<std::mutex> lock(g_mutex);
     int64_t state_now_ms = monotonic_ms();
-    for (const auto &res : results) {
-      auto git = g_templates.find(res.id);
+    idx = 0;
+    for (const auto &pair : templates_snapshot) {
+      int id = pair.first;
+      const auto &template_results = per_template_results[idx++];
+      auto git = g_templates.find(id);
       if (git != g_templates.end()) {
         git->second.force_fullscreen_once = false;
-        if (res.used_fullscreen) {
+        bool used_fullscreen =
+            !template_results.empty() && template_results.front().used_fullscreen;
+        if (used_fullscreen) {
           git->second.last_fullscreen_search_ms = state_now_ms;
         }
-        if (res.matched) {
+        auto best_it = std::max_element(
+            template_results.begin(), template_results.end(),
+            [](const MatchResult &a, const MatchResult &b) {
+              return a.score < b.score;
+            });
+        bool found = best_it != template_results.end() && best_it->matched;
+        if (found) {
           git->second.miss_count = 0;
-          git->second.roi = res.rect;
-        } else if (res.used_fullscreen) {
+          if (git->second.track_roi_to_match) {
+            git->second.roi = best_it->rect;
+          }
+        } else if (used_fullscreen) {
           git->second.miss_count = 0;
         } else {
           git->second.miss_count++;
@@ -514,7 +454,14 @@ std::vector<MatchResult> vision_match_all(const cv::Mat &screen) {
   auto t_end = std::chrono::steady_clock::now();
   double elapsed_ms =
       std::chrono::duration<double, std::milli>(t_end - t_start).count();
-  LOGD("vision_match_all: %zu templates in %.1fms", count, elapsed_ms);
+  static int64_t last_timing_ms = 0;
+  const int64_t now_ms = monotonic_ms();
+  if (now_ms - last_timing_ms >= 2000) {
+    LOGD("scan=%dx%d templates=%zu match=%.1fms hits=%zu", screen.cols,
+         screen.rows, count, elapsed_ms,
+         std::count_if(results.begin(), results.end(), [](const auto &r) { return r.matched; }));
+    last_timing_ms = now_ms;
+  }
 
   return results;
 }
@@ -531,12 +478,19 @@ bool bitmap_to_mat(JNIEnv *env, jobject bitmap, cv::Mat &dst) {
     return false;
   if (AndroidBitmap_lockPixels(env, bitmap, &pixels) < 0)
     return false;
-  if (!pixels)
+  if (!pixels) {
+    AndroidBitmap_unlockPixels(env, bitmap);
     return false;
+  }
 
   // Deep copy so we can safely unlock
-  cv::Mat view(info.height, info.width, CV_8UC4, pixels);
-  view.copyTo(dst);
+  cv::Mat view(info.height, info.width, CV_8UC4, pixels, info.stride);
+  try {
+    view.copyTo(dst);
+  } catch (...) {
+    AndroidBitmap_unlockPixels(env, bitmap);
+    throw;
+  }
 
   AndroidBitmap_unlockPixels(env, bitmap);
   return true;
@@ -556,13 +510,19 @@ Java_com_autonion_automationcompanion_core_vision_VisionNativeBridge_nativeInit(
 JNIEXPORT void JNICALL
 Java_com_autonion_automationcompanion_core_vision_VisionNativeBridge_nativeAddTemplate(
     JNIEnv *env, jobject, jint id, jobject bitmap, jint roiX, jint roiY,
-    jint roiW, jint roiH, jfloat threshold, jboolean allowFullscreenFallback) {
+    jint roiW, jint roiH, jfloat threshold, jboolean allowFullscreenFallback,
+    jboolean trackRoiToMatch, jboolean moving) {
+  try {
   cv::Mat mat;
   if (!bitmap_to_mat(env, bitmap, mat))
     return;
   vision_add_template((int)id, mat, (int)roiX, (int)roiY, (int)roiW,
                       (int)roiH, (float)threshold,
-                      allowFullscreenFallback == JNI_TRUE);
+                      allowFullscreenFallback == JNI_TRUE,
+                      trackRoiToMatch == JNI_TRUE, moving == JNI_TRUE);
+  } catch (const std::exception &e) {
+    env->ThrowNew(env->FindClass("java/lang/IllegalArgumentException"), e.what());
+  }
 }
 
 JNIEXPORT void JNICALL
@@ -583,23 +543,14 @@ Java_com_autonion_automationcompanion_core_vision_VisionNativeBridge_nativeReque
   vision_request_fullscreen_search((int)id);
 }
 
-JNIEXPORT jobjectArray JNICALL
-Java_com_autonion_automationcompanion_core_vision_VisionNativeBridge_nativeMatch(
-    JNIEnv *env, jobject, jobject bitmap) {
-
-  cv::Mat screen;
-  if (!bitmap_to_mat(env, bitmap, screen))
-    return nullptr;
-
-  std::vector<MatchResult> results = vision_match_all(screen);
-
+static jobjectArray java_results(JNIEnv *env, const std::vector<MatchResult> &results) {
   // Create Java Array of MatchResultNative
   jclass cls = env->FindClass(
       "com/autonion/automationcompanion/core/vision/MatchResultNative");
   if (!cls)
     return nullptr;
 
-  jmethodID ctor = env->GetMethodID(cls, "<init>", "(IZFIIII)V");
+  jmethodID ctor = env->GetMethodID(cls, "<init>", "(IZFIIIIIFFI)V");
   if (!ctor)
     return nullptr;
 
@@ -611,11 +562,56 @@ Java_com_autonion_automationcompanion_core_vision_VisionNativeBridge_nativeMatch
         cls, ctor, (jint)results[i].id,
         results[i].matched ? JNI_TRUE : JNI_FALSE, (jfloat)results[i].score,
         (jint)results[i].rect.x, (jint)results[i].rect.y,
-        (jint)results[i].rect.width, (jint)results[i].rect.height);
+        (jint)results[i].rect.width, (jint)results[i].rect.height,
+        (jint)results[i].track_id, (jfloat)results[i].velocity_x,
+        (jfloat)results[i].velocity_y, (jint)results[i].observations);
     env->SetObjectArrayElement(jobjArray, (jsize)i, obj);
     env->DeleteLocalRef(obj);
   }
 
   return jobjArray;
+}
+
+JNIEXPORT jobjectArray JNICALL
+Java_com_autonion_automationcompanion_core_vision_VisionNativeBridge_nativeMatch(
+    JNIEnv *env, jobject, jobject bitmap, jlong frameMs) {
+  try {
+    cv::Mat screen;
+    if (!bitmap_to_mat(env, bitmap, screen)) return java_results(env, {});
+    return java_results(env, vision_match_all(screen, frameMs));
+  } catch (const std::exception &e) {
+    env->ThrowNew(env->FindClass("java/lang/IllegalStateException"), e.what());
+    return nullptr;
+  }
+}
+
+JNIEXPORT jobjectArray JNICALL
+Java_com_autonion_automationcompanion_core_vision_VisionNativeBridge_nativeMatchRgba(
+    JNIEnv *env, jobject, jobject buffer, jint width, jint height, jint rowStride,
+    jlong frameMs) {
+  auto *pixels = env->GetDirectBufferAddress(buffer);
+  const auto capacity = env->GetDirectBufferCapacity(buffer);
+  const int64_t needed = static_cast<int64_t>(height - 1) * rowStride + width * 4LL;
+  if (!pixels || width <= 0 || height <= 0 || rowStride < width * 4LL || capacity < needed) {
+    env->ThrowNew(env->FindClass("java/lang/IllegalArgumentException"), "Invalid RGBA frame buffer");
+    return nullptr;
+  }
+  try {
+    // The caller holds the Image open until this synchronous call returns.
+    cv::Mat screen(height, width, CV_8UC4, pixels, rowStride);
+    return java_results(env, vision_match_all(screen, frameMs));
+  } catch (const std::exception &e) {
+    env->ThrowNew(env->FindClass("java/lang/IllegalStateException"), e.what());
+    return nullptr;
+  }
+}
+
+JNIEXPORT void JNICALL
+Java_com_autonion_automationcompanion_core_vision_VisionNativeBridge_nativeResetMotion(
+    JNIEnv *, jobject) {
+  std::lock_guard<std::mutex> lock(g_mutex);
+  for (auto &pair : g_templates) {
+    if (pair.second.moving) pair.second.moving->reset();
+  }
 }
 }

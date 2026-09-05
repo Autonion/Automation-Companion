@@ -4,9 +4,13 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.media.projection.MediaProjectionManager
+import android.os.Build
 import android.util.Log
+import android.view.WindowManager
 import com.autonion.automationcompanion.features.visual_trigger.core.VisionMediaProjection
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import com.autonion.automationcompanion.features.visual_trigger.core.VisionFrame
 import kotlinx.coroutines.withTimeoutOrNull
 
 private const val TAG = "ScreenCaptureProvider"
@@ -37,7 +41,7 @@ class ScreenCaptureProvider(private val context: Context) {
 
         val mpManager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE)
             as MediaProjectionManager
-        val metrics = context.resources.displayMetrics
+        val metrics = getRealDisplayMetrics()
 
         projection = VisionMediaProjection(context, mpManager) {
             // Projection revoked by the OS — mark as stopped and notify consumer
@@ -48,11 +52,11 @@ class ScreenCaptureProvider(private val context: Context) {
         }.also { vmp ->
             vmp.startProjection(
                 resultCode, resultData,
-                metrics.widthPixels, metrics.heightPixels, metrics.densityDpi
+                metrics.width, metrics.height, metrics.densityDpi
             )
         }
         isStarted = true
-        Log.d(TAG, "Screen capture started: ${metrics.widthPixels}x${metrics.heightPixels}")
+        Log.d(TAG, "Screen capture started: ${metrics.width}x${metrics.height}")
     }
 
     /**
@@ -85,4 +89,28 @@ class ScreenCaptureProvider(private val context: Context) {
     }
 
     fun isActive(): Boolean = isStarted
+
+    private data class CaptureDisplayMetrics(
+        val width: Int,
+        val height: Int,
+        val densityDpi: Int
+    )
+
+    private fun getRealDisplayMetrics(): CaptureDisplayMetrics {
+        val wm = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val bounds = wm.currentWindowMetrics.bounds
+            CaptureDisplayMetrics(bounds.width(), bounds.height(), context.resources.configuration.densityDpi)
+        } else {
+            val displayMetrics = android.util.DisplayMetrics()
+            @Suppress("DEPRECATION")
+            wm.defaultDisplay.getRealMetrics(displayMetrics)
+            CaptureDisplayMetrics(displayMetrics.widthPixels, displayMetrics.heightPixels, displayMetrics.densityDpi)
+        }
+    }
+
+    suspend fun <T> withLatestFrame(timeoutMs: Long = 3000L, block: (VisionFrame) -> T): T? {
+        val vmp = projection ?: return null
+        return withTimeoutOrNull(timeoutMs) { vmp.frames.map(block).first() }
+    }
 }

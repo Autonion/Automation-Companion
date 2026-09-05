@@ -843,6 +843,45 @@ private fun VisualTriggerNodeConfig(node: VisualTriggerNode, onUpdate: (FlowNode
                             )
                         }
                     }
+
+                    val hasTapRegion = preset.regions.any {
+                        it.action is com.autonion.automationcompanion.features.visual_trigger.models.VisionAction.Click
+                    }
+
+                    if (
+                        preset.executionMode == com.autonion.automationcompanion.features.visual_trigger.models.ExecutionMode.DETECT_ONLY &&
+                        hasTapRegion
+                    ) {
+                        Spacer(Modifier.height(12.dp))
+                        Text("Tap Dispatch", color = editorColors.panelDimText, fontSize = 12.sp)
+                        Spacer(Modifier.height(4.dp))
+
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            com.autonion.automationcompanion.features.visual_trigger.models.TapDispatchMode.entries.forEach { mode ->
+                                FilterChip(
+                                    selected = preset.tapDispatchMode == mode,
+                                    onClick = {
+                                        val updatedPreset = preset.copy(tapDispatchMode = mode)
+                                        val newJson = kotlinx.serialization.json.Json.encodeToString(updatedPreset)
+                                        onUpdate(node.copy(visionPresetJson = newJson))
+                                    },
+                                    label = {
+                                        Text(
+                                            when (mode) {
+                                                com.autonion.automationcompanion.features.visual_trigger.models.TapDispatchMode.SEQUENTIAL -> "Sequential Tap"
+                                                com.autonion.automationcompanion.features.visual_trigger.models.TapDispatchMode.CONCURRENT -> "Concurrent Tap"
+                                            },
+                                            fontSize = 11.sp
+                                        )
+                                    },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = NodeColors.VisualTriggerPurple.copy(alpha = 0.3f),
+                                        selectedLabelColor = NodeColors.VisualTriggerPurple
+                                    )
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
