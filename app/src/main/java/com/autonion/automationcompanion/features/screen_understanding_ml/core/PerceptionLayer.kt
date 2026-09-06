@@ -395,7 +395,22 @@ class PerceptionLayer(private val context: Context, modelFile: String? = null) {
         val elements = detect(bitmap)
         if (elements.isEmpty()) return elements
 
-        // 2. Run ML Kit OCR
+        // 2. Enrich with OCR
+        return enrichWithOcr(elements, bitmap)
+    }
+
+    /**
+     * Enrich an existing list of [UIElement]s with OCR text from the given [bitmap].
+     *
+     * For each element that has no text, if an OCR text block overlaps its bounds
+     * (IoU > threshold), the recognized text is written to [UIElement.text].
+     *
+     * This is useful when elements come from multiple sources (YOLO + accessibility)
+     * and you want to add OCR text without re-running detection.
+     */
+    suspend fun enrichWithOcr(elements: List<UIElement>, bitmap: Bitmap): List<UIElement> {
+        if (elements.isEmpty()) return elements
+
         val ocrEngine = OcrEngine()
         try {
             val ocrResult = ocrEngine.recognizeText(bitmap)
@@ -403,8 +418,10 @@ class PerceptionLayer(private val context: Context, modelFile: String? = null) {
 
             Log.d(TAG, "OCR found ${ocrResult.blocks.size} text blocks to match against ${elements.size} elements")
 
-            // 3. For each element, find overlapping OCR text
             return elements.map { element ->
+                // Skip elements that already have text (e.g. from accessibility)
+                if (!element.text.isNullOrBlank()) return@map element
+
                 val matchingTexts = ocrResult.blocks
                     .filter { block ->
                         block.bounds != null && calculateIoU(element.bounds, block.bounds) > 0.05f
@@ -428,6 +445,51 @@ class PerceptionLayer(private val context: Context, modelFile: String? = null) {
         }
     }
 
+    /**
+     * Run YOLO detection and augment with Accessibility tree elements.
+     *
+     * This is the primary detection method for the screen understanding pipeline.
+     * It combines two signal sources:
+     * 1. **YOLO model** — visual detection of UI elements from the screenshot
+     * 2. **Accessibility tree** — structural UI data for elements the model missed
+     *
+     * The merge logic uses IoU overlap: if an accessibility element overlaps a
+     * YOLO detection (IoU > 0.3), it is skipped (YOLO already found it).
+     * Otherwise, it is added as a gap-fill element with `source = "accessibility"`.
+     *
+     * YOLO elements that lack text are also enriched with accessibility text
+     * when a matching node is found.
+     */
+    fun detectWithAccessibilityAugmentation(bitmap: Bitmap): List<UIElement> {
+        // 1. Run standard YOLO detection
+        val yoloElements = detect(bitmap)
+
+        // 2. Get accessibility gap-fill elements (elements YOLO missed)
+        val gapFills = try {
+            AccessibilityAugmenter.getUndetectedElements(yoloElements)
+        } catch (e: Exception) {
+            Log.w(TAG, "Accessibility augmentation failed: ${e.message}")
+            emptyList()
+        }
+
+        // 3. Enrich YOLO elements with accessibility text where available
+        val enrichedYolo = try {
+            AccessibilityAugmenter.enrichWithAccessibilityText(yoloElements)
+        } catch (e: Exception) {
+            Log.w(TAG, "Accessibility text enrichment failed: ${e.message}")
+            yoloElements
+        }
+
+        // 4. Combine: enriched YOLO + accessibility gap-fills
+        val combined = enrichedYolo + gapFills
+
+        if (gapFills.isNotEmpty()) {
+            Log.d(TAG, "Augmented detection: ${yoloElements.size} YOLO + ${gapFills.size} a11y = ${combined.size} total")
+        }
+
+        return combined
+    }
+
     fun close() {
         synchronized(lock) {
             isClosed = true
@@ -436,3 +498,4 @@ class PerceptionLayer(private val context: Context, modelFile: String? = null) {
         }
     }
 }
+

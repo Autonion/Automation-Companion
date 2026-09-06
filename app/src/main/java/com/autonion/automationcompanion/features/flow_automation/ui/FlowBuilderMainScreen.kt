@@ -2,20 +2,30 @@ package com.autonion.automationcompanion.features.flow_automation.ui
 
 import android.content.Context
 import android.content.Intent
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.autonion.automationcompanion.core.onboarding.OnboardingPreferences
 import com.autonion.automationcompanion.features.flow_automation.engine.FlowExecutionService
+import com.autonion.automationcompanion.features.flow_automation.model.needsMediaProjection
 import com.autonion.automationcompanion.features.flow_automation.ui.editor.FlowEditorScreen
 import com.autonion.automationcompanion.features.flow_automation.ui.editor.FlowEditorViewModel
 import com.autonion.automationcompanion.features.flow_automation.ui.list.FlowListScreen
 import com.autonion.automationcompanion.features.flow_automation.ui.list.FlowListViewModel
+import com.autonion.automationcompanion.ui.components.FeatureTipSheet
+import com.autonion.automationcompanion.ui.components.YouTubeTutorials
 
 /**
  * Main entry composable for the Flow Builder feature.
@@ -27,6 +37,25 @@ fun FlowBuilderMainScreen(
 ) {
     val navController = rememberNavController()
     val context = LocalContext.current
+
+    // ── First-visit Feature Tip ──
+    val onboardingPrefs = remember { OnboardingPreferences.getInstance(context) }
+    var showTip by remember { mutableStateOf(!onboardingPrefs.hasTipBeenSeen("flow_builder")) }
+
+    if (showTip) {
+        FeatureTipSheet(
+            title = "Flow Builder",
+            tips = listOf(
+                "Tap **+** to add action nodes to your automation flow",
+                "Connect nodes by tapping an **output port** then the target node",
+                "**Long-press** a node for options like duplicate, delete, or configure"
+            ),
+            icon = Icons.Default.AccountTree,
+            iconColor = Color(0xFF7C4DFF),
+            youtubeLink = YouTubeTutorials.FLOW_BUILDER,
+            onDismiss = { onboardingPrefs.markTipSeen("flow_builder"); showTip = false }
+        )
+    }
 
     NavHost(
         navController = navController,
@@ -69,9 +98,9 @@ private fun startFlowService(context: Context, flowId: String) {
     val repository = com.autonion.automationcompanion.features.flow_automation.data.FlowRepository(context)
     val graph = repository.load(flowId)
     
-    val needsMediaProjection = graph?.nodes?.any {
+    val needsMediaProjection = graph?.reachableNodes()?.any {
         it is com.autonion.automationcompanion.features.flow_automation.model.VisualTriggerNode ||
-        it is com.autonion.automationcompanion.features.flow_automation.model.ScreenMLNode
+        (it is com.autonion.automationcompanion.features.flow_automation.model.ScreenMLNode && it.needsMediaProjection())
     } ?: false
 
     if (needsMediaProjection) {

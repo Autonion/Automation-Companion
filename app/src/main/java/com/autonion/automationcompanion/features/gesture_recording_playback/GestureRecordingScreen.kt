@@ -4,18 +4,24 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.widget.Toast
+import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.runtime.*
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
+import com.autonion.automationcompanion.core.onboarding.OnboardingPreferences
 import com.autonion.automationcompanion.features.gesture_recording_playback.managers.PresetManager
 import com.autonion.automationcompanion.features.gesture_recording_playback.overlay.OverlayService
 import com.autonion.automationcompanion.features.gesture_recording_playback.ui.components.ConfirmDeleteDialog
 import com.autonion.automationcompanion.features.gesture_recording_playback.ui.components.NewPresetDialog
 import com.autonion.automationcompanion.features.gesture_recording_playback.ui.presets.PresetsScreen
 import com.autonion.automationcompanion.features.gesture_recording_playback.utils.PermissionHelper
+import com.autonion.automationcompanion.ui.components.FeatureTipSheet
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
+import com.autonion.automationcompanion.ui.components.YouTubeTutorials
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AccessibilityNew
@@ -26,6 +32,25 @@ import android.content.Intent as AndroidIntent
 fun GestureRecordingScreen(onBack: () -> Unit = {}) {
     val context = LocalContext.current
     val permissionHelper = remember { PermissionHelper(context) }
+
+    // ── First-visit Feature Tip ──
+    val onboardingPrefs = remember { OnboardingPreferences.getInstance(context) }
+    var showTip by remember { mutableStateOf(!onboardingPrefs.hasTipBeenSeen("gesture_recording")) }
+
+    if (showTip) {
+        FeatureTipSheet(
+            title = "Gesture Recording",
+            tips = listOf(
+                "Tap **+ New Preset** to start recording a new gesture sequence",
+                "**Long-press** any action marker to edit its delay, duration, or type",
+                "Use the **play button** to replay a recorded gesture preset"
+            ),
+            icon = Icons.Default.TouchApp,
+            iconColor = Color(0xFF448AFF),
+            youtubeLink = YouTubeTutorials.GESTURE,
+            onDismiss = { onboardingPrefs.markTipSeen("gesture_recording"); showTip = false }
+        )
+    }
 
     // Compose-observed preset list
     val presetsState = remember { mutableStateListOf<String>() }
@@ -69,6 +94,7 @@ fun GestureRecordingScreen(onBack: () -> Unit = {}) {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(ctx: Context?, intent: Intent?) {
                 if (intent?.action == OverlayService.ACTION_PRESET_SAVED) {
+                    onboardingPrefs.hasCreatedFirstAutomation = true
                     // reload presets
                     coroutineScope.launch { loadPresets(context, presetsState) }
                 }
@@ -96,12 +122,22 @@ fun GestureRecordingScreen(onBack: () -> Unit = {}) {
 
     if (showNewDialog) {
         NewPresetDialog(
+            existingPresetNames = presetsState.toSet(),
             onCreate = { newName ->
                 val nameTrim = newName.trim()
-                if (nameTrim.isNotEmpty()) {
-                    PresetManager.savePreset(context, nameTrim, emptyList())
-                    coroutineScope.launch { loadPresets(context, presetsState) }
-                    startOverlayIfAllowed(nameTrim)
+                when {
+                    nameTrim.isEmpty() -> {
+                        Toast.makeText(context, "Preset name is required", Toast.LENGTH_SHORT).show()
+                    }
+                    PresetManager.presetExists(context, nameTrim) -> {
+                        Toast.makeText(context, "A preset with this name already exists", Toast.LENGTH_SHORT).show()
+                    }
+                    else -> {
+                        PresetManager.savePreset(context, nameTrim, emptyList())
+                        onboardingPrefs.hasCreatedFirstAutomation = true
+                        coroutineScope.launch { loadPresets(context, presetsState) }
+                        startOverlayIfAllowed(nameTrim)
+                    }
                 }
                 showNewDialog = false
             },
@@ -114,6 +150,8 @@ fun GestureRecordingScreen(onBack: () -> Unit = {}) {
             presetName = presetName,
             onConfirm = {
                 PresetManager.deletePreset(context, presetName)
+                // Stop the overlay service if it's running for this preset
+                context.stopService(AndroidIntent(context, OverlayService::class.java))
                 coroutineScope.launch { loadPresets(context, presetsState) }
                 confirmDeleteFor = null
             },

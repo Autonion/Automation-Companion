@@ -14,8 +14,13 @@ import androidx.compose.material.icons.filled.Screenshot
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.autonion.automationcompanion.features.flow_automation.data.FlowRepository
 import com.autonion.automationcompanion.features.flow_automation.engine.FlowExecutionService
 import com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract
+import com.autonion.automationcompanion.features.flow_automation.model.LaunchAppNode
+import com.autonion.automationcompanion.features.flow_automation.model.ScreenMLNode
+import com.autonion.automationcompanion.features.flow_automation.model.VisualTriggerNode
+import com.autonion.automationcompanion.features.flow_automation.model.needsMediaProjection
 import com.autonion.automationcompanion.features.system_context_automation.shared.ui.PermissionDisclosureDialog
 import com.autonion.automationcompanion.features.visual_trigger.service.CaptureOverlayService
 import com.autonion.automationcompanion.ui.theme.AppTheme
@@ -37,6 +42,7 @@ class FlowMediaProjectionActivity : ComponentActivity() {
     }
 
     private var showMediaProjectionDisclosure by mutableStateOf(true)
+    private var requiresFullScreenCapture by mutableStateOf(false)
 
     private val projectionLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         if (result.resultCode == Activity.RESULT_OK && result.data != null) {
@@ -63,6 +69,7 @@ class FlowMediaProjectionActivity : ComponentActivity() {
                         putExtra(FlowOverlayContract.EXTRA_FLOW_MODE, true)
                         putExtra(FlowOverlayContract.EXTRA_FLOW_NODE_ID, nodeId)
                         intent.getStringExtra("EXTRA_FLOW_ML_JSON")?.let { putExtra("EXTRA_FLOW_ML_JSON", it) }
+                        intent.getStringExtra("EXTRA_FLOW_NODE_MODE")?.let { putExtra("EXTRA_FLOW_NODE_MODE", it) }
                         intent.getBooleanExtra("EXTRA_CLEAR_ON_START", false).let { if (it) putExtra("EXTRA_CLEAR_ON_START", true) }
                     }
                     androidx.core.content.ContextCompat.startForegroundService(this, serviceIntent)
@@ -87,13 +94,18 @@ class FlowMediaProjectionActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        requiresFullScreenCapture = shouldRequireFullScreenCapture()
 
         setContent {
             AppTheme {
                 PermissionDisclosureDialog(
                     showDialog = showMediaProjectionDisclosure,
                     title = "Screen Capture Required",
-                    description = "Autonion needs to capture your screen to detect visual elements and execute automation flows. The screen content is processed locally on your device and is not stored or shared.",
+                    description = if (requiresFullScreenCapture) {
+                        "Autonion needs to capture your screen to detect visual elements and execute automation flows. This flow switches apps, so select Entire screen in the Android permission dialog. The screen content is processed locally on your device and is not stored or shared."
+                    } else {
+                        "Autonion needs to capture your screen to detect visual elements and execute automation flows. The screen content is processed locally on your device and is not stored or shared."
+                    },
                     icon = Icons.Default.Screenshot,
                     onDismiss = {
                         showMediaProjectionDisclosure = false
@@ -108,5 +120,17 @@ class FlowMediaProjectionActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    private fun shouldRequireFullScreenCapture(): Boolean {
+        if (intent.action != ACTION_RUN_FLOW) return false
+        val flowId = intent.getStringExtra(EXTRA_FLOW_ID) ?: return false
+        val graph = FlowRepository(this).load(flowId) ?: return false
+        val reachable = graph.reachableNodes()
+        val hasLaunchAppNode = reachable.any { it is LaunchAppNode }
+        val hasScreenCaptureNode = reachable.any {
+            it is VisualTriggerNode || (it is ScreenMLNode && it.needsMediaProjection())
+        }
+        return hasLaunchAppNode && hasScreenCaptureNode
     }
 }

@@ -17,8 +17,15 @@ class DeviceManagementViewModel(
     private val _isFeatureEnabled = MutableStateFlow(manager.isFeatureEnabled())
     val isFeatureEnabled: StateFlow<Boolean> = _isFeatureEnabled.asStateFlow()
 
-    private val _isClipboardSyncEnabled = MutableStateFlow<Boolean>(manager.isClipboardSyncEnabled())
-    val isClipboardSyncEnabled: StateFlow<Boolean> = _isClipboardSyncEnabled.asStateFlow()
+    // Directly expose the manager's reactive StateFlow — updates from both
+    // local toggles and remote desktop pushes are reflected automatically.
+    val isClipboardSyncEnabled: StateFlow<Boolean> = manager.clipboardSyncStateFlow
+
+    /// Non-null when the connected desktop agent requires a newer companion version.
+    val compatibilityWarning: StateFlow<String?> = manager.compatibilityWarning
+
+    val activePairingDevice: StateFlow<Device?> = manager.activePairingDevice
+    val pairingError: StateFlow<String?> = manager.pairingError
 
     private val _devices = MutableStateFlow<List<Device>>(emptyList())
     val devices: StateFlow<List<Device>> = _devices.asStateFlow()
@@ -38,14 +45,13 @@ class DeviceManagementViewModel(
 
     fun toggleClipboardSync(enabled: Boolean) {
         manager.setClipboardSyncEnabled(enabled)
-        _isClipboardSyncEnabled.value = enabled
     }
 
     fun updateDeviceRole(deviceId: String, role: DeviceRole) {
         viewModelScope.launch {
              val device = manager.deviceRepository.getDeviceById(deviceId)
              if (device != null) {
-                 manager.deviceRepository.addOrUpdateDevice(device.copy(role = role))
+                 manager.deviceRepository.updateDevice(device.copy(role = role))
              }
         }
     }
@@ -54,5 +60,17 @@ class DeviceManagementViewModel(
         viewModelScope.launch {
             manager.deviceRepository.toggleDeviceSelection(deviceId)
         }
+    }
+
+    fun submitPairingPin(deviceId: String, pin: String) {
+        manager.submitPairingPin(deviceId, pin)
+    }
+
+    fun dismissPairing() {
+        manager.dismissPairing()
+    }
+
+    fun unpairDevice(deviceId: String) {
+        manager.unpairDevice(deviceId)
     }
 }

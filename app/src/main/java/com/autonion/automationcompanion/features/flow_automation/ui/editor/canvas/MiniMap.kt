@@ -101,6 +101,8 @@ fun MiniMap(
                     is DelayNode -> NodeColors.DelayGrey
                     is LaunchAppNode -> NodeColors.LaunchAppTeal
                     is RepeatNode -> NodeColors.RepeatOrange
+                    is ClipboardNode -> NodeColors.ClipboardBrown
+                    is InputNode -> NodeColors.InputPink
                 }
 
                 val dotSize = Size(

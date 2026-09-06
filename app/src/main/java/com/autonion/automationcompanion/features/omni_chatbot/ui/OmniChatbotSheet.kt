@@ -8,8 +8,10 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.border
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -58,10 +60,12 @@ import com.autonion.automationcompanion.features.semantic_automation.ml.CloudApi
 import com.autonion.automationcompanion.features.semantic_automation.ml.CLOUD_API_PROVIDERS
 import com.autonion.automationcompanion.features.semantic_automation.ml.CloudApiProvider
 import com.autonion.automationcompanion.features.semantic_automation.ml.CloudApiLLMEngine
+import com.autonion.automationcompanion.features.semantic_automation.ml.ModelStorageManager
 import com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode
 import com.autonion.automationcompanion.features.semantic_automation.consent.CloudApiConsentManager
 import com.autonion.automationcompanion.features.semantic_automation.ui.CloudApiDisclaimerDialog
 import com.autonion.automationcompanion.ui.components.ChatHistoryPanel
+import com.autonion.automationcompanion.ui.components.YouTubeTutorials
 import java.util.Date
 
 // ─── Colors ──────────────────────────────────────────────
@@ -111,7 +115,8 @@ fun OmniChatbotScaffold(
         "feature/gesture_recording_playback",
         "feature/screen_understanding_using_on_device_ml",
         "feature/visual_trigger",
-        "settings/exclusion"
+        "settings/exclusion",
+        "onboarding"
     )
     val shouldHideFab = hideFabRoutes.any { currentRoute?.contains(it) == true }
     val shouldShowFab = !isExpanded && !isWalkthroughActive && !shouldHideFab
@@ -233,6 +238,9 @@ private fun OmniFAB(onClick: () -> Unit) {
 
 @Composable
 private fun OmniChatSheet(viewModel: OmniChatbotViewModel) {
+    val isDark = isSystemInDarkTheme()
+    val sheetBg = if (isDark) SheetBg else Color(0xFFF3F6FD)
+
     val messages by viewModel.messages.collectAsState()
     val inputText by viewModel.inputText.collectAsState()
     val currentRoute by viewModel.currentRoute.collectAsState()
@@ -266,7 +274,7 @@ private fun OmniChatSheet(viewModel: OmniChatbotViewModel) {
                 alpha = 1f - (dragOffsetY.coerceAtLeast(0f) / (dragThresholdPx * 3)).coerceIn(0f, 0.3f)
             },
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-        color = SheetBg,
+        color = sheetBg,
         tonalElevation = 8.dp,
         shadowElevation = 16.dp
     ) {
@@ -355,88 +363,58 @@ private fun OmniChatSheet(viewModel: OmniChatbotViewModel) {
                         }
                         1 -> {
                             // ── Chat Tab ──
-                            Box(modifier = Modifier.fillMaxSize()) {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .then(if (!isAIReady) Modifier.blur(12.dp) else Modifier)
-                                ) {
-                                    // ── FAQ Chips ──
-                                    AnimatedVisibility(visible = messages.isEmpty() && !showSettings) {
-                                        FAQChipRow(
-                                            chips = faqChips,
-                                            onChipClick = { viewModel.processPrompt(it.question) }
-                                        )
-                                    }
-
-                                    // ── Messages ──
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .fillMaxWidth(),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        if (messages.isEmpty() && !showSettings) {
-                                            EmptyChatState()
-                                        } else {
-                                            LazyColumn(
-                                                modifier = Modifier
-                                                    .fillMaxSize()
-                                                    .padding(horizontal = 12.dp),
-                                                state = listState,
-                                                reverseLayout = true,
-                                                verticalArrangement = Arrangement.spacedBy(6.dp),
-                                                contentPadding = PaddingValues(vertical = 8.dp)
-                                            ) {
-                                                items(messages, key = { it.id }) { message ->
-                                                    ChatBubble(
-                                                        message = message,
-                                                        onStopTask = { taskId -> viewModel.stopScheduledTask(taskId) },
-                                                        onStartWalkthrough = { featureId -> viewModel.startWalkthrough(featureId, fromOmniChat = true) }
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    // ── Input Bar ──
-                                    ChatInputBar(
-                                        value = inputText,
-                                        onValueChange = { viewModel.onInputChanged(it) },
-                                        onSend = { viewModel.processPrompt() }
+                            Column(modifier = Modifier.fillMaxSize()) {
+                                // ── FAQ Chips ──
+                                AnimatedVisibility(visible = messages.isEmpty() && !showSettings && isAIReady) {
+                                    FAQChipRow(
+                                        chips = faqChips,
+                                        onChipClick = { viewModel.processPrompt(it.question) }
                                     )
                                 }
 
-                                if (!isAIReady) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .background(Color.Black.copy(alpha = 0.18f))
-                                            .clickable(
-                                                interactionSource = remember { MutableInteractionSource() },
-                                                indication = null,
-                                                onClick = {}
-                                            )
-                                            .pointerInput(Unit) {
-                                                awaitPointerEventScope {
-                                                    while (true) {
-                                                        awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
-                                                    }
-                                                }
-                                            },
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        com.autonion.automationcompanion.ui.components.ConnectionRequiredOverlay(
-                                            message = "To use Omni-Chat AI, connect a Server LLM, select a Cloud API, or use an On-Device SLM.",
-                                            steps = listOf(
-                                                "Click the ⚙️ icon above.",
-                                                "Choose 'Server LLM' and enter your Ollama IP.",
-                                                "Or choose 'Cloud API' (configure in AI Engine Hub).",
-                                                "Or choose 'On-Device SLM' to run locally."
-                                            )
+                                // ── Messages ──
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .fillMaxWidth(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (messages.isEmpty() && !showSettings) {
+                                        SmartWelcomeState(
+                                            isAIReady = isAIReady,
+                                            onOpenCloudApi = { viewModel.openSettingsWithMode(InferenceMode.CLOUD_API) },
+                                            onOpenServer = { viewModel.openSettingsWithMode(InferenceMode.SERVER_LLM) },
+                                            onOpenSLM = { viewModel.openSettingsWithMode(InferenceMode.LOCAL_SLM) },
+                                            onBrowseFAQs = { selectedTab = 0 }
                                         )
+                                    } else {
+                                        LazyColumn(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .padding(horizontal = 12.dp),
+                                            state = listState,
+                                            reverseLayout = true,
+                                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                                            contentPadding = PaddingValues(vertical = 8.dp)
+                                        ) {
+                                            items(messages, key = { it.id }) { message ->
+                                                ChatBubble(
+                                                    message = message,
+                                                    onStopTask = { taskId -> viewModel.stopScheduledTask(taskId) },
+                                                    onStartWalkthrough = { featureId -> viewModel.startWalkthrough(featureId, fromOmniChat = true) }
+                                                )
+                                            }
+                                        }
                                     }
                                 }
+
+                                // ── Input Bar ──
+                                ChatInputBar(
+                                    value = inputText,
+                                    onValueChange = { viewModel.onInputChanged(it) },
+                                    onSend = { viewModel.processPrompt() },
+                                    enabled = isAIReady
+                                )
                             }
                         }
                     }
@@ -469,16 +447,23 @@ private data class OmniTab(val title: String, val icon: androidx.compose.ui.grap
 
 @Composable
 private fun OmniTabRow(selectedTab: Int, onTabSelected: (Int) -> Unit) {
+    val isDark = isSystemInDarkTheme()
     val tabs = listOf(
         OmniTab("FAQ", Icons.Default.MenuBook),
         OmniTab("Chat", Icons.Default.Chat)
     )
+    val containerBg = if (isDark) Color.White.copy(alpha = 0.05f) else Color.Black.copy(alpha = 0.04f)
+    val borderModifier = if (!isDark) Modifier.border(1.dp, Color.Black.copy(alpha = 0.06f), RoundedCornerShape(12.dp)) else Modifier
+    val unselectedColor = if (isDark) Color.White.copy(alpha = 0.4f) else Color.Black.copy(alpha = 0.5f)
+    val selectedColor = if (isDark) Color.White else Color.Black
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(Color.White.copy(alpha = 0.05f))
+            .background(containerBg)
+            .then(borderModifier)
             .padding(4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
@@ -494,9 +479,17 @@ private fun OmniTabRow(selectedTab: Int, onTabSelected: (Int) -> Unit) {
                     .weight(1f)
                     .clip(RoundedCornerShape(10.dp))
                     .background(
-                        if (isSelected) Brush.horizontalGradient(
-                            listOf(AccentPurple.copy(alpha = 0.3f), AccentBlue.copy(alpha = 0.2f))
-                        ) else Brush.horizontalGradient(
+                        if (isSelected) {
+                            if (isDark) {
+                                Brush.horizontalGradient(
+                                    listOf(AccentPurple.copy(alpha = 0.3f), AccentBlue.copy(alpha = 0.2f))
+                                )
+                            } else {
+                                Brush.horizontalGradient(
+                                    listOf(AccentPurple.copy(alpha = 0.85f), AccentBlue.copy(alpha = 0.75f))
+                                )
+                            }
+                        } else Brush.horizontalGradient(
                             listOf(Color.Transparent, Color.Transparent)
                         )
                     )
@@ -511,13 +504,13 @@ private fun OmniTabRow(selectedTab: Int, onTabSelected: (Int) -> Unit) {
                     Icon(
                         tab.icon,
                         contentDescription = tab.title,
-                        tint = if (isSelected) Color.White else Color.White.copy(alpha = 0.4f),
+                        tint = if (isSelected) selectedColor else unselectedColor,
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
                         tab.title,
-                        color = if (isSelected) Color.White else Color.White.copy(alpha = 0.4f),
+                        color = if (isSelected) selectedColor else unselectedColor,
                         fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
                         fontSize = 13.sp
                     )
@@ -541,6 +534,13 @@ private fun ChatSheetHeader(
     showSettings: Boolean,
     isDragging: Boolean = false
 ) {
+    val isDark = isSystemInDarkTheme()
+    val dragHandleColor = if (isDark) Color.White.copy(alpha = if (isDragging) 0.5f else 0.2f) else Color.Black.copy(alpha = if (isDragging) 0.4f else 0.15f)
+    val textColor = if (isDark) Color.White else Color(0xFF1A1C1E)
+    val secondaryTextColor = if (isDark) Color.White.copy(alpha = 0.5f) else Color.Black.copy(alpha = 0.55f)
+    val iconButtonTint = if (isDark) Color.White.copy(alpha = 0.6f) else Color.Black.copy(alpha = 0.6f)
+    val newChatButtonTint = if (isDark) Color.White.copy(alpha = 0.8f) else Color.Black.copy(alpha = 0.75f)
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -555,7 +555,7 @@ private fun ChatSheetHeader(
                 .width(40.dp)
                 .height(4.dp)
                 .clip(RoundedCornerShape(2.dp))
-                .background(Color.White.copy(alpha = if (isDragging) 0.5f else 0.2f))
+                .background(dragHandleColor)
         )
 
         Row(
@@ -585,13 +585,13 @@ private fun ChatSheetHeader(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     "Omni-Chat",
-                    color = Color.White,
+                    color = textColor,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp
                 )
                 Text(
                     "Ask anything or automate tasks",
-                    color = Color.White.copy(alpha = 0.5f),
+                    color = secondaryTextColor,
                     fontSize = 11.sp
                 )
             }
@@ -616,7 +616,7 @@ private fun ChatSheetHeader(
                 Icon(
                     Icons.Default.AddComment,
                     contentDescription = "New Chat",
-                    tint = Color.White.copy(alpha = 0.8f),
+                    tint = newChatButtonTint,
                     modifier = Modifier.size(22.dp)
                 )
             }
@@ -626,10 +626,12 @@ private fun ChatSheetHeader(
                 Icon(
                     Icons.Default.History,
                     contentDescription = "Chat History",
-                    tint = Color.White.copy(alpha = 0.6f),
+                    tint = iconButtonTint,
                     modifier = Modifier.size(22.dp)
                 )
             }
+
+
 
             // Settings button with status indicator
             IconButton(onClick = onSettingsClick) {
@@ -637,8 +639,8 @@ private fun ChatSheetHeader(
                     Icon(
                         if (showSettings) Icons.Default.Close else Icons.Default.Settings,
                         contentDescription = "LLM Settings",
-                        tint = if (showSettings) Color.White.copy(alpha = 0.8f)
-                               else Color.White.copy(alpha = 0.6f),
+                        tint = if (showSettings) (if (isDark) Color.White.copy(alpha = 0.8f) else Color.Black.copy(alpha = 0.8f))
+                               else iconButtonTint,
                         modifier = Modifier.size(22.dp)
                     )
                     // Status dot overlay
@@ -656,7 +658,7 @@ private fun ChatSheetHeader(
                 Icon(
                     Icons.Default.KeyboardArrowDown,
                     contentDescription = "Minimize",
-                    tint = Color.White.copy(alpha = 0.6f)
+                    tint = iconButtonTint
                 )
             }
         }
@@ -667,6 +669,13 @@ private fun ChatSheetHeader(
 
 @Composable
 private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
+    val isDark = isSystemInDarkTheme()
+    val sheetBg = if (isDark) SheetBg else Color(0xFFF3F6FD)
+    val panelBgStart = if (isDark) Color(0xFF151829) else Color(0xFFE2E7FA)
+    val cardGlass = if (isDark) CardGlass else Color.White.copy(alpha = 0.75f)
+    val textColor = if (isDark) Color.White else Color(0xFF1A1C1E)
+    val textLabelColor = if (isDark) Color.White.copy(alpha = 0.5f) else Color.Black.copy(alpha = 0.55f)
+
     val connectionStatus by viewModel.llmConnectionStatus.collectAsState()
     val serverUrl by viewModel.llmServerUrl.collectAsState()
     val selectedModel by viewModel.llmSelectedModel.collectAsState()
@@ -743,8 +752,8 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
             .background(
                 Brush.verticalGradient(
                     listOf(
-                        Color(0xFF151829),
-                        SheetBg
+                        panelBgStart,
+                        sheetBg
                     )
                 )
             )
@@ -754,7 +763,7 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
         // ── Inference Mode Toggle ──
         Text(
             "AI Engine",
-            color = Color.White.copy(alpha = 0.5f),
+            color = textLabelColor,
             fontSize = 11.sp,
             fontWeight = FontWeight.Medium
         )
@@ -767,9 +776,9 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                 onClick = {
                     viewModel.setInferenceMode(InferenceMode.LOCAL_SLM)
                 },
-                color = if (isSLM) AccentPurple.copy(alpha = 0.25f) else CardGlass,
+                color = if (isSLM) AccentPurple.copy(alpha = 0.25f) else cardGlass,
                 shape = RoundedCornerShape(20.dp),
-                border = if (isSLM) BorderStroke(1.dp, AccentPurple) else null,
+                border = if (isSLM) BorderStroke(1.dp, AccentPurple) else if (!isDark) BorderStroke(1.dp, Color.Black.copy(alpha = 0.08f)) else null,
                 modifier = Modifier.weight(1f)
             ) {
                 Row(
@@ -780,13 +789,13 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                     Icon(
                         Icons.Default.PhoneAndroid,
                         contentDescription = null,
-                        tint = if (isSLM) AccentPurple else Color.White.copy(alpha = 0.5f),
+                        tint = if (isSLM) AccentPurple else textColor.copy(alpha = 0.5f),
                         modifier = Modifier.size(14.dp)
                     )
                     Spacer(Modifier.width(4.dp))
                     Text(
                         "SLM",
-                        color = if (isSLM) Color.White else Color.White.copy(alpha = 0.5f),
+                        color = if (isSLM) textColor else textColor.copy(alpha = 0.5f),
                         fontSize = 11.sp,
                         fontWeight = if (isSLM) FontWeight.SemiBold else FontWeight.Normal
                     )
@@ -797,9 +806,9 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                 onClick = {
                     viewModel.setInferenceMode(InferenceMode.SERVER_LLM)
                 },
-                color = if (isLLM) AccentPurple.copy(alpha = 0.25f) else CardGlass,
+                color = if (isLLM) AccentPurple.copy(alpha = 0.25f) else cardGlass,
                 shape = RoundedCornerShape(20.dp),
-                border = if (isLLM) BorderStroke(1.dp, AccentPurple) else null,
+                border = if (isLLM) BorderStroke(1.dp, AccentPurple) else if (!isDark) BorderStroke(1.dp, Color.Black.copy(alpha = 0.08f)) else null,
                 modifier = Modifier.weight(1f)
             ) {
                 Row(
@@ -810,13 +819,13 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                     Icon(
                         Icons.Default.Dns,
                         contentDescription = null,
-                        tint = if (isLLM) AccentPurple else Color.White.copy(alpha = 0.5f),
+                        tint = if (isLLM) AccentPurple else textColor.copy(alpha = 0.5f),
                         modifier = Modifier.size(14.dp)
                     )
                     Spacer(Modifier.width(4.dp))
                     Text(
                         "Server",
-                        color = if (isLLM) Color.White else Color.White.copy(alpha = 0.5f),
+                        color = if (isLLM) textColor else textColor.copy(alpha = 0.5f),
                         fontSize = 11.sp,
                         fontWeight = if (isLLM) FontWeight.SemiBold else FontWeight.Normal
                     )
@@ -831,9 +840,9 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                         showCloudConsentDialog = true
                     }
                 },
-                color = if (isCloud) AccentBlue.copy(alpha = 0.25f) else CardGlass,
+                color = if (isCloud) AccentBlue.copy(alpha = 0.25f) else cardGlass,
                 shape = RoundedCornerShape(20.dp),
-                border = if (isCloud) BorderStroke(1.dp, AccentBlue) else null,
+                border = if (isCloud) BorderStroke(1.dp, AccentBlue) else if (!isDark) BorderStroke(1.dp, Color.Black.copy(alpha = 0.08f)) else null,
                 modifier = Modifier.weight(1f)
             ) {
                 Row(
@@ -844,13 +853,13 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                     Icon(
                         Icons.Default.Cloud,
                         contentDescription = null,
-                        tint = if (isCloud) AccentBlue else Color.White.copy(alpha = 0.5f),
+                        tint = if (isCloud) AccentBlue else textColor.copy(alpha = 0.5f),
                         modifier = Modifier.size(14.dp)
                     )
                     Spacer(Modifier.width(4.dp))
                     Text(
                         "Cloud API",
-                        color = if (isCloud) Color.White else Color.White.copy(alpha = 0.5f),
+                        color = if (isCloud) textColor else textColor.copy(alpha = 0.5f),
                         fontSize = 11.sp,
                         fontWeight = if (isCloud) FontWeight.SemiBold else FontWeight.Normal
                     )
@@ -870,6 +879,10 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
                         .background(AccentPurple.copy(alpha = 0.12f))
+                        .then(
+                            if (!isDark) Modifier.border(BorderStroke(1.dp, Color.Black.copy(alpha = 0.06f)), RoundedCornerShape(12.dp))
+                            else Modifier
+                        )
                         .padding(horizontal = 14.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -881,22 +894,33 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                     )
                     Spacer(Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
+                        val modelManager = remember { ModelStorageManager(context) }
+                        val activeModelName = remember(viewModel.inferenceMode) {
+                            val path = modelManager.getActiveModelPath()
+                            if (path != null) {
+                                val fileName = java.io.File(path).nameWithoutExtension
+                                fileName.replace("_", " ").replace("-", " ")
+                                    .replaceFirstChar { it.uppercase() }
+                            } else "Not Installed"
+                        }
                         Text(
-                            "On-Device AI (Gemma 2B)",
-                            color = Color.White,
+                            "On-Device AI ($activeModelName)",
+                            color = textColor,
                             fontWeight = FontWeight.SemiBold,
-                            fontSize = 14.sp
+                            fontSize = 14.sp,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )
                         Text(
                             "Runs locally on your phone. No server needed.",
-                            color = Color.White.copy(alpha = 0.5f),
+                            color = textColor.copy(alpha = 0.5f),
                             fontSize = 11.sp
                         )
                     }
                 }
                 Text(
-                    "\uD83D\uDCA1 Import a .bin model from the SLM Hub in Settings → AI Model Manager to enable on-device inference.",
-                    color = Color.White.copy(alpha = 0.35f),
+                    "💡 Import a .gguf model from the SLM Hub in Settings → AI Model Manager to enable on-device inference.",
+                    color = textColor.copy(alpha = 0.45f),
                     fontSize = 11.sp,
                     lineHeight = 15.sp
                 )
@@ -928,6 +952,10 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
                         .background(statusConfig.second.copy(alpha = 0.12f))
+                        .then(
+                            if (!isDark) Modifier.border(BorderStroke(1.dp, Color.Black.copy(alpha = 0.06f)), RoundedCornerShape(12.dp))
+                            else Modifier
+                        )
                         .padding(horizontal = 14.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -941,21 +969,21 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             statusConfig.first,
-                            color = Color.White,
+                            color = textColor,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 14.sp
                         )
                         if (connectionStatus == ServerConnectionStatus.CONNECTED && selectedModel.isNotBlank()) {
                             Text(
                                 "Model: $selectedModel",
-                                color = Color.White.copy(alpha = 0.6f),
+                                color = textColor.copy(alpha = 0.6f),
                                 fontSize = 11.sp
                             )
                         }
                         if (connectionStatus == ServerConnectionStatus.DISCONNECTED) {
                             Text(
                                 "Enter your Ollama server IP to connect",
-                                color = Color.White.copy(alpha = 0.5f),
+                                color = textColor.copy(alpha = 0.5f),
                                 fontSize = 11.sp
                             )
                         }
@@ -980,19 +1008,23 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                         value = ipInput,
                         onValueChange = { ipInput = it },
                         placeholder = {
-                            Text("192.168.1.x", color = Color.White.copy(alpha = 0.25f))
+                            Text("192.168.1.x", color = textColor.copy(alpha = 0.3f))
                         },
                         modifier = Modifier
-                            .weight(1f),
+                            .weight(1f)
+                            .then(
+                                if (!isDark) Modifier.border(BorderStroke(1.dp, Color.Black.copy(alpha = 0.08f)), RoundedCornerShape(12.dp))
+                                else Modifier
+                            ),
                         shape = RoundedCornerShape(12.dp),
                         colors = TextFieldDefaults.colors(
-                            focusedContainerColor = CardGlass,
-                            unfocusedContainerColor = CardGlass,
+                            focusedContainerColor = cardGlass,
+                            unfocusedContainerColor = cardGlass,
                             focusedIndicatorColor = Color.Transparent,
                             unfocusedIndicatorColor = Color.Transparent,
                             cursorColor = AccentPurple,
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
+                            focusedTextColor = textColor,
+                            unfocusedTextColor = textColor
                         ),
                         singleLine = true,
                         textStyle = LocalTextStyle.current.copy(fontSize = 13.sp),
@@ -1000,7 +1032,7 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                             Icon(
                                 Icons.Default.Dns,
                                 contentDescription = null,
-                                tint = Color.White.copy(alpha = 0.4f),
+                                tint = textColor.copy(alpha = 0.45f),
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -1034,7 +1066,7 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(
                             "AI Model",
-                            color = Color.White.copy(alpha = 0.5f),
+                            color = textLabelColor,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Medium
                         )
@@ -1042,8 +1074,9 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                         Box {
                             Surface(
                                 onClick = { showModelDropdown = true },
-                                color = CardGlass,
+                                color = cardGlass,
                                 shape = RoundedCornerShape(12.dp),
+                                border = if (!isDark) BorderStroke(1.dp, Color.Black.copy(alpha = 0.08f)) else null,
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Row(
@@ -1061,8 +1094,8 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                                     Spacer(Modifier.width(10.dp))
                                     Text(
                                         text = selectedModel.ifBlank { "Select a model…" },
-                                        color = if (selectedModel.isNotBlank()) Color.White
-                                                else Color.White.copy(alpha = 0.4f),
+                                        color = if (selectedModel.isNotBlank()) textColor
+                                                else textColor.copy(alpha = 0.4f),
                                         fontSize = 13.sp,
                                         modifier = Modifier.weight(1f),
                                         maxLines = 1,
@@ -1071,7 +1104,7 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                                     Icon(
                                         Icons.Default.KeyboardArrowDown,
                                         contentDescription = null,
-                                        tint = Color.White.copy(alpha = 0.4f),
+                                        tint = textColor.copy(alpha = 0.45f),
                                         modifier = Modifier.size(18.dp)
                                     )
                                 }
@@ -1080,7 +1113,7 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                             DropdownMenu(
                                 expanded = showModelDropdown,
                                 onDismissRequest = { showModelDropdown = false },
-                                modifier = Modifier.background(CardGlass)
+                                modifier = Modifier.background(cardGlass)
                             ) {
                                 availableModels.forEach { model ->
                                     DropdownMenuItem(
@@ -1097,7 +1130,7 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                                                 }
                                                 Text(
                                                     model,
-                                                    color = Color.White,
+                                                    color = textColor,
                                                     fontSize = 13.sp
                                                 )
                                             }
@@ -1116,8 +1149,8 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                 // Help hint
                 if (connectionStatus == ServerConnectionStatus.DISCONNECTED) {
                     Text(
-                        "\uD83D\uDCA1 Run Ollama on your PC and enter its LAN IP above. Both devices must be on the same WiFi network.",
-                        color = Color.White.copy(alpha = 0.35f),
+                        "💡 Run Ollama on your PC and enter its LAN IP above. Both devices must be on the same WiFi network.",
+                        color = textColor.copy(alpha = 0.45f),
                         fontSize = 11.sp,
                         lineHeight = 15.sp
                     )
@@ -1153,6 +1186,10 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
                         .background(cloudStatusConfig.second.copy(alpha = 0.12f))
+                        .then(
+                            if (!isDark) Modifier.border(BorderStroke(1.dp, Color.Black.copy(alpha = 0.06f)), RoundedCornerShape(12.dp))
+                            else Modifier
+                        )
                         .padding(horizontal = 14.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -1166,7 +1203,7 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             cloudStatusConfig.first,
-                            color = Color.White,
+                            color = textColor,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 14.sp
                         )
@@ -1175,7 +1212,7 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                                 "Using your configured Cloud API provider."
                             else
                                 "Ready to connect to cloud models.",
-                            color = Color.White.copy(alpha = 0.5f),
+                            color = textColor.copy(alpha = 0.5f),
                             fontSize = 11.sp
                         )
                     }
@@ -1185,8 +1222,9 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                 Box {
                     Surface(
                         onClick = { showCloudProviderDropdown = true },
-                        color = CardGlass,
+                        color = cardGlass,
                         shape = RoundedCornerShape(12.dp),
+                        border = if (!isDark) BorderStroke(1.dp, Color.Black.copy(alpha = 0.08f)) else null,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Row(
@@ -1204,7 +1242,7 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                             Spacer(Modifier.width(10.dp))
                             Text(
                                 text = cloudSelectedProvider.displayName,
-                                color = Color.White,
+                                color = textColor,
                                 fontSize = 13.sp,
                                 modifier = Modifier.weight(1f),
                                 maxLines = 1,
@@ -1213,7 +1251,7 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                             Icon(
                                 Icons.Default.KeyboardArrowDown,
                                 contentDescription = null,
-                                tint = Color.White.copy(alpha = 0.4f),
+                                tint = textColor.copy(alpha = 0.4f),
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -1222,7 +1260,7 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                     DropdownMenu(
                         expanded = showCloudProviderDropdown,
                         onDismissRequest = { showCloudProviderDropdown = false },
-                        modifier = Modifier.background(CardGlass)
+                        modifier = Modifier.background(cardGlass)
                     ) {
                         CLOUD_API_PROVIDERS.forEach { provider ->
                             DropdownMenuItem(
@@ -1239,7 +1277,7 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                                         }
                                         Text(
                                             provider.displayName,
-                                            color = Color.White,
+                                            color = textColor,
                                             fontSize = 13.sp
                                         )
                                     }
@@ -1260,14 +1298,14 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                     OutlinedTextField(
                         value = cloudBaseUrlInput,
                         onValueChange = { cloudBaseUrlInput = it },
-                        placeholder = { Text("Custom Base URL", color = Color.White.copy(alpha = 0.3f), fontSize = 13.sp) },
+                        placeholder = { Text("Custom Base URL", color = textColor.copy(alpha = 0.3f), fontSize = 13.sp) },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = AccentBlue,
-                            unfocusedBorderColor = Color.White.copy(alpha = 0.1f),
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
+                            unfocusedBorderColor = textColor.copy(alpha = 0.15f),
+                            focusedTextColor = textColor,
+                            unfocusedTextColor = textColor
                         )
                     )
                 }
@@ -1281,7 +1319,7 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                     OutlinedTextField(
                         value = cloudApiKeyInput,
                         onValueChange = { cloudApiKeyInput = it },
-                        placeholder = { Text("API Key", color = Color.White.copy(alpha = 0.3f), fontSize = 13.sp) },
+                        placeholder = { Text("API Key", color = textColor.copy(alpha = 0.3f), fontSize = 13.sp) },
                         modifier = Modifier.weight(1f),
                         singleLine = true,
                         visualTransformation = if (obscureKey) androidx.compose.ui.text.input.PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
@@ -1290,16 +1328,16 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                                 Icon(
                                     if (obscureKey) Icons.Default.Visibility else Icons.Default.VisibilityOff,
                                     contentDescription = null,
-                                    tint = Color.White.copy(alpha = 0.5f),
+                                    tint = textColor.copy(alpha = 0.5f),
                                     modifier = Modifier.size(18.dp)
                                 )
                             }
                         },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = AccentBlue,
-                            unfocusedBorderColor = Color.White.copy(alpha = 0.1f),
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
+                            unfocusedBorderColor = textColor.copy(alpha = 0.15f),
+                            focusedTextColor = textColor,
+                            unfocusedTextColor = textColor
                         )
                     )
 
@@ -1308,7 +1346,7 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(0.6f)) {
                             CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = AccentBlue)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("Fetching models...", fontSize = 13.sp, color = Color.White.copy(alpha=0.7f))
+                            Text("Fetching models...", fontSize = 13.sp, color = textColor.copy(alpha=0.7f))
                         }
                     } else if (fetchedCloudModels.isNotEmpty() || cloudSelectedProvider.suggestedModels.isNotEmpty()) {
                         val modelsToShow = if (fetchedCloudModels.isNotEmpty()) fetchedCloudModels else cloudSelectedProvider.suggestedModels
@@ -1317,7 +1355,7 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                                 onClick = { showCloudModelDropdown = true },
                                 color = Color.Transparent,
                                 shape = RoundedCornerShape(4.dp),
-                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.5f)),
+                                border = BorderStroke(1.dp, textColor.copy(alpha = 0.5f)),
                                 modifier = Modifier.fillMaxWidth().height(56.dp)
                             ) {
                                 Row(
@@ -1326,7 +1364,7 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                                 ) {
                                     Text(
                                         text = cloudModelInput.ifBlank { "Model" },
-                                        color = if (cloudModelInput.isNotBlank()) Color.White else Color.White.copy(alpha = 0.3f),
+                                        color = if (cloudModelInput.isNotBlank()) textColor else textColor.copy(alpha = 0.3f),
                                         fontSize = 13.sp,
                                         modifier = Modifier.weight(1f),
                                         maxLines = 1,
@@ -1335,7 +1373,7 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                                     Icon(
                                         Icons.Default.KeyboardArrowDown,
                                         contentDescription = null,
-                                        tint = Color.White.copy(alpha = 0.4f),
+                                        tint = textColor.copy(alpha = 0.4f),
                                         modifier = Modifier.size(18.dp)
                                     )
                                 }
@@ -1344,7 +1382,7 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                             DropdownMenu(
                                 expanded = showCloudModelDropdown,
                                 onDismissRequest = { showCloudModelDropdown = false },
-                                modifier = Modifier.background(CardGlass)
+                                modifier = Modifier.background(cardGlass)
                             ) {
                                 modelsToShow.forEach { model ->
                                     DropdownMenuItem(
@@ -1359,7 +1397,7 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                                                     )
                                                     Spacer(Modifier.width(8.dp))
                                                 }
-                                                Text(model, color = Color.White, fontSize = 13.sp)
+                                                Text(model, color = textColor, fontSize = 13.sp)
                                             }
                                         },
                                         onClick = {
@@ -1374,14 +1412,14 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
                         OutlinedTextField(
                             value = cloudModelInput,
                             onValueChange = { cloudModelInput = it },
-                            placeholder = { Text("Model", color = Color.White.copy(alpha = 0.3f), fontSize = 13.sp) },
+                            placeholder = { Text("Model", color = textColor.copy(alpha = 0.3f), fontSize = 13.sp) },
                             modifier = Modifier.weight(0.6f),
                             singleLine = true,
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = AccentBlue,
-                                unfocusedBorderColor = Color.White.copy(alpha = 0.1f),
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White
+                                unfocusedBorderColor = textColor.copy(alpha = 0.15f),
+                                focusedTextColor = textColor,
+                                unfocusedTextColor = textColor
                             )
                         )
                     }
@@ -1412,8 +1450,13 @@ private fun LLMSettingsPanel(viewModel: OmniChatbotViewModel) {
 
 @Composable
 private fun FAQChipRow(chips: List<FAQChip>, onChipClick: (FAQChip) -> Unit) {
-    val scrollState = rememberScrollState()
+    val isDark = isSystemInDarkTheme()
+    val textLabelColor = if (isDark) Color.White.copy(alpha = 0.4f) else Color.Black.copy(alpha = 0.45f)
+    val cardGlass = if (isDark) CardGlass else Color.White.copy(alpha = 0.75f)
+    val textColor = if (isDark) Color.White else Color(0xFF1A1C1E)
+    val cardBorderColor = if (isDark) Color.White.copy(alpha = 0.1f) else Color.Black.copy(alpha = 0.08f)
 
+    val scrollState = rememberScrollState()
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1421,7 +1464,7 @@ private fun FAQChipRow(chips: List<FAQChip>, onChipClick: (FAQChip) -> Unit) {
     ) {
         Text(
             "Suggested questions:",
-            color = Color.White.copy(alpha = 0.4f),
+            color = textLabelColor,
             fontSize = 11.sp,
             modifier = Modifier.padding(bottom = 6.dp)
         )
@@ -1445,12 +1488,12 @@ private fun FAQChipRow(chips: List<FAQChip>, onChipClick: (FAQChip) -> Unit) {
                     },
                     shape = RoundedCornerShape(12.dp),
                     colors = SuggestionChipDefaults.suggestionChipColors(
-                        containerColor = CardGlass,
-                        labelColor = Color.White.copy(alpha = 0.8f)
+                        containerColor = cardGlass,
+                        labelColor = textColor.copy(alpha = 0.8f)
                     ),
                     border = SuggestionChipDefaults.suggestionChipBorder(
                         enabled = true,
-                        borderColor = Color.White.copy(alpha = 0.1f)
+                        borderColor = cardBorderColor
                     )
                 )
             }
@@ -1458,11 +1501,25 @@ private fun FAQChipRow(chips: List<FAQChip>, onChipClick: (FAQChip) -> Unit) {
     }
 }
 
-// ─── Empty State ────────────────────────────────────────
 
 @Composable
-private fun EmptyChatState() {
-    val infiniteTransition = rememberInfiniteTransition(label = "empty")
+private fun SmartWelcomeState(
+    isAIReady: Boolean,
+    onOpenCloudApi: () -> Unit,
+    onOpenServer: () -> Unit,
+    onOpenSLM: () -> Unit,
+    onBrowseFAQs: () -> Unit
+) {
+    val isDark = isSystemInDarkTheme()
+    val textColor = if (isDark) Color.White else Color(0xFF1A1C1E)
+    val secondaryTextColor = if (isDark) Color.White.copy(alpha = 0.5f) else Color.Black.copy(alpha = 0.55f)
+    val textPromptColor = if (isDark) Color.White.copy(alpha = 0.6f) else Color.Black.copy(alpha = 0.65f)
+    val textSubPromptColor = if (isDark) Color.White.copy(alpha = 0.3f) else Color.Black.copy(alpha = 0.45f)
+    val cardGlass = if (isDark) CardGlass else Color.White.copy(alpha = 0.75f)
+    val cardBorder = if (isDark) Color.Transparent else Color.Black.copy(alpha = 0.08f)
+    val borderStroke = if (isDark) null else BorderStroke(1.dp, cardBorder)
+
+    val infiniteTransition = rememberInfiniteTransition(label = "welcome")
     val pulseScale by infiniteTransition.animateFloat(
         initialValue = 0.92f,
         targetValue = 1.08f,
@@ -1473,31 +1530,219 @@ private fun EmptyChatState() {
         label = "scale"
     )
 
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 20.dp, vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
         Icon(
             Icons.Default.AutoAwesome,
             contentDescription = null,
             modifier = Modifier
                 .size(48.dp)
                 .scale(pulseScale),
-            tint = AccentPurple.copy(alpha = 0.5f)
+            tint = AccentPurple.copy(alpha = 0.6f)
         )
         Spacer(Modifier.height(12.dp))
-        Text(
-            "Ask me anything",
-            color = Color.White.copy(alpha = 0.6f),
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Medium
-        )
-        Spacer(Modifier.height(4.dp))
-        Text(
-            "Automate tasks, get answers, or send commands",
-            color = Color.White.copy(alpha = 0.3f),
-            fontSize = 12.sp,
-            textAlign = TextAlign.Center
-        )
+
+        if (isAIReady) {
+            // ── AI Connected: Standard prompt ──
+            Text(
+                "Ask me anything",
+                color = textPromptColor,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Automate tasks, get answers, or send commands",
+                color = textSubPromptColor,
+                fontSize = 12.sp,
+                textAlign = TextAlign.Center
+            )
+        } else {
+            // ── AI Not Connected: Smart Welcome ──
+            Text(
+                "👋 Welcome to Omni-Chat!",
+                color = textColor,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "I can answer questions, guide you through features, and run automations.",
+                color = secondaryTextColor,
+                fontSize = 13.sp,
+                textAlign = TextAlign.Center,
+                lineHeight = 18.sp
+            )
+
+            Spacer(Modifier.height(20.dp))
+
+            // ── AI Setup Section ──
+            Surface(
+                color = cardGlass,
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+                border = borderStroke,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        "⚡ Connect AI for full power",
+                        color = textColor.copy(alpha = 0.85f),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+
+                    WelcomeSetupChip(
+                        emoji = "☁️",
+                        label = "Cloud API",
+                        hint = "OpenAI, Groq, etc.",
+                        color = AccentBlue,
+                        onClick = onOpenCloudApi
+                    )
+                    WelcomeSetupChip(
+                        emoji = "🖥️",
+                        label = "Ollama Server",
+                        hint = "Run on your PC",
+                        color = AccentGreen,
+                        onClick = onOpenServer
+                    )
+                    WelcomeSetupChip(
+                        emoji = "📱",
+                        label = "On-Device SLM",
+                        hint = "Runs locally",
+                        color = AccentPurple,
+                        onClick = onOpenSLM
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(14.dp))
+
+            Text(
+                "Even without AI, you can browse FAQs and explore features!",
+                color = textColor.copy(alpha = 0.45f),
+                fontSize = 11.sp,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(Modifier.height(10.dp))
+
+            // ── Quick Action Chips ──
+            val uriHandler = LocalUriHandler.current
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Surface(
+                    onClick = { uriHandler.openUri(YouTubeTutorials.OMNI_CHAT) },
+                    color = AccentPurple.copy(alpha = if (isDark) 0.15f else 0.1f),
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, AccentPurple.copy(alpha = 0.3f)),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            Icons.Default.PlayCircle,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                            tint = AccentPurple
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "Watch Tutorial",
+                            color = textColor.copy(alpha = 0.85f),
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                Surface(
+                    onClick = onBrowseFAQs,
+                    color = AccentBlue.copy(alpha = if (isDark) 0.15f else 0.1f),
+                    shape = androidx.compose.foundation.shape.RoundedCornerShape(20.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, AccentBlue.copy(alpha = 0.3f)),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Box(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            "❓ Browse FAQs",
+                            color = textColor.copy(alpha = 0.85f),
+                            fontSize = 12.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
     }
 }
+
+/** Individual setup option chip used in the smart welcome state. */
+@Composable
+private fun WelcomeSetupChip(
+    emoji: String,
+    label: String,
+    hint: String,
+    color: Color,
+    onClick: () -> Unit
+) {
+    val isDark = isSystemInDarkTheme()
+    val textColor = if (isDark) Color.White else Color(0xFF1A1C1E)
+    val secondaryTextColor = if (isDark) Color.White.copy(alpha = 0.4f) else Color.Black.copy(alpha = 0.5f)
+    val borderStroke = if (isDark) null else BorderStroke(1.dp, Color.Black.copy(alpha = 0.06f))
+
+    Surface(
+        onClick = onClick,
+        color = color.copy(alpha = if (isDark) 0.1f else 0.08f),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
+        border = borderStroke,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(emoji, fontSize = 16.sp)
+            Spacer(Modifier.width(10.dp))
+            Text(
+                label,
+                color = textColor,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                hint,
+                color = secondaryTextColor,
+                fontSize = 11.sp
+            )
+            Spacer(Modifier.width(6.dp))
+            Icon(
+                Icons.Default.ChevronRight,
+                contentDescription = null,
+                tint = textColor.copy(alpha = 0.3f),
+                modifier = Modifier.size(16.dp)
+            )
+        }
+    }
+}
+
 
 // ─── Chat Bubble ────────────────────────────────────────
 
@@ -1509,6 +1754,12 @@ private fun ChatBubble(
 ) {
     val isUser = message.isUser
     val uriHandler = LocalUriHandler.current
+
+    val isDark = isSystemInDarkTheme()
+    val bubbleTextColor = if (isDark) Color.White else Color(0xFF1A1C1E)
+    val systemBubbleBg = if (isDark) SystemBubbleBg else Color(0xFFE8ECF5)
+    val timestampColor = if (isDark) Color.White.copy(alpha = 0.2f) else Color.Black.copy(alpha = 0.3f)
+    val cardBorderColor = if (isDark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.06f)
 
     // Entrance animation
     var visible by remember { mutableStateOf(false) }
@@ -1578,8 +1829,20 @@ private fun ChatBubble(
                     .background(
                         if (isUser) Brush.horizontalGradient(UserBubbleGrad)
                         else Brush.horizontalGradient(
-                            listOf(SystemBubbleBg, SystemBubbleBg)
+                            listOf(systemBubbleBg, systemBubbleBg)
                         )
+                    )
+                    .then(
+                        if (!isUser) Modifier.border(
+                            1.dp,
+                            cardBorderColor,
+                            RoundedCornerShape(
+                                topStart = 16.dp,
+                                topEnd = 16.dp,
+                                bottomStart = 4.dp,
+                                bottomEnd = 16.dp
+                            )
+                        ) else Modifier
                     )
                     .then(
                         if (!isUser) Modifier.background(
@@ -1619,22 +1882,22 @@ private fun ChatBubble(
                     ClickableText(
                         text = annotatedText,
                         style = androidx.compose.ui.text.TextStyle(
-                            color = Color.White,
+                            color = bubbleTextColor,
                             fontSize = 14.sp,
                             lineHeight = 20.sp
                         ),
                         onClick = { offset ->
                             annotatedText.getStringAnnotations("URL", offset, offset)
                                 .firstOrNull()?.let { annotation ->
-                                    var uri = annotation.item
-                                    if (!uri.startsWith("http://") && !uri.startsWith("https://")) {
-                                        uri = "https://$uri"
-                                    }
-                                    try {
-                                        uriHandler.openUri(uri)
-                                    } catch (e: Exception) {
-                                        // Ignore exception if URL is invalid
-                                    }
+                                     var uri = annotation.item
+                                     if (!uri.startsWith("http://") && !uri.startsWith("https://")) {
+                                         uri = "https://$uri"
+                                     }
+                                     try {
+                                         uriHandler.openUri(uri)
+                                     } catch (e: Exception) {
+                                         // Ignore exception if URL is invalid
+                                     }
                                 }
                         }
                     )
@@ -1670,12 +1933,12 @@ private fun ChatBubble(
                                         .height(4.dp)
                                         .clip(RoundedCornerShape(2.dp)),
                                     color = AccentPurple,
-                                    trackColor = Color.White.copy(alpha = 0.1f)
+                                    trackColor = if (isDark) Color.White.copy(alpha = 0.1f) else Color.Black.copy(alpha = 0.08f)
                                 )
                                 Spacer(Modifier.height(4.dp))
                                 Text(
                                     "${widget.description} (${widget.step}/${widget.total})",
-                                    color = Color.White.copy(alpha = 0.5f),
+                                    color = bubbleTextColor.copy(alpha = 0.5f),
                                     fontSize = 11.sp
                                 )
                             }
@@ -1730,7 +1993,7 @@ private fun ChatBubble(
             // Timestamp
             Text(
                 text = formatTime(message.timestamp),
-                color = Color.White.copy(alpha = 0.2f),
+                color = timestampColor,
                 fontSize = 10.sp,
                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
             )
@@ -1744,8 +2007,20 @@ private fun ChatBubble(
 private fun ChatInputBar(
     value: String,
     onValueChange: (String) -> Unit,
-    onSend: () -> Unit
+    onSend: () -> Unit,
+    enabled: Boolean = true
 ) {
+    val isDark = isSystemInDarkTheme()
+    val inputBarBg = if (isDark) InputBarBg else Color.White.copy(alpha = 0.88f)
+    val cardGlass = if (isDark) CardGlass else Color.White.copy(alpha = 0.75f)
+    val textColor = if (isDark) Color.White else Color(0xFF1A1C1E)
+    val secondaryTextColor = if (isDark) Color.White.copy(alpha = 0.3f) else Color.Black.copy(alpha = 0.45f)
+    val borderModifier = if (enabled) {
+        if (!isDark) Modifier.border(1.dp, Color.Black.copy(alpha = 0.06f), RoundedCornerShape(28.dp)) else Modifier
+    } else {
+        Modifier.border(1.dp, if (isDark) Color.White.copy(alpha = 0.05f) else Color.Black.copy(alpha = 0.08f), RoundedCornerShape(28.dp))
+    }
+
     val focusManager = LocalFocusManager.current
     Column(
         modifier = Modifier
@@ -1753,7 +2028,7 @@ private fun ChatInputBar(
             .imePadding()
     ) {
         androidx.compose.animation.AnimatedVisibility(
-            visible = value.startsWith("/") && value.length < 8,
+            visible = enabled && value.startsWith("/") && value.length < 8,
             enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandVertically(),
             exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkVertically()
         ) {
@@ -1765,8 +2040,9 @@ private fun ChatInputBar(
             ) {
                 listOf("/android ", "/desktop ").forEach { cmd ->
                     Surface(
-                        color = CardGlass,
+                        color = cardGlass,
                         shape = RoundedCornerShape(12.dp),
+                        border = if (!isDark) BorderStroke(1.dp, Color.Black.copy(alpha = 0.06f)) else null,
                         onClick = { onValueChange(cmd) }
                     ) {
                         Text(
@@ -1785,18 +2061,20 @@ private fun ChatInputBar(
                 .fillMaxWidth()
                 .padding(horizontal = 12.dp, vertical = 8.dp)
                 .clip(RoundedCornerShape(28.dp))
-                .background(InputBarBg)
+                .background(if (enabled) inputBarBg else inputBarBg.copy(alpha = 0.35f))
+                .then(borderModifier)
                 .padding(horizontal = 6.dp, vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             TextField(
                 value = value,
                 onValueChange = onValueChange,
+                enabled = enabled,
                 modifier = Modifier.weight(1f),
                 placeholder = {
                     Text(
-                        "Ask anything...",
-                        color = Color.White.copy(alpha = 0.3f)
+                        if (enabled) "Ask anything..." else "Connect AI to start chatting...",
+                        color = secondaryTextColor
                     )
                 },
                 colors = TextFieldDefaults.colors(
@@ -1805,8 +2083,11 @@ private fun ChatInputBar(
                     focusedIndicatorColor = Color.Transparent,
                     unfocusedIndicatorColor = Color.Transparent,
                     cursorColor = AccentPurple,
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White
+                    focusedTextColor = textColor,
+                    unfocusedTextColor = textColor,
+                    disabledTextColor = textColor.copy(alpha = 0.4f),
+                    disabledContainerColor = Color.Transparent,
+                    disabledIndicatorColor = Color.Transparent
                 ),
                 maxLines = 3,
                 textStyle = LocalTextStyle.current.copy(fontSize = 14.sp)
@@ -1815,7 +2096,7 @@ private fun ChatInputBar(
         // Send button with pulse animation
         val hasText = value.isNotBlank()
         val sendScale by animateFloatAsState(
-            targetValue = if (hasText) 1f else 0.7f,
+            targetValue = if (enabled && hasText) 1f else 0.7f,
             animationSpec = spring(dampingRatio = 0.5f, stiffness = Spring.StiffnessMedium),
             label = "sendScale"
         )
@@ -1825,20 +2106,20 @@ private fun ChatInputBar(
                 focusManager.clearFocus()
                 onSend()
             },
-            enabled = hasText,
+            enabled = enabled && hasText,
             modifier = Modifier
                 .scale(sendScale)
                 .size(40.dp)
                 .clip(CircleShape)
                 .background(
-                    if (hasText) Brush.horizontalGradient(UserBubbleGrad)
+                    if (enabled && hasText) Brush.horizontalGradient(UserBubbleGrad)
                     else Brush.horizontalGradient(listOf(Color.Transparent, Color.Transparent))
                 )
         ) {
             Icon(
                 Icons.AutoMirrored.Filled.Send,
                 contentDescription = "Send",
-                tint = Color.White.copy(alpha = if (hasText) 1f else 0.3f),
+                tint = if (isDark) Color.White.copy(alpha = if (enabled && hasText) 1f else 0.15f) else Color.White.copy(alpha = if (enabled && hasText) 1f else 0.4f),
                 modifier = Modifier.size(18.dp)
             )
         }
@@ -1874,11 +2155,21 @@ private fun FAQBrowserUI(
     isAIReady: Boolean,
     onFAQSelected: (com.autonion.automationcompanion.features.omni_chatbot.knowledge.FAQRepository.FAQ) -> Unit
 ) {
+    val isDark = isSystemInDarkTheme()
+    val sheetBg = if (isDark) SheetBg else Color(0xFFF3F6FD)
+    val cardGlass = if (isDark) CardGlass else Color.White.copy(alpha = 0.75f)
+    val textColor = if (isDark) Color.White else Color(0xFF1A1C1E)
+    val secondaryTextColor = if (isDark) Color.White.copy(alpha = 0.4f) else Color.Black.copy(alpha = 0.5f)
+    val outlineBorderColor = if (isDark) Color.White.copy(alpha = 0.15f) else Color.Black.copy(alpha = 0.12f)
+    val focusContainerColor = if (isDark) Color.White.copy(alpha = 0.05f) else Color.Black.copy(alpha = 0.03f)
+    val unfocusContainerColor = if (isDark) Color.White.copy(alpha = 0.03f) else Color.Black.copy(alpha = 0.015f)
+    val dividerColor = if (isDark) Color.White.copy(alpha = 0.1f) else Color.Black.copy(alpha = 0.08f)
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .fillMaxHeight(0.8f)
-            .background(SheetBg)
+            .background(sheetBg)
             .padding(horizontal = 16.dp)
     ) {
         val listState = rememberLazyListState()
@@ -1887,8 +2178,8 @@ private fun FAQBrowserUI(
 
         Text(
             "FAQ Library",
-            color = Color.White.copy(alpha = 0.8f),
-            fontWeight = FontWeight.SemiBold,
+            color = textColor.copy(alpha = 0.85f),
+            fontWeight = FontWeight.Bold,
             fontSize = 18.sp,
             modifier = Modifier.padding(top = 8.dp, bottom = 8.dp)
         )
@@ -1898,13 +2189,13 @@ private fun FAQBrowserUI(
             value = searchQuery,
             onValueChange = { searchQuery = it },
             placeholder = {
-                Text("Search FAQs...", color = Color.White.copy(alpha = 0.35f), fontSize = 14.sp)
+                Text("Search FAQs...", color = secondaryTextColor, fontSize = 14.sp)
             },
             leadingIcon = {
                 Icon(
                     Icons.Default.Search,
                     contentDescription = "Search",
-                    tint = Color.White.copy(alpha = 0.5f),
+                    tint = secondaryTextColor,
                     modifier = Modifier.size(20.dp)
                 )
             },
@@ -1914,20 +2205,20 @@ private fun FAQBrowserUI(
                         Icon(
                             Icons.Default.Close,
                             contentDescription = "Clear",
-                            tint = Color.White.copy(alpha = 0.5f),
+                            tint = secondaryTextColor,
                             modifier = Modifier.size(18.dp)
                         )
                     }
                 }
             },
             colors = OutlinedTextFieldDefaults.colors(
-                focusedTextColor = Color.White,
-                unfocusedTextColor = Color.White,
+                focusedTextColor = textColor,
+                unfocusedTextColor = textColor,
                 cursorColor = AccentPurple,
                 focusedBorderColor = AccentPurple.copy(alpha = 0.5f),
-                unfocusedBorderColor = Color.White.copy(alpha = 0.15f),
-                focusedContainerColor = Color.White.copy(alpha = 0.05f),
-                unfocusedContainerColor = Color.White.copy(alpha = 0.03f),
+                unfocusedBorderColor = outlineBorderColor,
+                focusedContainerColor = focusContainerColor,
+                unfocusedContainerColor = unfocusContainerColor,
             ),
             shape = RoundedCornerShape(12.dp),
             singleLine = true,
@@ -1965,13 +2256,13 @@ private fun FAQBrowserUI(
                             Icon(
                                 Icons.Default.SearchOff,
                                 contentDescription = null,
-                                tint = Color.White.copy(alpha = 0.3f),
+                                tint = secondaryTextColor.copy(alpha = 0.5f),
                                 modifier = Modifier.size(48.dp)
                             )
                             Spacer(modifier = Modifier.height(12.dp))
                             Text(
                                 "No FAQs match \"$searchQuery\"",
-                                color = Color.White.copy(alpha = 0.4f),
+                                color = secondaryTextColor,
                                 fontSize = 14.sp
                             )
                         }
@@ -1981,8 +2272,9 @@ private fun FAQBrowserUI(
             items(filteredFaqs, key = { it.question }) { faq ->
                 val isExpanded = expandedFaqId == faq.question
                 Surface(
-                    color = CardGlass,
+                    color = cardGlass,
                     shape = RoundedCornerShape(12.dp),
+                    border = if (!isDark) BorderStroke(1.dp, outlineBorderColor) else null,
                     modifier = Modifier.fillMaxWidth().animateItem(),
                     onClick = {
                         // Always toggle inline answer
@@ -1993,7 +2285,7 @@ private fun FAQBrowserUI(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 text = faq.question,
-                                color = Color.White,
+                                color = textColor,
                                 fontSize = 14.sp,
                                 fontWeight = FontWeight.Medium,
                                 modifier = Modifier.weight(1f)
@@ -2001,7 +2293,7 @@ private fun FAQBrowserUI(
                             Icon(
                                 if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
                                 contentDescription = if (isExpanded) "Collapse" else "Expand",
-                                tint = Color.White.copy(alpha = 0.4f),
+                                tint = secondaryTextColor,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -2032,11 +2324,11 @@ private fun FAQBrowserUI(
                         ) {
                             Column {
                                 Spacer(modifier = Modifier.height(10.dp))
-                                HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                                HorizontalDivider(color = dividerColor)
                                 Spacer(modifier = Modifier.height(10.dp))
                                 Text(
                                     text = faq.answer,
-                                    color = Color.White.copy(alpha = 0.75f),
+                                    color = textColor.copy(alpha = 0.75f),
                                     fontSize = 13.sp,
                                     lineHeight = 19.sp
                                 )

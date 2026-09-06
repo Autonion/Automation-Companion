@@ -13,6 +13,7 @@ import android.graphics.Typeface
 import android.os.Bundle
 import android.view.GestureDetector
 import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import android.view.View
 import android.widget.EditText
 import android.widget.Toast
@@ -68,10 +69,18 @@ class CaptureEditorActivity : ComponentActivity() {
     // Captured by the service BEFORE opening this editor (while target app was visible)
     private var preCapturedTextNodes: List<CapturedTextNode> = emptyList()
     
+    // Pre-captured interactive accessibility elements from the target app
+    // Used to augment YOLO detections without reading the editor's own UI tree
+    private var preCapturedA11yElements: List<UIElement> = emptyList()
+    
     // Flow mode state
     private var isFlowMode = false
     private var flowNodeId: String? = null
     private var currentImagePath: String? = null
+    
+    // Track which tab the user is on (Elements = Object Detection, Text = OCR)
+    private var currentDisplayMode: EditorDisplayMode = EditorDisplayMode.ELEMENTS
+    private var isA11yOnlyMode = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -80,6 +89,7 @@ class CaptureEditorActivity : ComponentActivity() {
         presetName = intent.getStringExtra("PRESET_NAME") ?: "Untitled"
         isFlowMode = intent.getBooleanExtra(FlowOverlayContract.EXTRA_FLOW_MODE, false)
         flowNodeId = intent.getStringExtra(FlowOverlayContract.EXTRA_FLOW_NODE_ID)
+        isA11yOnlyMode = intent.getBooleanExtra("A11Y_ONLY_MODE", false)
         currentImagePath = imagePath
         
         // Parse pre-captured accessibility text from service
@@ -90,6 +100,17 @@ class CaptureEditorActivity : ComponentActivity() {
                 android.util.Log.d("CaptureEditor", "Loaded ${preCapturedTextNodes.size} pre-captured accessibility text nodes")
             } catch (e: Exception) {
                 android.util.Log.w("CaptureEditor", "Failed to parse pre-captured acc text: ${e.message}")
+            }
+        }
+        
+        // Parse pre-captured interactive accessibility elements from service
+        val accElementsJson = intent.getStringExtra("ACC_ELEMENTS_DATA")
+        if (!accElementsJson.isNullOrEmpty()) {
+            try {
+                preCapturedA11yElements = Json.decodeFromString<List<UIElement>>(accElementsJson)
+                android.util.Log.d("CaptureEditor", "Loaded ${preCapturedA11yElements.size} pre-captured interactive a11y elements")
+            } catch (e: Exception) {
+                android.util.Log.w("CaptureEditor", "Failed to parse pre-captured a11y elements: ${e.message}")
             }
         }
         
@@ -107,7 +128,7 @@ class CaptureEditorActivity : ComponentActivity() {
         }
         
         sourceBitmap = BitmapFactory.decodeFile(file.absolutePath)
-        perceptionLayer = PerceptionLayer(this)
+        perceptionLayer = if (isA11yOnlyMode) null else PerceptionLayer(this)
         
         // Handle Back Press explicitly
         onBackPressedDispatcher.addCallback(this) {
@@ -119,8 +140,6 @@ class CaptureEditorActivity : ComponentActivity() {
                 CaptureEditorScreen()
             }
         }
-        
-        runDetection()
     }
     
     @Composable
@@ -146,7 +165,10 @@ class CaptureEditorActivity : ComponentActivity() {
                 if (sourceBitmap != null) {
                     AndroidView(
                         factory = { context ->
-                            EditorView(context, sourceBitmap!!).also { editorViewInput = it }
+                            EditorView(context, sourceBitmap!!).also {
+                                editorViewInput = it
+                                runDetection()
+                            }
                         },
                         modifier = Modifier.fillMaxSize()
                     )
@@ -165,6 +187,7 @@ class CaptureEditorActivity : ComponentActivity() {
                         selected = displayMode == EditorDisplayMode.ELEMENTS,
                         onClick = {
                             displayMode = EditorDisplayMode.ELEMENTS
+                            currentDisplayMode = EditorDisplayMode.ELEMENTS
                             editorViewInput?.setDisplayMode(EditorDisplayMode.ELEMENTS)
                         },
                         label = { Text("🔲 Elements", fontSize = 13.sp) },
@@ -175,39 +198,42 @@ class CaptureEditorActivity : ComponentActivity() {
                             labelColor = Color.White.copy(alpha = 0.7f)
                         )
                     )
-                    FilterChip(
-                        selected = displayMode == EditorDisplayMode.TEXT,
-                        onClick = {
-                            displayMode = EditorDisplayMode.TEXT
-                            editorViewInput?.setDisplayMode(EditorDisplayMode.TEXT)
-                            // Run OCR on first switch (cached after that)
-                            if (ocrElements == null && !ocrLoading) {
-                                ocrLoading = true
-                                runOcr { ocrLoading = false }
-                            }
-                        },
-                        label = {
-                            if (ocrLoading) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(14.dp),
-                                        strokeWidth = 2.dp,
-                                        color = Color.White
-                                    )
-                                    Spacer(Modifier.width(6.dp))
-                                    Text("Scanning...", fontSize = 13.sp)
+                    if (!isA11yOnlyMode) {
+                        FilterChip(
+                            selected = displayMode == EditorDisplayMode.TEXT,
+                            onClick = {
+                                displayMode = EditorDisplayMode.TEXT
+                                currentDisplayMode = EditorDisplayMode.TEXT
+                                editorViewInput?.setDisplayMode(EditorDisplayMode.TEXT)
+                                // Run OCR on first switch (cached after that)
+                                if (ocrElements == null && !ocrLoading) {
+                                    ocrLoading = true
+                                    runOcr { ocrLoading = false }
                                 }
-                            } else {
-                                Text("📝 Text", fontSize = 13.sp)
-                            }
-                        },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = Color(0xFF00BCD4),
-                            selectedLabelColor = Color.White,
-                            containerColor = Color.Transparent,
-                            labelColor = Color.White.copy(alpha = 0.7f)
+                            },
+                            label = {
+                                if (ocrLoading) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(14.dp),
+                                            strokeWidth = 2.dp,
+                                            color = Color.White
+                                        )
+                                        Spacer(Modifier.width(6.dp))
+                                        Text("Scanning...", fontSize = 13.sp)
+                                    }
+                                } else {
+                                    Text("📝 Text", fontSize = 13.sp)
+                                }
+                            },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = Color(0xFF00BCD4),
+                                selectedLabelColor = Color.White,
+                                containerColor = Color.Transparent,
+                                labelColor = Color.White.copy(alpha = 0.7f)
+                            )
                         )
-                    )
+                    }
                 }
             }
         }
@@ -278,9 +304,81 @@ class CaptureEditorActivity : ComponentActivity() {
     
     private fun runDetection() {
         val flowMlJson = intent.getStringExtra("EXTRA_FLOW_ML_JSON")
+        if (isA11yOnlyMode) {
+            val finalElements = preCapturedA11yElements.toMutableList()
+
+            // Fallback: If preCapturedA11yElements is empty, use preCapturedTextNodes
+            if (finalElements.isEmpty() && preCapturedTextNodes.isNotEmpty()) {
+                for (node in preCapturedTextNodes) {
+                    finalElements.add(
+                        UIElement(
+                            id = "a11y_${java.util.UUID.randomUUID().toString().take(8)}",
+                            label = "button",
+                            confidence = 0.85f,
+                            bounds = android.graphics.RectF(node.boundsLeft, node.boundsTop, node.boundsRight, node.boundsBottom),
+                            text = node.text,
+                            source = "accessibility"
+                        )
+                    )
+                }
+            }
+
+            var loadedStates: List<SelectionState>? = null
+
+            if (!flowMlJson.isNullOrEmpty()) {
+                try {
+                    val steps = Json.decodeFromString<List<AutomationStep>>(flowMlJson)
+                    val savedElements = steps.map { it.anchor }
+                    for (saved in savedElements) {
+                        if (finalElements.none { it.id == saved.id }) {
+                            finalElements.add(saved)
+                        }
+                    }
+                    loadedStates = steps.map { step ->
+                        SelectionState(
+                            element = step.anchor,
+                            isOptional = step.isOptional,
+                            actionType = step.actionType,
+                            inputText = step.inputText
+                        )
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.e("CaptureEditor", "Failed to parse EXTRA_FLOW_ML_JSON", e)
+                }
+            }
+
+            if (finalElements.isEmpty()) {
+                Toast.makeText(this@CaptureEditorActivity, "No interactive elements found — try Retake", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this@CaptureEditorActivity, "Found ${finalElements.size} UI elements", Toast.LENGTH_SHORT).show()
+                editorViewInput?.setElements(finalElements)
+                loadedStates?.let { editorViewInput?.setSelectionStates(it) }
+            }
+            return
+        }
+
         Toast.makeText(this, "Detecting UI elements...", Toast.LENGTH_SHORT).show()
         lifecycleScope.launch(Dispatchers.Default) {
-             val detectedElements = perceptionLayer?.detectWithOcr(sourceBitmap!!) ?: emptyList()
+             // 1. Run YOLO detection on the screenshot
+             val yoloElements = perceptionLayer?.detect(sourceBitmap!!) ?: emptyList()
+
+             // 2. Use pre-captured accessibility elements (from the service, captured while
+             //    target app was in foreground) to fill gaps in YOLO detections
+             val gapFills = if (preCapturedA11yElements.isNotEmpty()) {
+                 com.autonion.automationcompanion.features.screen_understanding_ml.core.AccessibilityAugmenter
+                     .filterUndetected(preCapturedA11yElements, yoloElements)
+             } else {
+                 emptyList()
+             }
+             val augmentedElements = yoloElements + gapFills
+             android.util.Log.d("CaptureEditor", "Detection: ${yoloElements.size} YOLO + ${gapFills.size} a11y = ${augmentedElements.size} total")
+
+             // 3. Enrich with OCR text
+             val detectedElements = if (augmentedElements.isNotEmpty()) {
+                 perceptionLayer?.enrichWithOcr(augmentedElements, sourceBitmap!!) ?: augmentedElements
+             } else {
+                 emptyList()
+             }
              withContext(Dispatchers.Main) {
                  val finalElements = detectedElements.toMutableList()
                  var loadedStates: List<SelectionState>? = null
@@ -409,24 +507,21 @@ class CaptureEditorActivity : ComponentActivity() {
                  captureScreenHeight = sourceBitmap?.height?.toFloat() ?: 0f
              )
         }
-        
-        if (isFlowMode && flowNodeId != null) {
-            try {
-                val json = Json.encodeToString(steps)
-                val tempFile = File(cacheDir, "flow_ml_${flowNodeId}.json")
-                tempFile.writeText(json)
-                
-                val resultIntent = Intent(FlowOverlayContract.ACTION_FLOW_ML_DONE).apply {
-                    putExtra(FlowOverlayContract.EXTRA_RESULT_NODE_ID, flowNodeId)
-                    putExtra(FlowOverlayContract.EXTRA_RESULT_FILE_PATH, tempFile.absolutePath)
-                    putExtra(FlowOverlayContract.EXTRA_RESULT_IMAGE_PATH, currentImagePath)
-                }
-                LocalBroadcastManager.getInstance(this).sendBroadcast(resultIntent)
-                
-                Toast.makeText(this, "Flow node configured", Toast.LENGTH_SHORT).show()
+             if (isFlowMode && flowNodeId != null) {
+            // Accumulate steps in the service (same multi-snap pipeline as
+            // normal mode). The overlay Save button will broadcast the final
+            // result back to the FlowEditorViewModel.
+            val service = ScreenUnderstandingService.instance
+            if (service != null) {
+                service.addStepsFromEditor(steps)
+                // Store latest image path and editor mode for the eventual broadcast
+                service.updateFlowMetadata(currentImagePath, if (isA11yOnlyMode) "A11Y_ONLY" else currentDisplayMode.name)
+                // Go back to target app to continue capturing
+                moveTaskToBack(true)
                 finish()
-            } catch (e: Exception) {
-                Toast.makeText(this, "Error saving for flow mode: ${e.message}", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "Error: Service not running! Elements lost.", Toast.LENGTH_LONG).show()
+                android.util.Log.e("CaptureEditor", "Service instance is null (flow mode)")
             }
             return
         }
@@ -550,6 +645,20 @@ class CaptureEditorActivity : ComponentActivity() {
             pathEffect = DashPathEffect(floatArrayOf(20f, 20f), 0f)
         }
 
+        // Accessibility gap-fill element styles (distinct from YOLO)
+        private val paintBoxA11y = Paint().apply {
+            color = android.graphics.Color.CYAN
+            style = Paint.Style.STROKE
+            strokeWidth = 4f
+            pathEffect = DashPathEffect(floatArrayOf(15f, 10f), 0f)
+        }
+        private val paintLabelA11y = Paint().apply {
+            color = android.graphics.Color.CYAN
+            textSize = 26f
+            style = Paint.Style.FILL
+            isAntiAlias = true
+        }
+
         // ── Text/OCR mode paints ──
         private val paintOcrBox = Paint().apply {
             color = 0xFF00BCD4.toInt() // Cyan
@@ -578,9 +687,28 @@ class CaptureEditorActivity : ComponentActivity() {
         private var ocrTextElements: List<UIElement> = emptyList()
         private val selectionStates: MutableList<SelectionState> = mutableListOf()
 
-        private var scaleFactor = 1f
-        private var offsetX = 0f
-        private var offsetY = 0f
+        // Base fit-to-view transform (computed in onMeasure)
+        private var baseScale = 1f
+        private var baseOffsetX = 0f
+        private var baseOffsetY = 0f
+
+        // User zoom/pan on top of the base transform
+        private var userZoom = 1f
+        private var userPanX = 0f
+        private var userPanY = 0f
+        private val minZoom = 1f
+        private val maxZoom = 5f
+
+        // Drag tracking
+        private var lastTouchX = 0f
+        private var lastTouchY = 0f
+        private var isDragging = false
+        private var activePointerId = MotionEvent.INVALID_POINTER_ID
+
+        // Computed combined transform values
+        private val scaleFactor: Float get() = baseScale * userZoom
+        private val offsetX: Float get() = baseOffsetX * userZoom + userPanX
+        private val offsetY: Float get() = baseOffsetY * userZoom + userPanY
 
         /** Currently active elements based on display mode */
         private val activeElements: List<UIElement>
@@ -615,16 +743,24 @@ class CaptureEditorActivity : ComponentActivity() {
         fun getSelectionActionTypes() = selectionStates.map { it.actionType }
         fun getSelectionInputTexts() = selectionStates.map { it.inputText }
 
+        /** Convert screen touch coordinates to bitmap coordinates */
+        private fun screenToBitmapX(sx: Float): Float = (sx - offsetX) / scaleFactor
+        private fun screenToBitmapY(sy: Float): Float = (sy - offsetY) / scaleFactor
+
+        /** Find the smallest (innermost) element at the given bitmap coordinates */
+        private fun findSmallestElementAt(x: Float, y: Float): UIElement? {
+            return activeElements
+                .filter { it.bounds.contains(x, y) }
+                .minByOrNull { it.bounds.width() * it.bounds.height() }
+        }
+
         private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
-            override fun onDown(e: MotionEvent): Boolean {
-                return true
-            }
+            override fun onDown(e: MotionEvent): Boolean = true
 
             override fun onSingleTapUp(e: MotionEvent): Boolean {
-                val touchX = (e.x - offsetX) / scaleFactor
-                val touchY = (e.y - offsetY) / scaleFactor
-
-                val clicked = activeElements.find { it.bounds.contains(touchX, touchY) }
+                val touchX = screenToBitmapX(e.x)
+                val touchY = screenToBitmapY(e.y)
+                val clicked = findSmallestElementAt(touchX, touchY)
                 if (clicked != null) {
                     toggleSelection(clicked)
                 }
@@ -632,10 +768,9 @@ class CaptureEditorActivity : ComponentActivity() {
             }
 
             override fun onLongPress(e: MotionEvent) {
-                val touchX = (e.x - offsetX) / scaleFactor
-                val touchY = (e.y - offsetY) / scaleFactor
-
-                val clicked = activeElements.find { it.bounds.contains(touchX, touchY) }
+                val touchX = screenToBitmapX(e.x)
+                val touchY = screenToBitmapY(e.y)
+                val clicked = findSmallestElementAt(touchX, touchY)
                 if (clicked != null) {
                     val state = selectionStates.find { it.element.id == clicked.id }
                     if (state != null) {
@@ -643,10 +778,92 @@ class CaptureEditorActivity : ComponentActivity() {
                     }
                 }
             }
+
+            override fun onDoubleTap(e: MotionEvent): Boolean {
+                // Double-tap to reset zoom
+                userZoom = 1f
+                userPanX = 0f
+                userPanY = 0f
+                invalidate()
+                return true
+            }
+        })
+
+        private val scaleGestureDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+            override fun onScale(detector: ScaleGestureDetector): Boolean {
+                val prevZoom = userZoom
+                userZoom = (userZoom * detector.scaleFactor).coerceIn(minZoom, maxZoom)
+                val zoomDelta = userZoom / prevZoom
+
+                // Zoom around the focal point
+                userPanX = detector.focusX - zoomDelta * (detector.focusX - userPanX)
+                userPanY = detector.focusY - zoomDelta * (detector.focusY - userPanY)
+                clampPan()
+                invalidate()
+                return true
+            }
         })
 
         override fun onTouchEvent(event: MotionEvent): Boolean {
-            return gestureDetector.onTouchEvent(event)
+            scaleGestureDetector.onTouchEvent(event)
+            gestureDetector.onTouchEvent(event)
+
+            // Handle drag/pan (only when not scaling)
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    activePointerId = event.getPointerId(0)
+                    lastTouchX = event.x
+                    lastTouchY = event.y
+                    isDragging = false
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    if (!scaleGestureDetector.isInProgress && event.pointerCount == 1) {
+                        val pIdx = event.findPointerIndex(activePointerId)
+                        if (pIdx >= 0) {
+                            val dx = event.getX(pIdx) - lastTouchX
+                            val dy = event.getY(pIdx) - lastTouchY
+                            if (!isDragging && (dx * dx + dy * dy) > 64) {
+                                isDragging = true
+                            }
+                            if (isDragging && userZoom > 1f) {
+                                userPanX += dx
+                                userPanY += dy
+                                clampPan()
+                                invalidate()
+                            }
+                            lastTouchX = event.getX(pIdx)
+                            lastTouchY = event.getY(pIdx)
+                        }
+                    }
+                }
+                MotionEvent.ACTION_POINTER_UP -> {
+                    val pointerIndex = event.actionIndex
+                    val pointerId = event.getPointerId(pointerIndex)
+                    if (pointerId == activePointerId) {
+                        val newIndex = if (pointerIndex == 0) 1 else 0
+                        if (newIndex < event.pointerCount) {
+                            activePointerId = event.getPointerId(newIndex)
+                            lastTouchX = event.getX(newIndex)
+                            lastTouchY = event.getY(newIndex)
+                        }
+                    }
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    activePointerId = MotionEvent.INVALID_POINTER_ID
+                    isDragging = false
+                }
+            }
+            return true
+        }
+
+        /** Keep the pan within reasonable bounds so the bitmap stays partially visible */
+        private fun clampPan() {
+            val bitmapW = bitmap.width * baseScale * userZoom
+            val bitmapH = bitmap.height * baseScale * userZoom
+            val maxPanX = (bitmapW - width) / 2f + width * 0.3f
+            val maxPanY = (bitmapH - height) / 2f + height * 0.3f
+            userPanX = userPanX.coerceIn(-maxPanX.coerceAtLeast(0f), maxPanX.coerceAtLeast(0f))
+            userPanY = userPanY.coerceIn(-maxPanY.coerceAtLeast(0f), maxPanY.coerceAtLeast(0f))
         }
 
         private fun showActionPicker(state: SelectionState) {
@@ -695,13 +912,35 @@ class CaptureEditorActivity : ComponentActivity() {
         }
 
         private fun toggleSelection(element: UIElement) {
-            val existing = selectionStates.find { it.element.id == element.id }
+            // Primary: exact ID match
+            var existing = selectionStates.find { it.element.id == element.id }
+            // Fallback: bounds-overlap match (handles recapture where YOLO assigns
+            // new IDs but the saved selection references the original ID)
+            if (existing == null) {
+                existing = selectionStates.find { state ->
+                    val iou = calculateIoU(state.element.bounds, element.bounds)
+                    iou > 0.5f
+                }
+            }
             if (existing != null) {
                 selectionStates.remove(existing)
             } else {
                 selectionStates.add(SelectionState(element))
             }
             invalidate()
+        }
+
+        /** Calculate Intersection over Union for two rectangles */
+        private fun calculateIoU(a: android.graphics.RectF, b: android.graphics.RectF): Float {
+            val interLeft = maxOf(a.left, b.left)
+            val interTop = maxOf(a.top, b.top)
+            val interRight = minOf(a.right, b.right)
+            val interBottom = minOf(a.bottom, b.bottom)
+            if (interRight <= interLeft || interBottom <= interTop) return 0f
+            val interArea = (interRight - interLeft) * (interBottom - interTop)
+            val areaA = a.width() * a.height()
+            val areaB = b.width() * b.height()
+            return interArea / (areaA + areaB - interArea)
         }
 
         override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -711,14 +950,14 @@ class CaptureEditorActivity : ComponentActivity() {
             val srcRatio = bitmap.width.toFloat() / bitmap.height.toFloat()
             val dstRatio = width.toFloat() / height.toFloat()
 
-            if (srcRatio > dstRatio) {
-                scaleFactor = width.toFloat() / bitmap.width.toFloat()
+            baseScale = if (srcRatio > dstRatio) {
+                width.toFloat() / bitmap.width.toFloat()
             } else {
-                scaleFactor = height.toFloat() / bitmap.height.toFloat()
+                height.toFloat() / bitmap.height.toFloat()
             }
 
-            offsetX = (width - bitmap.width * scaleFactor) / 2
-            offsetY = (height - bitmap.height * scaleFactor) / 2
+            baseOffsetX = (width - bitmap.width * baseScale) / 2
+            baseOffsetY = (height - bitmap.height * baseScale) / 2
 
             setMeasuredDimension(width, height)
         }
@@ -740,8 +979,11 @@ class CaptureEditorActivity : ComponentActivity() {
             canvas.restore()
         }
 
-        /** Draw TFLite-detected UI element bounding boxes (green/blue) */
+        /** Draw TFLite-detected UI element bounding boxes (green/blue) and a11y gap-fills (cyan dashed) */
         private fun drawElementOverlays(canvas: Canvas) {
+            val invScale = 1f / scaleFactor
+            paintLabelA11y.textSize = 26f * invScale
+
             for (element in elements) {
                 val state = selectionStates.find { it.element.id == element.id }
                 val index = selectionStates.indexOf(state)
@@ -751,6 +993,11 @@ class CaptureEditorActivity : ComponentActivity() {
                     val paint = if (state.isOptional) paintDashed else paintSelected
                     canvas.drawRect(element.bounds, paint)
                     drawSelectionBadge(canvas, element, state, index)
+                } else if (element.source == "accessibility" || isA11yOnlyMode) {
+                    // Accessibility element: cyan bounding box with label/text
+                    canvas.drawRect(element.bounds, paintBoxA11y)
+                    val label = (element.text?.take(20) ?: element.label)
+                    canvas.drawText(label, element.bounds.left, element.bounds.top - 5f * invScale, paintLabelA11y)
                 } else {
                     canvas.drawRect(element.bounds, paintBox)
                 }

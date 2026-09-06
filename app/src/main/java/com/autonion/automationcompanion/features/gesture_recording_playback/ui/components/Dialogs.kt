@@ -33,11 +33,22 @@ import kotlinx.coroutines.launch
 private const val DIALOG_ANIM_DURATION = 220
 
 @Composable
-fun NewPresetDialog(onCreate: (String) -> Unit, onCancel: () -> Unit) {
+fun NewPresetDialog(
+    existingPresetNames: Set<String> = emptySet(),
+    onCreate: (String) -> Unit,
+    onCancel: () -> Unit
+) {
     var text by remember { mutableStateOf("") }
     val scale = remember { Animatable(0.9f) }
     val alpha = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
+    val trimmedText = text.trim()
+    val nameError = when {
+        text.isNotEmpty() && trimmedText.isEmpty() -> "Preset name is required"
+        trimmedText.isNotEmpty() && existingPresetNames.any { it.equals(trimmedText, ignoreCase = true) } ->
+            "A preset with this name already exists"
+        else -> null
+    }
 
     LaunchedEffect(Unit) {
         scale.animateTo(1f, tween(DIALOG_ANIM_DURATION, easing = FastOutSlowInEasing))
@@ -82,6 +93,10 @@ fun NewPresetDialog(onCreate: (String) -> Unit, onCancel: () -> Unit) {
                     value = text,
                     onValueChange = { text = it },
                     label = { Text("Preset name") },
+                    isError = nameError != null,
+                    supportingText = {
+                        nameError?.let { Text(it) }
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 20.dp),
@@ -99,9 +114,10 @@ fun NewPresetDialog(onCreate: (String) -> Unit, onCancel: () -> Unit) {
                     Button(
                         onClick = {
                             dismissThen {
-                                if (text.trim().isNotEmpty()) onCreate(text.trim())
+                                if (trimmedText.isNotEmpty() && nameError == null) onCreate(trimmedText)
                             }
-                        }
+                        },
+                        enabled = trimmedText.isNotEmpty() && nameError == null
                     ) {
                         Text("Create")
                     }

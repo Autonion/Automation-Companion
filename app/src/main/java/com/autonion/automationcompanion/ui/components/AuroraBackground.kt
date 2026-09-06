@@ -27,9 +27,10 @@ import com.autonion.automationcompanion.ui.theme.DarkBackground
 @Composable
 fun AuroraBackground(
     modifier: Modifier = Modifier,
+    forceDark: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = forceDark || isSystemInDarkTheme()
     
     // Config for gradients
     val bgBase = if (isDark) Color(0xFF0F1115) else Color(0xFFF3F6FD) // Dark: Rich Black, Light: Pale Blue-White

@@ -4,7 +4,11 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import com.autonion.automationcompanion.features.system_context_automation.battery.engine.BatteryServiceManager
 import com.autonion.automationcompanion.features.system_context_automation.wifi.engine.WiFiMonitorManager
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
@@ -20,6 +24,14 @@ class BootReceiver : BroadcastReceiver() {
             
             // Initialize WiFi monitoring for Android 7+
             WiFiMonitorManager.initialize(context)
+
+            // Resume battery monitoring if any battery automations are active
+            BatteryServiceManager.startMonitoringIfNeeded(context)
+
+            // Re-arm all enabled Time-of-Day alarms (alarms are wiped on device reboot)
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                com.autonion.automationcompanion.features.system_context_automation.timeofday.engine.TimeOfDayReceiver.scheduleAllEnabled(context)
+            }
         }
     }
 }

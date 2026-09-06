@@ -12,7 +12,9 @@ import android.os.Build
 import android.os.IBinder
 import android.view.Gravity
 import android.view.LayoutInflater
+import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.ViewTreeObserver
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
@@ -32,6 +34,7 @@ import com.autonion.automationcompanion.features.gesture_recording_playback.mana
 import com.autonion.automationcompanion.features.gesture_recording_playback.managers.SettingsManager
 import kotlinx.serialization.json.Json
 import java.io.File
+import kotlin.math.abs
 
 class OverlayService : Service() {
 
@@ -60,6 +63,7 @@ class OverlayService : Service() {
     private var currentLoopCount = 1
     private var isSetupMode = false
     private var isCompactMode = false
+    private var isOverlayMinimized = false
 
     private val playbackReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -70,8 +74,15 @@ class OverlayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // If the system restarted the service (null intent), shut down immediately.
+        // A valid launch always carries EXTRA_PRESET_NAME or EXTRA_FLOW_MODE.
+        if (intent == null) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+
         // Check for flow mode
-        if (intent?.getBooleanExtra(FlowOverlayContract.EXTRA_FLOW_MODE, false) == true) {
+        if (intent.getBooleanExtra(FlowOverlayContract.EXTRA_FLOW_MODE, false)) {
             isFlowMode = true
             flowNodeId = intent.getStringExtra(FlowOverlayContract.EXTRA_FLOW_NODE_ID)
             
@@ -133,6 +144,8 @@ class OverlayService : Service() {
         // Load settings
         currentLoopCount = SettingsManager.getLoopCount(this)
         isCompactMode = SettingsManager.isCompactMode(this)
+        val showPrevGestures = SettingsManager.isShowPreviousGestures(this)
+        ActionManager.setShowPreviousGestures(showPrevGestures)
         
         setupOverlay()
 //        startForeground(1, NotificationHelper.createNotification(this))
@@ -280,6 +293,10 @@ class OverlayService : Service() {
         // We attach the listener to the PANEL so dragging the panel moves the whole window.
         // We update 'controlsParams' which applies to 'controlsView' (binding.root).
         binding.controlPanel.setOnTouchListener(OverlayTouchListener(windowManager, controlsView, controlsParams))
+        binding.btnMinimizeOverlay.setOnClickListener {
+            setOverlayMinimized(true)
+        }
+        setupMinimizedOverlayHandle()
 
         binding.btnAdd.setOnClickListener {
             binding.mainControls.visibility = View.GONE
@@ -392,9 +409,88 @@ class OverlayService : Service() {
             SettingsManager.saveCompactMode(this, isCompactMode)
             updateCompactMode()
         }
+
+        binding.btnToggleGestures.setOnClickListener {
+            val newVal = !ActionManager.isShowingPreviousGestures()
+            ActionManager.setShowPreviousGestures(newVal)
+            SettingsManager.saveShowPreviousGestures(this, newVal)
+            updateGestureToggleState(newVal)
+        }
+        updateGestureToggleState(ActionManager.isShowingPreviousGestures())
         
         // Apply initial state
         updateCompactMode()
+    }
+
+    private fun setupMinimizedOverlayHandle() {
+        val touchSlop = ViewConfiguration.get(this).scaledTouchSlop
+        var startWindowX = 0
+        var startWindowY = 0
+        var downRawX = 0f
+        var downRawY = 0f
+        var isDragging = false
+
+        binding.btnMinimizedOverlay.setOnClickListener {
+            setOverlayMinimized(false)
+        }
+
+        binding.btnMinimizedOverlay.setOnTouchListener { view, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    startWindowX = controlsParams.x
+                    startWindowY = controlsParams.y
+                    downRawX = event.rawX
+                    downRawY = event.rawY
+                    isDragging = false
+                    view.isPressed = true
+                    true
+                }
+
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = event.rawX - downRawX
+                    val dy = event.rawY - downRawY
+                    if (!isDragging && (abs(dx) > touchSlop || abs(dy) > touchSlop)) {
+                        isDragging = true
+                    }
+                    if (isDragging) {
+                        controlsParams.x = startWindowX + dx.toInt()
+                        controlsParams.y = startWindowY + dy.toInt()
+                        updateControlLayout()
+                    }
+                    true
+                }
+
+                MotionEvent.ACTION_UP -> {
+                    view.isPressed = false
+                    if (!isDragging) {
+                        view.performClick()
+                    }
+                    true
+                }
+
+                MotionEvent.ACTION_CANCEL -> {
+                    view.isPressed = false
+                    true
+                }
+
+                else -> false
+            }
+        }
+    }
+
+    private fun setOverlayMinimized(minimized: Boolean) {
+        if (isOverlayMinimized == minimized) return
+        isOverlayMinimized = minimized
+
+        binding.controlPanel.visibility = if (minimized) View.GONE else View.VISIBLE
+        binding.btnMinimizedOverlay.visibility = if (minimized) View.VISIBLE else View.GONE
+        if (minimized) {
+            binding.ivSaveStatus.visibility = View.GONE
+        }
+
+        binding.root.post {
+            updateControlLayout()
+        }
     }
 
     private fun updateCompactMode() {
@@ -432,7 +528,7 @@ class OverlayService : Service() {
             binding.btnToggleInput, binding.btnAdd, binding.btnSave, 
             binding.btnClear, binding.btnClose,
             binding.btnAddClick, binding.btnAddLongClick, binding.btnAddSwipe, 
-            binding.btnBack, binding.btnToggleLayout
+            binding.btnBack, binding.btnToggleLayout, binding.btnToggleGestures
         )
         
         val marginCompact = dpToPx(2) // Tight vertical spacing
@@ -565,9 +661,8 @@ class OverlayService : Service() {
     private fun startPlaying() {
         isPlaying = true
 
-        // Show Playback controls
+        // Show only the Stop button during playback
         binding.btnStop.visibility = View.VISIBLE
-        binding.btnRestart.visibility = View.VISIBLE
 
         // Hide Setup/Main controls
         binding.btnPlay.visibility = View.GONE
@@ -576,6 +671,12 @@ class OverlayService : Service() {
         binding.btnAdd.visibility = View.GONE
         binding.btnClear.visibility = View.GONE
         binding.btnClose.visibility = View.GONE
+        binding.btnRestart.visibility = View.GONE
+
+        // Hide non-essential toggles to minimize overlay footprint
+        binding.btnToggleLayout.visibility = View.GONE
+        binding.btnToggleGestures.visibility = View.GONE
+        binding.btnMinimizeOverlay.visibility = View.GONE
 
         // Hide Info/Stats
         binding.tvActionCount.visibility = View.GONE
@@ -613,15 +714,15 @@ class OverlayService : Service() {
             binding.btnClear.visibility = View.VISIBLE
             binding.btnClose.visibility = View.VISIBLE
 
+            // Restore toggle buttons
+            binding.btnToggleLayout.visibility = View.VISIBLE
+            binding.btnToggleGestures.visibility = View.VISIBLE
+            binding.btnMinimizeOverlay.visibility = View.VISIBLE
+
             // Restore Info/Stats
             binding.tvActionCount.visibility = View.VISIBLE
             binding.layoutLoopCount.visibility = View.VISIBLE
             updateControlLayout()
-
-            // Re-enable in case they were disabled (legacy code cleanup)
-//            binding.btnAdd.isEnabled = true
-//            binding.btnClear.isEnabled = true
-//            binding.btnToggleInput.isEnabled = true
         }
     }
 
@@ -643,6 +744,16 @@ class OverlayService : Service() {
         } else {
             binding.tvToggleLabel.setText(R.string.mode_edit)
             binding.ivToggleIcon.setImageResource(R.drawable.ic_edit)
+        }
+    }
+
+    private fun updateGestureToggleState(showAll: Boolean) {
+        if (showAll) {
+            binding.ivToggleGestures.setImageResource(R.drawable.ic_visibility)
+            binding.tvToggleGestures.text = "Hide All"
+        } else {
+            binding.ivToggleGestures.setImageResource(R.drawable.ic_visibility_off)
+            binding.tvToggleGestures.text = "Show All"
         }
     }
 
@@ -773,6 +884,11 @@ class OverlayService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+
+        // Stop any running playback in AutomationService so gestures don't
+        // continue executing after the overlay is gone.
+        broadcastIntent(ACTION_STOP)
+
         LocalBroadcastManager.getInstance(this).unregisterReceiver(playbackReceiver)
 
         if (::markersView.isInitialized) {

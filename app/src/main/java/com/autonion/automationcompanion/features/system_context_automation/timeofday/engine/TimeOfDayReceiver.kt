@@ -33,6 +33,7 @@ class TimeOfDayReceiver : BroadcastReceiver() {
                 set(Calendar.HOUR_OF_DAY, hour)
                 set(Calendar.MINUTE, minute)
                 set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
             }
 
             // If the time has already passed today, schedule for tomorrow
@@ -53,15 +54,47 @@ class TimeOfDayReceiver : BroadcastReceiver() {
             )
 
             try {
-                alarmManager.setAndAllowWhileIdle(
-                    AlarmManager.RTC_WAKEUP,
-                    calendar.timeInMillis,
-                    pendingIntent
-                )
-                Log.i(TAG, "Scheduled alarm for slot $slotId at ${calendar.time}")
+                val canExact = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                    alarmManager.canScheduleExactAlarms()
+                } else {
+                    true
+                }
+
+                if (canExact) {
+                    alarmManager.setExactAndAllowWhileIdle(
+                        AlarmManager.RTC_WAKEUP,
+                        calendar.timeInMillis,
+                        pendingIntent
+                    )
+                } else {
+                    alarmManager.setAndAllowWhileIdle(
+                        AlarmManager.RTC_WAKEUP,
+                        calendar.timeInMillis,
+                        pendingIntent
+                    )
+                }
+                Log.i(TAG, "Scheduled alarm (exact=$canExact) for slot $slotId at ${calendar.time}")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to schedule alarm", e)
             }
+        }
+
+        suspend fun scheduleAllEnabled(context: Context) {
+            val dao = AppDatabase.get(context).slotDao()
+            val slots = dao.getEnabledSlotsByType("TIME_OF_DAY")
+            val json = Json { ignoreUnknownKeys = true }
+
+            for (slot in slots) {
+                val config = try {
+                    slot.triggerConfigJson?.let { json.decodeFromString<TriggerConfig.TimeOfDay>(it) }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to decode time config for slot ${slot.id}", e)
+                    null
+                } ?: continue
+
+                scheduleAlarm(context, slot.id, config.hour, config.minute)
+            }
+            Log.i(TAG, "Re-scheduled alarms for ${slots.size} enabled TimeOfDay slots")
         }
 
         fun cancelAlarm(context: Context, slotId: Long) {

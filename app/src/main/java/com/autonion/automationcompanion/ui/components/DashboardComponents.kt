@@ -1,4 +1,5 @@
 package com.autonion.automationcompanion.ui.components
+import androidx.compose.foundation.layout.heightIn
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -8,14 +9,23 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.AppBlocking
+import androidx.compose.material.icons.outlined.BugReport
+import androidx.compose.material.icons.outlined.CloudSync
+import androidx.compose.material.icons.outlined.MailOutline
+import androidx.compose.material.icons.outlined.Policy
 import androidx.compose.material3.*
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -26,6 +36,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.autonion.automationcompanion.ui.theme.DarkBannerBackground
@@ -79,12 +90,219 @@ fun SecondaryButton(text: String, icon: ImageVector, onClick: () -> Unit, modifi
 }
 
 @Composable
+fun SettingsDropdownMenu(
+    expanded: Boolean,
+    onDismissRequest: () -> Unit,
+    onWhatsNewClick: () -> Unit = {},
+    onExclusionClick: () -> Unit,
+    onBackupClick: () -> Unit,
+    onAgeComplianceClick: () -> Unit,
+    onBugReportEmail: () -> Unit,
+    onBugReportGithub: () -> Unit,
+    modifier: Modifier = Modifier,
+    offset: DpOffset = DpOffset(x = (-8).dp, y = 8.dp)
+) {
+    val isDark = isSystemInDarkTheme()
+    val menuBg = if (isDark) Color(0xFF161926) else MaterialTheme.colorScheme.surface
+    val borderColor = if (isDark) Color(0xFF7C4DFF).copy(alpha = 0.25f) else Color.Black.copy(alpha = 0.08f)
+    val dividerColor = if (isDark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.06f)
+    val sectionHeaderColor = if (isDark) Color(0xFF9ECAFF).copy(alpha = 0.85f) else MaterialTheme.colorScheme.primary
+
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismissRequest,
+        offset = offset,
+        shape = RoundedCornerShape(18.dp),
+        containerColor = menuBg,
+        tonalElevation = 6.dp,
+        shadowElevation = 16.dp,
+        border = BorderStroke(1.dp, borderColor),
+        modifier = modifier.widthIn(min = 260.dp, max = 310.dp)
+    ) {
+        // ── Section 1: Preferences ──────────────────────────────
+        Text(
+            text = "PREFERENCES",
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontWeight = FontWeight.Bold,
+                fontSize = 10.sp,
+                letterSpacing = 0.8.sp,
+                color = sectionHeaderColor
+            ),
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp)
+        )
+
+        SettingsDropdownItem(
+            title = "What's New",
+            subtitle = "Latest features & video",
+            icon = Icons.Default.AutoAwesome,
+            accentColor = Color(0xFF7C4DFF),
+            onClick = {
+                onDismissRequest()
+                onWhatsNewClick()
+            }
+        )
+
+        SettingsDropdownItem(
+            title = "Excluded Apps",
+            subtitle = "Manage app restrictions",
+            icon = Icons.Outlined.AppBlocking,
+            accentColor = Color(0xFFFF9100),
+            onClick = {
+                onDismissRequest()
+                onExclusionClick()
+            }
+        )
+
+        SettingsDropdownItem(
+            title = "Backup & Restore",
+            subtitle = "Export & sync configs",
+            icon = Icons.Outlined.CloudSync,
+            accentColor = Color(0xFF00BCD4),
+            onClick = {
+                onDismissRequest()
+                onBackupClick()
+            }
+        )
+
+        SettingsDropdownItem(
+            title = "Age & Compliance",
+            subtitle = "Policies & data safety",
+            icon = Icons.Outlined.Policy,
+            accentColor = Color(0xFF00C853),
+            onClick = {
+                onDismissRequest()
+                onAgeComplianceClick()
+            }
+        )
+
+        HorizontalDivider(
+            color = dividerColor,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+        )
+
+        // ── Section 2: Support & Feedback ────────────────────────
+        Text(
+            text = "HELP & FEEDBACK",
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontWeight = FontWeight.Bold,
+                fontSize = 10.sp,
+                letterSpacing = 0.8.sp,
+                color = sectionHeaderColor
+            ),
+            modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 4.dp)
+        )
+
+        SettingsDropdownItem(
+            title = "Report Bug (Email)",
+            subtitle = "Direct developer support",
+            icon = Icons.Outlined.MailOutline,
+            accentColor = Color(0xFF7C4DFF),
+            trailingIcon = Icons.AutoMirrored.Outlined.OpenInNew,
+            onClick = {
+                onDismissRequest()
+                onBugReportEmail()
+            }
+        )
+
+        SettingsDropdownItem(
+            title = "Report Bug (GitHub)",
+            subtitle = "Issue tracker & logs",
+            icon = Icons.Outlined.BugReport,
+            accentColor = Color(0xFF2979FF),
+            trailingIcon = Icons.AutoMirrored.Outlined.OpenInNew,
+            onClick = {
+                onDismissRequest()
+                onBugReportGithub()
+            }
+        )
+
+        Spacer(modifier = Modifier.height(4.dp))
+    }
+}
+
+@Composable
+private fun SettingsDropdownItem(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    accentColor: Color,
+    onClick: () -> Unit,
+    trailingIcon: ImageVector = Icons.Default.ChevronRight,
+    modifier: Modifier = Modifier
+) {
+    val isDark = isSystemInDarkTheme()
+
+    DropdownMenuItem(
+        text = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                // Leading squircle badge
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(accentColor.copy(alpha = if (isDark) 0.16f else 0.12f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = accentColor,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                // Title and subtitle
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    )
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Normal
+                        )
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(6.dp))
+
+                // Trailing icon
+                Icon(
+                    imageVector = trailingIcon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                    modifier = Modifier.size(15.dp)
+                )
+            }
+        },
+        onClick = onClick,
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+        modifier = modifier
+    )
+}
+
+@Composable
 fun DashboardHeader(
     title: String,
     subtitle: String? = null,
     onNotificationClick: (() -> Unit)? = null,
+    onWhatsNewClick: () -> Unit = {},
     onExclusionClick: () -> Unit = {},
-    onBackupClick: () -> Unit = {}
+    onBackupClick: () -> Unit = {},
+    onAgeComplianceClick: () -> Unit = {},
+    onBugReportEmail: () -> Unit = {},
+    onBugReportGithub: () -> Unit = {}
 ) {
     var showSettingsMenu by remember { mutableStateOf(false) }
 
@@ -137,31 +355,16 @@ fun DashboardHeader(
                     }
                 }
 
-                DropdownMenu(
+                SettingsDropdownMenu(
                     expanded = showSettingsMenu,
-                    onDismissRequest = { showSettingsMenu = false }
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("Excluded Apps") },
-                        onClick = {
-                            showSettingsMenu = false
-                            onExclusionClick()
-                        },
-                        leadingIcon = {
-                            Icon(Icons.Default.Security, contentDescription = null)
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Backup & Restore") },
-                        onClick = {
-                            showSettingsMenu = false
-                            onBackupClick()
-                        },
-                        leadingIcon = {
-                            Icon(Icons.Default.CloudUpload, contentDescription = null)
-                        }
-                    )
-                }
+                    onDismissRequest = { showSettingsMenu = false },
+                    onWhatsNewClick = onWhatsNewClick,
+                    onExclusionClick = onExclusionClick,
+                    onBackupClick = onBackupClick,
+                    onAgeComplianceClick = onAgeComplianceClick,
+                    onBugReportEmail = onBugReportEmail,
+                    onBugReportGithub = onBugReportGithub
+                )
             }
 
             if (onNotificationClick != null) {
@@ -208,18 +411,19 @@ fun HeroCard(
     val scale by animateFloatAsState(targetValue = if (isPressed) 0.95f else 1f, label = "scale")
 
     Card(
+        onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 24.dp)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
-            }
-            .clickable(interactionSource = interactionSource, indication = LocalIndication.current) { onClick() },
+            },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(24.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        border = if (isDark) BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)) else null
+        border = if (isDark) BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)) else null,
+        interactionSource = interactionSource
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
             Row(
@@ -256,7 +460,9 @@ fun GridCard(
     iconColor: Color,
     iconContainerColor: Color,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    titleFontSize: androidx.compose.ui.unit.TextUnit = 16.sp,
+    descFontSize: androidx.compose.ui.unit.TextUnit = 13.sp
 ) {
     val isDark = isSystemInDarkTheme()
     val interactionSource = remember { MutableInteractionSource() }
@@ -264,17 +470,18 @@ fun GridCard(
     val scale by animateFloatAsState(targetValue = if (isPressed) 0.95f else 1f, label = "scale")
 
     Card(
+        onClick = onClick,
         modifier = modifier
-            .height(190.dp) // Increased slightly
+            .height(190.dp) // Fixed height ensures uniform rows in grid layouts
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
-            }
-            .clickable(interactionSource = interactionSource, indication = LocalIndication.current) { onClick() },
+            },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(24.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        border = if (isDark) BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)) else null
+        border = if (isDark) BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)) else null,
+        interactionSource = interactionSource
     ) {
         Column(
             modifier = Modifier.padding(16.dp)
@@ -294,11 +501,11 @@ fun GridCard(
                 title, 
                 style = MaterialTheme.typography.titleMedium.copy(
                     fontWeight = FontWeight.Bold, 
-                    fontSize = 15.sp 
+                    fontSize = titleFontSize 
                 ), 
                 maxLines = 2, 
                 minLines = 2,
-                lineHeight = 20.sp,
+                lineHeight = if (titleFontSize > 16.sp) 24.sp else 20.sp,
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
             )
             Spacer(modifier = Modifier.height(4.dp))
@@ -306,8 +513,8 @@ fun GridCard(
                 description,
                 style = MaterialTheme.typography.bodySmall.copy(
                     color = MaterialTheme.colorScheme.onSurfaceVariant, 
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp
+                    fontSize = descFontSize,
+                    lineHeight = if (descFontSize > 13.sp) 20.sp else 16.sp
                 ),
                 maxLines = 3, // Reduced max lines to ensure it fits comfortably within the fixed structure
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
@@ -323,7 +530,9 @@ fun ListCard(
     icon: ImageVector,
     iconColor: Color,
     iconContainerColor: Color, // Gradient usually
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    titleFontSize: androidx.compose.ui.unit.TextUnit = 16.sp,
+    descFontSize: androidx.compose.ui.unit.TextUnit = 14.sp
 ) {
     val isDark = isSystemInDarkTheme()
     val interactionSource = remember { MutableInteractionSource() }
@@ -331,18 +540,19 @@ fun ListCard(
     val scale by animateFloatAsState(targetValue = if (isPressed) 0.95f else 1f, label = "scale")
 
     Card(
+        onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 24.dp, vertical = 6.dp)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
-            }
-            .clickable(interactionSource = interactionSource, indication = LocalIndication.current) { onClick() },
+            },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(20.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        border = if (isDark) BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)) else null
+        border = if (isDark) BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)) else null,
+        interactionSource = interactionSource
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -354,14 +564,14 @@ fun ListCard(
                     .background(iconContainerColor, RoundedCornerShape(12.dp)),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(icon, contentDescription = null, tint = iconColor)
+                Icon(icon, contentDescription = null, tint = iconColor, modifier = Modifier.size(28.dp))
             }
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
-                Text(description, style = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant))
+                Text(title, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = titleFontSize))
+                Text(description, style = MaterialTheme.typography.bodyMedium.copy(color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = descFontSize, lineHeight = if (descFontSize > 14.sp) 22.sp else 20.sp))
             }
-            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.Gray)
+            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.Gray, modifier = Modifier.size(28.dp))
         }
     }
 }
@@ -384,16 +594,17 @@ fun StatusCard(
     val resolvedTitleColor = titleColor ?: MaterialTheme.colorScheme.onSurface
 
     Card(
+        onClick = onClick,
         modifier = modifier
             .height(110.dp)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
-            }
-            .clickable(interactionSource = interactionSource, indication = LocalIndication.current) { onClick() },
+            },
         colors = CardDefaults.cardColors(containerColor = backgroundColor),
         shape = RoundedCornerShape(20.dp),
-        border = if (isSystemInDarkTheme()) BorderStroke(1.dp, iconContainerColor.copy(alpha = 0.3f)) else BorderStroke(1.dp, iconContainerColor.copy(alpha = 0.1f))
+        border = if (isSystemInDarkTheme()) BorderStroke(1.dp, iconContainerColor.copy(alpha = 0.3f)) else BorderStroke(1.dp, iconContainerColor.copy(alpha = 0.1f)),
+        interactionSource = interactionSource
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -445,17 +656,18 @@ fun BannerCard(
     val scale by animateFloatAsState(targetValue = if (isPressed) 0.95f else 1f, label = "scale")
 
     Card(
+        onClick = onClick,
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 24.dp)
             .graphicsLayer {
                 scaleX = scale
                 scaleY = scale
-            }
-            .clickable(interactionSource = interactionSource, indication = LocalIndication.current) { onClick() },
+            },
         colors = CardDefaults.cardColors(containerColor = bannerBg),
         shape = RoundedCornerShape(24.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        interactionSource = interactionSource
     ) {
         Row(
             modifier = Modifier.padding(20.dp),
@@ -501,11 +713,149 @@ fun StaggeredEntry(
 
     Box(
         modifier = Modifier
+            .fillMaxSize()
             .graphicsLayer {
                 this.alpha = animAlpha.value
                 this.translationY = slide.value
             }
     ) {
         content()
+    }
+}
+
+@Composable
+fun TabletBrandingPanel(
+    onWhatsNewClick: () -> Unit = {},
+    onExclusionClick: () -> Unit = {},
+    onBackupClick: () -> Unit = {},
+    onAgeComplianceClick: () -> Unit = {},
+    onBugReportEmail: () -> Unit = {},
+    onBugReportGithub: () -> Unit = {},
+    modifier: Modifier = Modifier
+) {
+    val isDark = isSystemInDarkTheme()
+    var showSettingsMenu by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = modifier
+            .fillMaxHeight()
+            .padding(start = 32.dp, end = 24.dp, top = 48.dp, bottom = 32.dp),
+        verticalArrangement = Arrangement.SpaceBetween
+    ) {
+        // Top section: Branding
+        Column {
+            Text(
+                text = "Autonion",
+                style = MaterialTheme.typography.displaySmall.copy(
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "AI-Powered Automation",
+                style = MaterialTheme.typography.titleLarge.copy(
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f)
+                )
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+            Text(
+                text = "Record gestures, build visual flows, and automate tasks with natural language — all on-device with optional cloud power.",
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 24.sp
+                )
+            )
+        }
+
+        // Bottom section: Settings + Version
+        Column {
+            // Settings row
+            Box {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { showSettingsMenu = true }
+                        .padding(vertical = 8.dp, horizontal = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.surface,
+                        shadowElevation = 2.dp,
+                        modifier = Modifier.size(40.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Settings,
+                                contentDescription = "Settings",
+                                tint = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+
+                    Text(
+                        text = "Settings",
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    )
+                }
+
+                SettingsDropdownMenu(
+                    expanded = showSettingsMenu,
+                    onDismissRequest = { showSettingsMenu = false },
+                    onWhatsNewClick = onWhatsNewClick,
+                    onExclusionClick = onExclusionClick,
+                    onBackupClick = onBackupClick,
+                    onAgeComplianceClick = onAgeComplianceClick,
+                    onBugReportEmail = onBugReportEmail,
+                    onBugReportGithub = onBugReportGithub
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Version + GitHub + Privacy Policy
+            val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "v1.0.6  ·  ",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        fontSize = 12.sp
+                    )
+                )
+                Text(
+                    text = "GitHub",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                        fontSize = 12.sp,
+                        textDecoration = TextDecoration.Underline
+                    ),
+                    modifier = Modifier.clickable { uriHandler.openUri("https://github.com/Autonion") }
+                )
+                Text(
+                    text = "  ·  ",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        fontSize = 12.sp
+                    )
+                )
+                Text(
+                    text = "Privacy Policy",
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                        fontSize = 12.sp,
+                        textDecoration = TextDecoration.Underline
+                    ),
+                    modifier = Modifier.clickable { uriHandler.openUri("https://autonion.github.io/autonion-policies/") }
+                )
+            }
+        }
     }
 }

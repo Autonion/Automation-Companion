@@ -40,13 +40,58 @@ fun ActionPicker(
     var showDndRationale by remember { mutableStateOf(false) }
     var showSmsRationale by remember { mutableStateOf(false) }
 
+    var pendingDndEnable by remember { mutableStateOf(false) }
+    var pendingAudioEnable by remember { mutableStateOf(false) }
+    var pendingBrightnessEnable by remember { mutableStateOf(false) }
+
+    // Re-check permissions when returning from Android Settings
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                if (pendingDndEnable && nm.isNotificationPolicyAccessGranted) {
+                    if (configuredActions.none { it is ConfiguredAction.Dnd }) {
+                        onActionsChanged(configuredActions + ConfiguredAction.Dnd(true))
+                    }
+                    pendingDndEnable = false
+                }
+                if (pendingAudioEnable && nm.isNotificationPolicyAccessGranted) {
+                    if (configuredActions.none { it is ConfiguredAction.Audio }) {
+                        onActionsChanged(
+                            configuredActions + ConfiguredAction.Audio(
+                                ringVolume = 3,
+                                mediaVolume = 8,
+                                alarmVolume = 8,
+                                ringerMode = RingerMode.NORMAL
+                            )
+                        )
+                    }
+                    pendingAudioEnable = false
+                }
+                if (pendingBrightnessEnable && PermissionUtils.isWriteSettingsPermissionGranted(context)) {
+                    if (configuredActions.none { it is ConfiguredAction.Brightness }) {
+                        onActionsChanged(configuredActions + ConfiguredAction.Brightness(150))
+                    }
+                    pendingBrightnessEnable = false
+                }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
     val smsPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         val granted = permissions[Manifest.permission.SEND_SMS] == true &&
                       permissions[Manifest.permission.READ_CONTACTS] == true
         if (granted) {
-            // Permission granted, user can toggle again to enable
+            if (configuredActions.none { it is ConfiguredAction.SendSms }) {
+                onActionsChanged(configuredActions + ConfiguredAction.SendSms("", ""))
+            }
         }
     }
 
@@ -54,7 +99,10 @@ fun ActionPicker(
     if (showWriteSettingsRationale) {
         com.autonion.automationcompanion.features.system_context_automation.shared.ui.PermissionDisclosureDialog(
             showDialog = showWriteSettingsRationale,
-            onDismiss = { showWriteSettingsRationale = false },
+            onDismiss = { 
+                showWriteSettingsRationale = false 
+                pendingBrightnessEnable = false
+            },
             onContinue = {
                 showWriteSettingsRationale = false
                 PermissionUtils.requestWriteSettingsPermission(context)
@@ -68,7 +116,11 @@ fun ActionPicker(
     if (showDndRationale) {
         com.autonion.automationcompanion.features.system_context_automation.shared.ui.PermissionDisclosureDialog(
             showDialog = showDndRationale,
-            onDismiss = { showDndRationale = false },
+            onDismiss = { 
+                showDndRationale = false 
+                pendingDndEnable = false
+                pendingAudioEnable = false
+            },
             onContinue = {
                 showDndRationale = false
                 val intent = Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
@@ -136,6 +188,7 @@ fun ActionPicker(
                 if (enabled) {
                     val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                     if (!nm.isNotificationPolicyAccessGranted) {
+                        pendingAudioEnable = true
                         showDndRationale = true
                     } else {
                         if (audioAction == null) {
@@ -151,6 +204,7 @@ fun ActionPicker(
                         audioExpanded = true
                     }
                 } else {
+                    pendingAudioEnable = false
                     onActionsChanged(configuredActions.filterNot { it is ConfiguredAction.Audio })
                     audioExpanded = false
                 }
@@ -183,6 +237,7 @@ fun ActionPicker(
                 if (enabled) {
                     val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
                     if (!nm.isNotificationPolicyAccessGranted) {
+                        pendingDndEnable = true
                         showDndRationale = true
                     } else {
                         if (dndAction == null) {
@@ -190,6 +245,7 @@ fun ActionPicker(
                         }
                     }
                 } else {
+                    pendingDndEnable = false
                     onActionsChanged(configuredActions.filterNot { it is ConfiguredAction.Dnd })
                 }
             }

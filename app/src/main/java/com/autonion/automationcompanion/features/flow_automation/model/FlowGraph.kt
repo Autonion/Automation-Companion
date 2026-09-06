@@ -37,6 +37,28 @@ data class FlowGraph(
     fun failureEdge(nodeId: String): FlowEdge? =
         edges.firstOrNull { it.fromNodeId == nodeId && it.isFailurePath }
 
+    /**
+     * Return all nodes reachable from the StartNode by following directed edges (BFS).
+     * Disconnected / island nodes that have no edge path from Start are excluded.
+     */
+    fun reachableNodes(): List<FlowNode> {
+        val start = findStartNode() ?: return emptyList()
+        val visited = mutableSetOf(start.id)
+        val queue = ArrayDeque<String>()
+        queue.add(start.id)
+
+        while (queue.isNotEmpty()) {
+            val current = queue.removeFirst()
+            for (edge in edges.filter { it.fromNodeId == current }) {
+                if (visited.add(edge.toNodeId)) {
+                    queue.add(edge.toNodeId)
+                }
+            }
+        }
+
+        return nodes.filter { it.id in visited }
+    }
+
     /** Create an updated copy with a new/replaced node. */
     fun withNode(node: FlowNode): FlowGraph {
         val updated = nodes.toMutableList()
@@ -96,5 +118,7 @@ data class FlowGraph(
         is DelayNode -> node.copy(onFailureEdgeId = null)
         is LaunchAppNode -> node.copy(onFailureEdgeId = null)
         is RepeatNode -> node.copy(onFailureEdgeId = null)
+        is ClipboardNode -> node.copy(onFailureEdgeId = null)
+        is InputNode -> node.copy(onFailureEdgeId = null)
     }
 }

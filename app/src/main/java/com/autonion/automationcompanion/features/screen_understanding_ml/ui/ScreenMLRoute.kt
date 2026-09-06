@@ -13,6 +13,9 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,6 +30,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -39,11 +43,20 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.autonion.automationcompanion.features.screen_understanding_ml.core.ScreenUnderstandingService
 import com.autonion.automationcompanion.features.screen_understanding_ml.logic.PresetRepository
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.AutomationPreset
 import com.autonion.automationcompanion.ui.components.AuroraBackground
 import androidx.compose.material.icons.outlined.Info
+import com.autonion.automationcompanion.ui.components.YouTubeTutorials
+import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.ui.platform.LocalUriHandler
 import com.autonion.automationcompanion.features.omni_chatbot.ui.LocalStartWalkthrough
+import com.autonion.automationcompanion.ui.isTablet
+import com.autonion.automationcompanion.ui.rememberWindowWidthSize
+import com.autonion.automationcompanion.ui.WindowWidthSize
+import com.autonion.automationcompanion.core.onboarding.OnboardingPreferences
+import com.autonion.automationcompanion.ui.components.FeatureTipSheet
 import kotlinx.coroutines.launch
 
 /**
@@ -62,6 +75,26 @@ fun ScreenMLRoute(onBack: () -> Unit) {
 
     val presets = remember { mutableStateListOf<AutomationPreset>() }
     var showDialog by remember { mutableStateOf(false) }
+    var confirmDeleteFor by remember { mutableStateOf<AutomationPreset?>(null) }
+
+    // ── First-visit Feature Tip ──
+    val onboardingPrefs = remember { OnboardingPreferences.getInstance(context) }
+    var showTip by remember { mutableStateOf(!onboardingPrefs.hasTipBeenSeen("screen_ml")) }
+
+    if (showTip) {
+        FeatureTipSheet(
+            title = "UI Recognition AI",
+            tips = listOf(
+                "Tap **+ Add** to capture and analyze your current screen",
+                "The AI identifies **clickable elements** and their coordinates",
+                "Create **multi-step presets** that run automatic UI interactions"
+            ),
+            icon = androidx.compose.material.icons.Icons.AutoMirrored.Filled.ViewQuilt,
+            iconColor = androidx.compose.ui.graphics.Color(0xFF448AFF),
+            youtubeLink = YouTubeTutorials.SCREEN_ML,
+            onDismiss = { onboardingPrefs.markTipSeen("screen_ml"); showTip = false }
+        )
+    }
 
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -77,6 +110,7 @@ fun ScreenMLRoute(onBack: () -> Unit) {
 
     if (showDialog) {
         NewAutomationDialog(
+            existingPresetNames = presets.map { it.name }.toSet(),
             onDismiss = { showDialog = false },
             onConfirm = { name ->
                 showDialog = false
@@ -87,14 +121,28 @@ fun ScreenMLRoute(onBack: () -> Unit) {
         )
     }
 
+    // Confirm delete dialog for Screen ML presets
+    confirmDeleteFor?.let { preset ->
+        ConfirmDeletePresetDialog(
+            presetName = preset.name,
+            onConfirm = {
+                repository.deletePreset(preset.id)
+                presets.remove(preset)
+                // Stop the overlay service if it's running for this preset
+                if (ScreenUnderstandingService.instance?.currentPresetId == preset.id) {
+                    context.stopService(Intent(context, ScreenUnderstandingService::class.java))
+                }
+                confirmDeleteFor = null
+            },
+            onCancel = { confirmDeleteFor = null }
+        )
+    }
+
     ScreenMLDashboardContent(
         presets = presets,
         onBack = onBack,
         onAddClick = { showDialog = true },
-        onDelete = { preset ->
-            repository.deletePreset(preset.id)
-            presets.remove(preset)
-        },
+        onDelete = { preset -> confirmDeleteFor = preset },
         onPlay = { preset ->
             val intent = Intent(context, SetupFlowActivity::class.java).apply {
                 putExtra("ACTION_REQUEST_PERMISSION_PLAY_PRESET", preset.id)
@@ -127,8 +175,16 @@ private fun ScreenMLDashboardContent(
 ) {
     val fabScale = remember { Animatable(0f) }
     val startWalkthrough = LocalStartWalkthrough.current
+    val tablet = isTablet()
+    val windowWidthSize = rememberWindowWidthSize()
     LaunchedEffect(Unit) {
         fabScale.animateTo(1f, tween(300, easing = FastOutSlowInEasing))
+    }
+
+    val horizontalPad = when (windowWidthSize) {
+        WindowWidthSize.Expanded -> 32.dp
+        WindowWidthSize.Medium -> 24.dp
+        else -> 16.dp
     }
 
     AuroraBackground {
@@ -147,6 +203,10 @@ private fun ScreenMLDashboardContent(
                         navigationIconContentColor = MaterialTheme.colorScheme.onSurface
                     ),
                     actions = {
+                        val uriHandler = LocalUriHandler.current
+                        IconButton(onClick = { uriHandler.openUri(YouTubeTutorials.SCREEN_ML) }) {
+                            Icon(Icons.Default.PlayCircle, contentDescription = "Watch Video Tutorial", tint = MaterialTheme.colorScheme.onSurface)
+                        }
                         IconButton(onClick = { startWalkthrough("screen_ml") }) {
                             Icon(Icons.Outlined.Info, contentDescription = "Take a Walkthrough", tint = MaterialTheme.colorScheme.onSurface)
                         }
@@ -169,6 +229,34 @@ private fun ScreenMLDashboardContent(
             Box(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
                 if (presets.isEmpty()) {
                     AgentEmptyState()
+                } else if (tablet) {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(2),
+                        contentPadding = PaddingValues(start = horizontalPad, top = 12.dp, end = horizontalPad, bottom = 88.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        gridItemsIndexed(
+                            presets,
+                            key = { _, preset -> preset.id }
+                        ) { index, preset ->
+                            var itemVisible by remember { mutableStateOf(false) }
+                            LaunchedEffect(Unit) {
+                                kotlinx.coroutines.delay(index * 50L)
+                                itemVisible = true
+                            }
+                            AnimatedVisibility(
+                                visible = itemVisible,
+                                enter = fadeIn(tween(300)) + slideInVertically(tween(300, easing = FastOutSlowInEasing)) { it / 4 }
+                            ) {
+                                AgentPresetItem(
+                                    preset = preset,
+                                    onDelete = { onDelete(preset) },
+                                    onPlay = { onPlay(preset) }
+                                )
+                            }
+                        }
+                    }
                 } else {
                     LazyColumn(
                         contentPadding = PaddingValues(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 88.dp),
@@ -298,6 +386,7 @@ private fun AgentPresetItem(
                 scaleX = scale
                 scaleY = scale
             }
+            .clip(RoundedCornerShape(16.dp))
             .clickable(interactionSource = interactionSource, indication = null) {},
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
@@ -345,6 +434,7 @@ private fun AgentPresetItem(
 
 @Composable
 private fun NewAutomationDialog(
+    existingPresetNames: Set<String> = emptySet(),
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit
 ) {
@@ -352,6 +442,13 @@ private fun NewAutomationDialog(
     val scale = remember { Animatable(0.9f) }
     val alpha = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
+    val trimmedName = name.trim()
+    val nameError = when {
+        name.isNotEmpty() && trimmedName.isEmpty() -> "Preset name is required"
+        trimmedName.isNotEmpty() && existingPresetNames.any { it.equals(trimmedName, ignoreCase = true) } ->
+            "A preset with this name already exists"
+        else -> null
+    }
 
     LaunchedEffect(Unit) {
         scale.animateTo(1f, tween(220, easing = FastOutSlowInEasing))
@@ -396,6 +493,10 @@ private fun NewAutomationDialog(
                     value = name,
                     onValueChange = { name = it },
                     label = { Text("Preset name") },
+                    isError = nameError != null,
+                    supportingText = {
+                        nameError?.let { Text(it) }
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 20.dp),
@@ -413,12 +514,90 @@ private fun NewAutomationDialog(
                     Button(
                         onClick = {
                             dismissThen {
-                                if (name.isNotBlank()) onConfirm(name.trim())
+                                if (trimmedName.isNotEmpty() && nameError == null) onConfirm(trimmedName)
                             }
                         },
-                        enabled = name.isNotBlank()
+                        enabled = trimmedName.isNotEmpty() && nameError == null
                     ) {
                         Text("Create")
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ─── Confirm Delete Dialog ──────────────────────────────
+
+@Composable
+private fun ConfirmDeletePresetDialog(
+    presetName: String,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit
+) {
+    val scale = remember { Animatable(0.9f) }
+    val alpha = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) {
+        scale.animateTo(1f, tween(220, easing = FastOutSlowInEasing))
+        alpha.animateTo(1f, tween(220))
+    }
+
+    fun dismissThen(callback: () -> Unit) {
+        scope.launch {
+            scale.animateTo(0.95f, tween(120))
+            alpha.animateTo(0f, tween(120))
+            callback()
+        }
+    }
+
+    Dialog(
+        onDismissRequest = onCancel,
+        properties = DialogProperties(
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true,
+            usePlatformDefaultWidth = false
+        )
+    ) {
+        Surface(
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            tonalElevation = 6.dp,
+            modifier = Modifier
+                .fillMaxWidth(0.9f)
+                .graphicsLayer {
+                    scaleX = scale.value
+                    scaleY = scale.value
+                    this.alpha = alpha.value
+                }
+        ) {
+            Column(modifier = Modifier.padding(24.dp)) {
+                Text(
+                    text = "Delete Preset",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "Are you sure you want to delete '$presetName'?",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 12.dp)
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 24.dp),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = { dismissThen(onCancel) }) {
+                        Text("Cancel")
+                    }
+                    Button(
+                        onClick = { dismissThen(onConfirm) },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        Text("Delete")
                     }
                 }
             }

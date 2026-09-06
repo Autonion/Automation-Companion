@@ -229,6 +229,18 @@ class OmniChatbotViewModel(
                 Log.e(TAG, "Error collecting desktop responses", e)
             }
         }
+
+        // Track successful connection of any AI engine to complete onboarding checklist row
+        viewModelScope.launch {
+            isAIReady.collect { ready ->
+                if (ready) {
+                    Log.d(TAG, "AI connection status verified as ready. Updating onboarding preferences.")
+                    com.autonion.automationcompanion.core.onboarding.OnboardingPreferences
+                        .getInstance(context)
+                        .hasConnectedAI = true
+                }
+            }
+        }
     }
 
     // ─── Input Handling ─────────────────────────────────────
@@ -293,7 +305,9 @@ class OmniChatbotViewModel(
 
     fun expand() {
         _isExpanded.value = true
-        llmEngine.autoConnectIfNeeded()
+        if (_inferenceMode.value == com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.SERVER_LLM) {
+            llmEngine.autoConnectIfNeeded()
+        }
     }
 
     fun updateRoute(route: String?) {
@@ -303,6 +317,16 @@ class OmniChatbotViewModel(
     fun toggleSettings() {
         _showSettings.value = !_showSettings.value
         if (_showSettings.value) _showFAQBrowser.value = false
+    }
+
+    /**
+     * Opens the settings panel pre-set to a specific inference mode.
+     * Used by the smart welcome message in OmniChatbotSheet.
+     */
+    fun openSettingsWithMode(mode: com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode) {
+        setInferenceMode(mode)
+        _showSettings.value = true
+        _showFAQBrowser.value = false
     }
 
     fun toggleFAQBrowser() {
@@ -324,6 +348,7 @@ class OmniChatbotViewModel(
             isUser = false,
             mode = ResponseMode.FAQ
         ))
+        recordChatTurn(faq.question, faq.answer)
     }
 
     // ─── LLM Connection Management ──────────────────────────
@@ -724,6 +749,17 @@ class OmniChatbotViewModel(
     }
 
     private fun handleQAndA(result: IntentResult) {
+        faqRepository.findExactQuestionMatch(result.rawPrompt)?.let { faq ->
+            addMessage(OmniChatMessage(
+                text = faq.answer,
+                isUser = false,
+                mode = ResponseMode.FAQ,
+                suggestedWalkthroughId = getWalkthroughFeatureForPrompt(result.rawPrompt)
+            ))
+            recordChatTurn(result.rawPrompt, faq.answer)
+            return
+        }
+
         addMessage(OmniChatMessage(
             text = "💬 Let me think about that...",
             isUser = false,
@@ -732,6 +768,23 @@ class OmniChatbotViewModel(
         ))
 
         viewModelScope.launch {
+            if (!faqRepository.isLoaded) {
+                val waitStart = System.currentTimeMillis()
+                while (!faqRepository.isLoaded && System.currentTimeMillis() - waitStart < 1_500) {
+                    delay(100)
+                }
+            }
+
+            faqRepository.findExactQuestionMatch(result.rawPrompt)?.let { faq ->
+                updateLastBotMessage(
+                    faq.answer,
+                    ResponseMode.FAQ,
+                    suggestedWalkthroughId = getWalkthroughFeatureForPrompt(result.rawPrompt)
+                )
+                recordChatTurn(result.rawPrompt, faq.answer)
+                return@launch
+            }
+
             // Wait for the knowledge store to finish loading (handles the race
             // condition where the user sends a question before background init
             // completes — previously this returned "I don't have information").
@@ -752,16 +805,16 @@ class OmniChatbotViewModel(
                 Log.d(TAG, "Q&A: Knowledge store ready after ${System.currentTimeMillis() - waitStart}ms")
             }
 
-            // Retrieve top 3 relevant chunks (filtered by min similarity 0.35)
-            val chunks = knowledgeStore.search(result.rawPrompt, topK = 3)
+            // Retrieve top 3 relevant chunks. For short follow-ups like
+            // "what modes does it support?", include recent chat as search context.
+            val chunks = knowledgeStore.search(buildKnowledgeSearchQuery(result.rawPrompt), topK = 3)
 
             // Case A: No knowledge chunks found at all
             if (chunks.isEmpty()) {
-                updateLastBotMessage(
-                    "I don't have information about that in my knowledge base. " +
-                    "Try asking about app features, automation, or troubleshooting!",
-                    ResponseMode.KNOWLEDGE
-                )
+                val fallback = "I don't have information about that in my knowledge base. " +
+                    "Try asking about app features, automation, or troubleshooting!"
+                updateLastBotMessage(fallback, ResponseMode.KNOWLEDGE)
+                recordChatTurn(result.rawPrompt, fallback)
                 return@launch
             }
 
@@ -772,8 +825,10 @@ class OmniChatbotViewModel(
                     cloudApiEngine.connectionStatus.value == CloudApiConnectionStatus.CONNECTED || cloudApiEngine.isConfigured
                 com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.SERVER_LLM ->
                     llmEngine.connectionStatus.value == ServerConnectionStatus.CONNECTED
-                com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.LOCAL_SLM ->
-                    true // SLM is always available on-device
+                com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.LOCAL_SLM -> {
+                    val activePath = modelStorageManager.getActiveModelPath()
+                    !activePath.isNullOrBlank() && java.io.File(activePath).exists()
+                }
             }
             if (!isLlmAvailable) {
                 val cleanText = cleanKnowledgeChunk(chunks.first().text.take(1000), maxLength = 600)
@@ -784,6 +839,12 @@ class OmniChatbotViewModel(
                         append("• Tap ⚙️ above and select a provider\n")
                         append("• Enter your API key and save")
                     }
+                    com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.LOCAL_SLM -> buildString {
+                        append(cleanText)
+                        append("\n\n💡 For smarter answers, import an on-device SLM model:\n")
+                        append("• Tap ⚙️ above → Settings → AI Model Manager\n")
+                        append("• Import a .gguf or .bin model")
+                    }
                     else -> buildString {
                         append(cleanText)
                         append("\n\n💡 For smarter answers, connect to Ollama:\n")
@@ -792,6 +853,7 @@ class OmniChatbotViewModel(
                     }
                 }
                 updateLastBotMessage(fallback, ResponseMode.KNOWLEDGE)
+                recordChatTurn(result.rawPrompt, fallback)
                 return@launch
             }
 
@@ -804,52 +866,81 @@ class OmniChatbotViewModel(
                 }
             }
 
-
             // ── Stable system prompt — identity + rules only, NEVER changes ──
-            // This mirrors how ChatGPT/Gemini work: constant system identity
-            // with conversation history flowing naturally between turns.
             val baseSystemPrompt = buildString {
                 append("/no_think\n")
                 append("You are Autonion, an AI assistant built into an Android automation app.\n\n")
                 append("STRICT RULES:\n")
-                append("1. Answer ONLY using the reference knowledge provided for each question. Do NOT add information that is not in the knowledge.\n")
-                append("2. If the reference knowledge does NOT contain information to answer the question, say exactly: \"I don't have specific information about that in my knowledge base.\"\n")
-                append("3. Do NOT make up features, capabilities, or instructions that are not explicitly described in the knowledge.\n")
-                append("4. Be concise and direct. Use bullet points where appropriate.\n")
-                append("5. Do NOT use <think> tags or internal reasoning. Answer immediately.\n")
-                append("6. If your answer is primarily about one of these features, append the tag on a new line at the very end of your response: [WALKTHROUGH:feature_id]\n")
+                append("1. Answer using the reference knowledge provided for the current question. Use prior chat only to resolve follow-up references like \"it\", \"that\", or \"same\".\n")
+                append("2. Do NOT add factual details that are not supported by the reference knowledge or already-stated chat context.\n")
+                append("3. If the reference knowledge and already-stated chat context do NOT contain information to answer the question, say exactly: \"I don't have specific information about that in my knowledge base.\"\n")
+                append("4. Do NOT make up features, capabilities, or instructions that are not explicitly described in the knowledge.\n")
+                append("5. Be concise and direct. Use bullet points where appropriate.\n")
+                append("6. Do NOT use <think> tags or internal reasoning. Answer immediately.\n")
+                append("7. If your answer is primarily about one of these features, append the tag on a new line at the very end of your response: [WALKTHROUGH:feature_id]\n")
                 append("   Available features: flow_builder, gesture_recording, semantic_automation, cross_device, visual_trigger, screen_ml, system_context, debugger\n")
                 append("   IMPORTANT: Do NOT append a WALKTHROUGH tag for browser extension, extension installation, or extension setup topics. Those have no walkthrough.\n")
-                append("7. IMPORTANT: There are TWO different extensions. The 'Autonion Extension' is for Desktop PC browsers. The 'Autonion Android Extension' is for Mobile phone browsers. If the user asks about an 'extension' without specifying PC or Mobile, explicitly mention both, explain the difference, and you MUST provide the exact github.com download URLs for BOTH extensions exactly as they appear in the knowledge below.\n")
+                append("8. IMPORTANT: There are TWO different extensions. The 'Autonion Extension' is for Desktop PC browsers. The 'Autonion Android Extension' is for Mobile phone browsers. If the user asks about an 'extension' without specifying PC or Mobile, explicitly mention both, explain the difference, and you MUST provide the exact github.com download URLs for BOTH extensions exactly as they appear in the knowledge below.\n")
             }
 
             // ── Per-query knowledge — scoped to current question only ──
-            // Placed right before the user's question so the model knows
-            // this knowledge is for THIS turn, not for the conversation history.
             val knowledgeContext = buildString {
-                append("REFERENCE KNOWLEDGE FOR THE FOLLOWING QUESTION ONLY:\n")
-                append("(Use this knowledge to answer the user's next message. ")
+                append("REFERENCE KNOWLEDGE FOR THE CURRENT QUESTION ONLY:\n")
+                append("(Use this knowledge to answer the current question below. ")
                 append("Do NOT apply it to previous conversation topics.)\n\n")
                 append(contextText)
             }
 
             var rawAnswer: String? = null
             try {
-                // ── Common Langchain4j Path for both Local Server and Cloud API ──
-                withContext(Dispatchers.IO) {
-                    val model = getLangchainModel()
-                    if (model != null) {
-                            val userMsg = UserMessage(result.rawPrompt)
+                if (currentMode == com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.LOCAL_SLM) {
+                    withContext(Dispatchers.IO) {
+                        val slm = com.autonion.automationcompanion.features.semantic_automation.ml.PredictorCache.getSLMEngine(context, modelStorageManager)
+                        if (slm != null) {
+                            val recentConversation = buildRecentConversationContext()
+                            val slmPrompt = buildString {
+                                append("You are Autonion, an AI assistant for Android automation.\n")
+                                append("Answer concisely using ONLY the reference knowledge for factual details.\n")
+                                append("Use recent conversation only to resolve follow-up references like \"it\", \"that\", or \"same\".\n")
+                                append("If the reference knowledge does not answer the current question, say exactly: \"I don't have specific information about that in my knowledge base.\"\n\n")
+                                if (recentConversation.isNotBlank()) {
+                                    append("Recent conversation:\n")
+                                    append(recentConversation)
+                                    append("\n\n")
+                                }
+                                append("Reference knowledge for the current question:\n")
+                                append(contextText.take(1500))
+                                append("\n\nCurrent question: ")
+                                append(result.rawPrompt)
+                                append("\nAnswer:")
+                            }
+                            val response = slm.generateChatResponse(slmPrompt)
+                            if (!response.isNullOrBlank()) {
+                                var content = response.trim()
+                                if (content.contains("</think>")) {
+                                    content = content.substringAfter("</think>").trim()
+                                } else if (content.startsWith("<think>")) {
+                                    content = ""
+                                }
+                                if (content.isNotBlank()) {
+                                    rawAnswer = content
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // ── Common Langchain4j Path for both Local Server and Cloud API ──
+                    withContext(Dispatchers.IO) {
+                        val model = getLangchainModel()
+                        if (model != null) {
+                            val userMsg = UserMessage(buildRagUserPrompt(result.rawPrompt, knowledgeContext))
 
-                            // Message ordering mirrors ChatGPT architecture:
-                            // 1. Stable system identity (constant across turns)
-                            // 2. Full conversation history (natural flow)
-                            // 3. Per-query knowledge (scoped to current question)
-                            // 4. Current user question
                             val allMessages = mutableListOf<dev.langchain4j.data.message.ChatMessage>()
+                            // Keep exactly one system message. Put per-question RAG
+                            // context in the current user turn so chat templates don't
+                            // drop it and old history can't outrank it.
                             allMessages.add(SystemMessage(baseSystemPrompt))
                             allMessages.addAll(chatMemory.messages())
-                            allMessages.add(SystemMessage(knowledgeContext))
                             allMessages.add(userMsg)
 
                             val response = model.generate(allMessages)
@@ -863,18 +954,15 @@ class OmniChatbotViewModel(
 
                             if (content.isNotBlank()) {
                                 rawAnswer = content
-                                chatMemory.add(userMsg)
-                                chatMemory.add(AiMessage(rawAnswer))
                             }
                         }
                     }
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Q&A generation failed (${_inferenceMode.value})", e)
             }
 
             // Parse [WALKTHROUGH:feature_id] tag from the LLM response.
-            // The LLM appends this when the answer is clearly about a specific feature.
-            // Also catch bare [feature_id] tags that the LLM sometimes produces.
             val walkthroughTagRegex = Regex("""\[WALKTHROUGH:(\w+)]""")
             val bareTagRegex = Regex("""\[(flow_builder|gesture_recording|semantic_automation|cross_device|visual_trigger|screen_ml|system_context|debugger)]""")
             val tagMatch = rawAnswer?.let { walkthroughTagRegex.find(it) }
@@ -889,24 +977,26 @@ class OmniChatbotViewModel(
                 ?.trim()
 
             // Priority: prompt-based match → LLM tag → null
-            // If the query is about an excluded topic (e.g. extensions), suppress ALL
-            // walkthrough suggestions — even hallucinated LLM tags.
-            val walkthroughFeature = if (FeatureMatcher.isExcludedFromWalkthrough(result.rawPrompt)) {
-                null
-            } else {
-                FeatureMatcher.matchFeature(result.rawPrompt) ?: llmSuggestedFeature
-            }
+            val walkthroughFeature = getWalkthroughFeatureForPrompt(result.rawPrompt, llmSuggestedFeature)
 
             if (!answer.isNullOrBlank()) {
                 updateLastBotMessage(answer, ResponseMode.KNOWLEDGE, suggestedWalkthroughId = walkthroughFeature)
+                recordChatTurn(result.rawPrompt, answer)
             } else {
                 // LLM failed — show clean chunk fallback
                 val fallback = cleanKnowledgeChunk(chunks.first().text.take(1000), maxLength = 600)
+                val fallbackNote = when (currentMode) {
+                    com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.LOCAL_SLM ->
+                        "$fallback\n\n💡 On-device SLM didn't respond. Showing knowledge base excerpt."
+                    else ->
+                        "$fallback\n\n💡 LLM didn't respond. Showing knowledge base excerpt."
+                }
                 updateLastBotMessage(
-                    "$fallback\n\n💡 LLM didn't respond. Showing knowledge base excerpt.",
+                    fallbackNote,
                     ResponseMode.KNOWLEDGE,
                     suggestedWalkthroughId = walkthroughFeature
                 )
+                recordChatTurn(result.rawPrompt, fallbackNote)
             }
         }
     }
@@ -940,6 +1030,91 @@ class OmniChatbotViewModel(
         } else {
             truncated.trim() + "…"
         }
+    }
+
+    private fun buildRagUserPrompt(question: String, knowledgeContext: String): String {
+        return buildString {
+            append(knowledgeContext)
+            append("\n\nCURRENT QUESTION:\n")
+            append(question.trim())
+            append("\n\nAnswer directly using the reference knowledge.")
+        }
+    }
+
+    private fun buildKnowledgeSearchQuery(question: String): String {
+        if (!isContextualFollowUp(question)) return question
+
+        val recentConversation = buildRecentConversationContext(
+            maxMessages = 6,
+            maxCharsPerMessage = 220
+        )
+
+        return if (recentConversation.isBlank()) {
+            question
+        } else {
+            "$recentConversation\nCurrent question: $question"
+        }
+    }
+
+    private fun isContextualFollowUp(question: String): Boolean {
+        val lower = question.lowercase().trim()
+        val tokens = lower
+            .replace(Regex("[^a-z0-9\\s]"), " ")
+            .split(Regex("\\s+"))
+            .filter { it.isNotBlank() }
+
+        val contextualTerms = setOf(
+            "it", "its", "that", "this", "they", "them", "those", "these",
+            "same", "above", "previous", "earlier", "also", "too"
+        )
+
+        return tokens.any { it in contextualTerms } ||
+            lower.startsWith("what about") ||
+            lower.startsWith("how about") ||
+            lower.startsWith("and ") ||
+            lower.startsWith("also ")
+    }
+
+    private fun buildRecentConversationContext(
+        maxMessages: Int = 6,
+        maxCharsPerMessage: Int = 280
+    ): String {
+        return chatMemory.messages()
+            .takeLast(maxMessages)
+            .mapNotNull { msg ->
+                when (msg) {
+                    is UserMessage -> {
+                        val text = msg.singleText().trim()
+                        if (text.isBlank()) null else "User: ${text.take(maxCharsPerMessage)}"
+                    }
+                    is AiMessage -> {
+                        val text = msg.text().trim()
+                        if (text.isBlank()) null else "Assistant: ${text.take(maxCharsPerMessage)}"
+                    }
+                    else -> null
+                }
+            }
+            .joinToString("\n")
+    }
+
+    private fun getWalkthroughFeatureForPrompt(
+        prompt: String,
+        llmSuggestedFeature: String? = null
+    ): String? {
+        return if (FeatureMatcher.isExcludedFromWalkthrough(prompt)) {
+            null
+        } else {
+            FeatureMatcher.matchFeature(prompt) ?: llmSuggestedFeature
+        }
+    }
+
+    private fun recordChatTurn(userText: String, assistantText: String) {
+        val cleanedUserText = userText.trim()
+        val cleanedAssistantText = stripMarkdown(assistantText).trim()
+        if (cleanedUserText.isBlank() || cleanedAssistantText.isBlank()) return
+
+        chatMemory.add(UserMessage(cleanedUserText.take(800)))
+        chatMemory.add(AiMessage(cleanedAssistantText.take(1200)))
     }
 
     // ═══════════════════════════════════════════════════════════
@@ -1125,12 +1300,24 @@ class OmniChatbotViewModel(
             }
         }.ifBlank { null }
 
+        // Build structured conversation history for richer cross-device context.
+        // Desktop agent uses this to understand multi-turn references like
+        // "type hello in it" (where "it" = the app opened in a prior turn).
+        val conversationHistory = chatMemory.messages().takeLast(10).mapNotNull { msg ->
+            when (msg) {
+                is UserMessage -> mapOf("role" to "user", "content" to msg.singleText().take(500))
+                is AiMessage -> mapOf("role" to "assistant", "content" to msg.text().take(500))
+                else -> null
+            }
+        }
+
         return AgentRequest(
             transactionId = txnId,
             prompt = result.rawPrompt,
             timestamp = System.currentTimeMillis(),
             target = result.entities.targetDevice ?: "desktop",
             context = contextSummary,
+            conversationHistory = conversationHistory,
             agentContext = AgentRequestContext(
                 conversationSummary = contextSummary,
                 preferredModelMode = "desktop_default",

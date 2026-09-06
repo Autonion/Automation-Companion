@@ -35,13 +35,14 @@ class TemporalTracker {
             }
 
             if (bestMatch != null) {
-                // Update track
+                // Update track with latest bounds, confidence, text, and source
                 updatedTracks.add(
                     track.copy(
                         bounds = bestMatch.bounds,
                         confidence = bestMatch.confidence,
-                        lastSeenTimestamp = currentTime
-                        // Keep the original ID
+                        lastSeenTimestamp = currentTime,
+                        text = bestMatch.text ?: track.text,
+                        source = bestMatch.source
                     )
                 )
                 unmatchedDetected.remove(bestMatch)

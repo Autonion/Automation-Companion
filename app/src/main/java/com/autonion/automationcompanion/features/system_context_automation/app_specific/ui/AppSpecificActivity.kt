@@ -228,9 +228,11 @@ fun AppSpecificSlotsScreen(
                                             )
 
                                             recentlyDeleted = slot
+                                            snackbarHostState.currentSnackbarData?.dismiss()
                                             val result = snackbarHostState.showSnackbar(
                                                 message = "Slot deleted",
-                                                actionLabel = "Undo"
+                                                actionLabel = "Undo",
+                                                duration = SnackbarDuration.Short
                                             )
                                             if (result == SnackbarResult.ActionPerformed) {
                                                 recentlyDeleted?.let { 
@@ -380,6 +382,7 @@ private fun AppSpecificSlotCard(
         modifier = Modifier
             .fillMaxWidth()
             .scale(animScale)
+            .clip(RoundedCornerShape(22.dp))
             .clickable(interactionSource = interactionSource, indication = null) { onEdit() },
         shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(

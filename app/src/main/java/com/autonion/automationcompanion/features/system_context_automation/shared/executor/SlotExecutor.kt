@@ -51,10 +51,11 @@ object SlotExecutor {
             return
         }
 
-        // Check execution lock (once per day per slot) - SKIP for App/WiFi
+        // Check execution lock (once per day per slot) - SKIP for App/WiFi/Battery
         // App and WiFi triggers should run every time event occurs.
-        // Location/Time triggers might need daily limit (though Location currently bypasses this anyway).
-        if (slot.triggerType != "APP" && slot.triggerType != "WIFI") {
+        // Battery uses edge-trigger state tracking (lastTriggerState) instead of calendar-day locks.
+        // Location/Time triggers use the daily lock.
+        if (slot.triggerType != "APP" && slot.triggerType != "WIFI" && slot.triggerType != "BATTERY") {
             val today = getTodayKey()
             if (slot.lastExecutedDay == today) {
                 Log.i(TAG, "Slot $slotId already executed today, skipping")

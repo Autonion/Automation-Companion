@@ -6,6 +6,7 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -19,7 +20,9 @@ import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sensors
+import androidx.compose.material.icons.filled.Accessibility
 import androidx.compose.material.icons.filled.Tv
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,6 +31,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.foundation.border
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -50,20 +56,46 @@ private val OfflineRed = Color(0xFFEF5350)
 private val UnknownGray = Color(0xFF9E9E9E)
 
 @Composable
-fun DeviceManagementScreen() {
+fun DeviceManagementScreen(
+    onAccessibilityNeeded: () -> Unit = {}
+) {
     val context = LocalContext.current
     val manager = CrossDeviceAutomationManager.getInstance(context)
     val viewModel = viewModel { DeviceManagementViewModel(manager) }
     val devices by viewModel.devices.collectAsState()
     val isEnabled by viewModel.isFeatureEnabled.collectAsState()
+    val activePairingDevice by viewModel.activePairingDevice.collectAsState()
+    val pairingError by viewModel.pairingError.collectAsState()
 
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        contentPadding = PaddingValues(vertical = 12.dp)
+    val isDark = isSystemInDarkTheme()
+    val textColor = if (isDark) Color.White else Color(0xFF1A1C1E)
+    val secondaryTextColor = if (isDark) Color.White.copy(alpha = 0.6f) else Color(0xFF1A1C1E).copy(alpha = 0.6f)
+    val disabledColor = if (isDark) Color.White.copy(alpha = 0.4f) else Color(0xFF1A1C1E).copy(alpha = 0.4f)
+
+    if (activePairingDevice != null) {
+        PairingBottomSheet(
+            device = activePairingDevice!!,
+            errorMessage = pairingError,
+            onDismiss = viewModel::dismissPairing,
+            onSubmitPin = { pin ->
+                viewModel.submitPairingPin(activePairingDevice!!.id, pin)
+            }
+        )
+    }
+
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.TopCenter
     ) {
+        LazyColumn(
+            modifier = Modifier
+                .widthIn(max = 600.dp)
+                .fillMaxHeight()
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(vertical = 12.dp)
+        ) {
         // ─── Feature Toggle Card ─────────────────────
         item {
             GlassSettingsCard {
@@ -96,13 +128,13 @@ fun DeviceManagementScreen() {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             "Cross-Device Automation",
-                            color = Color.White,
+                            color = textColor,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 15.sp
                         )
                         Text(
                             if (isEnabled) "Running in background" else "Disabled",
-                            color = if (isEnabled) OnlineGreen.copy(alpha = 0.8f) else Color.White.copy(alpha = 0.4f),
+                            color = if (isEnabled) OnlineGreen.copy(alpha = 0.8f) else disabledColor,
                             fontSize = 12.sp
                         )
                     }
@@ -113,8 +145,8 @@ fun DeviceManagementScreen() {
                         colors = SwitchDefaults.colors(
                             checkedThumbColor = Color.White,
                             checkedTrackColor = AccentPurple,
-                            uncheckedThumbColor = Color.White.copy(alpha = 0.6f),
-                            uncheckedTrackColor = Color.White.copy(alpha = 0.1f)
+                            uncheckedThumbColor = if (isDark) Color.White.copy(alpha = 0.6f) else Color.Black.copy(alpha = 0.4f),
+                            uncheckedTrackColor = if (isDark) Color.White.copy(alpha = 0.1f) else Color.Black.copy(alpha = 0.1f)
                         )
                     )
                 }
@@ -123,48 +155,139 @@ fun DeviceManagementScreen() {
 
         // ─── Sub-settings (when enabled) ────────────
         if (isEnabled) {
+            // Compatibility Warning
+            item {
+                val warning by viewModel.compatibilityWarning.collectAsState()
+                if (warning != null) {
+                    GlassSettingsCard {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xFFFFA726).copy(alpha = 0.1f))
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Warning,
+                                contentDescription = null,
+                                tint = Color(0xFFFFA726),
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                warning!!,
+                                color = Color(0xFFFFA726),
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp
+                            )
+                        }
+                    }
+                }
+            }
+
             // Clipboard Sync
             item {
                 val isClipboardSyncEnabled by viewModel.isClipboardSyncEnabled.collectAsState()
+                var pendingClipboardEnable by remember { mutableStateOf(false) }
+                val isAccessibilityConnected by com.autonion.automationcompanion.AccessibilityRouter.isConnected.collectAsState()
+
+                // Auto-enable clipboard sync when user returns from granting accessibility
+                LaunchedEffect(isAccessibilityConnected) {
+                    if (pendingClipboardEnable && isAccessibilityConnected) {
+                        viewModel.toggleClipboardSync(true)
+                        pendingClipboardEnable = false
+                    }
+                }
 
                 GlassSettingsCard {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            Icons.Default.ContentCopy,
-                            contentDescription = null,
-                            tint = AccentBlue.copy(alpha = 0.7f),
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                "Sync Clipboard",
-                                color = Color.White,
-                                fontWeight = FontWeight.Medium,
-                                fontSize = 14.sp
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(start = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.ContentCopy,
+                                contentDescription = null,
+                                tint = AccentBlue.copy(alpha = 0.7f),
+                                modifier = Modifier.size(20.dp)
                             )
-                            Text(
-                                "Automatically share copied text",
-                                color = Color.White.copy(alpha = 0.4f),
-                                fontSize = 12.sp
+                            Spacer(Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "Sync Clipboard",
+                                    color = textColor,
+                                    fontWeight = FontWeight.Medium,
+                                    fontSize = 14.sp
+                                )
+                                Text(
+                                    if (isClipboardSyncEnabled && !isAccessibilityConnected)
+                                        "Requires Accessibility Service"
+                                    else
+                                        "Automatically share copied text",
+                                    color = if (isClipboardSyncEnabled && !isAccessibilityConnected)
+                                        Color(0xFFFF6B6B).copy(alpha = 0.8f)
+                                    else
+                                        disabledColor,
+                                    fontSize = 12.sp
+                                )
+                            }
+
+                            Switch(
+                                checked = isClipboardSyncEnabled,
+                                onCheckedChange = { enabled ->
+                                    if (enabled && !isAccessibilityConnected) {
+                                        // Remember the user's intent, then show disclosure
+                                        pendingClipboardEnable = true
+                                        onAccessibilityNeeded()
+                                    } else {
+                                        viewModel.toggleClipboardSync(enabled)
+                                    }
+                                },
+                                colors = SwitchDefaults.colors(
+                                    checkedThumbColor = Color.White,
+                                    checkedTrackColor = if (isClipboardSyncEnabled && !isAccessibilityConnected)
+                                        Color(0xFFFF6B6B).copy(alpha = 0.6f)
+                                    else
+                                        AccentBlue,
+                                    uncheckedThumbColor = if (isDark) Color.White.copy(alpha = 0.6f) else Color.Black.copy(alpha = 0.4f),
+                                    uncheckedTrackColor = if (isDark) Color.White.copy(alpha = 0.1f) else Color.Black.copy(alpha = 0.1f)
+                                )
                             )
                         }
 
-                        Switch(
-                            checked = isClipboardSyncEnabled,
-                            onCheckedChange = viewModel::toggleClipboardSync,
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color.White,
-                                checkedTrackColor = AccentBlue,
-                                uncheckedThumbColor = Color.White.copy(alpha = 0.6f),
-                                uncheckedTrackColor = Color.White.copy(alpha = 0.1f)
-                            )
-                        )
+                        // Warning when clipboard sync is enabled but accessibility is off
+                        if (isClipboardSyncEnabled && !isAccessibilityConnected) {
+                            Spacer(Modifier.height(8.dp))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color(0xFFFF6B6B).copy(alpha = 0.1f))
+                                    .clickable {
+                                        pendingClipboardEnable = true
+                                        onAccessibilityNeeded()
+                                    }
+                                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.Accessibility,
+                                    contentDescription = null,
+                                    tint = Color(0xFFFF6B6B),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    "Tap to enable Accessibility Service for clipboard sync",
+                                    color = Color(0xFFFF6B6B).copy(alpha = 0.9f),
+                                    fontSize = 11.sp,
+                                    lineHeight = 14.sp
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -180,13 +303,13 @@ fun DeviceManagementScreen() {
                             Icon(
                                 Icons.Default.Settings,
                                 contentDescription = null,
-                                tint = Color.White.copy(alpha = 0.5f),
+                                tint = textColor.copy(alpha = 0.5f),
                                 modifier = Modifier.size(20.dp)
                             )
                             Spacer(Modifier.width(12.dp))
                             Text(
                                 "Background Settings",
-                                color = Color.White,
+                                color = textColor,
                                 fontWeight = FontWeight.Medium,
                                 fontSize = 14.sp
                             )
@@ -223,7 +346,10 @@ fun DeviceManagementScreen() {
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = Color.White.copy(alpha = 0.7f)
+                                contentColor = textColor.copy(alpha = 0.7f)
+                            ),
+                            border = ButtonDefaults.outlinedButtonBorder.copy(
+                                brush = SolidColor(textColor.copy(alpha = 0.15f))
                             )
                         ) {
                             Text(
@@ -236,7 +362,7 @@ fun DeviceManagementScreen() {
                             Spacer(Modifier.height(6.dp))
                             Text(
                                 "Battery optimization disabled. If disconnection persists, check 'App Settings > Battery'.",
-                                color = Color.White.copy(alpha = 0.3f),
+                                color = secondaryTextColor.copy(alpha = 0.5f),
                                 fontSize = 11.sp,
                                 lineHeight = 15.sp
                             )
@@ -246,34 +372,78 @@ fun DeviceManagementScreen() {
             }
         }
 
-        // ─── Section Header ─────────────────────────
-        item {
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "Discovered Devices",
-                color = Color.White.copy(alpha = 0.6f),
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 13.sp,
-                letterSpacing = 1.sp,
-                modifier = Modifier.padding(start = 4.dp)
-            )
-        }
-
-        // ─── Empty + Scanning ───────────────────────
-        if (devices.isEmpty()) {
+        if (!isEnabled) {
             item {
-                ScanningState()
+                GlassSettingsCard {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 16.dp, horizontal = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Sensors,
+                            contentDescription = null,
+                            modifier = Modifier.size(36.dp),
+                            tint = textColor.copy(alpha = 0.25f)
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            "Cross-Device Automation is Off",
+                            color = textColor.copy(alpha = 0.7f),
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 14.sp
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "Turn on the toggle above to scan for and connect to nearby PCs.",
+                            color = secondaryTextColor.copy(alpha = 0.5f),
+                            fontSize = 12.sp,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
             }
-            // ── Setup Guide (LLM-independent) ──
+            // ── Getting Started steps when toggled off ──
             item {
-                SetupGuideCard()
+                SetupGuideCard(isDark, textColor)
+            }
+        } else {
+            // ─── Section Header ─────────────────────────
+            item {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Discovered Devices",
+                    color = textColor.copy(alpha = 0.6f),
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp,
+                    letterSpacing = 1.sp,
+                    modifier = Modifier.padding(start = 4.dp)
+                )
+            }
+
+            // ─── Empty + Scanning (Only when enabled and actively scanning) ───
+            if (devices.isEmpty()) {
+                item {
+                    ScanningState(isDark, textColor)
+                }
+                // ── Setup Guide (LLM-independent) ──
+                item {
+                    SetupGuideCard(isDark, textColor)
+                }
+            }
+
+            // ─── Device Cards ───────────────────────────
+            itemsIndexed(devices) { index, device ->
+                StaggeredDeviceItem(
+                    device = device,
+                    index = index,
+                    onToggleSelection = { viewModel.toggleDeviceSelection(device.id) },
+                    onUnpair = { viewModel.unpairDevice(device.id) }
+                )
             }
         }
-
-        // ─── Device Cards ───────────────────────────
-        itemsIndexed(devices) { index, device ->
-            StaggeredDeviceItem(device = device, index = index, onToggleSelection = { viewModel.toggleDeviceSelection(device.id) })
-        }
+    }
     }
 }
 
@@ -283,16 +453,24 @@ fun DeviceManagementScreen() {
 
 @Composable
 private fun GlassSettingsCard(content: @Composable ColumnScope.() -> Unit) {
+    val isDark = isSystemInDarkTheme()
+    val cardGlass = if (isDark) CardGlass else Color.White.copy(alpha = 0.65f)
+    val cardBorder = if (isDark) CardBorder else Color.Black.copy(alpha = 0.05f)
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
+            .then(
+                if (!isDark) Modifier.border(1.dp, Color.Black.copy(alpha = 0.06f), RoundedCornerShape(16.dp))
+                else Modifier
+            )
             .background(
                 Brush.verticalGradient(
-                    listOf(CardGlass, CardGlass.copy(alpha = 0.35f))
+                    listOf(cardGlass, cardGlass.copy(alpha = 0.35f))
                 )
             )
-            .background(CardBorder, RoundedCornerShape(16.dp))
+            .background(cardBorder, RoundedCornerShape(16.dp))
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -306,7 +484,7 @@ private fun GlassSettingsCard(content: @Composable ColumnScope.() -> Unit) {
 // ═══════════════════════════════════════════════════════════════
 
 @Composable
-private fun ScanningState() {
+private fun ScanningState(isDark: Boolean, textColor: Color) {
     val infiniteTransition = rememberInfiniteTransition(label = "scan")
     val pulseAlpha by infiniteTransition.animateFloat(
         initialValue = 0.3f,
@@ -354,13 +532,13 @@ private fun ScanningState() {
             Spacer(Modifier.height(16.dp))
             Text(
                 "Scanning for devices...",
-                color = Color.White.copy(alpha = 0.5f),
+                color = textColor.copy(alpha = 0.5f),
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium
             )
             Text(
                 "Make sure devices are on the same network",
-                color = Color.White.copy(alpha = 0.3f),
+                color = textColor.copy(alpha = 0.3f),
                 fontSize = 12.sp,
                 textAlign = TextAlign.Center
             )
@@ -373,24 +551,30 @@ private fun ScanningState() {
 // ═══════════════════════════════════════════════════════════════
 
 @Composable
-private fun SetupGuideCard() {
+private fun SetupGuideCard(isDark: Boolean, textColor: Color) {
     val context = LocalContext.current
     val agentUrl = "https://github.com/Autonion/Autonion-Agent/releases"
     val extensionUrl = "https://github.com/Autonion/Autonion-Extension/releases"
+
+    val cardBorder = if (isDark) CardBorder else Color.Black.copy(alpha = 0.05f)
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
+            .then(
+                if (!isDark) Modifier.border(1.dp, Color.Black.copy(alpha = 0.06f), RoundedCornerShape(16.dp))
+                else Modifier
+            )
             .background(
                 Brush.verticalGradient(
                     listOf(
-                        AccentPurple.copy(alpha = 0.10f),
-                        AccentBlue.copy(alpha = 0.08f)
+                        AccentPurple.copy(alpha = if (isDark) 0.10f else 0.15f),
+                        AccentBlue.copy(alpha = if (isDark) 0.08f else 0.12f)
                     )
                 )
             )
-            .background(CardBorder, RoundedCornerShape(16.dp))
+            .background(cardBorder, RoundedCornerShape(16.dp))
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -407,17 +591,17 @@ private fun SetupGuideCard() {
                 Spacer(Modifier.width(8.dp))
                 Text(
                     "Getting Started",
-                    color = Color.White,
+                    color = textColor,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 15.sp
                 )
             }
 
             // Steps
-            SetupStep("1", "Download & install the Autonion Desktop Agent on your PC")
-            SetupStep("2", "Run the Desktop Agent and ensure both devices are on the same WiFi")
-            SetupStep("3", "Your desktop will appear above automatically via mDNS discovery")
-            SetupStep("4", "For browser tasks, also install the Autonion Extension in Chrome")
+            SetupStep("1", "Download & install the Autonion Desktop Agent on your PC", textColor)
+            SetupStep("2", "Run the Desktop Agent and ensure both devices are on the same WiFi", textColor)
+            SetupStep("3", "Your desktop will appear above automatically via mDNS discovery", textColor)
+            SetupStep("4", "For browser tasks, also install the Autonion Extension in Chrome", textColor)
 
             Spacer(Modifier.height(4.dp))
 
@@ -477,7 +661,7 @@ private fun SetupGuideCard() {
 }
 
 @Composable
-private fun SetupStep(number: String, text: String) {
+private fun SetupStep(number: String, text: String, textColor: Color) {
     Row(
         verticalAlignment = Alignment.Top,
         modifier = Modifier.padding(start = 4.dp)
@@ -499,7 +683,7 @@ private fun SetupStep(number: String, text: String) {
         Spacer(Modifier.width(10.dp))
         Text(
             text,
-            color = Color.White.copy(alpha = 0.6f),
+            color = textColor.copy(alpha = 0.6f),
             fontSize = 13.sp,
             lineHeight = 18.sp
         )
@@ -511,7 +695,12 @@ private fun SetupStep(number: String, text: String) {
 // ═══════════════════════════════════════════════════════════════
 
 @Composable
-private fun StaggeredDeviceItem(device: Device, index: Int, onToggleSelection: () -> Unit) {
+private fun StaggeredDeviceItem(
+    device: Device,
+    index: Int,
+    onToggleSelection: () -> Unit,
+    onUnpair: () -> Unit
+) {
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         kotlinx.coroutines.delay(index * 100L)
@@ -522,21 +711,52 @@ private fun StaggeredDeviceItem(device: Device, index: Int, onToggleSelection: (
         visible = visible,
         enter = fadeIn(tween(300)) + slideInVertically(tween(300)) { it / 2 }
     ) {
-        DeviceGlassCard(device, onToggleSelection = onToggleSelection)
+        DeviceGlassCard(
+            device = device,
+            onToggleSelection = onToggleSelection,
+            onUnpair = onUnpair
+        )
     }
 }
 
 @Composable
-private fun DeviceGlassCard(device: Device, onToggleSelection: () -> Unit) {
-    val statusColor = when (device.status) {
-        DeviceStatus.ONLINE -> OnlineGreen
-        DeviceStatus.OFFLINE -> OfflineRed
-        DeviceStatus.UNKNOWN -> UnknownGray
+private fun DeviceGlassCard(
+    device: Device,
+    onToggleSelection: () -> Unit,
+    onUnpair: () -> Unit
+) {
+    val isDark = isSystemInDarkTheme()
+    val cardGlass = if (isDark) CardGlass else Color.White.copy(alpha = 0.65f)
+    val cardBorder = if (isDark) CardBorder else Color.Black.copy(alpha = 0.05f)
+    val textColor = if (isDark) Color.White else Color(0xFF1A1C1E)
+
+    var showUnpairDialog by remember { mutableStateOf(false) }
+
+    if (showUnpairDialog) {
+        UnpairDeviceWarningDialog(
+            device = device,
+            onConfirm = {
+                showUnpairDialog = false
+                onUnpair()
+            },
+            onDismiss = { showUnpairDialog = false }
+        )
+    }
+
+    val statusColor = when {
+        device.isPairingRequired -> Color(0xFFFFB74D)
+        device.isServiceOnly && device.status == DeviceStatus.ONLINE -> Color(0xFFFFB74D)
+        device.status == DeviceStatus.ONLINE -> OnlineGreen
+        device.status == DeviceStatus.OFFLINE -> OfflineRed
+        else -> UnknownGray
     }
     val statusLabel = when {
-        device.isSelected && device.status == DeviceStatus.ONLINE -> "Connected"
+        device.isPairingRequired -> "PIN Required"
+        device.isServiceOnly && device.isSelected && device.status == DeviceStatus.ONLINE -> "Service Only"
+        device.isServiceOnly && device.status == DeviceStatus.ONLINE -> "Service Available"
+        device.isSelected && device.status == DeviceStatus.ONLINE -> if (device.isPaired) "Paired" else "Connected"
         device.isSelected -> "Selected"
-        device.status == DeviceStatus.ONLINE -> "Available"
+        device.status == DeviceStatus.ONLINE -> if (device.isPaired) "Paired" else "Available"
         device.status == DeviceStatus.OFFLINE -> "Offline"
         else -> "Unknown"
     }
@@ -552,13 +772,17 @@ private fun DeviceGlassCard(device: Device, onToggleSelection: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
+            .then(
+                if (!isDark) Modifier.border(1.dp, Color.Black.copy(alpha = 0.06f), RoundedCornerShape(16.dp))
+                else Modifier
+            )
             .background(
                 Brush.verticalGradient(
-                    listOf(CardGlass, CardGlass.copy(alpha = 0.35f))
+                    listOf(cardGlass, cardGlass.copy(alpha = 0.35f))
                 )
             )
             .background(
-                if (device.isSelected) AccentPurple.copy(alpha = 0.08f) else CardBorder,
+                if (device.isSelected) AccentPurple.copy(alpha = 0.08f) else cardBorder,
                 RoundedCornerShape(16.dp)
             )
             .clickable { onToggleSelection() }
@@ -590,14 +814,17 @@ private fun DeviceGlassCard(device: Device, onToggleSelection: () -> Unit) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     device.name,
-                    color = Color.White,
+                    color = textColor,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 15.sp
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    device.ipAddress,
-                    color = Color.White.copy(alpha = 0.4f),
+                    if (device.isServiceOnly && device.status == DeviceStatus.ONLINE)
+                        "${device.ipAddress} • Unlock Service"
+                    else
+                        device.ipAddress,
+                    color = textColor.copy(alpha = 0.4f),
                     fontSize = 12.sp
                 )
             }
@@ -641,15 +868,119 @@ private fun DeviceGlassCard(device: Device, onToggleSelection: () -> Unit) {
 
             Spacer(Modifier.width(8.dp))
 
+            // Unpair button (only when device is paired)
+            if (device.isPaired) {
+                IconButton(
+                    onClick = { showUnpairDialog = true },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.DeleteOutline,
+                        contentDescription = "Unpair device",
+                        tint = OfflineRed.copy(alpha = 0.85f),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Spacer(Modifier.width(4.dp))
+            }
+
             // Selection toggle icon
             Icon(
                 imageVector = if (device.isSelected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
                 contentDescription = if (device.isSelected) "Connected" else "Tap to connect",
-                tint = if (device.isSelected) AccentPurple else Color.White.copy(alpha = 0.3f),
+                tint = if (device.isSelected) AccentPurple else textColor.copy(alpha = 0.3f),
                 modifier = Modifier.size(24.dp)
             )
         }
     }
+}
+
+@Composable
+fun UnpairDeviceWarningDialog(
+    device: Device,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val isDark = isSystemInDarkTheme()
+    val textColor = if (isDark) Color.White else Color(0xFF1A1C1E)
+    val secondaryTextColor = if (isDark) Color.White.copy(alpha = 0.7f) else Color(0xFF1A1C1E).copy(alpha = 0.7f)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFFFFA726).copy(alpha = 0.15f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = Color(0xFFFFA726),
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+        },
+        title = {
+            Text(
+                text = "Unpair from \"${device.name}\"?",
+                fontWeight = FontWeight.Bold,
+                fontSize = 17.sp,
+                textAlign = TextAlign.Center,
+                color = textColor
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "This will disconnect this phone and revoke its trusted pairing credentials with your desktop agent.",
+                    fontSize = 13.sp,
+                    color = secondaryTextColor,
+                    lineHeight = 18.sp
+                )
+                Spacer(Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.Top) {
+                    Text("• ", color = Color(0xFFFFA726), fontWeight = FontWeight.Bold)
+                    Text("Remote triggers & desktop actions will stop.", fontSize = 12.sp, color = secondaryTextColor)
+                }
+                Row(verticalAlignment = Alignment.Top) {
+                    Text("• ", color = Color(0xFFFFA726), fontWeight = FontWeight.Bold)
+                    Text("Clipboard synchronization will be disabled for this PC.", fontSize = 12.sp, color = secondaryTextColor)
+                }
+                Row(verticalAlignment = Alignment.Top) {
+                    Text("• ", color = Color(0xFFFFA726), fontWeight = FontWeight.Bold)
+                    Text("Reconnecting will require entering a new 6-digit PIN on your PC.", fontSize = 12.sp, color = secondaryTextColor)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = OfflineRed,
+                    contentColor = Color.White
+                ),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Text("Unpair Device", fontWeight = FontWeight.SemiBold)
+            }
+        },
+        dismissButton = {
+            OutlinedButton(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Text("Cancel")
+            }
+        },
+        containerColor = if (isDark) Color(0xFF1E2130) else Color.White,
+        shape = RoundedCornerShape(20.dp)
+    )
 }
 
 fun getDeviceIcon(role: DeviceRole): ImageVector {

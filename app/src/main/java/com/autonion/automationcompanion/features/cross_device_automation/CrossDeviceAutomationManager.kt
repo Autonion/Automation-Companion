@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
 import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
+import com.autonion.automationcompanion.features.flow_automation.data.DesktopFlowManager
 import kotlinx.coroutines.launch
 import com.autonion.automationcompanion.features.cross_device_automation.actions.ActionExecutor
 import com.autonion.automationcompanion.features.cross_device_automation.data.InMemoryDeviceRepository
@@ -14,6 +15,9 @@ import com.autonion.automationcompanion.features.cross_device_automation.host_ma
 import com.autonion.automationcompanion.features.cross_device_automation.networking.NetworkingManager
 import com.autonion.automationcompanion.features.cross_device_automation.rules.RuleEngine
 import com.autonion.automationcompanion.features.cross_device_automation.tagging.TaggingSystem
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 
 class CrossDeviceAutomationManager(private val context: Context) : NetworkingManager.NetworkingListener {
@@ -21,6 +25,7 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
     // Repositories
     val deviceRepository = InMemoryDeviceRepository()
     val ruleRepository = InMemoryRuleRepository()
+    val deviceAuthManager = com.autonion.automationcompanion.features.cross_device_automation.data.DeviceAuthManager(context)
 
     // Event Pipeline Components
     private val enricher = EventEnricher()
@@ -34,6 +39,11 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
     private lateinit var clipboardMonitor: com.autonion.automationcompanion.features.cross_device_automation.event_source.ClipboardMonitor
     private var isStarted = false
 
+    // Desktop Flow Manager — lazy init after networkingManager is available
+    val desktopFlowManager: DesktopFlowManager by lazy {
+        DesktopFlowManager(context, this)
+    }
+
     // Background Execution Locks
     private var wakeLock: android.os.PowerManager.WakeLock? = null
     private var wifiLock: android.net.wifi.WifiManager.WifiLock? = null
@@ -41,6 +51,36 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
     // Preferences
     private val prefs = context.getSharedPreferences("cross_device_prefs", Context.MODE_PRIVATE)
     private val PREF_FEATURE_ENABLED = "feature_enabled"
+    private val PREF_CLIPBOARD_SYNC_ENABLED = "clipboard_sync_enabled"
+
+    // Reactive StateFlow so the ViewModel updates when desktop pushes state changes
+    private val _clipboardSyncEnabled = MutableStateFlow(false)
+    val clipboardSyncStateFlow: StateFlow<Boolean> = _clipboardSyncEnabled.asStateFlow()
+
+    // Version compatibility warning — non-null when desktop requires a newer companion
+    private val _compatibilityWarning = MutableStateFlow<String?>(null)
+    val compatibilityWarning: StateFlow<String?> = _compatibilityWarning.asStateFlow()
+
+    // Active Pairing State
+    private val _activePairingDevice = MutableStateFlow<com.autonion.automationcompanion.features.cross_device_automation.domain.Device?>(null)
+    val activePairingDevice: StateFlow<com.autonion.automationcompanion.features.cross_device_automation.domain.Device?> = _activePairingDevice.asStateFlow()
+
+    private val _pairingError = MutableStateFlow<String?>(null)
+    val pairingError: StateFlow<String?> = _pairingError.asStateFlow()
+
+    init {
+        // One-time migration: reset clipboard sync for users who had it
+        // implicitly enabled under the old default=true behavior.
+        val MIGRATION_KEY = "clipboard_sync_default_migrated_v1"
+        if (!prefs.getBoolean(MIGRATION_KEY, false)) {
+            prefs.edit()
+                .putBoolean("clipboard_sync_enabled", false)
+                .putBoolean(MIGRATION_KEY, true)
+                .apply()
+        }
+        // Seed reactive StateFlow with persisted value
+        _clipboardSyncEnabled.value = prefs.getBoolean(PREF_CLIPBOARD_SYNC_ENABLED, false)
+    }
 
     fun initialize() {
         // ... (Existing initialization logic) ...
@@ -53,7 +93,7 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
             }
         }
         
-        networkingManager = NetworkingManager(context, deviceRepository, eventReceiverProxy)
+        networkingManager = NetworkingManager(context, deviceRepository, eventReceiverProxy, deviceAuthManager)
         networkingManager.listener = this
         actionExecutor = ActionExecutor(context, networkingManager)
         
@@ -86,14 +126,23 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
         }
     }
 
-    private val PREF_CLIPBOARD_SYNC_ENABLED = "clipboard_sync_enabled"
-
     fun isClipboardSyncEnabled(): Boolean {
-        return prefs.getBoolean(PREF_CLIPBOARD_SYNC_ENABLED, true)
+        return prefs.getBoolean(PREF_CLIPBOARD_SYNC_ENABLED, false)
     }
 
     fun setClipboardSyncEnabled(enabled: Boolean) {
         prefs.edit().putBoolean(PREF_CLIPBOARD_SYNC_ENABLED, enabled).apply()
+        _clipboardSyncEnabled.value = enabled
+
+        // Send one-shot command to desktop (no polling)
+        if (::networkingManager.isInitialized && isStarted) {
+            val command = mapOf(
+                "type" to "clipboard.set_sync_enabled",
+                "payload" to mapOf("enabled" to enabled)
+            )
+            networkingManager.broadcast(command)
+            Log.d(TAG, "Sent clipboard sync ${if (enabled) "enabled" else "disabled"} to desktop")
+        }
     }
 
     fun start() {
@@ -135,8 +184,14 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
         hostManager.stopDiscovery()
         networkingManager.stop()
         releaseLocks()
-        // Deselect all devices so UI reflects disconnected state
-        scope.launch { deviceRepository.deselectAllDevices() }
+        // Clear all devices from memory and state so UI and repo reflect that discovery is stopped
+        scope.launch {
+            deviceRepository.deselectAllDevices()
+            deviceRepository.clearAllDevices()
+        }
+        _compatibilityWarning.value = null
+        _activePairingDevice.value = null
+        _pairingError.value = null
     }
 
     private fun acquireLocks() {
@@ -238,10 +293,13 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
         }
     }
 
-    fun stopRemoteAutomation() {
-        val command = mapOf("type" to "kill_switch")
+    fun stopRemoteAutomation(transactionId: String? = null) {
+        val command = mutableMapOf<String, Any>("type" to "kill_switch")
+        if (!transactionId.isNullOrEmpty()) {
+            command["transactionId"] = transactionId
+        }
         networkingManager.broadcast(command)
-        Log.i(TAG, "Sent kill_switch to remote devices")
+        Log.i(TAG, "Sent kill_switch to remote devices (txn=$transactionId)")
     }
 
     // --- Networking Events ---
@@ -249,10 +307,119 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
     override fun onDeviceConnected(device: com.autonion.automationcompanion.features.cross_device_automation.domain.Device) {
         Log.d("CrossDeviceManager", "Device connected: ${device.name}")
         syncRulesToDesktop() // Sync rules immediately on connection
+        desktopFlowManager.requestFlowList() // Also fetch desktop flows
+        // Push clipboard sync state to desktop on connect (one-shot, no polling)
+        syncClipboardStateToDesktop()
     }
 
     override fun onDeviceDisconnected(deviceId: String) {
         Log.d("CrossDeviceManager", "Device disconnected: $deviceId")
+        _compatibilityWarning.value = null // Clear stale warnings
+        desktopFlowManager.onDeviceDisconnected(deviceId)
+    }
+
+    override fun onAgentVersionReceived(deviceId: String, agentVersion: String?, minCompanionVersion: String?) {
+        Log.d(TAG, "Desktop agent v$agentVersion (requires companion >= $minCompanionVersion)")
+
+        // Old desktop that doesn't send version at all → definitely outdated
+        if (agentVersion == null) {
+            _compatibilityWarning.value =
+                "Connected Desktop Agent is outdated and missing features like Flows. " +
+                "Please update to v$MIN_REQUIRED_AGENT_VERSION+ for full compatibility."
+            Log.w(TAG, _compatibilityWarning.value!!)
+            return
+        }
+
+        // New desktop, check if OUR version meets their minimum
+        if (minCompanionVersion != null) {
+            val ourVersion = try {
+                context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "0.0.0"
+            } catch (_: Exception) { "0.0.0" }
+
+            if (compareVersions(ourVersion, minCompanionVersion) < 0) {
+                _compatibilityWarning.value =
+                    "Desktop Agent v$agentVersion requires Companion v$minCompanionVersion+. " +
+                    "You have v$ourVersion. Please update for full compatibility."
+                Log.w(TAG, _compatibilityWarning.value!!)
+            } else {
+                _compatibilityWarning.value = null
+            }
+        } else {
+            _compatibilityWarning.value = null
+        }
+    }
+
+    override fun onPairingRequired(deviceId: String, deviceName: String) {
+        Log.d(TAG, "Pairing required for device: $deviceName ($deviceId)")
+        scope.launch {
+            val device = deviceRepository.getDeviceById(deviceId)
+            _activePairingDevice.value = device
+            _pairingError.value = null
+        }
+    }
+
+    override fun onPairingSuccess(deviceId: String) {
+        Log.d(TAG, "Pairing succeeded for device: $deviceId")
+        if (_activePairingDevice.value?.id == deviceId) {
+            _activePairingDevice.value = null
+            _pairingError.value = null
+        }
+    }
+
+    override fun onPairingFailed(deviceId: String, error: String) {
+        Log.w(TAG, "Pairing failed for device $deviceId: $error")
+        _pairingError.value = error
+    }
+
+    fun submitPairingPin(deviceId: String, pin: String) {
+        if (::networkingManager.isInitialized) {
+            _pairingError.value = null
+            networkingManager.submitPairingPin(deviceId, pin)
+        }
+    }
+
+    fun dismissPairing() {
+        _activePairingDevice.value = null
+        _pairingError.value = null
+    }
+
+    fun unpairDevice(deviceId: String) {
+        scope.launch {
+            // 1. Send unpair command to desktop over active connection
+            if (::networkingManager.isInitialized) {
+                networkingManager.sendCommand(
+                    deviceId,
+                    mapOf("type" to "unpair_device")
+                )
+            }
+
+            // 2. Query latest device record from repository
+            val device = deviceRepository.getDeviceById(deviceId)
+            if (device != null) {
+                // 3. Clear paired agent ID
+                if (device.agentId != null) {
+                    deviceAuthManager.unpairAgent(device.agentId)
+                }
+
+                // 4. Rotate deviceSecret so offline desktops cannot re-auth with old secret
+                deviceAuthManager.rotateSecret()
+
+                // 5. Cleanly disconnect socket
+                if (::networkingManager.isInitialized) {
+                    networkingManager.disconnectDevice(deviceId)
+                }
+
+                // 6. Update repository with reset pairing state
+                deviceRepository.updateDevice(
+                    device.copy(
+                        isPaired = false,
+                        isSelected = false,
+                        isPairingRequired = true,
+                        agentId = null
+                    )
+                )
+            }
+        }
     }
 
     override fun onMessageReceived(deviceId: String, message: String) {
@@ -270,24 +437,21 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
                 return
             }
 
-            // Existing logic for RawEvent/Events
-            // Note: NetworkingManager now tries to parse and send to EventReceiver directly if it looks like an event.
-            // But if we want to handle it here explicitly or if NetworkingManager failed to parse it as an event:
-            if (type.startsWith("clipboard.") || type.contains("event")) {
-                 try {
-                     val event = com.google.gson.Gson().fromJson(message, com.autonion.automationcompanion.features.cross_device_automation.domain.RawEvent::class.java)
-                     if (event != null) {
-                        if (event.type == "clipboard.text_copied") {
-                             onExternalEvent(event) // Special handling for clipboard
-                        } else {
-                             scope.launch {
-                                 eventPipeline.onEventReceived(event)
-                             }
-                        }
-                     }
-                 } catch (e: Exception) {
-                     Log.w("CrossDeviceManager", "Failed to parse as event in onMessageReceived: ${e.message}")
-                 }
+            // ── Flow System messages from Desktop ──
+            if (type == "flow_list_response" || type == "flow_trigger_response") {
+                desktopFlowManager.handleIncomingMessage(message)
+                return
+            }
+
+            // ── Clipboard sync state pushed from Desktop ──
+            if (type == "clipboard.sync_state_changed") {
+                val payload = json.optJSONObject("payload")
+                val enabled = payload?.optBoolean("enabled", true) ?: true
+                // Update local preference and reactive state without echoing back
+                prefs.edit().putBoolean(PREF_CLIPBOARD_SYNC_ENABLED, enabled).apply()
+                _clipboardSyncEnabled.value = enabled
+                Log.d(TAG, "Clipboard sync state updated from desktop: $enabled")
+                return
             }
         } catch (e: Exception) {
             Log.e("CrossDeviceManager", "Error parsing message", e)
@@ -311,6 +475,17 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
         if (::clipboardMonitor.isInitialized && isFeatureEnabled() && isClipboardSyncEnabled()) {
             clipboardMonitor.checkNow(context)
         }
+    }
+
+    /// Push clipboard sync preference to desktop on connect (one-shot, no polling).
+    private fun syncClipboardStateToDesktop() {
+        if (!::networkingManager.isInitialized || !isStarted) return
+        val command = mapOf(
+            "type" to "clipboard.set_sync_enabled",
+            "payload" to mapOf("enabled" to isClipboardSyncEnabled())
+        )
+        networkingManager.broadcast(command)
+        Log.d(TAG, "Pushed clipboard sync state to desktop on connect: ${isClipboardSyncEnabled()}")
     }
 
     fun onExternalEvent(event: com.autonion.automationcompanion.features.cross_device_automation.domain.RawEvent) {
@@ -345,16 +520,31 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
     
     companion object {
         private const val TAG = "CrossDeviceManager"
+        /** Minimum Autonion Agent version required for full feature compatibility. */
+        private const val MIN_REQUIRED_AGENT_VERSION = "2.0.5"
         @Volatile
         private var instance: CrossDeviceAutomationManager? = null
 
         fun getInstance(context: Context): CrossDeviceAutomationManager {
             return instance ?: synchronized(this) {
-                instance ?: CrossDeviceAutomationManager(context.applicationContext).also { 
+                instance ?: CrossDeviceAutomationManager(context.applicationContext).also {
                     it.initialize()
-                    instance = it 
+                    instance = it
                 }
             }
+        }
+
+        /** Compare two semver strings (e.g. "1.1.0" vs "1.0.9"). Returns -1, 0, or 1. */
+        fun compareVersions(a: String, b: String): Int {
+            val pa = a.split(".").map { it.toIntOrNull() ?: 0 }
+            val pb = b.split(".").map { it.toIntOrNull() ?: 0 }
+            for (i in 0 until 3) {
+                val va = pa.getOrElse(i) { 0 }
+                val vb = pb.getOrElse(i) { 0 }
+                if (va < vb) return -1
+                if (va > vb) return 1
+            }
+            return 0
         }
     }
 }

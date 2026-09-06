@@ -37,6 +37,7 @@ import com.autonion.automationcompanion.automation.actions.builders.ActionBuilde
 import com.autonion.automationcompanion.automation.actions.models.ConfiguredAction
 import com.autonion.automationcompanion.automation.actions.ui.ActionPicker
 import com.autonion.automationcompanion.automation.actions.ui.AppPickerActivity
+import com.autonion.automationcompanion.features.system_context_automation.battery.engine.BatteryBroadcastReceiver
 import com.autonion.automationcompanion.features.system_context_automation.battery.engine.BatteryServiceManager
 import com.autonion.automationcompanion.features.system_context_automation.location.data.db.AppDatabase
 import com.autonion.automationcompanion.features.system_context_automation.location.data.models.Slot
@@ -50,22 +51,32 @@ import kotlinx.serialization.json.Json
 
 class BatteryConfigActivity : AppCompatActivity() {
 
-    private var contactPickerActionIndex: Int? = null
+    private var contactPickerActionIndex: Int = -1
     private var appPickerActionIndex = -1
 
-    private val pickContactLauncher = registerForActivityResult(ActivityResultContracts.PickContact()) { uri ->
-        if (uri != null && contactPickerActionIndex != null) {
-            val cursor = contentResolver.query(
-                uri,
-                arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER),
-                null,
-                null,
-                null
-            )
-            cursor?.use {
-                if (it.moveToFirst()) {
-                    val number = it.getString(0)
-                    // Update would go here
+    private val pickContactLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
+        if (res.resultCode == RESULT_OK && res.data != null) {
+            val uri: android.net.Uri? = res.data!!.data
+            uri?.let { u ->
+                val num = fetchPhoneNumberFromContact(u)
+                if (!num.isNullOrBlank()) {
+                    if (contactPickerActionIndex >= 0 && contactPickerActionIndex < configuredActionsState.size) {
+                        val smsAction = configuredActionsState.getOrNull(contactPickerActionIndex)
+                        if (smsAction is ConfiguredAction.SendSms) {
+                            val updatedContacts = if (smsAction.contactsCsv.isBlank())
+                                num else "${smsAction.contactsCsv};$num"
+                            configuredActionsState = configuredActionsState.mapIndexed { idx, action ->
+                                if (idx == contactPickerActionIndex) {
+                                    smsAction.copy(contactsCsv = updatedContacts)
+                                } else {
+                                    action
+                                }
+                            }
+                            contactPickerActionIndex = -1
+                        }
+                    }
+                } else {
+                    Toast.makeText(this, "No number in contact", Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -106,6 +117,37 @@ class BatteryConfigActivity : AppCompatActivity() {
         appPickerLauncher.launch(intent)
     }
 
+    private val contactPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { _ -> }
+
+    private fun pickContact(actionIndex: Int) {
+        contactPickerActionIndex = actionIndex
+        if (androidx.core.content.ContextCompat.checkSelfPermission(
+                this,
+                android.Manifest.permission.READ_CONTACTS
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            contactPermissionLauncher.launch(android.Manifest.permission.READ_CONTACTS)
+            return
+        }
+        val pick = Intent(
+            Intent.ACTION_PICK,
+            ContactsContract.CommonDataKinds.Phone.CONTENT_URI
+        )
+        pickContactLauncher.launch(pick)
+    }
+
+    private fun fetchPhoneNumberFromContact(uri: android.net.Uri): String? {
+        var number: String? = null
+        val projection = arrayOf(ContactsContract.CommonDataKinds.Phone.NUMBER)
+        val cursor = contentResolver.query(uri, projection, null, null, null)
+        cursor?.use {
+            if (it.moveToFirst()) number = it.getString(0)
+        }
+        return number
+    }
+
     private var slotId: Long = -1L
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -123,6 +165,7 @@ class BatteryConfigActivity : AppCompatActivity() {
                     configuredActions = configuredActionsState,
                     onActionsChanged = { configuredActionsState = it },
                     onPickAppClicked = { actionIndex -> openAppPicker(actionIndex) },
+                    onPickContactClicked = { actionIndex -> pickContact(actionIndex) },
                     initialBatteryPercentage = loadedBatteryPercentage,
                     initialThresholdType = loadedThresholdType,
                     isEditing = slotId != -1L,
@@ -174,6 +217,7 @@ fun BatteryConfigScreen(
     configuredActions: List<ConfiguredAction>,
     onActionsChanged: (List<ConfiguredAction>) -> Unit,
     onPickAppClicked: (Int) -> Unit,
+    onPickContactClicked: (Int) -> Unit = { _ -> },
     initialBatteryPercentage: Int = 20,
     initialThresholdType: TriggerConfig.Battery.ThresholdType = TriggerConfig.Battery.ThresholdType.REACHES_OR_BELOW,
     isEditing: Boolean = false,
@@ -190,6 +234,9 @@ fun BatteryConfigScreen(
         animationSpec = tween(300, easing = FastOutSlowInEasing),
         label = "percentAnim"
     )
+
+    val scrollState = rememberScrollState()
+    val isScrolled by remember { derivedStateOf { scrollState.value > 0 } }
 
     AuroraBackground {
         Scaffold(
@@ -214,7 +261,10 @@ fun BatteryConfigScreen(
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Color.Transparent,
+                        containerColor = if (isScrolled) {
+                            if (isDark) Color(0xFF1E2228).copy(alpha = 0.95f)
+                            else MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
+                        } else Color.Transparent,
                         titleContentColor = MaterialTheme.colorScheme.onSurface,
                         navigationIconContentColor = MaterialTheme.colorScheme.onSurface
                     )
@@ -225,8 +275,8 @@ fun BatteryConfigScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
                     .padding(padding)
+                    .verticalScroll(scrollState)
                     .padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
@@ -325,7 +375,7 @@ fun BatteryConfigScreen(
                             context = context,
                             configuredActions = configuredActions,
                             onActionsChanged = onActionsChanged,
-                            onPickContactClicked = { _ -> },
+                            onPickContactClicked = onPickContactClicked,
                             onPickAppClicked = onPickAppClicked
                         )
                     }
@@ -333,8 +383,10 @@ fun BatteryConfigScreen(
 
                 // ═══════════ Save Button ═══════════
                 ConfigSectionEntry(index = 3) {
+                    val hasAnyAction = ActionBuilder.hasAnyValidAction(configuredActions)
                     Button(
                         onClick = { onSave(batteryPercentage, thresholdType, configuredActions) },
+                        enabled = hasAnyAction,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(54.dp),
@@ -346,6 +398,17 @@ fun BatteryConfigScreen(
                         Icon(Icons.Rounded.Save, contentDescription = null, modifier = Modifier.size(20.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Save Automation", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    }
+
+                    if (!hasAnyAction) {
+                        Text(
+                            "Enable at least one automation",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier
+                                .padding(top = 4.dp)
+                                .align(Alignment.CenterHorizontally)
+                        )
                     }
                 }
 
@@ -433,6 +496,13 @@ private fun saveBatterySlot(
             )
 
             val actions = ActionBuilder.buildActions(configuredActions)
+            if (actions.isEmpty()) {
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    Toast.makeText(context, "Enable at least one automation", Toast.LENGTH_SHORT).show()
+                }
+                return@launch
+            }
+
             val triggerConfigJson = json.encodeToString(
                 TriggerConfig.serializer(),
                 triggerConfig as TriggerConfig
@@ -448,14 +518,31 @@ private fun saveBatterySlot(
             )
 
             val dao = AppDatabase.get(context).slotDao()
+            val savedId: Long
             if (slotId != -1L) {
                 dao.update(slot)
+                savedId = slotId
             } else {
-                dao.insert(slot)
+                savedId = dao.insert(slot)
             }
 
             // Start battery monitoring service
             BatteryServiceManager.startMonitoringIfNeeded(context)
+
+            // Immediately evaluate the saved slot against the current battery level
+            // (don't wait for the next ACTION_BATTERY_CHANGED which may take minutes)
+            val currentLevel = BatteryBroadcastReceiver.getBatteryPercentage(context)
+            if (currentLevel >= 0) {
+                val shouldTrigger = when (thresholdType) {
+                    TriggerConfig.Battery.ThresholdType.REACHES_OR_BELOW -> currentLevel <= batteryPercentage
+                    TriggerConfig.Battery.ThresholdType.REACHES_OR_ABOVE -> currentLevel >= batteryPercentage
+                }
+                if (shouldTrigger) {
+                    android.util.Log.i("BatteryConfig", "Immediately triggering slot $savedId (battery=$currentLevel%, threshold=$batteryPercentage%)")
+                    com.autonion.automationcompanion.features.system_context_automation.shared.executor.SlotExecutor.execute(context, savedId)
+                }
+                dao.updateLastTriggerState(savedId, shouldTrigger)
+            }
 
             android.os.Handler(android.os.Looper.getMainLooper()).post {
                 Toast.makeText(context, "Battery automation saved", Toast.LENGTH_SHORT).show()

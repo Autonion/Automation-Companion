@@ -6,6 +6,9 @@ project(vision_engine LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Enforce 16 KB page size alignment for all compiled shared libraries (including 32-bit targets)
+set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,max-page-size=16384")
+
 # ------------------------------------------------------------
 # OpenCV
 # ------------------------------------------------------------

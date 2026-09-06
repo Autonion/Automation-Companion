@@ -1,5 +1,6 @@
 package com.autonion.automationcompanion.features.screen_understanding_ml.core
 
+import android.accessibilityservice.AccessibilityService
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -19,6 +20,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.util.Log
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import com.autonion.automationcompanion.R
@@ -48,6 +50,8 @@ import java.util.UUID
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.CapturedTextNode
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
 
 class ScreenUnderstandingService : Service() {
 
@@ -87,13 +91,17 @@ class ScreenUnderstandingService : Service() {
     private var isPlaying = false
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-    private var currentPresetId: String? = null
+    var currentPresetId: String? = null
+        private set
     
     // Flow mode state
     private var isFlowMode = false
     private var flowNodeId: String? = null
     private var flowMlJson: String? = null
     private var clearOnStart: Boolean = false
+    private var flowImagePath: String? = null
+    private var flowEditorMode: String? = null
+    private var isA11yOnlyMode = false
 
     // Debug metrics mode
     var isDebugMode = false
@@ -170,15 +178,37 @@ class ScreenUnderstandingService : Service() {
         Toast.makeText(this, "Added ${steps.size} elements (Total: ${accumulatedSteps.size})", Toast.LENGTH_SHORT).show()
         // Reveal save button now that we have captured content
         overlay?.showSaveButton()
+        // Clear flowMlJson after the first accumulation so subsequent snaps
+        // don't re-load stale selections in the editor.
+        if (isFlowMode) {
+            flowMlJson = null
+            clearOnStart = false
+        }
+    }
+
+    /** Called by CaptureEditorActivity to store the latest image and editor mode for flow broadcast */
+    fun updateFlowMetadata(imagePath: String?, editorMode: String?) {
+        if (imagePath != null) flowImagePath = imagePath
+        if (editorMode != null) flowEditorMode = editorMode
     }
 
     /** Save all accumulated steps as a preset */
     private fun saveAccumulatedPreset(name: String) {
-        Log.d(TAG, "saveAccumulatedPreset called. Name: $name, Count: ${accumulatedSteps.size}")
+        val normalizedName = name.trim()
+        Log.d(TAG, "saveAccumulatedPreset called. Name: $normalizedName, Count: ${accumulatedSteps.size}")
+        if (normalizedName.isEmpty()) {
+            Toast.makeText(this, "Preset name is required", Toast.LENGTH_SHORT).show()
+            return
+        }
         if (accumulatedSteps.isEmpty()) {
             Toast.makeText(this, "No elements to save (Count: 0) — snap and select first", Toast.LENGTH_SHORT).show()
             return
         }
+        if (presetRepository?.hasPresetNamed(normalizedName, excludingId = savedPresetId) == true) {
+            Toast.makeText(this, "A preset with this name already exists", Toast.LENGTH_SHORT).show()
+            return
+        }
+
         // Reuse the same preset ID within a session so repeated saves update
         // the same file instead of creating duplicates
         val presetId = savedPresetId ?: UUID.randomUUID().toString()
@@ -186,21 +216,53 @@ class ScreenUnderstandingService : Service() {
 
         val preset = AutomationPreset(
             id = presetId,
-            name = name,
+            name = normalizedName,
             scope = ScopeType.GLOBAL,
             executionMode = ExecutionMode.STRICT,
             steps = accumulatedSteps.toList()
         )
         presetRepository?.savePreset(preset)
-        Toast.makeText(this, "Preset '$name' saved with ${accumulatedSteps.size} steps!", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, "Preset '$normalizedName' saved with ${accumulatedSteps.size} steps!", Toast.LENGTH_LONG).show()
+    }
+
+    /**
+     * Flow mode: Broadcast all accumulated steps back to FlowEditorViewModel
+     * via LocalBroadcast, then stop the service (overlay + MediaProjection).
+     */
+    private fun saveAccumulatedStepsForFlow() {
+        if (accumulatedSteps.isEmpty()) {
+            Toast.makeText(this, "No elements captured — snap and select first", Toast.LENGTH_SHORT).show()
+            return
+        }
+        try {
+            val json = Json.encodeToString(accumulatedSteps.toList())
+            val tempFile = java.io.File(cacheDir, "flow_ml_${flowNodeId}.json")
+            tempFile.writeText(json)
+
+            val resultIntent = Intent(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.ACTION_FLOW_ML_DONE).apply {
+                putExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_RESULT_NODE_ID, flowNodeId)
+                putExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_RESULT_FILE_PATH, tempFile.absolutePath)
+                putExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_RESULT_IMAGE_PATH, flowImagePath)
+                putExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_RESULT_ML_MODE, flowEditorMode ?: "ELEMENTS")
+            }
+            androidx.localbroadcastmanager.content.LocalBroadcastManager.getInstance(this).sendBroadcast(resultIntent)
+
+            Toast.makeText(this, "Flow node configured with ${accumulatedSteps.size} steps", Toast.LENGTH_SHORT).show()
+            stopSelf()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to save flow steps", e)
+            Toast.makeText(this, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Always use media projection FGS type — all paths go through SetupFlowActivity first
-        startForegroundNotification(useMediaProjectionType = true)
+        // Determine foreground service type BEFORE starting notification
+        val isA11yOnlyAction = intent?.action == "START_CAPTURE_A11Y_ONLY"
+        startForegroundNotification(useMediaProjectionType = !isA11yOnlyAction)
 
         when (intent?.action) {
             "START_CAPTURE" -> handleStartCapture(intent)
+            "START_CAPTURE_A11Y_ONLY" -> handleStartCaptureA11yOnly(intent)
             "DEBUG_TOGGLE" -> {
                 isDebugMode = !isDebugMode
                 Log.d(TAG, "Debug mode toggled: $isDebugMode")
@@ -237,8 +299,61 @@ class ScreenUnderstandingService : Service() {
                 notification,
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
             )
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+            )
         } else {
             startForeground(NOTIFICATION_ID, notification)
+        }
+    }
+
+    private fun handleStartCaptureA11yOnly(intent: Intent) {
+        val presetName = intent.getStringExtra("presetName")
+        val playPresetId = intent.getStringExtra("playPresetId")
+
+        isFlowMode = intent.getBooleanExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_MODE, false)
+        flowNodeId = intent.getStringExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_NODE_ID)
+        flowMlJson = intent.getStringExtra("EXTRA_FLOW_ML_JSON")
+        clearOnStart = intent.getBooleanExtra("EXTRA_CLEAR_ON_START", false)
+        isA11yOnlyMode = true
+
+        accumulatedSteps.clear()
+        savedPresetId = null
+
+        overlay?.dismiss()
+        mediaProjectionCore?.stopProjection()
+        perceptionLayer?.close()
+
+        val presetToPlay = if (playPresetId != null) {
+            presetRepository?.getPreset(playPresetId)
+        } else null
+
+        overlay = ScreenAgentOverlay(
+            context = this,
+            initialName = if (isFlowMode) "Flow" else (presetToPlay?.name ?: presetName),
+            onAnchorSelected = { /* No-op in capture mode */ },
+            onSave = { name, _ ->
+                if (isFlowMode && flowNodeId != null) {
+                    saveAccumulatedStepsForFlow()
+                } else {
+                    saveAccumulatedPreset(name)
+                }
+            },
+            onPlay = { _, _ ->
+                if (presetToPlay != null) {
+                    playPreset(presetToPlay)
+                }
+            },
+            onCapture = { captureA11ySnapshot() },
+            onPausePlayback = { stopPlayback() },
+            onStop = { stopSelf() }
+        )
+
+        if (android.provider.Settings.canDrawOverlays(this)) {
+            overlay?.showCaptureMode()
         }
     }
 
@@ -252,6 +367,8 @@ class ScreenUnderstandingService : Service() {
         isFlowMode = intent.getBooleanExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_MODE, false)
         flowNodeId = intent.getStringExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_NODE_ID)
         flowMlJson = intent.getStringExtra("EXTRA_FLOW_ML_JSON")
+        val flowNodeMode = intent.getStringExtra("EXTRA_FLOW_NODE_MODE")
+        isA11yOnlyMode = (flowNodeMode == "UI_ATTRIBUTE")
         clearOnStart = intent.getBooleanExtra("EXTRA_CLEAR_ON_START", false)
 
         Log.d(TAG, "Service received presetName: '$presetName', playPresetId: '$playPresetId', modelFile: '$modelFile'")
@@ -276,7 +393,18 @@ class ScreenUnderstandingService : Service() {
         mediaProjectionCore?.stopProjection()
         perceptionLayer?.close()
 
-        val metrics = resources.displayMetrics
+        val (realWidth, realHeight, densityDpi) = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            val bounds = windowManager.currentWindowMetrics.bounds
+            val density = resources.configuration.densityDpi
+            Triple(bounds.width(), bounds.height(), density)
+        } else {
+            val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            val displayMetrics = android.util.DisplayMetrics()
+            @Suppress("DEPRECATION")
+            windowManager.defaultDisplay.getRealMetrics(displayMetrics)
+            Triple(displayMetrics.widthPixels, displayMetrics.heightPixels, displayMetrics.densityDpi)
+        }
 
         mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         mediaProjectionCore = MediaProjectionCore(this, mediaProjectionManager!!) {
@@ -307,11 +435,16 @@ class ScreenUnderstandingService : Service() {
 
         overlay = ScreenAgentOverlay(
             context = this,
-            initialName = presetToPlay?.name ?: presetName,
+            initialName = if (isFlowMode) "Flow" else (presetToPlay?.name ?: presetName),
             onAnchorSelected = { /* No-op in capture mode */ },
             onSave = { name, _ ->
-                // Save accumulated steps as preset
-                saveAccumulatedPreset(name)
+                if (isFlowMode && flowNodeId != null) {
+                    // Flow mode: broadcast accumulated steps to FlowEditorViewModel
+                    saveAccumulatedStepsForFlow()
+                } else {
+                    // Normal mode: save as preset
+                    saveAccumulatedPreset(name)
+                }
             },
             onPlay = { _, _ ->
                 // Triggered when user taps Play on overlay in playback mode
@@ -339,7 +472,7 @@ class ScreenUnderstandingService : Service() {
             }
         }
 
-        mediaProjectionCore?.startProjection(resultCode, data, metrics.widthPixels, metrics.heightPixels, metrics.densityDpi)
+        mediaProjectionCore?.startProjection(resultCode, data, realWidth, realHeight, densityDpi)
 
         scope.launch {
             var frameCount = 0L
@@ -365,7 +498,7 @@ class ScreenUnderstandingService : Service() {
                 // Frame skipping: run detection every 2nd frame in normal mode, every frame in debug mode
                 val shouldDetect = if (isDebugMode) true else (frameCount % 2 == 1L)
                 if (shouldDetect) {
-                    val detections = perceptionLayer?.detect(bitmap) ?: emptyList()
+                    val detections = perceptionLayer?.detectWithAccessibilityAugmentation(bitmap) ?: emptyList()
                     val tracked = temporalTracker?.update(detections) ?: emptyList()
                     latestElements = tracked
 
@@ -381,6 +514,7 @@ class ScreenUnderstandingService : Service() {
                         inferenceMs = perceptionLayer?.getLastInferenceTimeMs() ?: 0f,
                         avgInferenceMs = perceptionLayer?.getAverageInferenceTimeMs() ?: 0f,
                         elementCount = latestElements.size,
+                        a11yElementCount = latestElements.count { it.source == "accessibility" },
                         temperature = readDeviceTemperature(),
                         delegate = perceptionLayer?.getDelegate() ?: "Unknown",
                         modelName = perceptionLayer?.getModelName() ?: "Unknown",
@@ -406,6 +540,107 @@ class ScreenUnderstandingService : Service() {
         }
     }
 
+    private fun captureA11ySnapshot() {
+        Log.d(TAG, "A11y-only snap clicked")
+        Toast.makeText(this, "Capturing Snapshot...", Toast.LENGTH_SHORT).show()
+
+        scope.launch {
+            // 1. Capture interactive elements + text (while target app is in foreground)
+            val a11yElements = AccessibilityAugmenter.captureAllInteractiveElements()
+            val accTextNodes = captureAccessibilityTextNodes()
+
+            if (a11yElements.isEmpty()) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@ScreenUnderstandingService, "No interactive elements found on screen", Toast.LENGTH_SHORT).show()
+                }
+                return@launch
+            }
+
+            // 2. Take screenshot via AccessibilityService (API 30+) — required for Editor bitmap
+            val bitmap = takeAccessibilityScreenshot()
+            val file = if (bitmap != null) {
+                val f = File(cacheDir, "a11y_capture_${UUID.randomUUID()}.png")
+                withContext(Dispatchers.IO) {
+                    FileOutputStream(f).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                }
+                f
+            } else {
+                val metrics = resources.displayMetrics
+                val width = metrics.widthPixels.coerceAtLeast(1080)
+                val height = metrics.heightPixels.coerceAtLeast(1920)
+                val placeholder = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                val canvas = android.graphics.Canvas(placeholder)
+                canvas.drawColor(android.graphics.Color.DKGRAY)
+                val f = File(cacheDir, "a11y_placeholder_${UUID.randomUUID()}.png")
+                withContext(Dispatchers.IO) {
+                    FileOutputStream(f).use { placeholder.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                }
+                f
+            }
+
+            // 3. Serialize a11y data
+            val accElementsJson = try { Json.encodeToString(a11yElements) } catch (_: Exception) { null }
+            val accTextJson = try { Json.encodeToString(accTextNodes) } catch (_: Exception) { null }
+
+            // 4. Launch CaptureEditorActivity
+            withContext(Dispatchers.Main) {
+                val intent = Intent(this@ScreenUnderstandingService, CaptureEditorActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    putExtra("IMAGE_PATH", file.absolutePath)
+                    putExtra("PRESET_NAME", overlay?.getCurrentName() ?: "Untitled")
+                    putExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_MODE, isFlowMode)
+                    putExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_NODE_ID, flowNodeId)
+                    putExtra("A11Y_ONLY_MODE", true)
+                    accElementsJson?.let { putExtra("ACC_ELEMENTS_DATA", it) }
+                    accTextJson?.let { putExtra("ACC_TEXT_DATA", it) }
+                    flowMlJson?.let { putExtra("EXTRA_FLOW_ML_JSON", it) }
+                    if (clearOnStart) putExtra("EXTRA_CLEAR_ON_START", true)
+                }
+                startActivity(intent)
+            }
+        }
+    }
+
+    private suspend fun takeAccessibilityScreenshot(): Bitmap? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            Log.w(TAG, "takeAccessibilityScreenshot requires API 30+, current: ${Build.VERSION.SDK_INT}")
+            return null
+        }
+
+        val service = AccessibilityRouter.getService() ?: run {
+            Log.w(TAG, "AccessibilityService not connected — cannot take screenshot")
+            return null
+        }
+
+        return suspendCancellableCoroutine { continuation ->
+            try {
+                service.takeScreenshot(
+                    android.view.Display.DEFAULT_DISPLAY,
+                    mainExecutor,
+                    object : AccessibilityService.TakeScreenshotCallback {
+                        override fun onSuccess(result: AccessibilityService.ScreenshotResult) {
+                            val hwBitmap = android.graphics.Bitmap.wrapHardwareBuffer(
+                                result.hardwareBuffer, result.colorSpace
+                            )
+                            result.hardwareBuffer.close()
+                            val swBitmap = hwBitmap?.copy(Bitmap.Config.ARGB_8888, false)
+                            hwBitmap?.recycle()
+                            continuation.resume(swBitmap)
+                        }
+
+                        override fun onFailure(errorCode: Int) {
+                            Log.w(TAG, "Accessibility screenshot failed, errorCode=$errorCode")
+                            continuation.resume(null)
+                        }
+                    }
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "takeScreenshot threw", e)
+                continuation.resume(null)
+            }
+        }
+    }
+
     private fun captureSnapshot() {
         Log.d(TAG, "Snap clicked, latestBitmap=${latestBitmap != null}")
         DebugLogger.info(
@@ -414,12 +649,31 @@ class ScreenUnderstandingService : Service() {
             "Screenshot taken for element selection",
             TAG
         )
-        val bitmap = latestBitmap
-        if (bitmap != null) {
-            Toast.makeText(this, "Capturing Snapshot...", Toast.LENGTH_SHORT).show()
-            scope.launch { saveBitmapAndOpenEditor(bitmap) }
-        } else {
-            Toast.makeText(this, "No frame captured yet, wait a moment...", Toast.LENGTH_SHORT).show()
+        scope.launch {
+            try {
+                // Hide overlay immediately so it doesn't appear in the captured screenshot
+                withContext(Dispatchers.Main) {
+                    setOverlayVisibility(false)
+                }
+
+                // Wait 120ms for WindowManager to remove overlay and VirtualDisplay to receive a clean frame
+                delay(120)
+
+                val bitmap = latestBitmap
+                if (bitmap != null) {
+                    saveBitmapAndOpenEditor(bitmap)
+                } else {
+                    withContext(Dispatchers.Main) {
+                        setOverlayVisibility(true)
+                        Toast.makeText(this@ScreenUnderstandingService, "No frame captured yet, wait a moment...", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed during captureSnapshot", e)
+                withContext(Dispatchers.Main) {
+                    setOverlayVisibility(true)
+                }
+            }
         }
     }
 
@@ -431,7 +685,7 @@ class ScreenUnderstandingService : Service() {
                 bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
             }
 
-            // Pre-capture accessibility text WHILE the target app is still in the foreground.
+            // Pre-capture accessibility data WHILE the target app is still in the foreground.
             // Once the Editor opens, rootInActiveWindow will point to the Editor, not the target.
             val accTextNodes = captureAccessibilityTextNodes()
             val accTextJson = if (accTextNodes.isNotEmpty()) {
@@ -444,6 +698,18 @@ class ScreenUnderstandingService : Service() {
             } else null
             Log.d(TAG, "Pre-captured ${accTextNodes.size} accessibility text nodes for editor")
 
+            // Pre-capture interactive accessibility elements for augmenting YOLO in the editor
+            val accInteractiveElements = AccessibilityAugmenter.captureAllInteractiveElements()
+            val accElementsJson = if (accInteractiveElements.isNotEmpty()) {
+                try {
+                    Json.encodeToString(accInteractiveElements)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to serialize acc interactive elements", e)
+                    null
+                }
+            } else null
+            Log.d(TAG, "Pre-captured ${accInteractiveElements.size} interactive accessibility elements for editor")
+
             withContext(Dispatchers.Main) {
                 // Don't stopSelf — service stays alive for multi-snap
                 val intent = Intent(this@ScreenUnderstandingService, CaptureEditorActivity::class.java).apply {
@@ -452,9 +718,11 @@ class ScreenUnderstandingService : Service() {
                     putExtra("PRESET_NAME", overlay?.getCurrentName() ?: "Untitled")
                     putExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_MODE, isFlowMode)
                     putExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_NODE_ID, flowNodeId)
+                    putExtra("A11Y_ONLY_MODE", isA11yOnlyMode)
                     flowMlJson?.let { putExtra("EXTRA_FLOW_ML_JSON", it) }
                     if (clearOnStart) putExtra("EXTRA_CLEAR_ON_START", true)
                     accTextJson?.let { putExtra("ACC_TEXT_DATA", it) }
+                    accElementsJson?.let { putExtra("ACC_ELEMENTS_DATA", it) }
                 }
                 startActivity(intent)
             }
@@ -728,7 +996,7 @@ class ScreenUnderstandingService : Service() {
                 if (!anchorText.isNullOrBlank()) {
                     // Try YOLO text match first
                     val textMatch = sameLabel.firstOrNull { el ->
-                        !el.text.isNullOrBlank() && el.text.contains(anchorText, ignoreCase = true)
+                        HybridElementMatcher.isTextMatching(el.text, anchorText)
                     }
                     if (textMatch != null) {
                         Log.d(TAG, "waitForElement: Rotated YOLO text fallback: label=${textMatch.label}, text=${textMatch.text}")
@@ -742,10 +1010,9 @@ class ScreenUnderstandingService : Service() {
                         Log.d(TAG, "waitForElement: Rotated acc text fallback: label=${accMatch.label}, text=${accMatch.text}, bounds=${accMatch.bounds}")
                         return accMatch
                     }
-                }
-                // Last resort for rotation: highest-confidence YOLO of matching label
-                // Only accept if we have NO text to match against (truly ambiguous)
-                if (anchorText.isNullOrBlank()) {
+                } else {
+                    // Last resort for rotation: highest-confidence YOLO of matching label
+                    // Only accept if we have NO text to match against (truly ambiguous)
                     val bestYolo = sameLabel.maxByOrNull { it.confidence }
                     if (bestYolo != null && bestYolo.confidence > 0.5f) {
                         Log.d(TAG, "waitForElement: Rotated confidence fallback (no text): label=${bestYolo.label}, " +
@@ -771,10 +1038,10 @@ class ScreenUnderstandingService : Service() {
 
                 val fallbackMatch = if (!anchorText.isNullOrBlank()) {
                     val textMatches = sameLabel.filter { el ->
-                        !el.text.isNullOrBlank() && el.text.contains(anchorText, ignoreCase = true)
+                        HybridElementMatcher.isTextMatching(el.text, anchorText)
                     }
                     textMatches.maxByOrNull { iouFor(it) }
-                        ?: sameLabel.maxByOrNull { iouFor(it) }
+                    // Strict gating: if anchorText is specified and no candidate matches text, return null
                 } else {
                     sameLabel.maxByOrNull { iouFor(it) }
                 }
@@ -800,47 +1067,21 @@ class ScreenUnderstandingService : Service() {
         screenWidth: Float, screenHeight: Float
     ): UIElement? {
         try {
-            val service = AccessibilityRouter.getService() ?: return null
-            val root = try { service.rootInActiveWindow } catch (_: Exception) { null } ?: return null
-            try {
-                val nodes = root.findAccessibilityNodeInfosByText(text)
-                var bestMatch: UIElement? = null
-                var bestScore = 0f
-                for (node in nodes) {
-                    val bounds = android.graphics.Rect()
-                    node.getBoundsInScreen(bounds)
-                    val boundsF = RectF(bounds)
-                    // Validate bounds are on screen
-                    if (boundsF.right <= 0 || boundsF.bottom <= 0) { node.recycle(); continue }
-                    if (screenWidth > 0 && boundsF.left > screenWidth) { node.recycle(); continue }
-                    if (screenHeight > 0 && boundsF.top > screenHeight) { node.recycle(); continue }
-                    
-                    val nodeText = node.text?.toString() ?: node.contentDescription?.toString() ?: ""
-                    val textMatch = if (nodeText.contains(text, ignoreCase = true)) 1.0f else 0f
-                    val className = node.className?.toString()?.lowercase() ?: ""
-                    val classMatch = when (label.lowercase()) {
-                        "button" -> if (className.contains("button") || node.isClickable) 1.0f else 0f
-                        "input" -> if (className.contains("edittext") || node.isEditable) 1.0f else 0f
-                        "toggle" -> if (className.contains("switch") || className.contains("toggle")) 1.0f else 0f
-                        else -> 0.5f
-                    }
-                    val score = textMatch * 0.7f + classMatch * 0.3f
-                    if (score > bestScore && textMatch > 0f) {
-                        bestScore = score
-                        bestMatch = UIElement(
-                            id = java.util.UUID.randomUUID().toString(),
-                            label = label,
-                            confidence = score,
-                            bounds = boundsF,
-                            text = nodeText
-                        )
-                    }
-                    node.recycle()
-                }
-                return bestMatch
-            } finally {
-                try { root.recycle() } catch (_: Exception) {}
+            val elements = AccessibilityAugmenter.captureAllInteractiveElements()
+            val textMatches = elements.filter { el ->
+                // Validate bounds are on screen
+                if (el.bounds.right <= 0 || el.bounds.bottom <= 0) return@filter false
+                if (screenWidth > 0 && el.bounds.left > screenWidth) return@filter false
+                if (screenHeight > 0 && el.bounds.top > screenHeight) return@filter false
+                HybridElementMatcher.isTextMatching(el.text, text)
             }
+            if (textMatches.isNotEmpty()) {
+                return textMatches.maxByOrNull { el ->
+                    val classMatch = if (el.label.equals(label, ignoreCase = true)) 0.3f else 0f
+                    el.confidence + classMatch
+                }
+            }
+            return null
         } catch (e: Exception) {
             Log.w(TAG, "findAccessibilityElementByText failed: ${e.message}")
             return null
@@ -850,23 +1091,52 @@ class ScreenUnderstandingService : Service() {
     /**
      * Run live OCR on the current screen to find where [targetText] appears right now.
      * Returns a UIElement with the text's current bounds, or null if not found within timeout.
+     *
+     * Search strategy (in order of priority):
+     * 1. Exact line-level match within OCR blocks (handles block segmentation differences)
+     * 2. Exact block-level match (original behavior)
+     * 3. Target text contains a block (reverse containment for smaller blocks)
+     * 4. Accessibility tree text search (no OCR needed, uses live a11y nodes)
      */
     private suspend fun findTextOnScreen(targetText: String): UIElement? {
         val timeout = 5000L
         val startTime = System.currentTimeMillis()
         val ocrEngine = OcrEngine()
+        val dm = resources.displayMetrics
 
         try {
             while (System.currentTimeMillis() - startTime < timeout && isPlaying) {
                 val bitmap = latestBitmap
                 if (bitmap != null) {
                     val result = ocrEngine.recognizeText(bitmap)
-                    // Find the best matching block (case-insensitive contains)
+
+                    // ── Strategy 1: Line-level match within blocks ──
+                    // ML Kit can segment text differently between runs; searching lines
+                    // within blocks handles cases where a block was split or merged.
+                    for (block in result.blocks) {
+                        for (line in block.lines) {
+                            if (HybridElementMatcher.isTextMatching(line.text, targetText)) {
+                                val bounds = line.bounds ?: block.bounds
+                                if (bounds != null) {
+                                    Log.d(TAG, "findTextOnScreen: LINE match '${line.text}' for target '$targetText' at $bounds")
+                                    return UIElement(
+                                        id = java.util.UUID.randomUUID().toString(),
+                                        label = "Text",
+                                        confidence = line.confidence ?: block.confidence ?: 0.9f,
+                                        bounds = bounds,
+                                        text = line.text
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // ── Strategy 2: Block-level exact match (block contains target) ──
                     val matchBlock = result.blocks.firstOrNull { block ->
-                        block.text.contains(targetText, ignoreCase = true)
+                        HybridElementMatcher.isTextMatching(block.text, targetText)
                     }
                     if (matchBlock != null && matchBlock.bounds != null) {
-                        Log.d(TAG, "findTextOnScreen: found '${matchBlock.text}' at ${matchBlock.bounds}")
+                        Log.d(TAG, "findTextOnScreen: BLOCK match '${matchBlock.text}' for target '$targetText' at ${matchBlock.bounds}")
                         return UIElement(
                             id = java.util.UUID.randomUUID().toString(),
                             label = "Text",
@@ -875,8 +1145,38 @@ class ScreenUnderstandingService : Service() {
                             text = matchBlock.text
                         )
                     }
-                    Log.d(TAG, "findTextOnScreen: '$targetText' not found in ${result.blocks.size} blocks, retrying...")
+
+                    // ── Strategy 3: Reverse containment (target contains block text) ──
+                    // Handles cases where the originally captured block was large but at
+                    // runtime it was split into smaller blocks.
+                    val reverseMatch = result.blocks.firstOrNull { block ->
+                        block.text.length >= 3 && HybridElementMatcher.isTextMatching(targetText, block.text)
+                    }
+                    if (reverseMatch != null && reverseMatch.bounds != null) {
+                        Log.d(TAG, "findTextOnScreen: REVERSE match '${reverseMatch.text}' for target '$targetText' at ${reverseMatch.bounds}")
+                        return UIElement(
+                            id = java.util.UUID.randomUUID().toString(),
+                            label = "Text",
+                            confidence = (reverseMatch.confidence ?: 0.9f) * 0.8f,
+                            bounds = reverseMatch.bounds,
+                            text = reverseMatch.text
+                        )
+                    }
+
+                    Log.d(TAG, "findTextOnScreen: '$targetText' not found via OCR in ${result.blocks.size} blocks, trying accessibility...")
                 }
+
+                // ── Strategy 4: Accessibility tree fallback ──
+                // The accessibility tree often has reliable text regardless of OCR accuracy.
+                val accMatch = findAccessibilityElementByText(
+                    targetText, "Text",
+                    dm.widthPixels.toFloat(), dm.heightPixels.toFloat()
+                )
+                if (accMatch != null) {
+                    Log.d(TAG, "findTextOnScreen: A11Y fallback match for '$targetText' at ${accMatch.bounds}")
+                    return accMatch
+                }
+
                 delay(500)
             }
         } catch (e: Exception) {
@@ -884,7 +1184,7 @@ class ScreenUnderstandingService : Service() {
         } finally {
             ocrEngine.close()
         }
-        Log.w(TAG, "findTextOnScreen: '$targetText' not found within timeout")
+        Log.w(TAG, "findTextOnScreen: '$targetText' not found within timeout (tried OCR + accessibility)")
         return null
     }
 
@@ -905,7 +1205,12 @@ class ScreenUnderstandingService : Service() {
     }
 
     private fun savePreset(name: String, elementsData: List<Pair<UIElement, Boolean>>) {
+        val normalizedName = name.trim()
         Log.d(TAG, "savePreset called with ${elementsData.size} elements")
+        if (normalizedName.isEmpty()) {
+            Toast.makeText(this, "Preset name is required", Toast.LENGTH_SHORT).show()
+            return
+        }
         if (elementsData.isEmpty()) {
             Log.w(TAG, "Selection list is empty!")
             Toast.makeText(this, "No elements selected to save", Toast.LENGTH_SHORT).show()
@@ -943,22 +1248,27 @@ class ScreenUnderstandingService : Service() {
 
         if (currentPresetId != null) {
             val existing = presetRepository?.getPreset(currentPresetId!!)
-            if (existing != null && existing.name == name) {
+            if (existing != null && existing.name.equals(normalizedName, ignoreCase = true)) {
                 presetId = currentPresetId!!
                 Log.d(TAG, "Overwriting existing preset: $presetId")
             }
         }
 
+        if (presetRepository?.hasPresetNamed(normalizedName, excludingId = presetId) == true) {
+            Toast.makeText(this, "A preset with this name already exists", Toast.LENGTH_SHORT).show()
+            return
+        }
+
         val preset = AutomationPreset(
             id = presetId,
-            name = name,
+            name = normalizedName,
             scope = com.autonion.automationcompanion.features.screen_understanding_ml.model.ScopeType.GLOBAL,
             executionMode = ExecutionMode.STRICT,
             steps = steps
         )
 
         presetRepository?.savePreset(preset)
-        Toast.makeText(this, "Preset '$name' Saved with ${steps.size} steps!", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, "Preset '$normalizedName' Saved with ${steps.size} steps!", Toast.LENGTH_LONG).show()
     }
 
     /**

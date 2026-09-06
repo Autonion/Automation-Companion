@@ -54,6 +54,12 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
     private val _executionState = MutableStateFlow<FlowExecutionState>(FlowExecutionState.Idle)
     val executionState: StateFlow<FlowExecutionState> = _executionState.asStateFlow()
 
+    /** Validation errors to display before running a flow. Empty = valid. */
+    private val _validationErrors = MutableStateFlow<List<String>>(emptyList())
+    val validationErrors: StateFlow<List<String>> = _validationErrors.asStateFlow()
+
+    fun clearValidationErrors() { _validationErrors.value = emptyList() }
+
     // Bug #15 fix: Broadcast receiver for execution state updates from FlowExecutionService.
     // MUST be declared before init{} to avoid null during registration (Kotlin init order).
     private val serviceStateReceiver = object : android.content.BroadcastReceiver() {
@@ -233,6 +239,8 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
             FlowNodeType.DELAY -> DelayNode(position = position)
             FlowNodeType.LAUNCH_APP -> LaunchAppNode(position = position)
             FlowNodeType.REPEAT -> RepeatNode(position = position)
+            FlowNodeType.CLIPBOARD -> ClipboardNode(position = position)
+            FlowNodeType.INPUT -> InputNode(position = position)
         }
         _state.update { state ->
             state.copy(
@@ -245,7 +253,9 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
         }
         // Warn about MediaProjection when adding LaunchApp alongside visual/ML nodes
         if (type == FlowNodeType.LAUNCH_APP) {
-            val hasVisualNodes = _state.value.graph.nodes.any { it is VisualTriggerNode || it is ScreenMLNode }
+            val hasVisualNodes = _state.value.graph.nodes.any {
+                it is VisualTriggerNode || (it is ScreenMLNode && it.needsMediaProjection())
+            }
             if (hasVisualNodes) {
                 val app = getApplication<android.app.Application>()
                 android.widget.Toast.makeText(
@@ -290,7 +300,8 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
                 selectedNodeId = nodeId,
                 selectedEdgeId = null,
                 showNodeConfig = nodeId != null,
-                showEdgeConfig = false
+                showEdgeConfig = false,
+                showNodePalette = false
             )
         }
     }
@@ -391,7 +402,8 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
                 selectedEdgeId = edgeId,
                 selectedNodeId = null,
                 showEdgeConfig = edgeId != null,
-                showNodeConfig = false
+                showNodeConfig = false,
+                showNodePalette = false
             )
         }
     }
@@ -422,7 +434,14 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     fun toggleNodePalette() {
-        _state.update { it.copy(showNodePalette = !it.showNodePalette) }
+        _state.update {
+            val willShow = !it.showNodePalette
+            it.copy(
+                showNodePalette = willShow,
+                showNodeConfig = if (willShow) false else it.showNodeConfig,
+                showEdgeConfig = if (willShow) false else it.showEdgeConfig
+            )
+        }
     }
 
     fun dismissNodeConfig() {
@@ -439,15 +458,56 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
 
     // ─── Execution ───────────────────────────────────────────────────────
 
+    /**
+     * Validate the flow graph before execution.
+     * Returns a list of human-readable error messages. Empty list = valid.
+     */
+    fun validateFlow(): List<String> {
+        val graph = _state.value.graph
+        val errors = mutableListOf<String>()
+
+        // 1. Must have a start node
+        val start = graph.findStartNode()
+        if (start == null) {
+            errors.add("Flow is missing a Start node.")
+            return errors
+        }
+
+        // 2. Must have at least one edge from Start
+        val reachable = graph.reachableNodes()
+        if (reachable.size <= 1) {
+            errors.add("Flow has no nodes connected to Start. Add and connect at least one node.")
+            return errors
+        }
+
+        // 3. Validate each reachable node for missing configuration
+        for (node in reachable) {
+            val warning = node.configurationWarning()
+            if (warning != null) {
+                errors.add("\"${node.label}\" — $warning.")
+            }
+        }
+
+        return errors
+    }
+
     fun executeFlow(resultCode: Int? = null, resultData: android.content.Intent? = null) {
+        // Validate first
+        val errors = validateFlow()
+        if (errors.isNotEmpty()) {
+            _validationErrors.value = errors
+            return
+        }
+
         saveFlow()
         
         val context = getApplication<android.app.Application>()
         val flowId = _state.value.graph.id
 
-        // Check if any node in the flow needs MediaProjection (screen capture)
-        val needsMediaProjection = _state.value.graph.nodes.any {
-            it is VisualTriggerNode || it is ScreenMLNode
+        // Check if any reachable node in the flow needs MediaProjection (screen capture)
+        // Only nodes connected to the StartNode via edges are considered
+        val needsMediaProjection = _state.value.graph.reachableNodes().any {
+            it is VisualTriggerNode || (it is ScreenMLNode && it.needsMediaProjection())
         }
 
         if (!needsMediaProjection) {
@@ -528,7 +588,18 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
                 }
                 com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.ACTION_FLOW_ML_DONE -> {
                     val imgPath = intent.getStringExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_RESULT_IMAGE_PATH) ?: ""
-                    (node as? ScreenMLNode)?.copy(automationStepsJson = json, captureImagePath = imgPath) ?: node
+                    // Read which tab (Elements/Text/A11yOnly) was active in the Screen ML editor
+                    val editorMode = intent.getStringExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_RESULT_ML_MODE)
+                    val mlMode = when (editorMode) {
+                        "TEXT" -> ScreenMLMode.OCR
+                        "A11Y_ONLY" -> ScreenMLMode.UI_ATTRIBUTE
+                        else -> ScreenMLMode.OBJECT_DETECTION
+                    }
+                    (node as? ScreenMLNode)?.copy(
+                        automationStepsJson = json,
+                        captureImagePath = imgPath,
+                        mode = mlMode
+                    ) ?: node
                 }
                 else -> node
             }
@@ -579,6 +650,7 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
                 val intent = android.content.Intent(app, com.autonion.automationcompanion.features.flow_automation.ui.FlowMediaProjectionActivity::class.java).apply {
                     action = com.autonion.automationcompanion.features.flow_automation.ui.FlowMediaProjectionActivity.ACTION_START_SCREEN_ML
                     putExtra(com.autonion.automationcompanion.features.flow_automation.ui.FlowMediaProjectionActivity.EXTRA_NODE_ID, node.id)
+                    putExtra("EXTRA_FLOW_NODE_MODE", node.mode.name)
                     if (node.automationStepsJson.isNotEmpty()) {
                         putExtra("EXTRA_FLOW_ML_JSON", node.automationStepsJson)
                     } else {
@@ -603,6 +675,8 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
             is DelayNode -> node.copy(position = pos)
             is LaunchAppNode -> node.copy(position = pos)
             is RepeatNode -> node.copy(position = pos)
+            is ClipboardNode -> node.copy(position = pos)
+            is InputNode -> node.copy(position = pos)
         }
     }
 }

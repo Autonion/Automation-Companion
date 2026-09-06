@@ -5,6 +5,8 @@ import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
 import android.content.Context
 import android.util.Log
+import java.io.File
+import java.io.FileOutputStream
 import java.nio.LongBuffer
 
 /**
@@ -12,50 +14,102 @@ import java.nio.LongBuffer
  * Produces 384-dimensional embeddings identical to the Python
  * `sentence-transformers/all-MiniLM-L6-v2` model used during training.
  *
- * The embedding is computed as mean-pooling over the token-level
- * last_hidden_state, masked by the attention mask.
+ * Memory optimization:
+ * - Extracts model to disk and uses file-path memory mapping (mmap) instead of
+ *   reading 90MB into the Java heap, preventing OutOfMemoryErrors.
+ * - Shares a single static OrtSession across all SentenceEmbedder instances.
  */
 class SentenceEmbedder(context: Context) {
 
     companion object {
         private const val TAG = "SentenceEmbedder"
         private const val MODEL_ASSET = "miniLM-model.onnx"
+        private const val MODEL_FILENAME = "miniLM-model.onnx"
         private const val EMBEDDING_DIM = 384
         private const val MAX_SEQ_LEN = 128
+
+        // Static shared session and lock to avoid loading the 90MB model multiple times
+        @Volatile
+        private var sharedSession: OrtSession? = null
+        @Volatile
+        private var sharedInputNames: List<String>? = null
+        private val lock = Any()
     }
 
     private val appContext = context.applicationContext
     private val tokenizer = WordPieceTokenizer(context)
     private val ortEnv: OrtEnvironment = OrtEnvironment.getEnvironment()
 
-    // Lazy-loaded ONNX session — defers heavy model I/O from startup to first use
-    @Volatile
-    private var _ortSession: OrtSession? = null
-    private val ortSession: OrtSession
-        get() = _ortSession ?: synchronized(this) {
-            _ortSession ?: createSession().also { _ortSession = it }
+    private val ortSession: OrtSession?
+        get() = sharedSession ?: synchronized(lock) {
+            sharedSession ?: createSession()?.also { sharedSession = it }
         }
 
-    @Volatile
-    private var _modelInputNames: List<String>? = null
     private val modelInputNames: List<String>
-        get() = _modelInputNames ?: ortSession.inputNames.toList().also { _modelInputNames = it }
+        get() = sharedInputNames ?: ortSession?.inputNames?.toList()?.also { sharedInputNames = it } ?: emptyList()
 
     private var loggedFirstCall = false
 
-    private fun createSession(): OrtSession {
-        val start = System.currentTimeMillis()
-        val modelBytes = appContext.assets.open(MODEL_ASSET).use { it.readBytes() }
-        val opts = OrtSession.SessionOptions().apply {
-            setIntraOpNumThreads(4)
+    private fun getOrExtractModelFile(): File? {
+        return try {
+            val modelsDir = File(appContext.filesDir, "models").apply { if (!exists()) mkdirs() }
+            val destFile = File(modelsDir, MODEL_FILENAME)
+
+            val assetLength = try {
+                appContext.assets.openFd(MODEL_ASSET).use { it.length }
+            } catch (_: Exception) {
+                -1L
+            }
+
+            // If file already exists and is non-empty (and matches asset size if known), reuse it
+            if (destFile.exists() && destFile.length() > 0 && (assetLength <= 0 || destFile.length() == assetLength)) {
+                return destFile
+            }
+
+            Log.d(TAG, "Extracting MiniLM model to disk (${destFile.absolutePath})...")
+            appContext.assets.open(MODEL_ASSET).use { input ->
+                FileOutputStream(destFile).use { output ->
+                    val buffer = ByteArray(64 * 1024) // 64KB buffer — very low heap footprint
+                    var read: Int
+                    while (input.read(buffer).also { read = it } != -1) {
+                        output.write(buffer, 0, read)
+                    }
+                    output.flush()
+                }
+            }
+            Log.d(TAG, "MiniLM model extracted successfully (${destFile.length() / (1024 * 1024)}MB)")
+            destFile
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to extract MiniLM model file to disk", e)
+            null
         }
-        val session = ortEnv.createSession(modelBytes, opts)
-        val elapsed = System.currentTimeMillis() - start
-        Log.d(TAG, "ONNX MiniLM session created (${modelBytes.size / 1024}KB) in ${elapsed}ms")
-        session.inputNames.forEach { Log.d(TAG, "  Input: $it") }
-        session.outputNames.forEach { Log.d(TAG, "  Output: $it") }
-        Log.d(TAG, "Model expects ${session.inputNames.size} inputs: ${session.inputNames.toList()}")
-        return session
+    }
+
+    private fun createSession(): OrtSession? {
+        return try {
+            val start = System.currentTimeMillis()
+            val modelFile = getOrExtractModelFile()
+            val opts = OrtSession.SessionOptions().apply {
+                setIntraOpNumThreads(2) // Reduced from 4 to 2 to minimize memory & thread pressure
+            }
+
+            val session = if (modelFile != null && modelFile.exists() && modelFile.length() > 0) {
+                // Memory-mapped file path — ZERO Java heap memory allocated!
+                ortEnv.createSession(modelFile.absolutePath, opts)
+            } else {
+                // Fallback: direct streaming
+                Log.w(TAG, "Falling back to byte-buffer session creation")
+                val modelBytes = appContext.assets.open(MODEL_ASSET).use { it.readBytes() }
+                ortEnv.createSession(modelBytes, opts)
+            }
+
+            val elapsed = System.currentTimeMillis() - start
+            Log.d(TAG, "ONNX MiniLM session created via mmap in ${elapsed}ms")
+            session
+        } catch (e: Throwable) {
+            Log.e(TAG, "Failed to create ONNX session for SentenceEmbedder", e)
+            null
+        }
     }
 
     /**
@@ -63,7 +117,6 @@ class SentenceEmbedder(context: Context) {
      * Call this early to warm up without blocking the main thread.
      */
     fun ensureInitialized() {
-        // Accessing ortSession triggers lazy creation
         ortSession
     }
 
@@ -71,102 +124,92 @@ class SentenceEmbedder(context: Context) {
      * Encode a text string into a 384-dimensional embedding vector.
      */
     fun encode(text: String): FloatArray {
-        if (text.isBlank()) return FloatArray(EMBEDDING_DIM) // zero vector for empty text
+        if (text.isBlank()) return FloatArray(EMBEDDING_DIM)
 
-        // 1. Tokenize
-        val (inputIds, attentionMask, tokenTypeIds) = tokenizer.encode(text, MAX_SEQ_LEN)
+        val session = ortSession
+        if (session == null) {
+            Log.w(TAG, "ONNX session not available — returning zero embedding vector")
+            return FloatArray(EMBEDDING_DIM)
+        }
 
-        // 2. Create ONNX tensors — shape [1, MAX_SEQ_LEN]
-        val shape = longArrayOf(1, MAX_SEQ_LEN.toLong())
+        try {
+            // 1. Tokenize
+            val (inputIds, attentionMask, tokenTypeIds) = tokenizer.encode(text, MAX_SEQ_LEN)
 
-        val inputIdsTensor = OnnxTensor.createTensor(
-            ortEnv, LongBuffer.wrap(inputIds), shape
-        )
-        val attentionMaskTensor = OnnxTensor.createTensor(
-            ortEnv, LongBuffer.wrap(attentionMask), shape
-        )
-        val tokenTypeIdsTensor = OnnxTensor.createTensor(
-            ortEnv, LongBuffer.wrap(tokenTypeIds), shape
-        )
+            // 2. Create ONNX tensors — shape [1, MAX_SEQ_LEN]
+            val shape = longArrayOf(1, MAX_SEQ_LEN.toLong())
 
-        // 3. Build input map: match exactly the number of inputs the model expects
-        //    Standard BERT/MiniLM order: input_ids, attention_mask, token_type_ids
-        val allTensors = listOf(inputIdsTensor, attentionMaskTensor, tokenTypeIdsTensor)
-        val inputs = mutableMapOf<String, OnnxTensor>()
+            val inputIdsTensor = OnnxTensor.createTensor(
+                ortEnv, LongBuffer.wrap(inputIds), shape
+            )
+            val attentionMaskTensor = OnnxTensor.createTensor(
+                ortEnv, LongBuffer.wrap(attentionMask), shape
+            )
+            val tokenTypeIdsTensor = OnnxTensor.createTensor(
+                ortEnv, LongBuffer.wrap(tokenTypeIds), shape
+            )
 
-        for (i in modelInputNames.indices) {
-            if (i < allTensors.size) {
-                inputs[modelInputNames[i]] = allTensors[i]
+            // 3. Build input map
+            val allTensors = listOf(inputIdsTensor, attentionMaskTensor, tokenTypeIdsTensor)
+            val inputs = mutableMapOf<String, OnnxTensor>()
+
+            val names = modelInputNames
+            for (i in names.indices) {
+                if (i < allTensors.size) {
+                    inputs[names[i]] = allTensors[i]
+                }
             }
+
+            if (!loggedFirstCall) {
+                Log.d(TAG, "First encode: passing ${inputs.size} inputs: ${inputs.keys}")
+                loggedFirstCall = true
+            }
+
+            // 4. Run inference
+            val results = session.run(inputs)
+
+            // 5. Extract embedding from output
+            val outputNames = session.outputNames.toList()
+            val sentenceEmbIdx = outputNames.indexOfFirst {
+                it.contains("sentence", ignoreCase = true)
+            }
+
+            val embedding: FloatArray = if (sentenceEmbIdx >= 0) {
+                val sentTensor = results[sentenceEmbIdx]
+                extractDirectEmbedding(sentTensor.value)
+            } else {
+                val rawOutput = results[0].value
+                extractMeanPooled(rawOutput, attentionMask)
+            }
+
+            // 6. Cleanup
+            inputIdsTensor.close()
+            attentionMaskTensor.close()
+            tokenTypeIdsTensor.close()
+            results.close()
+
+            return embedding
+        } catch (e: Throwable) {
+            Log.e(TAG, "Error encoding text with SentenceEmbedder: '$text'", e)
+            return FloatArray(EMBEDDING_DIM)
         }
-
-        // Log once on first call
-        if (!loggedFirstCall) {
-            Log.d(TAG, "First encode: passing ${inputs.size} inputs: ${inputs.keys}")
-            loggedFirstCall = true
-        }
-
-        // 4. Run inference
-        val results = ortSession.run(inputs)
-
-        // 5. Extract embedding from output
-        //    The model has 2 outputs:
-        //      [0] token_embeddings: [1, 128, 384] — raw token-level (NOT what we want)
-        //      [1] sentence_embedding: [1, 384]    — pooled sentence vector (matches training)
-        //    Use sentence_embedding (index 1) if available; fall back to mean-pooling index 0.
-        val outputNames = ortSession.outputNames.toList()
-        val sentenceEmbIdx = outputNames.indexOfFirst {
-            it.contains("sentence", ignoreCase = true)
-        }
-
-        val embedding: FloatArray
-        if (sentenceEmbIdx >= 0) {
-            // Preferred: use pre-pooled sentence_embedding
-            val sentTensor = results[sentenceEmbIdx]
-            val raw = sentTensor.value
-            embedding = extractDirectEmbedding(raw)
-        } else {
-            // Fallback: mean-pool over token_embeddings
-            val rawOutput = results[0].value
-            embedding = extractMeanPooled(rawOutput, attentionMask)
-        }
-
-        // 6. Cleanup
-        inputIdsTensor.close()
-        attentionMaskTensor.close()
-        tokenTypeIdsTensor.close()
-        results.close()
-
-        return embedding
     }
 
-    /**
-     * Extract a direct sentence embedding from shape [1, 384].
-     */
     private fun extractDirectEmbedding(rawOutput: Any): FloatArray {
         val result = FloatArray(EMBEDDING_DIM)
-
         when (rawOutput) {
             is Array<*> -> {
                 val first = (rawOutput as Array<*>)[0]
                 if (first is FloatArray) {
                     System.arraycopy(first, 0, result, 0, minOf(first.size, EMBEDDING_DIM))
-                } else {
-                    Log.e(TAG, "sentence_embedding unexpected inner type: ${first?.let { it::class.java }}")
                 }
             }
-            else -> Log.e(TAG, "sentence_embedding unexpected type: ${rawOutput::class.java}")
         }
-
         return l2Normalize(result)
     }
 
-    /**
-     * Mean-pool token_embeddings [1, seq_len, 384] over attention-masked positions.
-     */
     private fun extractMeanPooled(rawOutput: Any, attentionMask: LongArray): FloatArray {
         val result = FloatArray(EMBEDDING_DIM)
-
         when (rawOutput) {
             is Array<*> -> {
                 val first = (rawOutput as Array<*>)[0]
@@ -187,9 +230,7 @@ class SentenceEmbedder(context: Context) {
                     }
                 }
             }
-            else -> Log.e(TAG, "token_embeddings unexpected type: ${rawOutput::class.java}")
         }
-
         return l2Normalize(result)
     }
 
@@ -204,11 +245,6 @@ class SentenceEmbedder(context: Context) {
     }
 
     fun close() {
-        try {
-            ortSession.close()
-            ortEnv.close()
-        } catch (e: Exception) {
-            Log.w(TAG, "Error closing ONNX session", e)
-        }
+        // Shared session is kept alive for app lifecycle, but can be cleared if needed
     }
 }

@@ -15,7 +15,9 @@ enum class FlowNodeType {
     @SerialName("screen_ml") SCREEN_ML,
     @SerialName("delay") DELAY,
     @SerialName("launch_app") LAUNCH_APP,
-    @SerialName("repeat") REPEAT
+    @SerialName("repeat") REPEAT,
+    @SerialName("clipboard") CLIPBOARD,
+    @SerialName("input") INPUT
 }
 
 /**
@@ -48,8 +50,36 @@ sealed class CoordinateSource {
  */
 @Serializable
 enum class ScreenMLMode {
-    @SerialName("ocr") OCR,
-    @SerialName("object_detection") OBJECT_DETECTION
+    @SerialName("object_detection") OBJECT_DETECTION,
+    @SerialName("ui_attribute") UI_ATTRIBUTE,
+    @SerialName("ocr") OCR
+}
+
+/**
+ * Clipboard operations.
+ */
+@Serializable
+enum class ClipboardOperation {
+    @SerialName("read") READ,
+    @SerialName("write") WRITE
+}
+
+/**
+ * Text input source.
+ */
+@Serializable
+sealed class InputSource {
+    @Serializable
+    @SerialName("static")
+    data class Static(val text: String) : InputSource()
+
+    @Serializable
+    @SerialName("from_context")
+    data class FromContext(val key: String) : InputSource()
+
+    @Serializable
+    @SerialName("clipboard")
+    data object Clipboard : InputSource()
 }
 
 // ─── Node hierarchy ────────────────────────────────────────────────────────────
@@ -158,25 +188,28 @@ data class VisualTriggerNode(
 }
 
 /**
- * ML-powered screen understanding node.
+ * Screen understanding node with three detection sub-modes:
  *
- * Configuration modes:
- * 1. **Recorded preset** — User captures screen via CaptureEditor, selects
- *    elements & assigns actions. Stored in [automationStepsJson].
- * 2. **Live mode** — Real-time OCR/object detection via [mode].
+ * 1. **Elements (YOLO + Accessibility)** — Requires MediaProjection. Uses YOLO model
+ *    on a screenshot + accessibility tree augmentation to detect interactive UI elements.
+ * 2. **OCR (Text)** — Requires MediaProjection. Uses ML Kit text recognition on a screenshot.
+ * 3. **UI Attribute (Accessibility only)** — No MediaProjection needed. Reads the
+ *    accessibility tree directly to detect interactive elements by their attributes
+ *    (text, className, contentDescription, bounds).
  *
- * The executor checks [automationStepsJson] first.
+ * In all modes, the user flow is: Snap → Editor → Select elements → Add.
+ * [automationStepsJson] stores recorded automation steps from the CaptureEditor.
  */
 @Serializable
 @SerialName("screen_ml")
 data class ScreenMLNode(
     override val id: String = UUID.randomUUID().toString(),
     override val position: NodePosition = NodePosition(),
-    override val label: String = "Screen ML",
+    override val label: String = "Screen Understanding",
     override val outputEdgeIds: List<String> = emptyList(),
     override val onFailureEdgeId: String? = null,
     override val timeoutMs: Long = 20_000L,
-    val mode: ScreenMLMode = ScreenMLMode.OCR,
+    val mode: ScreenMLMode = ScreenMLMode.OBJECT_DETECTION,
     val outputContextKey: String = "ml_result",
     val targetLabel: String? = null,
     /** Serialized automation steps JSON from CaptureEditor. */
@@ -186,6 +219,10 @@ data class ScreenMLNode(
 ) : FlowNode() {
     override val nodeType: FlowNodeType = FlowNodeType.SCREEN_ML
 }
+
+/** Returns true if this node's mode requires MediaProjection screen capture. */
+fun ScreenMLNode.needsMediaProjection(): Boolean =
+    mode != ScreenMLMode.UI_ATTRIBUTE
 
 /**
  * Simple delay node that pauses execution for a fixed duration.
@@ -247,3 +284,64 @@ data class RepeatNode(
 ) : FlowNode() {
     override val nodeType: FlowNodeType = FlowNodeType.REPEAT
 }
+
+/**
+ * Reads from or writes to the system clipboard.
+ */
+@Serializable
+@SerialName("clipboard")
+data class ClipboardNode(
+    override val id: String = UUID.randomUUID().toString(),
+    override val position: NodePosition = NodePosition(),
+    override val label: String = "Clipboard",
+    override val outputEdgeIds: List<String> = emptyList(),
+    override val onFailureEdgeId: String? = null,
+    override val timeoutMs: Long = 5_000L,
+    val operation: ClipboardOperation = ClipboardOperation.READ,
+    val contextKey: String = "clipboard_text",
+    val inputSource: InputSource = InputSource.FromContext("clipboard_text") // Used for WRITE operation
+) : FlowNode() {
+    override val nodeType: FlowNodeType = FlowNodeType.CLIPBOARD
+}
+
+/**
+ * Injects text into a target field using Accessibility ACTION_SET_TEXT.
+ */
+@Serializable
+@SerialName("input")
+data class InputNode(
+    override val id: String = UUID.randomUUID().toString(),
+    override val position: NodePosition = NodePosition(),
+    override val label: String = "Text Input",
+    override val outputEdgeIds: List<String> = emptyList(),
+    override val onFailureEdgeId: String? = null,
+    override val timeoutMs: Long = 5_000L,
+    val inputSource: InputSource = InputSource.Static(""),
+    // If true, attempt to trigger IME search/enter after setting text
+    val submitAfterInput: Boolean = false,
+    // By default, it sets text on the currently focused editable.
+    // Future enhancements could allow specifying a target element ID.
+    val targetElementId: String? = null
+) : FlowNode() {
+    override val nodeType: FlowNodeType = FlowNodeType.INPUT
+}
+
+/**
+ * Returns a human-readable warning if required configuration is missing, or null if valid.
+ */
+fun FlowNode.configurationWarning(): String? {
+    return when (this) {
+        is LaunchAppNode -> if (appPackageName.isBlank()) "No app selected" else null
+        is ScreenMLNode -> if (automationStepsJson.isBlank()) "No screen elements captured" else null
+        is VisualTriggerNode -> if (visionPresetJson.isBlank() && templateImagePath.isBlank()) "No image template captured" else null
+        is GestureNode -> if (recordedActionsJson.isBlank()) "No gesture recorded" else null
+        is InputNode -> {
+            val source = inputSource
+            if (source is InputSource.Static && source.text.isBlank()) "No input text provided" else null
+        }
+        else -> null
+    }
+}
+
+fun FlowNode.isConfigured(): Boolean = configurationWarning() == null
+

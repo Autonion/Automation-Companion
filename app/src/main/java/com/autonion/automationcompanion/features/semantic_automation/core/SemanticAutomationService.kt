@@ -7,8 +7,6 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.graphics.Bitmap
-import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
@@ -21,7 +19,6 @@ import androidx.core.app.NotificationCompat
 import com.autonion.automationcompanion.R
 import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
 import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
-import com.autonion.automationcompanion.features.screen_understanding_ml.core.MediaProjectionCore
 import com.autonion.automationcompanion.features.semantic_automation.model.AutomationStatus
 import com.autonion.automationcompanion.features.semantic_automation.ui.FloatingStopOverlay
 import kotlinx.coroutines.CoroutineScope
@@ -33,11 +30,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
 /**
- * Foreground service that owns a MediaProjection and drives the
- * [SemanticAutomationEngine] screen loop.
+ * Foreground service that drives the [SemanticAutomationEngine] screen loop.
  *
- * Started from [SemanticAutomationScreen] via an explicit intent
- * containing the MediaProjection result and the raw user command.
+ * This service does NOT require MediaProjection — the engine uses the
+ * Accessibility tree for UI understanding, which doesn't need screen capture.
+ *
+ * Started from [SemanticAutomationActivity] via an explicit intent
+ * containing the raw user command.
  */
 class SemanticAutomationService : Service() {
 
@@ -48,8 +47,6 @@ class SemanticAutomationService : Service() {
 
         const val ACTION_START = "ACTION_START_SEMANTIC"
         const val ACTION_STOP = "ACTION_STOP_SEMANTIC"
-        const val EXTRA_RESULT_CODE = "resultCode"
-        const val EXTRA_DATA = "data"
         const val EXTRA_COMMAND = "command"
 
         private val _activeEngine = kotlinx.coroutines.flow.MutableStateFlow<SemanticAutomationEngine?>(null)
@@ -58,15 +55,10 @@ class SemanticAutomationService : Service() {
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
-    private var mediaProjectionManager: MediaProjectionManager? = null
-    private var mediaProjectionCore: MediaProjectionCore? = null
     private var engine: SemanticAutomationEngine? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var keepAwakeView: View? = null
     private var floatingStopOverlay: FloatingStopOverlay? = null
-
-    @Volatile
-    private var latestBitmap: Bitmap? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -81,7 +73,6 @@ class SemanticAutomationService : Service() {
         Log.d(TAG, "Service destroyed")
         _activeEngine.value = null
         engine?.cleanup()
-        mediaProjectionCore?.stopProjection()
         wakeLock?.let {
             if (it.isHeld) it.release()
         }
@@ -120,18 +111,16 @@ class SemanticAutomationService : Service() {
     }
 
     private fun handleStart(intent: Intent) {
-        val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0)
-        val data = intent.getParcelableExtra<Intent>(EXTRA_DATA)
         val command = intent.getStringExtra(EXTRA_COMMAND) ?: ""
 
-        if (resultCode == 0 || data == null || command.isBlank()) {
-            Log.e(TAG, "Missing MediaProjection data or command")
+        if (command.isBlank()) {
+            Log.e(TAG, "Missing command")
             stopSelf()
             return
         }
 
         DebugLogger.info(
-            this, LogCategory.UI_RECOGNITION_AI,
+            this, LogCategory.SEMANTIC_AUTOMATION,
             "Semantic automation started",
             "Command: \"$command\"",
             TAG
@@ -176,26 +165,13 @@ class SemanticAutomationService : Service() {
             Log.e(TAG, "Failed to show floating stop overlay", e)
         }
 
-        val metrics = resources.displayMetrics
-        mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        mediaProjectionCore = MediaProjectionCore(this, mediaProjectionManager!!)
-        mediaProjectionCore?.startProjection(resultCode, data, metrics.widthPixels, metrics.heightPixels, metrics.densityDpi)
-
-        // Collect screenshots into latestBitmap
+        // Run the engine loop — no screenshot provider needed,
+        // the engine uses the Accessibility tree via UIStateBuilder
         scope.launch {
-            mediaProjectionCore?.screenCaptureFlow?.collect { bitmap ->
-                latestBitmap = bitmap.copy(bitmap.config ?: Bitmap.Config.ARGB_8888, false)
-            }
-        }
-
-        // Run the engine loop (with initial delay for projection to start)
-        scope.launch {
-            // Wait for MediaProjection to start producing frames
-            kotlinx.coroutines.delay(2000)
-
             engine?.runLoop(command) {
-                // Screenshot provider — returns the latest captured frame
-                latestBitmap
+                // No MediaProjection screenshots — return null.
+                // UIStateBuilder will use Accessibility tree (Strategy 2) as primary source.
+                null
             }
 
             // When engine finishes, stop the service
@@ -234,7 +210,7 @@ class SemanticAutomationService : Service() {
             startForeground(
                 NOTIFICATION_ID,
                 notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
             )
         } else {
             startForeground(NOTIFICATION_ID, notification)

@@ -28,7 +28,7 @@ import java.util.concurrent.ConcurrentHashMap
  * passive relay:
  *
  *   1. **DOM Snapshots**: The extension captures the browser's interactive DOM
- *      elements and sends them here. The SemanticAutomationAgent consumes these
+ *      elements and sends them here. The SemanticAutomationEngine consumes these
  *      snapshots alongside accessibility UI tree data to build richer prompts
  *      for the Local LLM (Ollama).
  *
@@ -36,7 +36,7 @@ import java.util.concurrent.ConcurrentHashMap
  *      scroll, etc.) to the extension, which dispatches them to the content
  *      script for execution in the browser DOM.
  *
- *   3. **Agentic Loop**: After each action, the extension automatically
+ *   3. **Automation Loop**: After each action, the extension automatically
  *      captures a fresh DOM snapshot and sends it back, enabling the
  *      LLM-driven automation loop:
  *
@@ -161,7 +161,7 @@ class ExtensionBridgeServer(port: Int = 54321) : WebSocketServer(InetSocketAddre
         // Log to DebugLogger so the user sees it in the app UI
         appContext?.let { ctx ->
             DebugLogger.success(
-                ctx, LogCategory.UI_RECOGNITION_AI,
+                ctx, LogCategory.SEMANTIC_AUTOMATION,
                 "Browser Extension Connected",
                 "Semantic Bridge extension connected from ${conn.remoteSocketAddress}",
                 TAG
@@ -179,7 +179,7 @@ class ExtensionBridgeServer(port: Int = 54321) : WebSocketServer(InetSocketAddre
 
             appContext?.let { ctx ->
                 DebugLogger.warning(
-                    ctx, LogCategory.UI_RECOGNITION_AI,
+                    ctx, LogCategory.SEMANTIC_AUTOMATION,
                     "Browser Extension Disconnected",
                     "Extension disconnected (code=$code, reason=$reason)",
                     TAG
@@ -263,7 +263,7 @@ class ExtensionBridgeServer(port: Int = 54321) : WebSocketServer(InetSocketAddre
         // Log to DebugLogger so user sees DOM snapshots arriving
         appContext?.let { ctx ->
             DebugLogger.info(
-                ctx, LogCategory.UI_RECOGNITION_AI,
+                ctx, LogCategory.SEMANTIC_AUTOMATION,
                 "DOM Snapshot Received",
                 "$nodeCount nodes ($interactiveCount interactive), reason=$reason\n" +
                     "URL: ${pageUrl.take(80)}\nTitle: ${pageTitle.take(60)}",

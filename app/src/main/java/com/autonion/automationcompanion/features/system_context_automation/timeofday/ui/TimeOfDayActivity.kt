@@ -177,7 +177,20 @@ fun TimeOfDaySlotsScreen(
                                 TimeOfDaySlotCard(
                                     slot = slot,
                                     onToggleEnabled = { enabled ->
-                                        scope.launch { dao.setEnabled(slot.id, enabled) }
+                                        scope.launch {
+                                            dao.setEnabled(slot.id, enabled)
+                                            if (enabled) {
+                                                val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+                                                val config = try {
+                                                    slot.triggerConfigJson?.let { json.decodeFromString<com.autonion.automationcompanion.features.system_context_automation.shared.models.TriggerConfig.TimeOfDay>(it) }
+                                                } catch (_: Exception) { null }
+                                                config?.let {
+                                                    TimeOfDayReceiver.scheduleAlarm(context, slot.id, it.hour, it.minute)
+                                                }
+                                            } else {
+                                                TimeOfDayReceiver.cancelAlarm(context, slot.id)
+                                            }
+                                        }
                                     },
                                     onEdit = { onEditClicked(slot.id) },
                                     onDelete = {
@@ -194,13 +207,24 @@ fun TimeOfDaySlotsScreen(
                                                 "TimeOfDaySlotsScreen"
                                             )
 
+                                            snackbarHostState.currentSnackbarData?.dismiss()
                                             val result = snackbarHostState.showSnackbar(
                                                 message = "Slot deleted",
-                                                actionLabel = "Undo"
+                                                actionLabel = "Undo",
+                                                duration = SnackbarDuration.Short
                                             )
                                             if (result == SnackbarResult.ActionPerformed) {
                                                 recentlyDeleted?.let { 
                                                     val newId = dao.insert(it.copy(id = 0)) 
+                                                    if (it.enabled) {
+                                                        val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+                                                        val config = try {
+                                                            it.triggerConfigJson?.let { raw -> json.decodeFromString<com.autonion.automationcompanion.features.system_context_automation.shared.models.TriggerConfig.TimeOfDay>(raw) }
+                                                        } catch (_: Exception) { null }
+                                                        config?.let { c ->
+                                                            TimeOfDayReceiver.scheduleAlarm(context, newId, c.hour, c.minute)
+                                                        }
+                                                    }
                                                     
                                                     // Log undo
                                                     com.autonion.automationcompanion.features.automation_debugger.DebugLogger.success(
@@ -334,6 +358,7 @@ private fun TimeOfDaySlotCard(
         modifier = Modifier
             .fillMaxWidth()
             .scale(animScale)
+            .clip(RoundedCornerShape(22.dp))
             .clickable(interactionSource = interactionSource, indication = null) { onEdit() },
         shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(
@@ -432,6 +457,36 @@ class TimeOfDayConfigActivity : AppCompatActivity() {
         }
     }
 
+    private var contactPickerActionIndex = -1
+
+    private val contactPickerLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { res ->
+        if (res.resultCode == RESULT_OK && res.data != null) {
+            val uri: android.net.Uri? = res.data!!.data
+            uri?.let { u ->
+                val num = fetchPhoneNumberFromContact(u)
+                if (!num.isNullOrBlank()) {
+                    if (contactPickerActionIndex >= 0 && contactPickerActionIndex < configuredActionsState.size) {
+                        val smsAction = configuredActionsState.getOrNull(contactPickerActionIndex)
+                        if (smsAction is ConfiguredAction.SendSms) {
+                            val updatedContacts = if (smsAction.contactsCsv.isBlank())
+                                num else "${smsAction.contactsCsv};$num"
+                            configuredActionsState = configuredActionsState.mapIndexed { idx, action ->
+                                if (idx == contactPickerActionIndex) {
+                                    smsAction.copy(contactsCsv = updatedContacts)
+                                } else {
+                                    action
+                                }
+                            }
+                            contactPickerActionIndex = -1
+                        }
+                    }
+                } else {
+                    Toast.makeText(this, "No number in contact", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
     private var configuredActionsState by mutableStateOf<List<ConfiguredAction>>(emptyList())
 
     private var loadedHour by mutableIntStateOf(8)
@@ -456,6 +511,37 @@ class TimeOfDayConfigActivity : AppCompatActivity() {
         appPickerLauncher.launch(intent)
     }
 
+    private val contactPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { _ -> }
+
+    private fun pickContact(actionIndex: Int) {
+        contactPickerActionIndex = actionIndex
+        if (androidx.core.content.ContextCompat.checkSelfPermission(
+                this,
+                android.Manifest.permission.READ_CONTACTS
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            contactPermissionLauncher.launch(android.Manifest.permission.READ_CONTACTS)
+            return
+        }
+        val pick = Intent(
+            Intent.ACTION_PICK,
+            android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_URI
+        )
+        contactPickerLauncher.launch(pick)
+    }
+
+    private fun fetchPhoneNumberFromContact(uri: android.net.Uri): String? {
+        var number: String? = null
+        val projection = arrayOf(android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER)
+        val cursor = contentResolver.query(uri, projection, null, null, null)
+        cursor?.use {
+            if (it.moveToFirst()) number = it.getString(0)
+        }
+        return number
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -469,6 +555,7 @@ class TimeOfDayConfigActivity : AppCompatActivity() {
                     configuredActions = configuredActionsState,
                     onActionsChanged = { configuredActionsState = it },
                     onPickAppClicked = { actionIndex -> openAppPicker(actionIndex) },
+                    onPickContactClicked = { actionIndex -> pickContact(actionIndex) },
                     initialHour = loadedHour,
                     initialMinute = loadedMinute,
                     initialRepeatDaily = loadedRepeatDaily,
@@ -516,6 +603,7 @@ fun TimeOfDayConfigScreen(
     configuredActions: List<ConfiguredAction>,
     onActionsChanged: (List<ConfiguredAction>) -> Unit,
     onPickAppClicked: (Int) -> Unit,
+    onPickContactClicked: (Int) -> Unit = { _ -> },
     initialHour: Int = 8,
     initialMinute: Int = 0,
     initialRepeatDaily: Boolean = true,
@@ -583,6 +671,9 @@ fun TimeOfDayConfigScreen(
         )
     }
 
+    val scrollState = rememberScrollState()
+    val isScrolled by remember { derivedStateOf { scrollState.value > 0 } }
+
     AuroraBackground {
         Scaffold(
             topBar = {
@@ -606,7 +697,10 @@ fun TimeOfDayConfigScreen(
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Color.Transparent,
+                        containerColor = if (isScrolled) {
+                            if (isDark) Color(0xFF1E2228).copy(alpha = 0.95f)
+                            else MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
+                        } else Color.Transparent,
                         titleContentColor = MaterialTheme.colorScheme.onSurface,
                         navigationIconContentColor = MaterialTheme.colorScheme.onSurface
                     )
@@ -617,8 +711,8 @@ fun TimeOfDayConfigScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
                     .padding(padding)
+                    .verticalScroll(scrollState)
                     .padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
@@ -703,7 +797,7 @@ fun TimeOfDayConfigScreen(
                             context = context,
                             configuredActions = configuredActions,
                             onActionsChanged = onActionsChanged,
-                            onPickContactClicked = { _ -> },
+                            onPickContactClicked = onPickContactClicked,
                             onPickAppClicked = onPickAppClicked
                         )
                     }
@@ -711,8 +805,10 @@ fun TimeOfDayConfigScreen(
 
                 // ═══ Save Button ═══
                 ConfigSectionEntry(index = 3) {
+                    val hasAnyAction = ActionBuilder.hasAnyValidAction(configuredActions)
                     Button(
                         onClick = { onSave(hour, minute, repeatDaily, configuredActions) },
+                        enabled = hasAnyAction,
                         modifier = Modifier.fillMaxWidth().height(54.dp),
                         shape = RoundedCornerShape(25.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
@@ -720,6 +816,17 @@ fun TimeOfDayConfigScreen(
                         Icon(Icons.Rounded.Save, contentDescription = null, modifier = Modifier.size(20.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Save Automation", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    }
+
+                    if (!hasAnyAction) {
+                        Text(
+                            "Enable at least one automation",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier
+                                .padding(top = 4.dp)
+                                .align(Alignment.CenterHorizontally)
+                        )
                     }
                 }
 
@@ -812,6 +919,13 @@ private fun saveTimeOfDaySlot(
             )
 
             val actions = ActionBuilder.buildActions(configuredActions)
+            if (actions.isEmpty()) {
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    Toast.makeText(context, "Enable at least one automation", Toast.LENGTH_SHORT).show()
+                }
+                return@launch
+            }
+
             val triggerConfigJson = json.encodeToString(
                 TriggerConfig.serializer(),
                 triggerConfig as TriggerConfig

@@ -103,16 +103,19 @@ object HybridElementMatcher {
         // 3. For each accessibility match, check if any YOLO candidate confirms it by text
         val screenArea = screenWidth * screenHeight
         for ((accElement, accScore) in accMatches) {
+            // HARD GATE: If anchor text was captured, element MUST match text
+            if (!anchorText.isNullOrBlank()) {
+                val elementText = accElement.text
+                if (!isTextMatching(elementText, anchorText)) {
+                    continue // Strict exclusion
+                }
+            }
+
             val yoloAgreement = yoloByLabel.any { yolo ->
-                !anchorText.isNullOrBlank() && !yolo.text.isNullOrBlank() &&
-                    yolo.text!!.contains(anchorText, ignoreCase = true)
+                !anchorText.isNullOrBlank() && isTextMatching(yolo.text, anchorText)
             }
             val yoloScore = if (yoloAgreement) 0.8f else if (yoloByLabel.isNotEmpty()) 0.3f else 0f
-            val ocrScore = if (!anchorText.isNullOrBlank()) {
-                val t = accElement.text ?: ""
-                if (t.contains(anchorText, ignoreCase = true)) 1.0f
-                else fuzzyTextSimilarity(t, anchorText)
-            } else 0.5f
+            val ocrScore = if (!anchorText.isNullOrBlank()) 1.0f else 0.5f
 
             // Size disambiguation: penalize candidates whose relative area differs greatly from anchor
             val candArea = accElement.bounds.width() * accElement.bounds.height()
@@ -142,17 +145,19 @@ object HybridElementMatcher {
 
         // 4. YOLO-only candidates (no accessibility match) — need coord conversion
         for (yolo in yoloByLabel) {
+            // HARD GATE: If anchor text was captured, YOLO candidate MUST match text
+            if (!anchorText.isNullOrBlank()) {
+                if (!isTextMatching(yolo.text, anchorText)) {
+                    continue // Strict exclusion
+                }
+            }
+
             val alreadyCovered = results.any { res ->
-                !anchorText.isNullOrBlank() && res.element.text != null &&
-                    res.element.text!!.contains(anchorText, ignoreCase = true)
+                !anchorText.isNullOrBlank() && isTextMatching(res.element.text, anchorText)
             }
             if (alreadyCovered) continue
 
-            val textScore = if (!anchorText.isNullOrBlank() && !yolo.text.isNullOrBlank()) {
-                if (yolo.text!!.contains(anchorText, ignoreCase = true)) 1.0f
-                else fuzzyTextSimilarity(yolo.text!!, anchorText)
-            } else 0f
-
+            val textScore = if (!anchorText.isNullOrBlank()) 1.0f else 0f
             val yoloScore = yolo.confidence.coerceAtMost(1.0f)
             val conf = (WEIGHT_YOLO * yoloScore + WEIGHT_OCR * textScore).coerceAtMost(1.0f)
 
@@ -186,84 +191,30 @@ object HybridElementMatcher {
         screenWidth: Float,
         screenHeight: Float
     ): List<Pair<UIElement, Float>> {
-        val service = AccessibilityRouter.getService() ?: return emptyList()
-        val root = try { service.rootInActiveWindow } catch (_: Exception) { null } ?: return emptyList()
+        val allElements = AccessibilityAugmenter.captureAllInteractiveElements()
+        if (allElements.isEmpty()) return emptyList()
 
         val results = mutableListOf<Pair<UIElement, Float>>()
-        try {
+        for (el in allElements) {
+            // Validate bounds are within screen
+            if (el.bounds.right <= 0 || el.bounds.bottom <= 0) continue
+            if (screenWidth > 0 && el.bounds.left > screenWidth) continue
+            if (screenHeight > 0 && el.bounds.top > screenHeight) continue
+
+            val nodeText = el.text
             if (!text.isNullOrBlank()) {
-                val nodes = root.findAccessibilityNodeInfosByText(text)
-                for (node in nodes) {
-                    val bounds = Rect()
-                    node.getBoundsInScreen(bounds)
-                    val boundsF = RectF(bounds)
-
-                    // Validate bounds are within screen
-                    if (boundsF.right <= 0 || boundsF.bottom <= 0) { node.recycle(); continue }
-                    if (screenWidth > 0 && boundsF.left > screenWidth) { node.recycle(); continue }
-                    if (screenHeight > 0 && boundsF.top > screenHeight) { node.recycle(); continue }
-
-                    val classScore = classMatchScore(node, label)
-                    val textScore = if (node.text?.toString()?.contains(text, ignoreCase = true) == true) 1.0f
-                                    else 0.5f
-                    val conf = (textScore * 0.6f + classScore * 0.4f).coerceIn(0f, 1f)
-
-                    if (conf > 0.3f) {
-                        results.add(Pair(
-                            UIElement(
-                                id = java.util.UUID.randomUUID().toString(),
-                                label = label,
-                                confidence = conf,
-                                bounds = boundsF,  // Screen coordinates!
-                                text = node.text?.toString() ?: node.contentDescription?.toString()
-                            ), conf
-                        ))
-                    }
-                    node.recycle()
-                }
+                if (!isTextMatching(nodeText, text)) continue
+            } else {
+                if (!el.label.equals(label, ignoreCase = true)) continue
             }
-            if (results.isEmpty()) {
-                val classMatches = findNodesByClassOnly(root, label, screenWidth, screenHeight)
-                results.addAll(classMatches)
+
+            val classScore = if (el.label.equals(label, ignoreCase = true)) 1.0f else 0.4f
+            val textScore = if (!text.isNullOrBlank() && isTextMatching(nodeText, text)) 1.0f else 0.5f
+            val conf = (textScore * 0.6f + classScore * 0.4f).coerceIn(0f, 1f)
+
+            if (conf > 0.3f) {
+                results.add(Pair(el, conf))
             }
-        } catch (e: Exception) {
-            Log.w(TAG, "Accessibility query failed: ${e.message}")
-        } finally {
-            try { root.recycle() } catch (_: Exception) {}
-        }
-        return results
-    }
-
-    private fun findNodesByClassOnly(
-        node: AccessibilityNodeInfo, label: String,
-        screenWidth: Float, screenHeight: Float,
-        depth: Int = 0
-    ): List<Pair<UIElement, Float>> {
-        if (depth > 8) return emptyList()
-        val results = mutableListOf<Pair<UIElement, Float>>()
-        val className = node.className?.toString()?.lowercase() ?: ""
-
-        val matchesClass = when (label.lowercase()) {
-            "button" -> className.contains("button") || node.isClickable
-            "input" -> className.contains("edittext") || node.isEditable
-            "toggle" -> className.contains("switch") || className.contains("toggle")
-            "checkbox" -> className.contains("checkbox")
-            else -> false
-        }
-
-        if (matchesClass) {
-            val bounds = Rect(); node.getBoundsInScreen(bounds); val boundsF = RectF(bounds)
-            if (boundsF.width() > 0 && boundsF.height() > 0) {
-                results.add(Pair(
-                    UIElement(java.util.UUID.randomUUID().toString(), label, 0.5f, boundsF,
-                        node.text?.toString() ?: node.contentDescription?.toString()), 0.5f
-                ))
-            }
-        }
-        for (i in 0 until node.childCount) {
-            val child = node.getChild(i) ?: continue
-            results.addAll(findNodesByClassOnly(child, label, screenWidth, screenHeight, depth + 1))
-            child.recycle()
         }
         return results
     }
@@ -293,6 +244,14 @@ object HybridElementMatcher {
         )
 
         for (accMatch in accessibilityMatches) {
+            // HARD GATE: If anchor text is non-blank, accessibility candidate MUST match text
+            if (!anchorText.isNullOrBlank()) {
+                val t = accMatch.first.text
+                if (!isTextMatching(t, anchorText)) {
+                    continue // Strict exclusion
+                }
+            }
+
             val accScore = accMatch.second
             val yoloOverlap = if (currentScreenWidth > 0 && currentScreenHeight > 0) {
                 val accNorm = normalizeRect(accMatch.first.bounds, currentScreenWidth, currentScreenHeight)
@@ -306,10 +265,7 @@ object HybridElementMatcher {
             }
 
             val yoloScore = yoloOverlap?.second ?: 0f
-            val ocrScore = if (!anchorText.isNullOrBlank()) {
-                val t = accMatch.first.text ?: ""
-                if (t.contains(anchorText, ignoreCase = true)) 1.0f else fuzzyTextSimilarity(t, anchorText)
-            } else 0.5f
+            val ocrScore = if (!anchorText.isNullOrBlank()) 1.0f else 0.5f
 
             var conf = WEIGHT_ACCESSIBILITY * accScore + WEIGHT_YOLO * yoloScore + WEIGHT_OCR * ocrScore
             if (yoloScore == 0f) {
@@ -321,6 +277,13 @@ object HybridElementMatcher {
         }
 
         for (yoloMatch in yoloMatches) {
+            // HARD GATE: If anchor text is non-blank, YOLO candidate MUST match text
+            if (!anchorText.isNullOrBlank()) {
+                if (!isTextMatching(yoloMatch.first.text, anchorText)) {
+                    continue // Strict exclusion
+                }
+            }
+
             val covered = if (currentScreenWidth > 0 && currentScreenHeight > 0) {
                 val yn = normalizeRect(yoloMatch.first.bounds, currentScreenWidth, currentScreenHeight)
                 results.any { calculateIoU(normalizeRect(it.element.bounds, currentScreenWidth, currentScreenHeight), yn) > 0.3f }
@@ -328,10 +291,7 @@ object HybridElementMatcher {
             if (covered) continue
 
             val yoloScore = yoloMatch.second
-            val ocrScore = if (!anchorText.isNullOrBlank() && !yoloMatch.first.text.isNullOrBlank()) {
-                if (yoloMatch.first.text!!.contains(anchorText, ignoreCase = true)) 1.0f
-                else fuzzyTextSimilarity(yoloMatch.first.text!!, anchorText)
-            } else if (anchorText.isNullOrBlank()) 0.5f else 0f
+            val ocrScore = if (!anchorText.isNullOrBlank()) 1.0f else 0.5f
 
             val conf = WEIGHT_YOLO * yoloScore + WEIGHT_OCR * ocrScore
             results.add(HybridMatchResult(yoloMatch.first, conf, 0f, yoloScore, ocrScore, "yolo"))
@@ -357,41 +317,36 @@ object HybridElementMatcher {
         label: String, text: String?, expectedBounds: RectF,
         normalizedAnchor: RectF?, screenWidth: Float, screenHeight: Float
     ): List<Pair<UIElement, Float>> {
-        val service = AccessibilityRouter.getService() ?: return emptyList()
-        val root = try { service.rootInActiveWindow } catch (_: Exception) { null } ?: return emptyList()
+        val allElements = AccessibilityAugmenter.captureAllInteractiveElements()
+        if (allElements.isEmpty()) return emptyList()
 
         val results = mutableListOf<Pair<UIElement, Float>>()
         val useNormalized = normalizedAnchor != null && screenWidth > 0 && screenHeight > 0
 
-        try {
+        for (el in allElements) {
+            val nodeText = el.text
             if (!text.isNullOrBlank()) {
-                val nodes = root.findAccessibilityNodeInfosByText(text)
-                for (node in nodes) {
-                    val bounds = Rect(); node.getBoundsInScreen(bounds); val boundsF = RectF(bounds)
-                    val spatialScore = if (useNormalized) {
-                        computeNormalizedSpatialScore(normalizeRect(boundsF, screenWidth, screenHeight), normalizedAnchor!!)
-                    } else computeRawSpatialScore(boundsF, expectedBounds)
-                    val classScore = classMatchScore(node, label)
-                    val conf = (spatialScore * 0.7f + classScore * 0.3f).coerceIn(0f, 1f)
-
-                    Log.d(TAG, "Acc text match: '${node.text}', bounds=$boundsF, " +
-                            "spatial=${"%.3f".format(spatialScore)}, class=${"%.2f".format(classScore)}, " +
-                            "conf=${"%.3f".format(conf)}, normalized=$useNormalized")
-
-                    if (conf > 0.2f) {
-                        results.add(Pair(UIElement(java.util.UUID.randomUUID().toString(), label, conf, boundsF,
-                            node.text?.toString() ?: node.contentDescription?.toString()), conf))
-                    }
-                    node.recycle()
-                }
+                if (!isTextMatching(nodeText, text)) continue
+            } else {
+                if (!el.label.equals(label, ignoreCase = true)) continue
             }
-            if (results.isEmpty()) {
-                results.addAll(findNodesByClass(root, label, expectedBounds, normalizedAnchor, screenWidth, screenHeight))
+
+            val spatialScore = if (useNormalized) {
+                computeNormalizedSpatialScore(normalizeRect(el.bounds, screenWidth, screenHeight), normalizedAnchor!!)
+            } else {
+                computeRawSpatialScore(el.bounds, expectedBounds)
             }
-        } catch (e: Exception) {
-            Log.w(TAG, "Accessibility query failed: ${e.message}")
-        } finally {
-            try { root.recycle() } catch (_: Exception) {}
+            val classScore = if (el.label.equals(label, ignoreCase = true)) 1.0f else 0.5f
+            val textScore = if (!text.isNullOrBlank() && isTextMatching(nodeText, text)) 1.0f else 0.5f
+            val conf = (spatialScore * 0.5f + classScore * 0.2f + textScore * 0.3f).coerceIn(0f, 1f)
+
+            Log.d(TAG, "Acc match: text='${el.text}', bounds=${el.bounds}, " +
+                    "spatial=${"%.3f".format(spatialScore)}, class=${"%.2f".format(classScore)}, " +
+                    "conf=${"%.3f".format(conf)}, normalized=$useNormalized")
+
+            if (conf > 0.2f) {
+                results.add(Pair(el, conf))
+            }
         }
         return results
     }
@@ -411,43 +366,6 @@ object HybridElementMatcher {
         return (1.0f - (dist / maxDim).coerceAtMost(1.0f)).coerceAtLeast(0f)
     }
 
-    private fun findNodesByClass(
-        node: AccessibilityNodeInfo, label: String, expectedBounds: RectF,
-        normalizedAnchor: RectF?, screenWidth: Float, screenHeight: Float,
-        depth: Int = 0
-    ): List<Pair<UIElement, Float>> {
-        if (depth > 8) return emptyList()
-        val results = mutableListOf<Pair<UIElement, Float>>()
-        val className = node.className?.toString()?.lowercase() ?: ""
-        val useNormalized = normalizedAnchor != null && screenWidth > 0 && screenHeight > 0
-        val matchesClass = when (label.lowercase()) {
-            "button" -> className.contains("button") || node.isClickable
-            "input" -> className.contains("edittext") || node.isEditable
-            "toggle" -> className.contains("switch") || className.contains("toggle")
-            "checkbox" -> className.contains("checkbox")
-            "radio" -> className.contains("radio")
-            "dropdown" -> className.contains("spinner")
-            "icon" -> className.contains("image") && node.isClickable
-            else -> false
-        }
-        if (matchesClass) {
-            val bounds = Rect(); node.getBoundsInScreen(bounds); val boundsF = RectF(bounds)
-            val spatialScore = if (useNormalized) {
-                computeNormalizedSpatialScore(normalizeRect(boundsF, screenWidth, screenHeight), normalizedAnchor!!)
-            } else computeRawSpatialScore(boundsF, expectedBounds)
-            if (spatialScore > 0.15f) {
-                results.add(Pair(UIElement(java.util.UUID.randomUUID().toString(), label, spatialScore, boundsF,
-                    node.text?.toString() ?: node.contentDescription?.toString()), spatialScore))
-            }
-        }
-        for (i in 0 until node.childCount) {
-            val child = node.getChild(i) ?: continue
-            results.addAll(findNodesByClass(child, label, expectedBounds, normalizedAnchor, screenWidth, screenHeight, depth + 1))
-            child.recycle()
-        }
-        return results
-    }
-
     // ═══════════════════════════════════════════════════════════════════════
     // YOLO CANDIDATE SCORING (normal mode)
     // ═══════════════════════════════════════════════════════════════════════
@@ -458,18 +376,60 @@ object HybridElementMatcher {
         screenWidth: Float, screenHeight: Float
     ): List<Pair<UIElement, Float>> {
         val useNorm = normalizedAnchor != null && screenWidth > 0 && screenHeight > 0
-        return candidates.filter { it.label.equals(anchorLabel, ignoreCase = true) }.map { el ->
+        return candidates.filter { it.label.equals(anchorLabel, ignoreCase = true) }.mapNotNull { el ->
+            if (!anchorText.isNullOrBlank()) {
+                // If anchorText is required, candidate must match text
+                if (!isTextMatching(el.text, anchorText)) return@mapNotNull null
+            }
             val iou = if (useNorm) calculateIoU(normalizeRect(el.bounds, screenWidth, screenHeight), normalizedAnchor!!)
                       else calculateIoU(el.bounds, anchorBounds)
-            val textBoost = if (!anchorText.isNullOrBlank() && !el.text.isNullOrBlank() &&
-                el.text!!.contains(anchorText, ignoreCase = true)) 0.2f else 0f
-            Pair(el, (iou + textBoost).coerceAtMost(1.0f))
-        }.filter { it.second > 0.05f }
+            val textBoost = if (!anchorText.isNullOrBlank() && isTextMatching(el.text, anchorText)) 0.2f else 0f
+            val score = (iou + textBoost).coerceAtMost(1.0f)
+            if (score > 0.05f) Pair(el, score) else null
+        }
     }
 
     // ═══════════════════════════════════════════════════════════════════════
     // UTILITIES
     // ═══════════════════════════════════════════════════════════════════════
+
+    fun normalizeText(text: String): String {
+        return text.lowercase()
+            .replace("…", "...")
+            .replace(Regex("\\.{2,}"), " ")
+            .replace(Regex("[^\\p{L}\\p{N}\\s]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+    }
+
+    fun isTextMatching(candidateText: String?, targetText: String): Boolean {
+        if (candidateText.isNullOrBlank() || targetText.isBlank()) return false
+        val normCand = normalizeText(candidateText)
+        val normTarget = normalizeText(targetText)
+        if (normCand.isEmpty() || normTarget.isEmpty()) return false
+
+        // 1. Direct containment
+        if (normCand.contains(normTarget) || normTarget.contains(normCand)) return true
+
+        // 2. Token overlap (handles truncation / ellipsis like "bo..." vs "born", or multiline fragments)
+        val candWords = normCand.split(" ").filter { it.isNotBlank() }
+        val targetWords = normTarget.split(" ").filter { it.isNotBlank() }
+        if (candWords.isNotEmpty() && targetWords.isNotEmpty()) {
+            val candSet = candWords.toSet()
+            val commonCount = targetWords.count { word ->
+                candSet.contains(word) || candWords.any { cw ->
+                    (cw.startsWith(word) || word.startsWith(cw)) && minOf(cw.length, word.length) >= 3
+                }
+            }
+            val targetMatchRatio = commonCount.toFloat() / targetWords.size
+            if (targetMatchRatio >= 0.70f || (commonCount >= 4 && targetWords.size >= 4)) {
+                return true
+            }
+        }
+
+        // 3. Fuzzy bigram similarity
+        return fuzzyTextSimilarity(normCand, normTarget) >= 0.70f
+    }
 
     private fun classMatchScore(node: AccessibilityNodeInfo, label: String): Float {
         val cn = node.className?.toString()?.lowercase() ?: return 0f
@@ -485,10 +445,12 @@ object HybridElementMatcher {
         }
     }
 
-    private fun fuzzyTextSimilarity(a: String, b: String): Float {
-        if (a.isBlank() || b.isBlank()) return 0f
-        val ba = a.lowercase().windowed(2).toSet()
-        val bb = b.lowercase().windowed(2).toSet()
+    fun fuzzyTextSimilarity(a: String, b: String): Float {
+        val normA = normalizeText(a)
+        val normB = normalizeText(b)
+        if (normA.isBlank() || normB.isBlank()) return 0f
+        val ba = normA.windowed(2).toSet()
+        val bb = normB.windowed(2).toSet()
         if (ba.isEmpty() && bb.isEmpty()) return 1f
         val inter = ba.intersect(bb).size.toFloat()
         val union = ba.union(bb).size.toFloat()

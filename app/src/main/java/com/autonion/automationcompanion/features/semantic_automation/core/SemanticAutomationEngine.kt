@@ -110,7 +110,9 @@ class SemanticAutomationEngine(private val context: Context) {
     private val stepHistory = mutableListOf<StepRecord>()
 
     init {
-        localServerEngine.autoConnectIfNeeded()
+        if (inferenceMode == InferenceMode.SERVER_LLM) {
+            localServerEngine.autoConnectIfNeeded()
+        }
     }
 
     /**
@@ -173,11 +175,20 @@ class SemanticAutomationEngine(private val context: Context) {
 
         // Parse the FULL original command → get app/domain context (1 LLM call)
         val masterGoal = try {
-            kotlinx.coroutines.withTimeoutOrNull(60_000L) {
-                if (inferenceMode == InferenceMode.CLOUD_API)
-                    goalParser.parse(rawCommand, cloudApiEngine, chatMemory.buildContextSummary())
-                else
-                    goalParser.parse(rawCommand, localServerEngine, chatMemory.buildContextSummary())
+            // On-device SLMs need more time for prompt processing on mobile CPUs
+            val timeoutMs = if (inferenceMode == InferenceMode.LOCAL_SLM) 180_000L else 60_000L
+            kotlinx.coroutines.withTimeoutOrNull(timeoutMs) {
+                when (inferenceMode) {
+                    InferenceMode.CLOUD_API ->
+                        goalParser.parse(rawCommand, cloudApiEngine, chatMemory.buildContextSummary())
+                    InferenceMode.LOCAL_SLM -> {
+                        val slm = PredictorCache.getSLMEngine(context, modelStorageManager)
+                        if (slm != null) goalParser.parse(rawCommand, slm, chatMemory.buildContextSummary())
+                        else null
+                    }
+                    else ->
+                        goalParser.parse(rawCommand, localServerEngine, chatMemory.buildContextSummary())
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Goal parsing exception: ${e.message}", e)
@@ -186,7 +197,10 @@ class SemanticAutomationEngine(private val context: Context) {
 
         if (masterGoal == null) {
             _status.value = AutomationStatus.FAILED
-            _lastActionDescription.value = "Could not reach LLM — check connection"
+            _lastActionDescription.value = when (inferenceMode) {
+                InferenceMode.LOCAL_SLM -> "On-device model failed to load or respond. Check AI Engine Hub."
+                else -> "Could not reach LLM — check connection"
+            }
             chatMemory.recordGoalOutcome(rawCommand, "failed: could not parse", false)
             return
         }
@@ -264,11 +278,20 @@ class SemanticAutomationEngine(private val context: Context) {
         stepHistory.clear()
 
         val parsedGoal = try {
-            kotlinx.coroutines.withTimeoutOrNull(60_000L) {
-                if (inferenceMode == InferenceMode.CLOUD_API)
-                    goalParser.parse(rawCommand, cloudApiEngine, chatMemory.buildContextSummary())
-                else
-                    goalParser.parse(rawCommand, localServerEngine, chatMemory.buildContextSummary())
+            // On-device SLMs need more time for prompt processing on mobile CPUs
+            val timeoutMs = if (inferenceMode == InferenceMode.LOCAL_SLM) 180_000L else 60_000L
+            kotlinx.coroutines.withTimeoutOrNull(timeoutMs) {
+                when (inferenceMode) {
+                    InferenceMode.CLOUD_API ->
+                        goalParser.parse(rawCommand, cloudApiEngine, chatMemory.buildContextSummary())
+                    InferenceMode.LOCAL_SLM -> {
+                        val slm = PredictorCache.getSLMEngine(context, modelStorageManager)
+                        if (slm != null) goalParser.parse(rawCommand, slm, chatMemory.buildContextSummary())
+                        else null
+                    }
+                    else ->
+                        goalParser.parse(rawCommand, localServerEngine, chatMemory.buildContextSummary())
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Goal parsing exception: ${e.message}", e)
@@ -276,11 +299,17 @@ class SemanticAutomationEngine(private val context: Context) {
         }
         if (parsedGoal == null) {
             _status.value = AutomationStatus.FAILED
-            _lastActionDescription.value = "Could not reach LLM — check connection"
+            _lastActionDescription.value = when (inferenceMode) {
+                InferenceMode.LOCAL_SLM -> "On-device model failed to load or respond. Check AI Engine Hub."
+                else -> "Could not reach LLM — check connection"
+            }
             DebugLogger.error(
-                context, LogCategory.UI_RECOGNITION_AI,
+                context, LogCategory.SEMANTIC_AUTOMATION,
                 "Goal parsing failed",
-                "LLM not connected or timed out. Please configure the server/API in Settings.",
+                when (inferenceMode) {
+                    InferenceMode.LOCAL_SLM -> "On-device SLM failed. The model may be incompatible or corrupted."
+                    else -> "LLM not connected or timed out. Please configure the server/API in Settings."
+                },
                 TAG
             )
             return
@@ -290,7 +319,7 @@ class SemanticAutomationEngine(private val context: Context) {
         _currentGoal.value = goal
 
         DebugLogger.info(
-            context, LogCategory.UI_RECOGNITION_AI,
+            context, LogCategory.SEMANTIC_AUTOMATION,
             "Semantic goal parsed",
             "task=${goal.task}, query=${goal.query}, app=${goal.targetApp}, domain=${goal.domain}, confidence=${goal.confidence}",
             TAG
@@ -303,7 +332,7 @@ class SemanticAutomationEngine(private val context: Context) {
             _status.value = AutomationStatus.FAILED
             _lastActionDescription.value = validationError
             DebugLogger.error(
-                context, LogCategory.UI_RECOGNITION_AI,
+                context, LogCategory.SEMANTIC_AUTOMATION,
                 "Goal rejected by validation gate",
                 validationError,
                 TAG
@@ -325,7 +354,7 @@ class SemanticAutomationEngine(private val context: Context) {
             _lastActionDescription.value = "App launched"
             _status.value = AutomationStatus.COMPLETED
             DebugLogger.success(
-                context, LogCategory.UI_RECOGNITION_AI,
+                context, LogCategory.SEMANTIC_AUTOMATION,
                 "Task completed",
                 "Launched ${goal.targetApp ?: goal.query}",
                 TAG
@@ -476,7 +505,7 @@ class SemanticAutomationEngine(private val context: Context) {
                 _lastActionDescription.value = "Task completed"
                 _status.value = AutomationStatus.COMPLETED
                 DebugLogger.success(
-                    context, LogCategory.UI_RECOGNITION_AI,
+                    context, LogCategory.SEMANTIC_AUTOMATION,
                     "Semantic task completed",
                     "Finished '${goal.rawCommand}' in $iteration iterations",
                     TAG
@@ -523,7 +552,7 @@ class SemanticAutomationEngine(private val context: Context) {
             } catch (e: Exception) {
                 Log.e(TAG, "Action execution crashed: ${e.message}", e)
                 DebugLogger.error(
-                    context, LogCategory.UI_RECOGNITION_AI,
+                    context, LogCategory.SEMANTIC_AUTOMATION,
                     "Action #$iteration crashed",
                     "${action.type}: ${e.message}",
                     TAG
@@ -556,14 +585,14 @@ class SemanticAutomationEngine(private val context: Context) {
 
             if (success) {
                 DebugLogger.success(
-                    context, LogCategory.UI_RECOGNITION_AI,
+                    context, LogCategory.SEMANTIC_AUTOMATION,
                     "Action #$iteration: ${action.type}",
                     action.description,
                     TAG
                 )
             } else {
                 DebugLogger.error(
-                    context, LogCategory.UI_RECOGNITION_AI,
+                    context, LogCategory.SEMANTIC_AUTOMATION,
                     "Action #$iteration failed",
                     "${action.type}: ${action.description}",
                     TAG
@@ -583,7 +612,7 @@ class SemanticAutomationEngine(private val context: Context) {
             _status.value = AutomationStatus.FAILED
             _lastActionDescription.value = "Reached max iterations ($MAX_LOOP_ITERATIONS)"
             DebugLogger.warning(
-                context, LogCategory.UI_RECOGNITION_AI,
+                context, LogCategory.SEMANTIC_AUTOMATION,
                 "Semantic loop limit reached",
                 "Stopped after $MAX_LOOP_ITERATIONS iterations for '${goal.rawCommand}'",
                 TAG
@@ -728,7 +757,7 @@ class SemanticAutomationEngine(private val context: Context) {
                 val rawPrompt = rGoal.rawCommand ?: goal.rawCommand
                 val taskType = rGoal.task ?: goal.task
 
-                // Always launch the base domain. The agentic loop will wait for the extension
+                // Always launch the base domain. The automation loop will wait for the extension
                 // to connect and provide the DOM to click the website's search box and interact.
                 val urlToLaunch = baseDomain
 
@@ -757,7 +786,7 @@ class SemanticAutomationEngine(private val context: Context) {
                     if (!extensionBridge.isConnected()) {
                         Log.w(TAG, "Browser launched but extension not connected. Prompting user.")
                         DebugLogger.warning(
-                            context, LogCategory.UI_RECOGNITION_AI,
+                            context, LogCategory.SEMANTIC_AUTOMATION,
                             "Browser extension not detected",
                             "Browser is open but the Autonion Android Extension is not connected. " +
                             "Web automation will fall back to the accessibility tree, which cannot interact with page content.",
@@ -786,7 +815,7 @@ class SemanticAutomationEngine(private val context: Context) {
                                 Log.d(TAG, "User chose to continue without extension")
                                 _lastActionDescription.value = "Continuing without extension (limited web interaction)…"
                                 DebugLogger.info(
-                                    context, LogCategory.UI_RECOGNITION_AI,
+                                    context, LogCategory.SEMANTIC_AUTOMATION,
                                     "Continuing without extension",
                                     "User chose to proceed with accessibility tree fallback for web automation.",
                                     TAG

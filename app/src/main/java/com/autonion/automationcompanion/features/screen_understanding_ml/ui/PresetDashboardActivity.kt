@@ -35,6 +35,8 @@ import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.ViewQuilt
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -60,6 +62,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -71,6 +74,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.autonion.automationcompanion.features.screen_understanding_ml.core.ScreenUnderstandingService
 import com.autonion.automationcompanion.features.screen_understanding_ml.logic.PresetRepository
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.AutomationPreset
 import com.autonion.automationcompanion.ui.theme.AppTheme
@@ -89,6 +93,7 @@ class PresetDashboardActivity : ComponentActivity() {
             AppTheme {
                 val presets = remember { mutableStateListOf<AutomationPreset>() }
                 var showDialog by remember { mutableStateOf(false) }
+                var confirmDeleteFor by remember { mutableStateOf<AutomationPreset?>(null) }
 
                 val lifecycleOwner = LocalLifecycleOwner.current
                 DisposableEffect(lifecycleOwner) {
@@ -106,6 +111,7 @@ class PresetDashboardActivity : ComponentActivity() {
 
                 if (showDialog) {
                     NewAutomationDialog(
+                        existingPresetNames = presets.map { it.name }.toSet(),
                         onDismiss = { showDialog = false },
                         onConfirm = { name ->
                             showDialog = false
@@ -116,14 +122,28 @@ class PresetDashboardActivity : ComponentActivity() {
                     )
                 }
 
+                // Confirm delete dialog for Screen ML presets
+                confirmDeleteFor?.let { preset ->
+                    ConfirmDeletePresetDialog(
+                        presetName = preset.name,
+                        onConfirm = {
+                            repository.deletePreset(preset.id)
+                            presets.remove(preset)
+                            // Stop the overlay service if it's running for this preset
+                            if (ScreenUnderstandingService.instance?.currentPresetId == preset.id) {
+                                stopService(Intent(this@PresetDashboardActivity, ScreenUnderstandingService::class.java))
+                            }
+                            confirmDeleteFor = null
+                        },
+                        onCancel = { confirmDeleteFor = null }
+                    )
+                }
+
                 PresetDashboardContent(
                     presets = presets,
                     onBack = { finish() },
                     onAddClick = { showDialog = true },
-                    onDelete = { preset ->
-                        repository.deletePreset(preset.id)
-                        presets.remove(preset)
-                    },
+                    onDelete = { preset -> confirmDeleteFor = preset },
                     onPlay = { preset ->
                         val intent = Intent(this@PresetDashboardActivity, SetupFlowActivity::class.java).apply {
                             putExtra("ACTION_REQUEST_PERMISSION_PLAY_PRESET", preset.id)
@@ -146,6 +166,7 @@ class PresetDashboardActivity : ComponentActivity() {
 
     @Composable
     private fun NewAutomationDialog(
+        existingPresetNames: Set<String> = emptySet(),
         onDismiss: () -> Unit,
         onConfirm: (String) -> Unit
     ) {
@@ -153,6 +174,13 @@ class PresetDashboardActivity : ComponentActivity() {
         val scale = remember { Animatable(0.9f) }
         val alpha = remember { Animatable(0f) }
         val scope = rememberCoroutineScope()
+        val trimmedName = name.trim()
+        val nameError = when {
+            name.isNotEmpty() && trimmedName.isEmpty() -> "Preset name is required"
+            trimmedName.isNotEmpty() && existingPresetNames.any { it.equals(trimmedName, ignoreCase = true) } ->
+                "A preset with this name already exists"
+            else -> null
+        }
 
         LaunchedEffect(Unit) {
             scale.animateTo(1f, tween(220, easing = FastOutSlowInEasing))
@@ -197,6 +225,10 @@ class PresetDashboardActivity : ComponentActivity() {
                         value = name,
                         onValueChange = { name = it },
                         label = { Text("Preset name") },
+                        isError = nameError != null,
+                        supportingText = {
+                            nameError?.let { Text(it) }
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(top = 20.dp),
@@ -214,10 +246,10 @@ class PresetDashboardActivity : ComponentActivity() {
                         androidx.compose.material3.Button(
                             onClick = {
                                 dismissThen {
-                                    if (name.isNotBlank()) onConfirm(name.trim())
+                                    if (trimmedName.isNotEmpty() && nameError == null) onConfirm(trimmedName)
                                 }
                             },
-                            enabled = name.isNotBlank()
+                            enabled = trimmedName.isNotEmpty() && nameError == null
                         ) {
                             Text("Create")
                         }
@@ -411,6 +443,7 @@ private fun AgentPresetItem(
                 scaleX = scale
                 scaleY = scale
             }
+            .clip(RoundedCornerShape(16.dp))
             .clickable(interactionSource = interactionSource, indication = null) {},
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
@@ -448,6 +481,82 @@ private fun AgentPresetItem(
                     contentDescription = "Delete",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ConfirmDeletePresetDialog(
+    presetName: String,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit
+) {
+    val scale = remember { Animatable(0.9f) }
+    val alpha = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) {
+        scale.animateTo(1f, tween(220, easing = FastOutSlowInEasing))
+        alpha.animateTo(1f, tween(220))
+    }
+
+    fun dismissThen(callback: () -> Unit) {
+        scope.launch {
+            scale.animateTo(0.95f, tween(120))
+            alpha.animateTo(0f, tween(120))
+            callback()
+        }
+    }
+
+    Dialog(
+        onDismissRequest = onCancel,
+        properties = DialogProperties(
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true,
+            usePlatformDefaultWidth = false
+        )
+    ) {
+        Surface(
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            tonalElevation = 6.dp,
+            modifier = Modifier
+                .fillMaxWidth(0.9f)
+                .graphicsLayer {
+                    scaleX = scale.value
+                    scaleY = scale.value
+                    this.alpha = alpha.value
+                }
+        ) {
+            Column(modifier = Modifier.padding(24.dp)) {
+                Text(
+                    text = "Delete Preset",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "Are you sure you want to delete '$presetName'?",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 12.dp)
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 24.dp),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    TextButton(onClick = { dismissThen(onCancel) }) {
+                        Text("Cancel")
+                    }
+                    Button(
+                        onClick = { dismissThen(onConfirm) },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        Text("Delete")
+                    }
+                }
             }
         }
     }

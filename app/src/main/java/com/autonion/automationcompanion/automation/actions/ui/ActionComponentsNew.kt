@@ -1,16 +1,26 @@
 package com.autonion.automationcompanion.automation.actions.ui
 
 import android.content.Context
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.autonion.automationcompanion.automation.actions.models.AppActionType
 import com.autonion.automationcompanion.automation.actions.models.ConfiguredAction
 import com.autonion.automationcompanion.automation.actions.models.NotificationType
 import com.autonion.automationcompanion.automation.actions.models.RingerMode
+import kotlin.math.roundToInt
 
 /**
  * Updated Audio (Volume) action configuration UI.
@@ -21,60 +31,105 @@ internal fun AudioActionConfig(
     action: ConfiguredAction.Audio,
     onActionChanged: (ConfiguredAction.Audio) -> Unit
 ) {
-    Column(Modifier.padding(start = 12.dp)) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
         // Ring Volume
-        Text("Ring Volume: ${action.ringVolume}", color = MaterialTheme.colorScheme.onSurface)
-        Slider(
-            value = action.ringVolume.toFloat(),
-            onValueChange = { newValue ->
-                onActionChanged(action.copy(ringVolume = newValue.toInt()))
-            },
-            valueRange = 0f..7f,
-            steps = 7,
-            modifier = Modifier.fillMaxWidth()
-        )
+        Column {
+            Text("Ring Volume: ${action.ringVolume}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+            Slider(
+                value = action.ringVolume.toFloat(),
+                onValueChange = { newValue ->
+                    onActionChanged(action.copy(ringVolume = newValue.roundToInt()))
+                },
+                valueRange = 0f..7f,
+                steps = 6,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
 
         // Media Volume
-        Text("Media Volume: ${action.mediaVolume}", color = MaterialTheme.colorScheme.onSurface)
-        Slider(
-            value = action.mediaVolume.toFloat(),
-            onValueChange = { newValue ->
-                onActionChanged(action.copy(mediaVolume = newValue.toInt()))
-            },
-            valueRange = 0f..15f,
-            steps = 15,
-            modifier = Modifier.fillMaxWidth()
-        )
+        Column {
+            Text("Media Volume: ${action.mediaVolume}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+            Slider(
+                value = action.mediaVolume.toFloat(),
+                onValueChange = { newValue ->
+                    onActionChanged(action.copy(mediaVolume = newValue.roundToInt()))
+                },
+                valueRange = 0f..15f,
+                steps = 14,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
 
         // Alarm Volume
-        Text("Alarm Volume: ${action.alarmVolume}", color = MaterialTheme.colorScheme.onSurface)
-        Slider(
-            value = action.alarmVolume.toFloat(),
-            onValueChange = { newValue ->
-                onActionChanged(action.copy(alarmVolume = newValue.toInt()))
-            },
-            valueRange = 0f..15f,
-            steps = 15,
-            modifier = Modifier.fillMaxWidth()
-        )
+        Column {
+            Text("Alarm Volume: ${action.alarmVolume}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+            Slider(
+                value = action.alarmVolume.toFloat(),
+                onValueChange = { newValue ->
+                    onActionChanged(action.copy(alarmVolume = newValue.roundToInt()))
+                },
+                valueRange = 0f..15f,
+                steps = 14,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
 
         // Ringer Mode
-        Text("Ringer Mode", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface)
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            listOf(
-                RingerMode.NORMAL to "Normal",
-                RingerMode.VIBRATE to "Vibrate",
-                RingerMode.SILENT to "Silent"
-            ).forEach { (mode, label) ->
-                FilterChip(
-                    selected = action.ringerMode == mode,
-                    onClick = { onActionChanged(action.copy(ringerMode = mode)) },
-                    label = { Text(label) },
-                    modifier = Modifier.weight(1f)
-                )
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(
+                "Ringer Mode",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(10.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(3.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    listOf(
+                        RingerMode.NORMAL to "Normal",
+                        RingerMode.VIBRATE to "Vibrate",
+                        RingerMode.SILENT to "Silent"
+                    ).forEach { (mode, label) ->
+                        val isSelected = action.ringerMode == mode
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(
+                                    if (isSelected) MaterialTheme.colorScheme.primary
+                                    else Color.Transparent
+                                )
+                                .clickable { onActionChanged(action.copy(ringerMode = mode)) }
+                                .padding(vertical = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.labelMedium.copy(
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    fontSize = 12.5.sp
+                                ),
+                                maxLines = 1,
+                                textAlign = TextAlign.Center,
+                                color = if (isSelected) MaterialTheme.colorScheme.onPrimary
+                                else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
             }
         }
     }

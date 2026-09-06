@@ -214,7 +214,7 @@ private fun ComparisonTable() {
             ComparisonRow("Quality", "Limited (2-7B)", "🧠 High (100B+)")
             ComparisonRow("Cost", "Free", "💰 Pay-per-token")
             ComparisonRow("Internet", "Not required", "📶 Required")
-            ComparisonRow("Models", "Gemma, Phi-2", "GPT-4o, Gemini, etc.")
+            ComparisonRow("Models", "Gemma 4, Phi-3.5, etc.", "GPT-4o, Gemini, etc.")
         }
     }
 }

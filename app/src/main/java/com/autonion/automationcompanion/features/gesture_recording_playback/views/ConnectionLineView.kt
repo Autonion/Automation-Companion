@@ -18,11 +18,20 @@ class ConnectionLineView @JvmOverloads constructor(
     private var endX = 0f
     private var endY = 0f
 
-    private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
-        strokeWidth = 5f
+    // Dark outline stroke — drawn first, thicker, for contrast on light backgrounds
+    private val outlinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#CC333333")
+        strokeWidth = 9f
         style = Paint.Style.STROKE
-        pathEffect = android.graphics.DashPathEffect(floatArrayOf(20f, 10f), 0f) // Dashed line
+        pathEffect = android.graphics.DashPathEffect(floatArrayOf(20f, 10f), 0f)
+    }
+
+    // Bright foreground stroke — drawn on top for visibility on dark backgrounds
+    private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#00E5FF") // Cyan — visible on both white and dark
+        strokeWidth = 4f
+        style = Paint.Style.STROKE
+        pathEffect = android.graphics.DashPathEffect(floatArrayOf(20f, 10f), 0f)
     }
 
     fun updatePosition(startX: Float, startY: Float, endX: Float, endY: Float) {
@@ -32,14 +41,12 @@ class ConnectionLineView @JvmOverloads constructor(
         this.endY = endY
         invalidate()
     }
-    
-    // Helper to calculate positions relative to this view (which should be MATCH_PARENT in setup)
-    // Actually, markers send SCREEN coordinates.
-    // If this view is MATCH_PARENT in the overlay window (at 0,0), then view coords == screen coords.
-    // So we can use raw values directly.
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
+        // Draw dark outline first for contrast on white/light backgrounds
+        canvas.drawLine(startX, startY, endX, endY, outlinePaint)
+        // Then draw the bright line on top
         canvas.drawLine(startX, startY, endX, endY, linePaint)
     }
 }

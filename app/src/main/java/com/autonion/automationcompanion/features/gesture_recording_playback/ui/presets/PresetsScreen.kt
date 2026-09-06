@@ -19,6 +19,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -56,7 +59,13 @@ import kotlinx.coroutines.launch
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.ui.platform.LocalUriHandler
+import com.autonion.automationcompanion.ui.components.YouTubeTutorials
 import com.autonion.automationcompanion.features.omni_chatbot.ui.LocalStartWalkthrough
+import com.autonion.automationcompanion.ui.isTablet
+import com.autonion.automationcompanion.ui.rememberWindowWidthSize
+import com.autonion.automationcompanion.ui.WindowWidthSize
 import com.autonion.automationcompanion.ui.components.AuroraBackground
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -74,9 +83,18 @@ fun PresetsScreen(
     val scope = rememberCoroutineScope()
     val fabScale = remember { Animatable(0f) }
     val startWalkthrough = LocalStartWalkthrough.current
+    val uriHandler = LocalUriHandler.current
+    val tablet = isTablet()
+    val windowWidthSize = rememberWindowWidthSize()
 
     LaunchedEffect(Unit) {
         fabScale.animateTo(1f, tween(300, easing = FastOutSlowInEasing))
+    }
+
+    val horizontalPad = when (windowWidthSize) {
+        WindowWidthSize.Expanded -> 32.dp
+        WindowWidthSize.Medium -> 24.dp
+        else -> 16.dp
     }
 
     AuroraBackground {
@@ -90,6 +108,9 @@ fun PresetsScreen(
                         }
                     },
                     actions = {
+                        IconButton(onClick = { uriHandler.openUri(YouTubeTutorials.GESTURE) }) {
+                            Icon(Icons.Default.PlayCircle, contentDescription = "Watch Video Tutorial", tint = MaterialTheme.colorScheme.onSurface)
+                        }
                         IconButton(onClick = { startWalkthrough("gesture_recording") }) {
                             Icon(Icons.Outlined.Info, contentDescription = "Take a Walkthrough", tint = MaterialTheme.colorScheme.onSurface)
                         }
@@ -118,6 +139,37 @@ fun PresetsScreen(
             Box(modifier = Modifier.padding(padding).fillMaxSize()) {
                 if (presets.isEmpty()) {
                     EmptyStateContent()
+                } else if (tablet) {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(2),
+                        contentPadding = PaddingValues(start = horizontalPad, top = 12.dp, end = horizontalPad, bottom = 88.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        gridItemsIndexed(
+                            presets,
+                            key = { _, name -> name }
+                        ) { index, presetName ->
+                            var itemVisible by remember { mutableStateOf(false) }
+                            LaunchedEffect(Unit) {
+                                kotlinx.coroutines.delay(index * 50L)
+                                itemVisible = true
+                            }
+                            AnimatedVisibility(
+                                visible = itemVisible,
+                                enter = fadeIn(tween(300)) + slideInVertically(tween(300, easing = FastOutSlowInEasing)) { it / 4 }
+                            ) {
+                                PresetCard(
+                                    name = presetName,
+                                    onClick = { onItemClicked(presetName) },
+                                    onPlay = { onPlay(presetName) },
+                                    onDelete = {
+                                        onDelete(presetName)
+                                    }
+                                )
+                            }
+                        }
+                    }
                 } else {
                     LazyColumn(
                         contentPadding = PaddingValues(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 88.dp),
@@ -142,13 +194,6 @@ fun PresetsScreen(
                                     onPlay = { onPlay(presetName) },
                                     onDelete = {
                                         onDelete(presetName)
-                                        scope.launch {
-                                            snackbarHostState.showSnackbar(
-                                                "Deleted \"$presetName\"",
-                                                actionLabel = "UNDO",
-                                                duration = SnackbarDuration.Short
-                                            )
-                                        }
                                     }
                                 )
                             }

@@ -43,6 +43,7 @@ import com.autonion.automationcompanion.features.flow_automation.engine.FlowExec
 import com.autonion.automationcompanion.features.flow_automation.model.LaunchAppNode
 import com.autonion.automationcompanion.features.flow_automation.model.ScreenMLNode
 import com.autonion.automationcompanion.features.flow_automation.model.VisualTriggerNode
+import com.autonion.automationcompanion.features.flow_automation.model.needsMediaProjection
 import com.autonion.automationcompanion.features.flow_automation.ui.editor.canvas.FlowCanvas
 import com.autonion.automationcompanion.features.flow_automation.ui.editor.canvas.MiniMap
 import com.autonion.automationcompanion.features.flow_automation.ui.editor.canvas.flowEditorColors
@@ -66,6 +67,7 @@ fun FlowEditorScreen(
     val state by viewModel.state.collectAsState()
     val execState by viewModel.executionState.collectAsState()
     val isExecuting = execState is FlowExecutionState.Running
+    val validationErrors by viewModel.validationErrors.collectAsState()
 
     val editorColors = flowEditorColors()
     val density = LocalDensity.current
@@ -86,7 +88,6 @@ fun FlowEditorScreen(
 
     // ── MediaProjection blocking dialog ──
     var showFullScreenDialog by remember { mutableStateOf(false) }
-    var pendingExecute by remember { mutableStateOf(false) }
 
     // ── Disclosure dialog states ──
     var showAccessibilityDisclosure by remember { mutableStateOf(false) }
@@ -94,16 +95,22 @@ fun FlowEditorScreen(
     var showMediaProjectionDisclosure by remember { mutableStateOf(false) }
 
     // Detect if flow has LaunchApp + visual/ML nodes (needs full-screen capture)
-    val hasLaunchAppNode = remember(state.graph.nodes) {
-        state.graph.nodes.any { it is LaunchAppNode }
+    // Only consider nodes reachable from StartNode via edges
+    val reachableNodes = remember(state.graph.nodes, state.graph.edges) {
+        state.graph.reachableNodes()
     }
-    val hasVisualNodes = remember(state.graph.nodes) {
-        state.graph.nodes.any { it is VisualTriggerNode || it is ScreenMLNode }
+    val hasLaunchAppNode = remember(reachableNodes) {
+        reachableNodes.any { it is LaunchAppNode }
+    }
+    val hasVisualNodes = remember(reachableNodes) {
+        reachableNodes.any {
+            it is VisualTriggerNode || (it is ScreenMLNode && it.needsMediaProjection())
+        }
     }
     val needsFullScreen = hasLaunchAppNode && hasVisualNodes
 
     // ── Warning banner for flows that need full-screen capture ──
-    val showScreenCaptureWarning = remember(state.graph.nodes) {
+    val showScreenCaptureWarning = remember(reachableNodes) {
         needsFullScreen
     }
 
@@ -242,11 +249,11 @@ fun FlowEditorScreen(
                                 }
                             ),
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White.copy(alpha = 0.8f),
-                                focusedBorderColor = Color(0xFF64FFDA),
-                                unfocusedBorderColor = Color.White.copy(alpha = 0.3f),
-                                cursorColor = Color(0xFF64FFDA)
+                                focusedTextColor = editorColors.panelText,
+                                unfocusedTextColor = editorColors.panelText.copy(alpha = 0.8f),
+                                focusedBorderColor = editorColors.accentTeal,
+                                unfocusedBorderColor = editorColors.panelText.copy(alpha = 0.3f),
+                                cursorColor = editorColors.accentTeal
                             )
                         )
                     },
@@ -259,15 +266,15 @@ fun FlowEditorScreen(
                                 showEditTitleDialog = false
                             }
                         ) {
-                            Text("Save", color = Color(0xFF64FFDA))
+                            Text("Save", color = editorColors.accentTealText)
                         }
                     },
                     dismissButton = {
                         TextButton(onClick = { showEditTitleDialog = false }) {
-                            Text("Cancel", color = Color.White.copy(alpha = 0.5f))
+                            Text("Cancel", color = editorColors.panelDimText)
                         }
                     },
-                    containerColor = Color(0xFF1E2024)
+                    containerColor = editorColors.panelBg
                 )
                 
                 LaunchedEffect(Unit) {
@@ -311,14 +318,13 @@ fun FlowEditorScreen(
                 )
             }
 
-            Spacer(Modifier.width(8.dp))
-
             // Save button
             TextButton(onClick = { viewModel.saveFlow() }) {
                 Text(
                     if (state.isDirty) "Save •" else "Saved",
-                    color = if (state.isDirty) Color(0xFF64FFDA) else Color.White.copy(alpha = 0.5f),
-                    fontSize = 13.sp
+                    color = if (state.isDirty) editorColors.accentTealText else editorColors.topBarDimText,
+                    fontSize = 13.sp,
+                    fontWeight = if (state.isDirty) FontWeight.Bold else FontWeight.Normal
                 )
             }
         }
@@ -379,11 +385,11 @@ fun FlowEditorScreen(
         ) {
             Surface(
                 shape = RoundedCornerShape(20.dp),
-                color = Color(0xFF64FFDA).copy(alpha = 0.9f)
+                color = editorColors.connectionIndicatorBg
             ) {
                 Text(
                     "Tap a node to connect",
-                    color = Color.Black,
+                    color = editorColors.connectionIndicatorText,
                     fontWeight = FontWeight.Medium,
                     modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
                     fontSize = 13.sp
@@ -428,7 +434,7 @@ fun FlowEditorScreen(
 
             // Node config panel
             AnimatedVisibility(
-                visible = state.showNodeConfig && state.selectedNodeId != null,
+                visible = !state.showNodePalette && state.showNodeConfig && state.selectedNodeId != null,
                 enter = slideInVertically { it } + fadeIn(),
                 exit = slideOutVertically { it } + fadeOut()
             ) {
@@ -454,7 +460,7 @@ fun FlowEditorScreen(
 
             // Edge config overlay
             AnimatedVisibility(
-                visible = state.showEdgeConfig && state.selectedEdgeId != null,
+                visible = !state.showNodePalette && state.showEdgeConfig && state.selectedEdgeId != null,
                 enter = slideInVertically { it } + fadeIn(),
                 exit = slideOutVertically { it } + fadeOut()
             ) {
@@ -492,6 +498,13 @@ fun FlowEditorScreen(
                         if (isExecuting) {
                             viewModel.stopExecution()
                         } else {
+                            // 1. Always validate flow configuration first!
+                            val errors = viewModel.validateFlow()
+                            if (errors.isNotEmpty()) {
+                                viewModel.executeFlow() // Sets _validationErrors and triggers error dialog
+                                return@FloatingActionButton
+                            }
+
                             if (!com.autonion.automationcompanion.AccessibilityRouter.isServiceConnected()) {
                                 showAccessibilityDisclosure = true
                             } else if (!hasVisualNodes) {
@@ -571,8 +584,7 @@ fun FlowEditorScreen(
                 Button(
                     onClick = {
                         showFullScreenDialog = false
-                        val mpManager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as android.media.projection.MediaProjectionManager
-                        projectionLauncher.launch(mpManager.createScreenCaptureIntent())
+                        showMediaProjectionDisclosure = true
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
                 ) {
@@ -621,7 +633,11 @@ fun FlowEditorScreen(
     PermissionDisclosureDialog(
         showDialog = showMediaProjectionDisclosure,
         title = "Screen Capture Required",
-        description = "Autonion needs to capture your screen to detect visual elements during flow execution. The screen content is processed locally on your device and is not stored or shared.",
+        description = if (needsFullScreen) {
+            "Autonion needs to capture your screen to detect visual elements during flow execution. This flow switches apps, so select Entire screen in the Android permission dialog. The screen content is processed locally on your device and is not stored or shared."
+        } else {
+            "Autonion needs to capture your screen to detect visual elements during flow execution. The screen content is processed locally on your device and is not stored or shared."
+        },
         icon = Icons.Default.Screenshot,
         onDismiss = { showMediaProjectionDisclosure = false },
         onContinue = {
@@ -630,4 +646,47 @@ fun FlowEditorScreen(
             projectionLauncher.launch(mpManager.createScreenCaptureIntent())
         }
     )
+
+    // ── Flow Validation Error Dialog ──
+    if (validationErrors.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = { viewModel.clearValidationErrors() },
+            containerColor = Color(0xFF1A1C1E),
+            titleContentColor = Color.White,
+            textContentColor = Color.White.copy(alpha = 0.85f),
+            title = {
+                Text(
+                    "⚠ Cannot Run Flow",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "The following nodes are not configured:",
+                        color = Color.White.copy(alpha = 0.6f),
+                        fontSize = 13.sp
+                    )
+                    validationErrors.forEach { error ->
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFFB71C1C).copy(alpha = 0.15f)
+                        ) {
+                            Text(
+                                "•  $error",
+                                color = Color(0xFFEF9A9A),
+                                fontSize = 13.sp,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.clearValidationErrors() }) {
+                    Text("OK", color = editorColors.accentTealText)
+                }
+            }
+        )
+    }
 }

@@ -1,6 +1,6 @@
 <resources>
     <string name="app_name">Autonion</string>
-    <string name="accessibility_desc">Accessibility Service for Automation Companion.</string>
+    <string name="accessibility_desc">Autonion uses the Accessibility Service only to carry out gesture recordings and automation flows that you explicitly create or trigger. It reads screen content solely to perform the specific action you request.</string>
     <string name="accessibility_description_gesture">Required for touch automation</string>
     <string name="overlay_permission">Overlay permission is required to show controls</string>
     <string name="accessibility_permission">Accessibility permission is required for automation</string>
@@ -30,6 +30,8 @@
     <string name="set_loop_count">Set Loop Count</string>
     <string name="number_of_loops">Number of loops</string>
     <string name="infinite_loop">Infinite Loop (∞)</string>
+    <string name="minimize_overlay">Minimize overlay</string>
+    <string name="expand_overlay">Expand overlay</string>
     <string name="save">Save</string>
 
 </resources>

@@ -55,13 +55,11 @@ class StopTrackingReceiver : BroadcastReceiver() {
             Log.w(TAG, "Failed to cancel notification: ${e.message}")
         }
 
-        // Also stop BatteryMonitoringService if running
+        // Only stop BatteryMonitoringService if no battery automations are active
         try {
-            val batteryIntent = Intent(context,
-                com.autonion.automationcompanion.features.system_context_automation.battery.engine.BatteryMonitoringService::class.java)
-            context.stopService(batteryIntent)
+            com.autonion.automationcompanion.features.system_context_automation.battery.engine.BatteryServiceManager.stopMonitoringIfNeeded(context)
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to stop BatteryMonitoringService: ${e.message}")
+            Log.w(TAG, "Failed to check/stop BatteryMonitoringService: ${e.message}")
         }
 
         // Unregister any geofences / listeners asynchronously
