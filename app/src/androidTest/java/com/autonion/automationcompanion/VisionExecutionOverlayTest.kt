@@ -99,6 +99,13 @@ class VisionExecutionOverlayTest {
                 touch(MotionEvent.ACTION_UP, 100f, 100f)
                 assertTrue(layout.x > 0)
                 assertTrue(layout.y > 0)
+                val displayFrame = android.graphics.Rect()
+                view.getWindowVisibleDisplayFrame(displayFrame)
+                layout.x = 100_000
+                layout.y = 100_000
+                method("clampExecutionOverlay").invoke(service)
+                assertEquals((displayFrame.width() - view.width).coerceAtLeast(0), layout.x)
+                assertEquals((displayFrame.height() - view.height).coerceAtLeast(0), layout.y)
                 val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
                 view.draw(Canvas(bitmap))
                 File(context.cacheDir, "execution-overlay-controls.png").outputStream().use {

@@ -291,7 +291,7 @@ match_all_occurrences(const cv::Mat &screen, const TemplateData &data, int id) {
     roi = cv::Rect(data.roi.x - px, data.roi.y - py,
                    data.roi.width + 2 * px, data.roi.height + 2 * py) & roi;
   }
-  if (roi.width < data.templ.cols || roi.height < data.templ.rows)
+  if (roi.width <= 0 || roi.height <= 0)
     return {{id, false, 0.0f, {}, !using_roi}};
   float best_score = 0;
   std::vector<MatchResult> results;

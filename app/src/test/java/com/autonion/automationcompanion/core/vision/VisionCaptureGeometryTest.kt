@@ -4,6 +4,21 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class VisionCaptureGeometryTest {
+    @Test fun rotationRemapsFullScreenAndCustomRoiFromOriginalCoordinates() {
+        assertEquals(TapBounds(0, 0, 2340, 1080),
+            remapVisionBounds(TapBounds(0, 0, 1080, 2340), 1080, 2340, 2340, 1080))
+        val source = TapBounds(108, 468, 972, 2106)
+        val landscape = remapVisionBounds(source, 1080, 2340, 2340, 1080)
+        assertEquals(TapBounds(234, 216, 2106, 972), landscape)
+        assertEquals(source, remapVisionBounds(landscape, 2340, 1080, 1080, 2340))
+        assertEquals(source, remapVisionBounds(source, 1080, 2340, 1080, 2340))
+        val g = VisionCaptureGeometry.create(2340, 1080, 128, true)
+        assertEquals(720, g.captureWidth)
+        assertEquals(332, g.captureHeight)
+        val hit = g.toScreen(MatchResultNative(x = g.captureX(1800), y = g.captureY(600), width = 30, height = 30))
+        assertEquals(1800.0, hit.x.toDouble(), 4.0)
+        assertEquals(600.0, hit.y.toDouble(), 4.0)
+    }
     @Test fun downscalesLargeScreenAndRestoresTapCoordinates() {
         val g = VisionCaptureGeometry.create(1080, 2340, 72, true)
         assertEquals(720, g.captureHeight)

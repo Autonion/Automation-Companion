@@ -26,6 +26,7 @@ import com.autonion.automationcompanion.core.vision.visionFrameTime
 class VisionFrame internal constructor(
     val image: Image,
     val acquiredAtMs: Long,
+    val captureGeneration: Int,
     private val release: () -> Unit
 ) : AutoCloseable {
     val width = image.width
@@ -77,26 +78,32 @@ class VisionMediaProjection(
 ) {
     private var mediaProjection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
-    private var imageReader: ImageReader? = null
+    private class ReaderSlot(val reader: ImageReader, val generation: Int) {
+        var activeFrames = 0
+        var retired = false
+    }
+    private var readerSlot: ReaderSlot? = null
     private val captureLock = Any()
-    private var activeFrames = 0
+    private var nextGeneration = 0
     private var released = false
     private val captureThread = HandlerThread("VisionCapture").apply { start() }
     private val available = Channel<Unit>(Channel.CONFLATED)
     @Volatile private var stoppedByUser = false
+    var onCapturedContentResize: ((Int, Int) -> Unit)? = null
 
     // Queue only signals. Acquire the newest image when processing is ready,
     // with no full-screen bitmap allocations on the main thread.
     val frames: Flow<VisionFrame> = flow {
         for (signal in available) {
             val frame = synchronized(captureLock) {
-                if (released) null else imageReader?.acquireLatestImage()?.let { image ->
-                    activeFrames++
-                    VisionFrame(image, SystemClock.uptimeMillis()) {
+                val slot = readerSlot
+                if (released || slot == null) null else slot.reader.acquireLatestImage()?.let { image ->
+                    slot.activeFrames++
+                    VisionFrame(image, SystemClock.uptimeMillis(), slot.generation) {
                         synchronized(captureLock) {
                             image.close()
-                            activeFrames--
-                            if (released && activeFrames == 0) closeReader()
+                            slot.activeFrames--
+                            if (slot.retired && slot.activeFrames == 0) slot.reader.close()
                         }
                     }
                 }
@@ -116,6 +123,9 @@ class VisionMediaProjection(
         stoppedByUser = false
         mediaProjection = projectionManager.getMediaProjection(resultCode, data)
         mediaProjection?.registerCallback(object : MediaProjection.Callback() {
+            override fun onCapturedContentResize(width: Int, height: Int) {
+                onCapturedContentResize?.invoke(width, height)
+            }
             override fun onStop() {
                 releaseResources()
                 if (!stoppedByUser) {
@@ -124,18 +134,48 @@ class VisionMediaProjection(
                 }
             }
         }, Handler(Looper.getMainLooper()))
-        imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3)
-        imageReader?.setOnImageAvailableListener({ available.trySend(Unit) }, Handler(captureThread.looper))
+        readerSlot = createReader(width, height)
         virtualDisplay = mediaProjection?.createVirtualDisplay(
             "VisionTriggerDisplay", width, height, density,
             DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-            imageReader?.surface, null, null
+            readerSlot?.reader?.surface, null, null
         )
     }
 
-    private fun closeReader() {
-        imageReader?.close()
-        imageReader = null
+    private fun createReader(width: Int, height: Int): ReaderSlot {
+        val reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3)
+        reader.setOnImageAvailableListener({ available.trySend(Unit) }, Handler(captureThread.looper))
+        return ReaderSlot(reader, ++nextGeneration)
+    }
+
+    private fun retire(slot: ReaderSlot?) {
+        slot ?: return
+        slot.retired = true
+        slot.reader.setOnImageAvailableListener(null, null)
+        if (slot.activeFrames == 0) slot.reader.close()
+    }
+
+    fun captureGeneration(): Int = synchronized(captureLock) { readerSlot?.generation ?: -1 }
+
+    fun resizeCapture(width: Int, height: Int, density: Int): Int = synchronized(captureLock) {
+        check(!released) { "Capture already stopped" }
+        val display = checkNotNull(virtualDisplay) { "Projection not started" }
+        val replacement = createReader(width, height)
+        try {
+            display.surface = null
+            display.resize(width, height, density)
+            display.surface = replacement.reader.surface
+        } catch (error: Exception) {
+            retire(replacement)
+            throw error
+        }
+        val previous = readerSlot
+        readerSlot = replacement
+        while (available.tryReceive().isSuccess) Unit
+        retire(previous)
+        Log.i("VisionProjection", "Capture resized: ${width}x$height generation=${replacement.generation}")
+        available.trySend(Unit)
+        replacement.generation
     }
 
     private fun releaseResources() {
@@ -143,11 +183,10 @@ class VisionMediaProjection(
             if (released) return
             released = true
             available.close()
-            imageReader?.setOnImageAvailableListener(null, null)
             virtualDisplay?.release()
             virtualDisplay = null
-            // Do not invalidate an Image that a synchronous JNI call is reading.
-            if (activeFrames == 0) closeReader()
+            retire(readerSlot)
+            readerSlot = null
             captureThread.quitSafely()
         }
     }

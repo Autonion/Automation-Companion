@@ -51,3 +51,16 @@ fun visionFrameTime(timestampNs: Long, nowNs: Long, acquiredAtMs: Long): VisionF
 }
 
 fun isFreshVisionFrame(observedAtMs: Long, nowMs: Long): Boolean = nowMs - observedAtMs in 0..150
+
+// Preserve the ROI's relative screen position, rather than rotating the target
+// pixels: most apps relayout upright when the device orientation changes.
+fun remapVisionBounds(bounds: TapBounds, fromWidth: Int, fromHeight: Int,
+                      toWidth: Int, toHeight: Int): TapBounds {
+    require(fromWidth > 0 && fromHeight > 0 && toWidth > 0 && toHeight > 0)
+    return TapBounds(
+        floor(bounds.left.toDouble() * toWidth / fromWidth).toInt().coerceIn(0, toWidth),
+        floor(bounds.top.toDouble() * toHeight / fromHeight).toInt().coerceIn(0, toHeight),
+        ceil(bounds.right.toDouble() * toWidth / fromWidth).toInt().coerceIn(0, toWidth),
+        ceil(bounds.bottom.toDouble() * toHeight / fromHeight).toInt().coerceIn(0, toHeight)
+    )
+}
