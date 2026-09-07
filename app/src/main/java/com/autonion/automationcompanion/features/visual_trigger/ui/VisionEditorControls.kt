@@ -1,17 +1,23 @@
 package com.autonion.automationcompanion.features.visual_trigger.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.PanTool
+import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,6 +25,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.autonion.automationcompanion.features.visual_trigger.models.*
@@ -112,22 +121,97 @@ internal fun VisionTargetSettings(
 ) {
     var showActions by remember { mutableStateOf(false) }
     var advanced by remember { mutableStateOf(false) }
+    val actions = if (region.matchMode == VisionMatchMode.MOVING) {
+        listOf(VisionAction.Click)
+    } else {
+        listOf(
+            VisionAction.Click,
+            VisionAction.LongClick,
+            VisionAction.Scroll(ScrollDirection.UP),
+            VisionAction.Scroll(ScrollDirection.DOWN)
+        )
+    }
     EditorSettingsSheet("Target #$number", onDismiss) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("Action", modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
-            Box {
-                TextButton(onClick = { showActions = true }) {
-                    Text(region.action.editorLabel, color = EditorAccent)
-                    Icon(Icons.Default.ExpandMore, "Choose action", tint = EditorAccent)
-                }
-                DropdownMenu(expanded = showActions, onDismissRequest = { showActions = false }) {
-                    val actions = if (region.matchMode == VisionMatchMode.MOVING) listOf(VisionAction.Click) else listOf(
-                        VisionAction.Click, VisionAction.LongClick, VisionAction.Scroll(ScrollDirection.UP), VisionAction.Scroll(ScrollDirection.DOWN))
-                    actions.forEach { action ->
-                        DropdownMenuItem(text = { Text(action.editorLabel) },
-                            leadingIcon = { if (region.action == action) Icon(Icons.Default.Check, "Selected") },
-                            onClick = { model.updateRegionAction(region.id, action); showActions = false })
+        Text("Action", style = MaterialTheme.typography.titleSmall)
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val canChangeAction = actions.size > 1
+            Surface(
+                onClick = { showActions = true },
+                enabled = canChangeAction,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .semantics {
+                        contentDescription = if (canChangeAction) "Choose action" else "Action fixed for rotating target"
+                    },
+                shape = RoundedCornerShape(6.dp),
+                color = Color.White.copy(alpha = 0.06f),
+                border = BorderStroke(
+                    1.dp,
+                    if (showActions) EditorAccent else Color.White.copy(alpha = 0.18f)
+                )
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 68.dp).padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        Modifier.size(40.dp).background(EditorAccent.copy(alpha = 0.13f), RoundedCornerShape(6.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(region.action.editorIcon, null, tint = EditorAccent, modifier = Modifier.size(22.dp))
                     }
+                    Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                        Text(region.action.editorLabel, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            region.action.editorDescription,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.LightGray
+                        )
+                    }
+                    Text(
+                        if (canChangeAction) "Change" else "Fixed",
+                        color = if (canChangeAction) EditorAccent else Color.Gray,
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                    if (canChangeAction) {
+                        Icon(Icons.Default.ExpandMore, null, tint = EditorAccent, modifier = Modifier.padding(start = 2.dp))
+                    }
+                }
+            }
+            DropdownMenu(
+                expanded = showActions,
+                onDismissRequest = { showActions = false },
+                modifier = Modifier.width(maxWidth)
+            ) {
+                actions.forEach { action ->
+                    val selected = region.action == action
+                    DropdownMenuItem(
+                        text = {
+                            Column {
+                                Text(action.editorLabel, fontWeight = FontWeight.Medium)
+                                Text(
+                                    action.editorDescription,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        },
+                        leadingIcon = {
+                            Icon(
+                                action.editorIcon,
+                                null,
+                                tint = if (selected) EditorAccent else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        },
+                        trailingIcon = {
+                            if (selected) Icon(Icons.Default.Check, "Selected", tint = EditorAccent)
+                        },
+                        modifier = Modifier.heightIn(min = 60.dp),
+                        onClick = {
+                            model.updateRegionAction(region.id, action)
+                            showActions = false
+                        }
+                    )
                 }
             }
         }
@@ -173,6 +257,30 @@ internal val VisionAction.editorLabel: String
         is VisionAction.Click -> "Tap"
         is VisionAction.LongClick -> "Long press"
         is VisionAction.Scroll -> "Scroll ${direction.name.lowercase()}"
+    }
+
+internal val VisionAction.editorDescription: String
+    get() = when (this) {
+        is VisionAction.Click -> "Tap the center of each match"
+        is VisionAction.LongClick -> "Press and hold each match"
+        is VisionAction.Scroll -> when (direction) {
+            ScrollDirection.UP -> "Swipe upward from each match"
+            ScrollDirection.DOWN -> "Swipe downward from each match"
+            ScrollDirection.LEFT -> "Swipe left from each match"
+            ScrollDirection.RIGHT -> "Swipe right from each match"
+        }
+    }
+
+internal val VisionAction.editorIcon: ImageVector
+    get() = when (this) {
+        is VisionAction.Click -> Icons.Default.TouchApp
+        is VisionAction.LongClick -> Icons.Default.PanTool
+        is VisionAction.Scroll -> when (direction) {
+            ScrollDirection.UP -> Icons.Default.ArrowUpward
+            ScrollDirection.DOWN -> Icons.Default.ArrowDownward
+            ScrollDirection.LEFT -> Icons.AutoMirrored.Filled.ArrowBack
+            ScrollDirection.RIGHT -> Icons.AutoMirrored.Filled.ArrowForward
+        }
     }
 
 @Composable
