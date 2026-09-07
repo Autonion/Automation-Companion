@@ -214,7 +214,15 @@ fun FlowEditorScreen(
             }
 
             if (showEditTitleDialog) {
-                var tempTitle by remember { mutableStateOf(state.graph.name) }
+                val initialText = state.graph.name.ifEmpty { "Untitled Flow" }
+                var titleValue by remember {
+                    mutableStateOf(
+                        androidx.compose.ui.text.input.TextFieldValue(
+                            text = initialText,
+                            selection = androidx.compose.ui.text.TextRange(initialText.length)
+                        )
+                    )
+                }
                 val focusRequester = remember { FocusRequester() }
                 
                 AlertDialog(
@@ -222,8 +230,8 @@ fun FlowEditorScreen(
                     title = { Text("Edit Flow Name", color = Color.White) },
                     text = {
                         OutlinedTextField(
-                            value = tempTitle,
-                            onValueChange = { tempTitle = it },
+                            value = titleValue,
+                            onValueChange = { titleValue = it },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .focusRequester(focusRequester),
@@ -233,8 +241,9 @@ fun FlowEditorScreen(
                             ),
                             keyboardActions = androidx.compose.foundation.text.KeyboardActions(
                                 onDone = {
-                                    if (tempTitle.isNotBlank()) {
-                                        viewModel.renameFlow(tempTitle)
+                                    val newTitle = titleValue.text.trim()
+                                    if (newTitle.isNotBlank()) {
+                                        viewModel.renameFlow(newTitle)
                                     }
                                     showEditTitleDialog = false
                                 }
@@ -251,8 +260,9 @@ fun FlowEditorScreen(
                     confirmButton = {
                         TextButton(
                             onClick = {
-                                if (tempTitle.isNotBlank()) {
-                                    viewModel.renameFlow(tempTitle)
+                                val newTitle = titleValue.text.trim()
+                                if (newTitle.isNotBlank()) {
+                                    viewModel.renameFlow(newTitle)
                                 }
                                 showEditTitleDialog = false
                             }
