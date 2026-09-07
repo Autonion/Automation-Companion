@@ -3,6 +3,7 @@ package com.autonion.automationcompanion.features.visual_trigger.service
 import android.annotation.SuppressLint
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
 import android.content.pm.ServiceInfo
@@ -17,6 +18,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.SystemClock
+import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
@@ -39,6 +41,7 @@ import com.autonion.automationcompanion.features.visual_trigger.core.VisionFrame
 import com.autonion.automationcompanion.features.visual_trigger.models.VisionMatchMode
 import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
 import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
+import com.autonion.automationcompanion.features.flow_automation.ui.FlowMediaProjectionActivity
 import com.autonion.automationcompanion.features.visual_trigger.core.VisionMediaProjection
 import com.autonion.automationcompanion.features.visual_trigger.data.VisionRepository
 import com.autonion.automationcompanion.features.visual_trigger.models.ExecutionMode
@@ -54,6 +57,12 @@ import kotlinx.coroutines.sync.withLock
 class VisionExecutionService : Service() {
 
     companion object {
+        const val ACTION_START_EXECUTION = "ACTION_START_EXECUTION"
+        const val EXTRA_RESULT_CODE = "EXTRA_RESULT_CODE"
+        const val EXTRA_RESULT_DATA = "EXTRA_RESULT_DATA"
+        const val EXTRA_PRESET_ID = "EXTRA_PRESET_ID"
+        const val EXTRA_START_RUNNING = "EXTRA_START_RUNNING"
+
         private const val TAG = "VisionExecution"
         private const val CHANNEL_ID = "vision_execution_channel"
         private const val NOTIFICATION_ID = 1002
@@ -70,6 +79,8 @@ class VisionExecutionService : Service() {
     private var visionProjection: VisionMediaProjection? = null
     private var repository: VisionRepository? = null
     private var activePreset: VisionPreset? = null
+    private var activePresetId: String? = null
+    private var recoveryStarted = false
     private data class CaptureConfiguration(
         val display: CaptureDisplayMetrics,
         val geometry: VisionCaptureGeometry,
@@ -129,13 +140,17 @@ class VisionExecutionService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            "ACTION_START_EXECUTION" -> {
-                val resultCode = intent.getIntExtra("EXTRA_RESULT_CODE", 0)
+            ACTION_START_EXECUTION -> {
+                val resultCode = intent.getIntExtra(EXTRA_RESULT_CODE, 0)
                 @Suppress("DEPRECATION")
-                val resultData = intent.getParcelableExtra<Intent>("EXTRA_RESULT_DATA")
-                val presetId = intent.getStringExtra("EXTRA_PRESET_ID")
+                val resultData = intent.getParcelableExtra<Intent>(EXTRA_RESULT_DATA)
+                val presetId = intent.getStringExtra(EXTRA_PRESET_ID)
 
                 if (resultCode != 0 && resultData != null && presetId != null) {
+                    activePresetId = presetId
+                    recoveryStarted = false
+                    isRunning = true
+                    isPaused = !intent.getBooleanExtra(EXTRA_START_RUNNING, false)
                     startForegroundServiceNotification()
                     showExecutionOverlay()
                     startExecution(resultCode, resultData, presetId)
@@ -230,7 +245,9 @@ class VisionExecutionService : Service() {
         }
 
         val playPauseBtn = OverlayStyles.createIconButton(
-            this, android.R.drawable.ic_media_play, "Start preset"
+            this,
+            if (isPaused) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause,
+            if (isPaused) "Start preset" else "Pause preset"
         ) { togglePause() }.apply { background = null }
         playPauseIcon = playPauseBtn
 
@@ -310,6 +327,62 @@ class VisionExecutionService : Service() {
         DebugLogger.info(applicationContext, LogCategory.VISUAL_TRIGGER, if (isPaused) "Paused" else "Resumed", if (isPaused) "Execution paused by user" else "Execution resumed by user", TAG)
     }
 
+    private fun recoverProjection() {
+        if (recoveryStarted) return
+        val presetId = activePresetId ?: run {
+            Log.e(TAG, "MediaProjection lost without an active preset ID")
+            stopSelf()
+            return
+        }
+
+        recoveryStarted = true
+        val resumeAfterRecovery = !isPaused
+        isPaused = true
+        isRunning = false
+        executionGeneration++
+        detections.clear()
+
+        val recoveryIntent = FlowMediaProjectionActivity.visualTriggerRecoveryIntent(
+            context = this,
+            presetId = presetId,
+            resumeAfterRecovery = resumeAfterRecovery
+        )
+        val recoveryPendingIntent = PendingIntent.getActivity(
+            this,
+            NOTIFICATION_ID,
+            recoveryIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("Screen capture stopped")
+            .setContentText("Tap to allow capture and restore the preset")
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentIntent(recoveryPendingIntent)
+            .addAction(android.R.drawable.ic_menu_view, "Allow capture", recoveryPendingIntent)
+            .setOngoing(false)
+            .setAutoCancel(false)
+            .setOnlyAlertOnce(true)
+            .build()
+        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification)
+
+        Log.w(TAG, "MediaProjection lost; requesting fresh consent for preset $presetId")
+        DebugLogger.warning(
+            applicationContext,
+            LogCategory.VISUAL_TRIGGER,
+            "Screen capture lost",
+            "Waiting for a fresh system screen-capture grant",
+            TAG
+        )
+
+        if (Settings.canDrawOverlays(this)) {
+            runCatching { startActivity(recoveryIntent) }
+                .onFailure { Log.w(TAG, "Could not open screen-capture consent automatically", it) }
+        }
+
+        stopForeground(STOP_FOREGROUND_DETACH)
+        stopSelf()
+    }
+
     private fun updateExecutionOverlayTouchPolicy() {
         val view = overlayView ?: return
         val lp = overlayLayoutParams ?: return
@@ -379,16 +452,7 @@ class VisionExecutionService : Service() {
 
             val mpManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
             visionProjection = VisionMediaProjection(this@VisionExecutionService, mpManager) {
-                // MediaProjection was revoked by the OS
-                Log.w(TAG, "MediaProjection lost — stopping execution")
-                DebugLogger.warning(applicationContext, LogCategory.VISUAL_TRIGGER,
-                    "Screen capture lost",
-                    "MediaProjection revoked by the system — restart required", TAG)
-                Handler(Looper.getMainLooper()).post {
-                    android.widget.Toast.makeText(this@VisionExecutionService,
-                        "Screen capture lost — please restart", android.widget.Toast.LENGTH_LONG).show()
-                }
-                stopSelf()
+                Handler(Looper.getMainLooper()).post { recoverProjection() }
             }
             visionProjection?.onCapturedContentResize = { _, _ -> requestDisplayRefresh() }
             val captureStartedAtMs = SystemClock.uptimeMillis()
