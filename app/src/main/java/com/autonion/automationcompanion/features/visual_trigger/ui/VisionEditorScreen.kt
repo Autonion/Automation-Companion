@@ -2,44 +2,37 @@ package com.autonion.automationcompanion.features.visual_trigger.ui
 
 import android.graphics.Rect
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.ChevronLeft
-import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.CropFree
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.rounded.ScreenRotation
+import androidx.compose.material.icons.automirrored.filled.RotateRight
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.semantics.*
+import androidx.compose.material.icons.filled.FitScreen
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -57,11 +50,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.autonion.automationcompanion.features.visual_trigger.models.VisionAction
-import com.autonion.automationcompanion.features.visual_trigger.models.ScrollDirection
 import com.autonion.automationcompanion.features.visual_trigger.models.ExecutionMode
 import com.autonion.automationcompanion.features.visual_trigger.models.VisionMatchMode
-import com.autonion.automationcompanion.features.visual_trigger.models.TapDispatchMode
-import kotlinx.coroutines.delay
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -72,26 +62,6 @@ import kotlin.math.sqrt
 private enum class DragMode { NONE, DRAW, MOVE, RESIZE_TL, RESIZE_TR, RESIZE_BL, RESIZE_BR, ROTATE, SEARCH_AREA }
 
 private const val RotationHandleOffsetPx = 56f
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun RegionTool(
-    label: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    tint: Color = Color.White,
-    onClick: () -> Unit
-) {
-    TooltipBox(
-        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-        tooltip = { PlainTooltip { Text(label) } },
-        state = rememberTooltipState()
-    ) {
-        FilledIconButton(
-            onClick = onClick,
-            colors = IconButtonDefaults.filledIconButtonColors(containerColor = Color(0xE622252B), contentColor = tint)
-        ) { Icon(icon, label) }
-    }
-}
 
 private fun normalizeRotationDegrees(degrees: Float): Float {
     var normalized = degrees % 360f
@@ -141,15 +111,15 @@ private fun rotatedTopCenter(rect: Rect, scale: Float, rotationDegrees: Float): 
     return rotatePoint(Offset(center.x, rect.top * scale), center, rotationDegrees)
 }
 
-private fun rotationHandlePosition(rect: Rect, scale: Float, rotationDegrees: Float): Offset {
+private fun rotationHandlePosition(rect: Rect, scale: Float, rotationDegrees: Float, canvas: IntSize): Offset {
     val center = regionCenter(rect, scale)
     val topCenter = rotatedTopCenter(rect, scale, rotationDegrees)
     val dx = topCenter.x - center.x
     val dy = topCenter.y - center.y
     val distance = sqrt(dx * dx + dy * dy).coerceAtLeast(1f)
     return Offset(
-        x = topCenter.x + dx / distance * RotationHandleOffsetPx,
-        y = topCenter.y + dy / distance * RotationHandleOffsetPx
+        x = (topCenter.x + dx / distance * RotationHandleOffsetPx).coerceIn(20f, (canvas.width - 20f).coerceAtLeast(20f)),
+        y = (topCenter.y + dy / distance * RotationHandleOffsetPx).coerceIn(20f, (canvas.height - 20f).coerceAtLeast(20f))
     )
 }
 
@@ -234,7 +204,7 @@ fun VisionEditorScreen(
     flowVisionJson: String? = null,
     viewModel: VisionEditorViewModel = viewModel()
 ) {
-    val initialized = remember { mutableStateOf(false) }
+    val initialized = rememberSaveable { mutableStateOf(false) }
     if (!initialized.value) {
         if (flowVisionJson != null) {
             viewModel.loadFlowPreset(flowVisionJson) { success ->
@@ -271,28 +241,19 @@ fun VisionEditorScreen(
     var dragStart by remember { mutableStateOf<Offset?>(null) }
     var dragCurrent by remember { mutableStateOf<Offset?>(null) }
     var dragMode by remember { mutableStateOf(DragMode.NONE) }
-    var selectedRegionId by remember { mutableStateOf<Int?>(null) }
+    var selectedRegionId by rememberSaveable { mutableStateOf<Int?>(null) }
     var searchAreaRegionId by remember { mutableStateOf<Int?>(null) }
     var editingRect by remember { mutableStateOf<Rect?>(null) } // live rect during move/resize
     var editingRotation by remember { mutableStateOf<Float?>(null) }
+    var rotationDragOffset by remember { mutableFloatStateOf(0f) }
 
     // Region detail dialog
-    var dialogRegion by remember { mutableStateOf<VisionEditorViewModel.TempRegion?>(null) }
-    var showRegionDialog by remember { mutableStateOf(false) }
+    val dialogRegion = regions.find { it.id == selectedRegionId }
+    var showRunSettings by rememberSaveable { mutableStateOf(false) }
+    var showRegionDialog by rememberSaveable { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
-
-    // Auto-dismiss instruction hint after 3 seconds
-    var showInstructionHint by remember { mutableStateOf(true) }
-    LaunchedEffect(Unit) {
-        delay(3000L)
-        showInstructionHint = false
-    }
-    // Also hide when first region is drawn
-    LaunchedEffect(regions.size) {
-        if (regions.isNotEmpty()) showInstructionHint = false
-    }
 
     val handleRadius = 18f  // Larger handles for easier grab
     val handleHitRadius = handleRadius * 3.5f  // Even larger hit area for finger touch
@@ -310,22 +271,52 @@ fun VisionEditorScreen(
         editingRotation = null
         dragMode = DragMode.NONE
         showRegionDialog = false
-        dialogRegion = null
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFF0D0D1A))
+    BackHandler(enabled = searchAreaRegionId != null) { searchAreaRegionId = null }
+    LaunchedEffect(canvasSize, currentPageIndex) {
+        userScale = 1f
+        userOffset = Offset.Zero
+        dragStart = null
+        dragCurrent = null
+        editingRect = null
+        editingRotation = null
+        dragMode = DragMode.NONE
+    }
+
+    BoxWithConstraints(
+        modifier = Modifier.fillMaxSize().background(Color(0xFF111416))
+            .windowInsetsPadding(WindowInsets.safeDrawing)
     ) {
-        if (bitmap != null) {
+        val landscape = maxWidth > maxHeight
+        val toolbarHeight = if (isMultiPage) 145.dp else 97.dp
+        BoxWithConstraints(
+            Modifier.fillMaxSize().padding(
+                end = if (landscape) 104.dp else 0.dp,
+                bottom = if (landscape) 0.dp else toolbarHeight
+            ).padding(12.dp).clipToBounds(),
+            contentAlignment = Alignment.Center
+        ) {
+        if (bitmap != null && fullResWidth > 0 && fullResHeight > 0) {
             val imageBitmap = bitmap!!.asImageBitmap()
             val imageWidth = fullResWidth    // coordinate space = full-res
             val imageHeight = fullResHeight  // coordinate space = full-res
 
             Canvas(
                 modifier = Modifier
-                    .fillMaxSize()
+                    .aspectRatio(imageWidth.toFloat() / imageHeight,
+                        matchHeightConstraintsFirst = maxWidth / maxHeight > imageWidth.toFloat() / imageHeight)
+                    .semantics {
+                        contentDescription = "Captured screen"
+                        stateDescription = if (selectedRegionId == null) "No target selected"
+                            else "Target #${regions.indexOfFirst { it.id == selectedRegionId } + 1} selected"
+                        customActions = regions.mapIndexed { index, region ->
+                            CustomAccessibilityAction("Select target #${index + 1}") {
+                                selectedRegionId = region.id
+                                true
+                            }
+                        }
+                    }
                     .pointerInput(Unit) {
                         awaitEachGesture {
                             awaitFirstDown(pass = PointerEventPass.Initial)
@@ -388,7 +379,7 @@ fun VisionEditorScreen(
                         transformOrigin = TransformOrigin(0f, 0f)
                     )
                     .onGloballyPositioned { canvasSize = it.size }
-                    .pointerInput(canvasSize, regions, selectedRegionId, searchAreaRegionId) {
+                    .pointerInput(canvasSize, regions, searchAreaRegionId) {
                         if (canvasSize == IntSize.Zero) return@pointerInput
                         val scaleX = canvasSize.width.toFloat() / imageWidth
                         val scaleY = canvasSize.height.toFloat() / imageHeight
@@ -411,13 +402,15 @@ fun VisionEditorScreen(
                                 if (sel != null) {
                                     val r = sel.rect
                                     val rotation = sel.rotationDegrees
-                                    val rotationHandle = rotationHandlePosition(r, scale, rotation)
+                                    val rotationHandle = rotationHandlePosition(r, scale, rotation, canvasSize)
                                     val rhDx = pos.x - rotationHandle.x
                                     val rhDy = pos.y - rotationHandle.y
                                     if (rhDx * rhDx + rhDy * rhDy < handleHitRadius * handleHitRadius) {
                                         dragMode = DragMode.ROTATE
                                         editingRect = Rect(r)
                                         editingRotation = rotation
+                                        // Clamped edge handles need an angle offset to avoid jumping on drag.
+                                        rotationDragOffset = rotation - rotationFromCenter(pos, regionCenter(r, scale))
                                         dragStart = pos
                                         return@detectDragGestures
                                     }
@@ -487,7 +480,8 @@ fun VisionEditorScreen(
                                     }
                                 } else if (dragMode == DragMode.ROTATE && selectedRegion != null) {
                                     val activeRect = editingRect ?: selectedRegion.rect
-                                    editingRotation = rotationFromCenter(change.position, regionCenter(activeRect, s))
+                                    editingRotation = normalizeRotationDegrees(
+                                        rotationFromCenter(change.position, regionCenter(activeRect, s)) + rotationDragOffset)
                                 }
                             },
                             onDragEnd = {
@@ -512,6 +506,7 @@ fun VisionEditorScreen(
                                                 scaledRect.intersect(0, 0, imageWidth, imageHeight)
                                                 if (scaledRect.width() > 3 && scaledRect.height() > 3) {
                                                     viewModel.addRegion(scaledRect)
+                                                    selectedRegionId = viewModel.regions.value.lastOrNull()?.id
                                                 }
                                             }
                                         }
@@ -591,7 +586,7 @@ fun VisionEditorScreen(
                                     pointInRotatedRect(offset, it.rect, scale, it.rotationDegrees)
                                 }
                                 if (region != null) {
-                                    dialogRegion = region
+                                    selectedRegionId = region.id
                                     showRegionDialog = true
                                 }
                             }
@@ -627,7 +622,9 @@ fun VisionEditorScreen(
                         close()
                     }
 
-                    region.searchRect?.let { searchRect ->
+                    region.searchRect?.takeIf {
+                        isSelected && !isEntireScreenSearch(it, imageWidth, imageHeight, executionMode)
+                    }?.let { searchRect ->
                         val roiColor = Color(0xFF00E5FF)
                         val roiTopLeft = Offset(searchRect.left * scale, searchRect.top * scale)
                         val roiSize = Size(searchRect.width() * scale, searchRect.height() * scale)
@@ -644,14 +641,15 @@ fun VisionEditorScreen(
                         )
                     }
 
-                    drawPath(color = Color(region.color), path = regionPath, alpha = if (isSelected) 0.35f else 0.25f)
+                    drawPath(color = Color(region.color), path = regionPath, alpha = if (isSelected) 0.18f else 0.06f)
+                    if (isSelected) drawPath(color = Color.White, path = regionPath, style = Stroke(width = 7f))
                     drawPath(color = Color(region.color), path = regionPath, style = Stroke(width = if (isSelected) 4f else 2.5f))
 
                     // Sequence number badge (#1, #2, ...)
                     val seqText = "#${index + 1}"
                     val badgePaint = android.graphics.Paint().apply { color = 0xDD000000.toInt(); isAntiAlias = true }
                     val seqPaint = android.graphics.Paint().apply {
-                        color = 0xFFFFFFFF.toInt(); textSize = 13f * scale
+                        color = 0xFFFFFFFF.toInt(); textSize = 11.sp.toPx() / userScale
                         typeface = android.graphics.Typeface.DEFAULT_BOLD; isAntiAlias = true
                     }
                     val seqWidth = seqPaint.measureText(seqText)
@@ -673,7 +671,7 @@ fun VisionEditorScreen(
                         is VisionAction.Scroll -> "SCROLL ${(region.action as VisionAction.Scroll).direction.name}"
                     }
                     val actionPaint = android.graphics.Paint().apply {
-                        color = region.color; textSize = 10f * scale
+                        color = region.color; textSize = 9.sp.toPx() / userScale
                         typeface = android.graphics.Typeface.DEFAULT_BOLD; isAntiAlias = true
                     }
                     val actionWidth = actionPaint.measureText(actionText)
@@ -697,7 +695,7 @@ fun VisionEditorScreen(
                             drawCircle(color = Color(region.color), radius = handleRadius - 4f, center = corner)
                         }
                         val topCenter = rotatedTopCenter(r, scale, rotation)
-                        val rotateHandle = rotationHandlePosition(r, scale, rotation)
+                        val rotateHandle = rotationHandlePosition(r, scale, rotation, canvasSize)
                         drawLine(
                             color = Color.White.copy(alpha = 0.75f),
                             start = topCenter,
@@ -722,132 +720,6 @@ fun VisionEditorScreen(
                 }
             }
 
-            // Instruction hint — auto-dismisses after 3s, doesn't block touches
-            AnimatedVisibility(
-                visible = showInstructionHint && regions.isEmpty(),
-                enter = fadeIn(),
-                exit = fadeOut(),
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = if (isMultiPage) 72.dp else 24.dp)
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(24.dp),
-                    color = Color.Black.copy(alpha = 0.7f),
-                    modifier = Modifier.padding(horizontal = 32.dp)
-                ) {
-                    Text(
-                        text = "Draw rectangles around UI elements to track",
-                        color = Color.White, fontSize = 14.sp,
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)
-                    )
-                }
-            }
-
-            // ─── Multi-Page Navigator Bar ─────────────────────────
-            if (isMultiPage) {
-                Surface(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 16.dp),
-                    shape = RoundedCornerShape(24.dp),
-                    color = Color(0xE61A1A2E),
-                    shadowElevation = 8.dp
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                    ) {
-                        // Previous page
-                        SmallFloatingActionButton(
-                            onClick = {
-                                if (currentPageIndex > 0) {
-                                    viewModel.navigateToPage(currentPageIndex - 1)
-                                    selectedRegionId = null
-                                    searchAreaRegionId = null
-                                }
-                            },
-                            containerColor = if (currentPageIndex > 0) Color(0xFF00C853) else Color.White.copy(alpha = 0.1f),
-                            contentColor = Color.White,
-                            shape = CircleShape,
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(Icons.Default.ChevronLeft, contentDescription = "Previous page", modifier = Modifier.size(20.dp))
-                        }
-
-                        // Page dots
-                        capturePages.forEachIndexed { index, _ ->
-                            Box(
-                                modifier = Modifier
-                                    .size(if (index == currentPageIndex) 10.dp else 7.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                        if (index == currentPageIndex) Color(0xFF00C853)
-                                        else Color.White.copy(alpha = 0.3f)
-                                    )
-                            )
-                        }
-
-                        // Page label
-                        Text(
-                            text = "${currentPageIndex + 1}/${capturePages.size}",
-                            color = Color.White,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 8.dp)
-                        )
-
-                        // Next page
-                        SmallFloatingActionButton(
-                            onClick = {
-                                if (currentPageIndex < capturePages.size - 1) {
-                                    viewModel.navigateToPage(currentPageIndex + 1)
-                                    selectedRegionId = null
-                                    searchAreaRegionId = null
-                                }
-                            },
-                            containerColor = if (currentPageIndex < capturePages.size - 1) Color(0xFF00C853) else Color.White.copy(alpha = 0.1f),
-                            contentColor = Color.White,
-                            shape = CircleShape,
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(Icons.Default.ChevronRight, contentDescription = "Next page", modifier = Modifier.size(20.dp))
-                        }
-                    }
-                }
-            }
-
-            val selectedTarget = regions.find { it.id == selectedRegionId }
-            if (selectedTarget != null) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(top = 64.dp, start = 16.dp, end = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Button(
-                        onClick = { dialogRegion = selectedTarget; showRegionDialog = true },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xE622252B), contentColor = Color.White),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(Icons.Default.Tune, "Target settings", modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text(when {
-                            searchAreaRegionId != null -> "Search area"
-                            selectedTarget.matchMode == VisionMatchMode.MOVING -> "Rotating"
-                            else -> "Fast match"
-                        })
-                    }
-                    RegionTool("Select search area (ROI)", Icons.Default.CropFree, Color(0xFF00E5FF)) {
-                        startSearchAreaSelection(selectedTarget.id)
-                    }
-                    RegionTool("Rotate selected region", Icons.Rounded.ScreenRotation) {
-                        viewModel.updateRegionRotation(selectedTarget.id, normalizeRotationDegrees(selectedTarget.rotationDegrees + 15f))
-                    }
-                }
-            }
-
         } else {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -858,369 +730,70 @@ fun VisionEditorScreen(
             }
         }
 
-        // --- Floating toolbar at top — contains ALL action buttons ---
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Left: Cancel and Execution Mode
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                SmallFloatingActionButton(
-                    onClick = onCancel,
-                    containerColor = Color(0xE61A1A2E),
-                    contentColor = Color.White,
-                    shape = CircleShape
-                ) {
-                    Icon(Icons.Default.Close, contentDescription = "Cancel", modifier = Modifier.size(20.dp))
-                }
-
-                var showExecutionModeMenu by remember { mutableStateOf(false) }
-                Box {
-                    Button(
-                        onClick = { showExecutionModeMenu = true },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xE61A1A2E), contentColor = Color.White),
-                        shape = RoundedCornerShape(16.dp),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
-                        modifier = Modifier.height(40.dp)
-                    ) {
-                        Text(
-                            text = when (executionMode) {
-                                ExecutionMode.MANDATORY_SEQUENTIAL -> "Mandatory Seq"
-                                ExecutionMode.OPTIONAL_SEQUENTIAL -> "Optional Seq"
-                                ExecutionMode.DETECT_ONLY -> when {
-                                    !hasTapRegion -> "Detect Only"
-                                    tapDispatchMode == TapDispatchMode.CONCURRENT -> "Detect: Multi"
-                                    else -> "Detect: Seq"
-                                }
-                            },
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                    DropdownMenu(
-                        expanded = showExecutionModeMenu,
-                        onDismissRequest = { showExecutionModeMenu = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Mandatory Sequential") },
-                            onClick = {
-                                viewModel.updateExecutionMode(ExecutionMode.MANDATORY_SEQUENTIAL)
-                                showExecutionModeMenu = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Optional Sequential") },
-                            onClick = {
-                                viewModel.updateExecutionMode(ExecutionMode.OPTIONAL_SEQUENTIAL)
-                                showExecutionModeMenu = false
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Detect Only") },
-                            onClick = {
-                                viewModel.updateExecutionMode(ExecutionMode.DETECT_ONLY)
-                                showExecutionModeMenu = false
-                            }
-                        )
-                        if (executionMode == ExecutionMode.DETECT_ONLY && hasTapRegion) {
-                            HorizontalDivider()
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        "When multiple tap targets match",
-                                        fontSize = 12.sp,
-                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f)
-                                    )
-                                },
-                                enabled = false,
-                                onClick = {}
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Sequential Tap") },
-                                leadingIcon = {
-                                    if (tapDispatchMode == TapDispatchMode.SEQUENTIAL) {
-                                        Icon(Icons.Default.Check, contentDescription = null)
-                                    }
-                                },
-                                onClick = {
-                                    viewModel.updateTapDispatchMode(TapDispatchMode.SEQUENTIAL)
-                                    showExecutionModeMenu = false
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Concurrent Tap") },
-                                leadingIcon = {
-                                    if (tapDispatchMode == TapDispatchMode.CONCURRENT) {
-                                        Icon(Icons.Default.Check, contentDescription = null)
-                                    }
-                                },
-                                onClick = {
-                                    viewModel.updateTapDispatchMode(TapDispatchMode.CONCURRENT)
-                                    showExecutionModeMenu = false
-                                }
-                            )
-                        }
-                    }
-                }
-            }
-
-            // Right: Selected-region rotate, Recapture, Undo, Save — all grouped together
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                SmallFloatingActionButton(
-                    onClick = onRecapture,
-                    containerColor = Color(0xE61A1A2E),
-                    contentColor = Color.White,
-                    shape = CircleShape
-                ) {
-                    Icon(Icons.Default.CameraAlt, contentDescription = "Recapture", modifier = Modifier.size(20.dp))
-                }
-
-                if (regions.isNotEmpty()) {
-                    SmallFloatingActionButton(
-                        onClick = { viewModel.undoLastRegion() },
-                        containerColor = Color(0xE61A1A2E),
-                        contentColor = Color.White,
-                        shape = CircleShape
-                    ) {
-                        Icon(Icons.AutoMirrored.Filled.Undo, contentDescription = "Undo", modifier = Modifier.size(20.dp))
-                    }
-
-                    // Save button — moved here from bottom-right to avoid obscuring drawn regions
-                    SmallFloatingActionButton(
-                        onClick = {
-                            if (isSaving) return@SmallFloatingActionButton
-                            if (isFlowMode && flowNodeId != null) {
-                                viewModel.saveForFlowMode(flowNodeId) { filePath -> onSaved(filePath) }
-                            } else {
-                                viewModel.savePreset(presetName) { savedPresetId -> onSaved(savedPresetId) }
-                            }
-                        },
-                        containerColor = Color(0xFF00C853),
-                        contentColor = Color.White,
-                        shape = CircleShape
-                    ) {
-                        if (isSaving) {
-                            CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
-                        } else Icon(Icons.Default.Check, "Save", modifier = Modifier.size(20.dp))
-                    }
-                }
-            }
         }
+        val selectedTarget = regions.find { it.id == selectedRegionId }
+        val primary = listOf(
+            EditorToolAction("Cancel", Icons.Default.Close, enabled = !isSaving, onClick = onCancel),
+            EditorToolAction("Undo", Icons.AutoMirrored.Filled.Undo, enabled = regions.isNotEmpty() && !isSaving) {
+                viewModel.undoLastRegion()
+                if (viewModel.regions.value.none { it.id == selectedRegionId }) selectedRegionId = null
+            },
+            EditorToolAction("Recapture", Icons.Default.CameraAlt, enabled = !isSaving, onClick = onRecapture),
+            EditorToolAction("Fit image", Icons.Default.FitScreen) { userScale = 1f; userOffset = Offset.Zero },
+            EditorToolAction("Run behavior", Icons.Default.Settings) { showRunSettings = true },
+            EditorToolAction("Save", Icons.Default.Check, enabled = regions.isNotEmpty() && !isSaving, tint = Color(0xFF47E78B)) {
+                if (isFlowMode && flowNodeId != null) {
+                    viewModel.saveForFlowMode(flowNodeId) { path -> onSaved(path) }
+                } else viewModel.savePreset(presetName) { id -> onSaved(id) }
+            }
+        )
+        val targetTools = if (searchAreaRegionId != null) listOf(
+            EditorToolAction("Cancel search area", Icons.Default.Close) { searchAreaRegionId = null }
+        ) else listOf(
+            EditorToolAction("Target settings", Icons.Default.Tune, enabled = selectedTarget != null) { showRegionDialog = true },
+            EditorToolAction("Edit search area", Icons.Default.CropFree, enabled = selectedTarget != null) {
+                selectedTarget?.let { startSearchAreaSelection(it.id) }
+            },
+            EditorToolAction("Rotate target", Icons.AutoMirrored.Filled.RotateRight, enabled = selectedTarget != null) {
+                selectedTarget?.let { viewModel.updateRegionRotation(it.id, normalizeRotationDegrees(it.rotationDegrees + 15f)) }
+            }
+        )
+        VisionEditorToolbar(
+            modifier = if (landscape) Modifier.align(Alignment.CenterEnd).width(104.dp).fillMaxHeight()
+                else Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(toolbarHeight),
+            landscape = landscape, primary = primary, target = targetTools,
+            targetLabel = selectedTarget?.let { "Target #${regions.indexOf(it) + 1}" } ?: "No target selected",
+            searchLabel = when {
+                searchAreaRegionId != null -> "Editing search area"
+                selectedTarget == null -> ""
+                isEntireScreenSearch(selectedTarget.searchRect, fullResWidth, fullResHeight, executionMode) -> "Entire screen"
+                selectedTarget.searchRect != null -> "Custom area"
+                else -> "Near target (saved)"
+            },
+            page = currentPageIndex, pages = capturePages.size,
+            onPage = {
+                viewModel.navigateToPage(it)
+                selectedRegionId = null
+                searchAreaRegionId = null
+                showRegionDialog = false
+            }
+        )
     }
 
-    // --- Region Detail Dialog ---
+    if (showRunSettings) {
+        VisionRunSettings(executionMode, tapDispatchMode, hasTapRegion,
+            regions.any { it.matchMode == VisionMatchMode.MOVING },
+            viewModel::updateExecutionMode, viewModel::updateTapDispatchMode,
+            onDismiss = { showRunSettings = false })
+    }
     if (showRegionDialog && dialogRegion != null) {
-        val region = dialogRegion!!
-        AlertDialog(
-            onDismissRequest = { showRegionDialog = false; dialogRegion = null },
-            containerColor = Color(0xFF22252B),
-            titleContentColor = Color.White,
-            title = { Text("Region #${regions.indexOfFirst { it.id == region.id } + 1}", fontWeight = FontWeight.Bold) },
-            text = {
-                Column(
-                    modifier = Modifier.verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Text("Match mode", color = Color.White, fontWeight = FontWeight.SemiBold)
-                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                        listOf(VisionMatchMode.STATIC, VisionMatchMode.MOVING).forEachIndexed { index, mode ->
-                            SegmentedButton(
-                                selected = region.matchMode == mode,
-                                onClick = {
-                                    viewModel.updateRegionMatchMode(region.id, mode)
-                                    dialogRegion = region.copy(matchMode = mode)
-                                },
-                                enabled = mode == VisionMatchMode.STATIC ||
-                                    (executionMode == ExecutionMode.DETECT_ONLY && region.action is VisionAction.Click),
-                                shape = SegmentedButtonDefaults.itemShape(index, 2)
-                            ) { Text(if (mode == VisionMatchMode.STATIC) "Fast match" else "Rotating", fontSize = 12.sp) }
-                        }
-                    }
-                    if (region.matchMode == VisionMatchMode.MOVING) {
-                        Text("Prediction lead: ${region.tapLeadMs} ms", color = Color.White)
-                        Slider(
-                            value = region.tapLeadMs.toFloat(),
-                            onValueChange = {
-                                val lead = (it / 5).roundToInt() * 5
-                                viewModel.updateRegionTapLead(region.id, lead)
-                                dialogRegion = region.copy(tapLeadMs = lead)
-                            },
-                            valueRange = 0f..150f,
-                            steps = 29
-                        )
-                    }
-                    Text("Select action for this region:", color = Color.White.copy(alpha = 0.7f))
-
-                    val actions = if (region.matchMode == VisionMatchMode.MOVING) {
-                        listOf("Tap" to VisionAction.Click)
-                    } else listOf(
-                        "Tap" to VisionAction.Click,
-                        "Long Press" to VisionAction.LongClick,
-                        "Scroll Up" to VisionAction.Scroll(ScrollDirection.UP),
-                        "Scroll Down" to VisionAction.Scroll(ScrollDirection.DOWN),
-                    )
-
-                    actions.forEach { (label, action) ->
-                        val isSelected = when {
-                            action is VisionAction.Click && region.action is VisionAction.Click -> true
-                            action is VisionAction.LongClick && region.action is VisionAction.LongClick -> true
-                            action is VisionAction.Scroll && region.action is VisionAction.Scroll ->
-                                (action as VisionAction.Scroll).direction == (region.action as VisionAction.Scroll).direction
-                            else -> false
-                        }
-
-                        Surface(
-                            onClick = {
-                                viewModel.updateRegionAction(region.id, action)
-                                dialogRegion = dialogRegion!!.copy(action = action)
-                            },
-                            shape = RoundedCornerShape(12.dp),
-                            color = if (isSelected) Color(0xFF00C853).copy(alpha = 0.2f) else Color.Transparent,
-                            border = if (isSelected) {
-                                androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF00C853))
-                            } else {
-                                androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = label,
-                                color = if (isSelected) Color(0xFF00C853) else Color.White,
-                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    Text(
-                        text = "Match threshold: ${String.format("%.2f", if (region.matchMode == VisionMatchMode.MOVING) region.movingMatchThreshold else region.matchThreshold)}",
-                        color = Color.White.copy(alpha = 0.7f),
-                        fontSize = 13.sp
-                    )
-                    Slider(
-                        value = if (region.matchMode == VisionMatchMode.MOVING) region.movingMatchThreshold else region.matchThreshold,
-                        onValueChange = { value ->
-                            val snapped = (Math.round(value * 20f) / 20f).coerceIn(0.5f, 1.0f)
-                            viewModel.updateRegionThreshold(region.id, snapped)
-                            dialogRegion = if (region.matchMode == VisionMatchMode.MOVING) region.copy(movingMatchThreshold = snapped) else region.copy(matchThreshold = snapped)
-                        },
-                        valueRange = 0.5f..1.0f,
-                        steps = 9,
-                        colors = SliderDefaults.colors(
-                            thumbColor = Color(0xFF00C853),
-                            activeTrackColor = Color(0xFF00C853)
-                        )
-                    )
-
-                    val currentSearchRect = region.searchRect
-                    val searchAreaText = currentSearchRect?.let {
-                        "Custom: ${it.width()}x${it.height()} at ${it.left}, ${it.top}"
-                    } ?: when {
-                        region.matchMode == VisionMatchMode.MOVING -> "Required"
-                        executionMode == ExecutionMode.DETECT_ONLY -> "Full screen"
-                        else -> "Around target"
-                    }
-
-                    Text(
-                        text = "Search area: $searchAreaText",
-                        color = Color.White.copy(alpha = 0.7f),
-                        fontSize = 13.sp
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Surface(
-                            onClick = { startSearchAreaSelection(region.id) },
-                            shape = RoundedCornerShape(12.dp),
-                            color = Color(0xFF00E5FF).copy(alpha = 0.12f),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF00E5FF).copy(alpha = 0.42f)),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text(
-                                text = "Draw ROI",
-                                color = Color(0xFF00E5FF),
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
-                                fontWeight = FontWeight.Bold,
-                                textAlign = TextAlign.Center
-                            )
-                        }
-
-                        Surface(
-                            onClick = {
-                                val fullScreenRect = Rect(0, 0, fullResWidth, fullResHeight)
-                                viewModel.updateRegionSearchRect(region.id, fullScreenRect)
-                                dialogRegion = dialogRegion!!.copy(searchRect = fullScreenRect)
-                            },
-                            shape = RoundedCornerShape(12.dp),
-                            color = Color.Transparent,
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.16f)),
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text(
-                                text = "Full Screen",
-                                color = Color.White,
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
-                                fontWeight = FontWeight.SemiBold,
-                                textAlign = TextAlign.Center
-                            )
-                        }
-                    }
-
-                    if (currentSearchRect != null) {
-                        Surface(
-                            onClick = {
-                                viewModel.updateRegionSearchRect(region.id, null)
-                                dialogRegion = dialogRegion!!.copy(searchRect = null)
-                            },
-                            shape = RoundedCornerShape(12.dp),
-                            color = Color.Transparent,
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.16f)),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text(
-                                text = "Use Auto Area",
-                                color = Color.White,
-                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-                                fontWeight = FontWeight.SemiBold,
-                                textAlign = TextAlign.Center
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(4.dp))
-
-                    Surface(
-                        onClick = { showDeleteConfirm = true },
-                        shape = RoundedCornerShape(12.dp),
-                        color = Color(0xFFFF1744).copy(alpha = 0.1f),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFF1744).copy(alpha = 0.3f)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFFF1744), modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Delete Region", color = Color(0xFFFF1744), fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showRegionDialog = false; dialogRegion = null }) {
-                    Text("Done", color = Color(0xFF00C853))
-                }
-            }
+        VisionTargetSettings(
+            region = dialogRegion, number = regions.indexOf(dialogRegion) + 1, mode = executionMode,
+            entireScreen = isEntireScreenSearch(dialogRegion.searchRect, fullResWidth, fullResHeight, executionMode),
+            onEntireScreen = { viewModel.updateRegionSearchRect(dialogRegion.id, Rect(0, 0, fullResWidth, fullResHeight)) },
+            onCustomArea = { startSearchAreaSelection(dialogRegion.id) },
+            model = viewModel, onDelete = { showDeleteConfirm = true },
+            onDismiss = { showRegionDialog = false }
         )
     }
 
@@ -1259,12 +832,12 @@ fun VisionEditorScreen(
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
             containerColor = Color(0xFF22252B),
-            title = { Text("Delete Region?", color = Color.White) },
-            text = { Text("This region will be removed.", color = Color.White.copy(alpha = 0.7f)) },
+            title = { Text("Delete target?", color = Color.White) },
+            text = { Text("This target will be removed.", color = Color.White.copy(alpha = 0.7f)) },
             confirmButton = {
                 TextButton(onClick = {
-                    viewModel.removeRegion(dialogRegion!!.id)
-                    showDeleteConfirm = false; showRegionDialog = false; dialogRegion = null
+                    viewModel.removeRegion(dialogRegion.id)
+                    showDeleteConfirm = false; showRegionDialog = false
                     selectedRegionId = null
                     searchAreaRegionId = null
                 }) { Text("Delete", color = Color(0xFFFF1744)) }

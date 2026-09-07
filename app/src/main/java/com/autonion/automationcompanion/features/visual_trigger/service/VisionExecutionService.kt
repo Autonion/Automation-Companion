@@ -352,13 +352,13 @@ class VisionExecutionService : Service() {
             resetExecutionState()
             val invalidMovingRegion = activePreset?.regions?.firstOrNull {
                 it.matchMode == VisionMatchMode.MOVING &&
-                    (it.customSearchRect() == null || it.action !is VisionAction.Click ||
+                    (it.action !is VisionAction.Click ||
                         activePreset?.executionMode != ExecutionMode.DETECT_ONLY)
             }
             if (invalidMovingRegion != null) {
                 withContext(Dispatchers.Main) {
                     android.widget.Toast.makeText(this@VisionExecutionService,
-                        "Moving objects require Detect Only, Tap, and a search area", android.widget.Toast.LENGTH_LONG).show()
+                        "Rotating targets require React to matches and Tap", android.widget.Toast.LENGTH_LONG).show()
                 }
                 stopSelf()
                 return@launch

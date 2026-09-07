@@ -145,7 +145,7 @@ fun VisionPresetDetailSheet(
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
                         text = "${preset.regions.size} region${if (preset.regions.size != 1) "s" else ""} • ${
-                            preset.executionMode.name.replace("_", " ").lowercase()
+                            preset.executionMode.displayLabel
                                 .replaceFirstChar { it.uppercase() }
                         }",
                         style = MaterialTheme.typography.bodySmall.copy(

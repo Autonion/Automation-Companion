@@ -533,7 +533,7 @@ fun VisionPresetCard(
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "${preset.regions.size} region${if (preset.regions.size != 1) "s" else ""} • ${preset.executionMode.name.replace("_", " ").lowercase().replaceFirstChar { it.uppercase() }}",
+                                text = "${preset.regions.size} region${if (preset.regions.size != 1) "s" else ""} • ${preset.executionMode.displayLabel}",
                                 style = MaterialTheme.typography.bodySmall.copy(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 12.sp
@@ -646,7 +646,7 @@ fun VisionPresetCard(
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = "${preset.regions.size} region${if (preset.regions.size != 1) "s" else ""} • ${preset.executionMode.name.replace("_", " ").lowercase().replaceFirstChar { it.uppercase() }}",
+                                text = "${preset.regions.size} region${if (preset.regions.size != 1) "s" else ""} • ${preset.executionMode.displayLabel}",
                                 style = MaterialTheme.typography.bodySmall.copy(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 12.sp

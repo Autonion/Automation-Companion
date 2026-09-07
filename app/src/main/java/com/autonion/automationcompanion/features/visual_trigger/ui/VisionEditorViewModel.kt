@@ -333,7 +333,8 @@ class VisionEditorViewModel(application: Application) : AndroidViewModel(applica
         )
         val nextId = maxGlobalId + 1
         val color = android.graphics.Color.HSVToColor(floatArrayOf((nextId * 137.5f) % 360, 0.8f, 1f))
-        val newRegion = TempRegion(nextId, rect, color, sourceCapturePath = currentImagePath)
+        val newRegion = TempRegion(nextId, rect, color, sourceCapturePath = currentImagePath,
+            searchRect = Rect(0, 0, _fullResWidth.value, _fullResHeight.value))
         currentList.add(newRegion)
         _regions.value = currentList
     }
@@ -379,7 +380,9 @@ class VisionEditorViewModel(application: Application) : AndroidViewModel(applica
 
     fun updateRegionMatchMode(id: Int, mode: VisionMatchMode) {
         _regions.value = _regions.value.map {
-            if (it.id == id) it.copy(matchMode = mode) else it
+            if (it.id == id) it.copy(matchMode = mode,
+                searchRect = if (mode == VisionMatchMode.MOVING && it.searchRect == null)
+                    Rect(0, 0, _fullResWidth.value, _fullResHeight.value) else it.searchRect) else it
         }
     }
 
@@ -394,9 +397,8 @@ class VisionEditorViewModel(application: Application) : AndroidViewModel(applica
         val error = when {
             regions.isEmpty() -> "Select at least one target before saving"
             moving.isEmpty() -> null
-            _executionMode.value != ExecutionMode.DETECT_ONLY -> "Moving objects require Detect Only mode"
+            _executionMode.value != ExecutionMode.DETECT_ONLY -> "Rotating targets require React to matches"
             moving.any { it.action !is VisionAction.Click } -> "Moving objects require the Tap action"
-            moving.any { it.searchRect == null } -> "Select a search area for each moving object"
             moving.any { it.rect.width() < 16 || it.rect.height() < 16 } -> "Moving targets must be at least 16 pixels wide and tall"
             else -> null
         }
@@ -683,7 +685,7 @@ class VisionEditorViewModel(application: Application) : AndroidViewModel(applica
             )
             require(preset.regions.none { it.matchMode == VisionMatchMode.MOVING } ||
                 preset.executionMode == ExecutionMode.DETECT_ONLY) {
-                "Moving objects require Detect Only mode in the destination preset"
+                "Rotating targets require React to matches in the destination preset"
             }
             currentCoroutineContext().ensureActive()
             // Publish only after every asset is complete. Cancellation must not delete

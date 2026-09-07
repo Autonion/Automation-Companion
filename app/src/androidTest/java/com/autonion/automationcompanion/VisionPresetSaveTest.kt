@@ -13,6 +13,7 @@ import com.autonion.automationcompanion.features.visual_trigger.models.VisionMat
 import com.autonion.automationcompanion.features.visual_trigger.models.VisionAction
 import com.autonion.automationcompanion.features.visual_trigger.models.VisionPreset
 import com.autonion.automationcompanion.features.visual_trigger.models.VisionRegion
+import com.autonion.automationcompanion.features.visual_trigger.models.ExecutionMode
 import com.autonion.automationcompanion.features.visual_trigger.ui.VisionEditorViewModel
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
@@ -134,17 +135,62 @@ class VisionPresetSaveTest {
         assertEquals(VisionMatchMode.MOVING, reopened.regions.value.single().matchMode)
     }
 
-    @Test fun freshCaptureValidationDoesNotSilentlySkipMissingMovingRoi() = Fixture().use { f ->
+    @Test fun freshTargetsDefaultToEntireScreenAndRotatingCanSaveWithoutDrawingArea() = Fixture().use { f ->
         val (model, _) = f.model()
         f.main { model.loadImage(f.source.absolutePath) }
         f.ready(model)
+        val completed = CountDownLatch(1)
+        val saved = AtomicReference<String>()
+        f.main {
+            model.addRegion(Rect(10, 10, 50, 50))
+            assertEquals(Rect(0, 0, 96, 96), model.regions.value.single().searchRect)
+            model.updateRegionMatchMode(1, VisionMatchMode.MOVING)
+            model.savePreset("Entire screen ${f.key}") { saved.set(it); completed.countDown() }
+        }
+        assertTrue(completed.await(10, TimeUnit.SECONDS))
+        f.ids.add(saved.get())
+        assertNull(model.saveError.value)
+        assertEquals(Rect(0, 0, 96, 96), runBlocking { f.repository.getPreset(saved.get()) }!!.regions.single().customSearchRect())
+        assertFalse(model.isSaving.value)
+    }
+
+    @Test fun existingSequentialAutoAreaIsPreservedButNewTargetsSearchEntireScreen() = Fixture().use { f ->
+        val original = f.existing().copy(executionMode = ExecutionMode.OPTIONAL_SEQUENTIAL)
+        runBlocking { f.repository.savePreset(original) }
+        val (model, _) = f.model()
+        f.main { model.loadExistingPreset(original.id) { assertTrue(it) } }
+        f.ready(model)
+        assertEquals(ExecutionMode.OPTIONAL_SEQUENTIAL, model.executionMode.value)
+        assertNull(model.regions.value.single().searchRect)
+        f.main { model.addRegion(Rect(50, 50, 80, 80)) }
+        assertEquals(Rect(0, 0, 96, 96), model.regions.value.last().searchRect)
+        val done = CountDownLatch(1)
+        f.main { model.savePreset(original.name) { done.countDown() } }
+        assertTrue(done.await(10, TimeUnit.SECONDS))
+        val saved = runBlocking { f.repository.getPreset(original.id) }!!
+        assertEquals(ExecutionMode.OPTIONAL_SEQUENTIAL, saved.executionMode)
+        assertNull(saved.regions.first().customSearchRect())
+        assertEquals(Rect(0, 0, 96, 96), saved.regions.last().customSearchRect())
+    }
+
+    @Test fun rotatingTargetWithUnspecifiedAreaUsesTheDetectOnlyScreenDefault() = Fixture().use { f ->
+        val (model, _) = f.model()
+        f.main { model.loadImage(f.source.absolutePath) }
+        f.ready(model)
+        val done = CountDownLatch(1)
+        val saved = AtomicReference<String>()
         f.main {
             model.addRegion(Rect(10, 10, 50, 50))
             model.updateRegionMatchMode(1, VisionMatchMode.MOVING)
-            model.savePreset("Missing ROI ${f.key}") { fail("Invalid preset was saved") }
+            model.updateRegionSearchRect(1, null)
+            model.savePreset("Screen default ${f.key}") { saved.set(it); done.countDown() }
         }
-        assertEquals("Select a search area for each moving object", model.saveError.value)
-        assertFalse(model.isSaving.value)
+        assertTrue(done.await(10, TimeUnit.SECONDS))
+        f.ids.add(saved.get())
+        assertNull(model.saveError.value)
+        val preset = runBlocking { f.repository.getPreset(saved.get()) }!!
+        assertEquals(ExecutionMode.DETECT_ONLY, preset.executionMode)
+        assertNull(preset.regions.single().customSearchRect())
     }
 
     @Test fun failedCommitPreservesExistingPresetAndAllowsRetry() = Fixture().use { f ->
