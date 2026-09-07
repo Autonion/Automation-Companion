@@ -204,7 +204,6 @@ fun VisionTriggerScreen(
                                     onClick = { detailPreset = preset },
                                     onRun = { onRunPreset(preset.id) },
                                     onDelete = { presetToDelete = preset },
-                                    onToggleActive = { viewModel.togglePresetActive(preset.id) },
                                     useVerticalLayout = true
                                 )
                             }
@@ -236,8 +235,7 @@ fun VisionTriggerScreen(
                                     primary = primary,
                                     onClick = { detailPreset = preset },
                                     onRun = { onRunPreset(preset.id) },
-                                    onDelete = { presetToDelete = preset },
-                                    onToggleActive = { viewModel.togglePresetActive(preset.id) }
+                                    onDelete = { presetToDelete = preset }
                                 )
                             }
                         }
@@ -439,7 +437,6 @@ fun VisionPresetCard(
     onClick: () -> Unit,
     onRun: () -> Unit,
     onDelete: () -> Unit,
-    onToggleActive: () -> Unit,
     useVerticalLayout: Boolean = false
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -516,41 +513,23 @@ fun VisionPresetCard(
                 Column(
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = preset.name,
-                                style = MaterialTheme.typography.titleMedium.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                ),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "${preset.regions.size} region${if (preset.regions.size != 1) "s" else ""} • ${preset.executionMode.displayLabel}",
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontSize = 12.sp
-                                )
-                            )
-                        }
-                        Switch(
-                            checked = preset.isActive,
-                            onCheckedChange = { onToggleActive() },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color.White,
-                                checkedTrackColor = primary,
-                                uncheckedThumbColor = Color.Gray,
-                                uncheckedTrackColor = Color.Gray.copy(alpha = 0.2f)
-                            )
+                    Text(
+                        text = preset.name,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "${preset.regions.size} region${if (preset.regions.size != 1) "s" else ""} • ${preset.executionMode.displayLabel}",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp
                         )
-                    }
+                    )
 
                     Spacer(modifier = Modifier.height(10.dp))
 
@@ -629,41 +608,23 @@ fun VisionPresetCard(
                         .weight(1f)
                         .padding(horizontal = 14.dp, vertical = 12.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = preset.name,
-                                style = MaterialTheme.typography.titleMedium.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                ),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "${preset.regions.size} region${if (preset.regions.size != 1) "s" else ""} • ${preset.executionMode.displayLabel}",
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontSize = 12.sp
-                                )
-                            )
-                        }
-                        Switch(
-                            checked = preset.isActive,
-                            onCheckedChange = { onToggleActive() },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color.White,
-                                checkedTrackColor = primary,
-                                uncheckedThumbColor = Color.Gray,
-                                uncheckedTrackColor = Color.Gray.copy(alpha = 0.2f)
-                            )
+                    Text(
+                        text = preset.name,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "${preset.regions.size} region${if (preset.regions.size != 1) "s" else ""} • ${preset.executionMode.displayLabel}",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 12.sp
                         )
-                    }
+                    )
 
                     Spacer(modifier = Modifier.height(10.dp))
 

@@ -144,29 +144,24 @@ fun VisionPresetDetailSheet(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "${preset.regions.size} region${if (preset.regions.size != 1) "s" else ""} • ${
-                            preset.executionMode.displayLabel
-                                .replaceFirstChar { it.uppercase() }
-                        }",
+                        text = "${preset.regions.size} region${if (preset.regions.size != 1) "s" else ""}",
                         style = MaterialTheme.typography.bodySmall.copy(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     )
                 }
 
-                // Status badge
+                // Execution mode badge
                 Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = if (preset.isActive) Color(0xFF00C853).copy(alpha = 0.15f)
-                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.1f)
+                    shape = RoundedCornerShape(12.dp),
+                    color = primary.copy(alpha = 0.12f)
                 ) {
                     Text(
-                        text = if (preset.isActive) "Active" else "Inactive",
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        text = preset.executionMode.displayLabel.replaceFirstChar { it.uppercase() },
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = if (preset.isActive) Color(0xFF00C853)
-                        else MaterialTheme.colorScheme.onSurfaceVariant
+                        color = primary
                     )
                 }
             }
@@ -308,8 +303,8 @@ fun VisionPresetDetailSheet(
                     .padding(horizontal = 20.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Edit button
-                Button(
+                // Edit button (Secondary action)
+                FilledTonalButton(
                     onClick = {
                         onDismiss()
                         onEdit()
@@ -318,9 +313,9 @@ fun VisionPresetDetailSheet(
                         .weight(1f)
                         .height(48.dp),
                     shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 ) {
                     Icon(
@@ -332,7 +327,7 @@ fun VisionPresetDetailSheet(
                     Text("Edit", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 }
 
-                // Run button
+                // Run button (Primary action)
                 Button(
                     onClick = {
                         onDismiss()
@@ -343,8 +338,8 @@ fun VisionPresetDetailSheet(
                         .height(48.dp),
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF00C853),
-                        contentColor = Color.White
+                        containerColor = primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
                     )
                 ) {
                     Icon(

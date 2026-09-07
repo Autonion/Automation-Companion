@@ -948,23 +948,34 @@ private fun ScreenMLNodeConfig(node: ScreenMLNode, onUpdate: (FlowNode) -> Unit,
     // ── Status indicator ──
     if (node.automationStepsJson.isNotEmpty()) {
         Row(
-            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text("✓ Screen Understanding actions configured", color = editorColors.accentTealText, fontSize = 12.sp)
+            Text(
+                text = "✓ Screen Understanding actions configured",
+                color = editorColors.accentTealText,
+                fontSize = 12.sp,
+                modifier = Modifier.weight(1f, fill = false),
+                maxLines = 2,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            )
+            Spacer(Modifier.width(8.dp))
             Surface(
                 shape = RoundedCornerShape(8.dp),
                 color = NodeColors.ScreenMLAmber.copy(alpha = 0.2f)
             ) {
                 Text(
-                    when (node.mode) {
+                    text = when (node.mode) {
                         ScreenMLMode.OCR -> "OCR"
                         ScreenMLMode.OBJECT_DETECTION -> "ELEMENTS"
                         ScreenMLMode.UI_ATTRIBUTE -> "UI ATTR"
                     },
                     color = NodeColors.ScreenMLAmber,
                     fontSize = 11.sp,
-                    fontWeight = FontWeight.Medium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    softWrap = false,
                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
                 )
             }
