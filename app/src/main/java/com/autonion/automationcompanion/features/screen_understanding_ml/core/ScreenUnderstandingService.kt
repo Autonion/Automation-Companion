@@ -1,9 +1,11 @@
 package com.autonion.automationcompanion.features.screen_understanding_ml.core
 
 import android.accessibilityservice.AccessibilityService
+import android.app.Activity
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import com.autonion.automationcompanion.AccessibilityRouter
@@ -16,14 +18,15 @@ import android.graphics.PointF
 import android.graphics.RectF
 import android.media.projection.MediaProjectionManager
 import android.os.Build
-import android.os.Handler
 import android.os.IBinder
-import android.os.Looper
+import android.os.SystemClock
+import android.provider.Settings
 import android.util.Log
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import com.autonion.automationcompanion.R
+import com.autonion.automationcompanion.features.flow_automation.ui.FlowMediaProjectionActivity
 import com.autonion.automationcompanion.features.screen_understanding_ml.logic.ActionExecutor
 import com.autonion.automationcompanion.features.screen_understanding_ml.logic.PresetRepository
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.AutomationPreset
@@ -37,10 +40,15 @@ import com.autonion.automationcompanion.features.screen_understanding_ml.ui.Capt
 import com.autonion.automationcompanion.features.screen_understanding_ml.ui.ScreenAgentOverlay
 import com.autonion.automationcompanion.features.screen_understanding_ml.ui.SetupFlowActivity
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -59,6 +67,8 @@ class ScreenUnderstandingService : Service() {
         private const val TAG = "ScreenUnderstanding"
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "screen_understanding_channel"
+        const val ACTION_RESTORE_PROJECTION = "RESTORE_SCREEN_ML_PROJECTION"
+        private const val ACTION_STOP = "STOP_SCREEN_ML"
 
         /** Static reference so the editor can communicate back */
         @Volatile
@@ -73,10 +83,23 @@ class ScreenUnderstandingService : Service() {
     private var temporalTracker: TemporalTracker? = null
     private var overlay: ScreenAgentOverlay? = null
     private var presetRepository: PresetRepository? = null
+    private var frameJob: Job? = null
+    private var snapshotJob: Job? = null
+    private var playbackJob: Job? = null
+    private var restoreJob: Job? = null
+    private var playbackGeneration = 0
+    private var activePlaybackPreset: AutomationPreset? = null
+    private var resumeAfterRecovery: AutomationPreset? = null
+    private var recoveryId: String? = null
+    private var overlayVisible = true
 
     fun setOverlayVisibility(visible: Boolean) {
+        overlayVisible = visible
         overlay?.setVisibility(visible)
     }
+
+    fun isAwaitingProjection(requestId: String?): Boolean =
+        requestId != null && requestId == recoveryId
 
     // Accumulated steps from multiple snaps
     private val accumulatedSteps: MutableList<AutomationStep> = mutableListOf()
@@ -156,10 +179,12 @@ class ScreenUnderstandingService : Service() {
         }
 
         instance = null
+        recoveryId = null
         isPlaying = false
         scope.cancel()
         overlay?.dismiss()
         mediaProjectionCore?.stopProjection()
+        latestBitmap = null
         perceptionLayer?.close()
         super.onDestroy()
     }
@@ -256,14 +281,46 @@ class ScreenUnderstandingService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Determine foreground service type BEFORE starting notification
-        val isA11yOnlyAction = intent?.action == "START_CAPTURE_A11Y_ONLY"
-        startForegroundNotification(useMediaProjectionType = !isA11yOnlyAction)
+        if (intent?.action == ACTION_STOP) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
+        if (intent?.action == ACTION_RESTORE_PROJECTION && !isAwaitingProjection(
+                intent.getStringExtra(FlowMediaProjectionActivity.EXTRA_CAPTURE_RECOVERY_ID)
+            )) {
+            if (overlay == null) stopSelf()
+            return START_NOT_STICKY
+        }
+        val resultCode = intent?.getIntExtra("resultCode", Activity.RESULT_CANCELED)
+        @Suppress("DEPRECATION")
+        val data = intent?.getParcelableExtra<Intent>("data")
+        val hasConsent = resultCode == Activity.RESULT_OK && data != null
+        if ((intent?.action == "START_CAPTURE" || intent?.action == ACTION_RESTORE_PROJECTION) && !hasConsent) {
+            Log.w(TAG, "Ignoring capture start without successful consent")
+            if (overlay == null) stopSelf()
+            return START_NOT_STICKY
+        }
 
         when (intent?.action) {
-            "START_CAPTURE" -> handleStartCapture(intent)
-            "START_CAPTURE_A11Y_ONLY" -> handleStartCaptureA11yOnly(intent)
+            "START_CAPTURE" -> {
+                startForegroundNotification(useMediaProjectionType = true)
+                handleStartCapture(intent)
+            }
+            ACTION_RESTORE_PROJECTION -> {
+                if (restoreJob?.isActive != true) {
+                    startForegroundNotification(useMediaProjectionType = true)
+                    restoreProjection(resultCode!!, data!!)
+                }
+            }
+            "START_CAPTURE_A11Y_ONLY" -> {
+                startForegroundNotification(useMediaProjectionType = false)
+                handleStartCaptureA11yOnly(intent)
+            }
             "DEBUG_TOGGLE" -> {
+                if (overlay == null) {
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
                 isDebugMode = !isDebugMode
                 Log.d(TAG, "Debug mode toggled: $isDebugMode")
                 Toast.makeText(this, "Debug Mode: ${if (isDebugMode) "ON" else "OFF"}", Toast.LENGTH_SHORT).show()
@@ -287,11 +344,25 @@ class ScreenUnderstandingService : Service() {
             notificationManager.createNotificationChannel(channel)
         }
 
-        val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Screen Agent Active")
-            .setContentText("Understanding screen content...")
+        val stopIntent = PendingIntent.getService(
+            this, NOTIFICATION_ID, Intent(this, ScreenUnderstandingService::class.java).setAction(ACTION_STOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle(if (recoveryId != null) "Screen capture paused" else "Screen Agent Active")
+            .setContentText(if (recoveryId != null) "Allow capture to continue UI Recognition AI" else "Understanding screen content...")
             .setSmallIcon(com.autonion.automationcompanion.R.drawable.ic_notification)
-            .build()
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+        recoveryId?.let { id ->
+            val retryIntent = PendingIntent.getActivity(
+                this, NOTIFICATION_ID, FlowMediaProjectionActivity.screenMlRecoveryIntent(this, id),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            builder.setContentIntent(retryIntent)
+                .addAction(android.R.drawable.ic_menu_view, "Allow capture", retryIntent)
+        }
+        val notification: Notification = builder.addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop", stopIntent).build()
 
         if (useMediaProjectionType && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             startForeground(
@@ -311,8 +382,11 @@ class ScreenUnderstandingService : Service() {
     }
 
     private fun handleStartCaptureA11yOnly(intent: Intent) {
+        resetCaptureWork()
+        startForegroundNotification(useMediaProjectionType = false)
         val presetName = intent.getStringExtra("presetName")
         val playPresetId = intent.getStringExtra("playPresetId")
+        currentPresetId = playPresetId
 
         isFlowMode = intent.getBooleanExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_MODE, false)
         flowNodeId = intent.getStringExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_NODE_ID)
@@ -325,6 +399,7 @@ class ScreenUnderstandingService : Service() {
 
         overlay?.dismiss()
         mediaProjectionCore?.stopProjection()
+        mediaProjectionCore = null
         perceptionLayer?.close()
 
         val presetToPlay = if (playPresetId != null) {
@@ -378,49 +453,21 @@ class ScreenUnderstandingService : Service() {
             isDebugMode = true
         }
 
-        if (resultCode != 0 && data != null) {
+        if (resultCode == Activity.RESULT_OK && data != null) {
             // Store preset info before startCapture so overlay mode is correct
-            if (playPresetId != null) {
-                currentPresetId = playPresetId
-            }
+            currentPresetId = playPresetId
             startCapture(resultCode, data, presetName, playPresetId, modelFile)
         }
     }
 
     private fun startCapture(resultCode: Int, data: Intent, presetName: String?, playPresetId: String?, modelFile: String? = null) {
         // Cleanup existing resources
+        resetCaptureWork()
+        startForegroundNotification(useMediaProjectionType = true)
         overlay?.dismiss()
         mediaProjectionCore?.stopProjection()
+        mediaProjectionCore = null
         perceptionLayer?.close()
-
-        val (realWidth, realHeight, densityDpi) = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-            val bounds = windowManager.currentWindowMetrics.bounds
-            val density = resources.configuration.densityDpi
-            Triple(bounds.width(), bounds.height(), density)
-        } else {
-            val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-            val displayMetrics = android.util.DisplayMetrics()
-            @Suppress("DEPRECATION")
-            windowManager.defaultDisplay.getRealMetrics(displayMetrics)
-            Triple(displayMetrics.widthPixels, displayMetrics.heightPixels, displayMetrics.densityDpi)
-        }
-
-        mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        mediaProjectionCore = MediaProjectionCore(this, mediaProjectionManager!!) {
-            // MediaProjection was revoked by the OS (screen off, app closed, etc.)
-            Log.w(TAG, "MediaProjection lost — stopping service")
-            DebugLogger.warning(
-                this@ScreenUnderstandingService, LogCategory.UI_RECOGNITION_AI,
-                "Screen capture lost",
-                "MediaProjection revoked by the system — restart required",
-                TAG
-            )
-            Handler(Looper.getMainLooper()).post {
-                Toast.makeText(this@ScreenUnderstandingService, "Screen capture lost — please restart", Toast.LENGTH_LONG).show()
-            }
-            stopSelf()
-        }
         perceptionLayer = PerceptionLayer(this, modelFile)
         temporalTracker = TemporalTracker()
 
@@ -457,7 +504,7 @@ class ScreenUnderstandingService : Service() {
             onStop = { stopSelf() }
         )
 
-        if (android.provider.Settings.canDrawOverlays(this)) {
+        if (Settings.canDrawOverlays(this)) {
             if (isDebugMode) {
                 // Debug/test mode: live bounding boxes + metrics HUD, no capture controls
                 overlay?.showDebugMode()
@@ -472,70 +519,175 @@ class ScreenUnderstandingService : Service() {
             }
         }
 
-        mediaProjectionCore?.startProjection(resultCode, data, realWidth, realHeight, densityDpi)
+        startProjectionCapture(resultCode, data)
+    }
 
-        scope.launch {
+    private fun startProjectionCapture(resultCode: Int, data: Intent) {
+        val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        val (width, height, density) = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val bounds = windowManager.maximumWindowMetrics.bounds
+            Triple(bounds.width(), bounds.height(), resources.configuration.densityDpi)
+        } else {
+            val metrics = android.util.DisplayMetrics()
+            @Suppress("DEPRECATION")
+            windowManager.defaultDisplay.getRealMetrics(metrics)
+            Triple(metrics.widthPixels, metrics.heightPixels, metrics.densityDpi)
+        }
+        mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        val core = MediaProjectionCore(this, mediaProjectionManager!!) { recoverProjection() }
+        mediaProjectionCore = core
+        try {
+            core.startProjection(resultCode, data, width, height, density)
+            collectFrames(core)
+        } catch (e: Exception) {
+            Log.e(TAG, "Could not start screen capture", e)
+            core.stopProjection()
+            recoverProjection(requestImmediately = false)
+        }
+    }
+
+    private fun collectFrames(core: MediaProjectionCore) {
+        frameJob = scope.launch {
             var frameCount = 0L
             var lastFpsTime = android.os.SystemClock.elapsedRealtime()
             var framesInWindow = 0
             var currentFps = 0f
 
-            mediaProjectionCore?.screenCaptureFlow?.collect { bitmap ->
-                frameCount++
-                framesInWindow++
+            core.screenCaptureFlow.collect { bitmap ->
+                try {
+                    currentCoroutineContext().ensureActive()
+                    frameCount++
+                    framesInWindow++
 
-                // Calculate FPS every second
-                val now = android.os.SystemClock.elapsedRealtime()
-                if (now - lastFpsTime >= 1000) {
-                    currentFps = framesInWindow * 1000f / (now - lastFpsTime)
-                    framesInWindow = 0
-                    lastFpsTime = now
-                }
-
-                // Store a copy of the latest bitmap for snap capture (always)
-                latestBitmap = bitmap.copy(bitmap.config ?: Bitmap.Config.ARGB_8888, false)
-
-                // Frame skipping: run detection every 2nd frame in normal mode, every frame in debug mode
-                val shouldDetect = if (isDebugMode) true else (frameCount % 2 == 1L)
-                if (shouldDetect) {
-                    val detections = perceptionLayer?.detectWithAccessibilityAugmentation(bitmap) ?: emptyList()
-                    val tracked = temporalTracker?.update(detections) ?: emptyList()
-                    latestElements = tracked
-
-                    withContext(Dispatchers.Main) {
-                        overlay?.updateElements(tracked)
+                    // Calculate FPS every second
+                    val now = android.os.SystemClock.elapsedRealtime()
+                    if (now - lastFpsTime >= 1000) {
+                        currentFps = framesInWindow * 1000f / (now - lastFpsTime)
+                        framesInWindow = 0
+                        lastFpsTime = now
                     }
-                }
 
-                // Update debug metrics overlay
-                if (isDebugMode) {
-                    val debugMetrics = com.autonion.automationcompanion.features.screen_understanding_ml.ui.DebugMetrics(
-                        fps = currentFps,
-                        inferenceMs = perceptionLayer?.getLastInferenceTimeMs() ?: 0f,
-                        avgInferenceMs = perceptionLayer?.getAverageInferenceTimeMs() ?: 0f,
-                        elementCount = latestElements.size,
-                        a11yElementCount = latestElements.count { it.source == "accessibility" },
-                        temperature = readDeviceTemperature(),
-                        delegate = perceptionLayer?.getDelegate() ?: "Unknown",
-                        modelName = perceptionLayer?.getModelName() ?: "Unknown",
-                        frameCount = frameCount,
-                        inferenceCount = perceptionLayer?.getInferenceCount() ?: 0
-                    )
-                    withContext(Dispatchers.Main) {
-                        overlay?.updateMetrics(debugMetrics)
+                    // Playback/OCR cache only. Editor snapshots acquire independently below.
+                    latestBitmap = bitmap.copy(bitmap.config ?: Bitmap.Config.ARGB_8888, false)
+
+                    // Frame skipping: run detection every 2nd frame in normal mode, every frame in debug mode
+                    val shouldDetect = if (isDebugMode) true else (frameCount % 2 == 1L)
+                    if (shouldDetect) {
+                        val detections = perceptionLayer?.detectWithAccessibilityAugmentation(bitmap) ?: emptyList()
+                        currentCoroutineContext().ensureActive()
+                        val tracked = temporalTracker?.update(detections) ?: emptyList()
+                        latestElements = tracked
+
+                        withContext(Dispatchers.Main) {
+                            overlay?.updateElements(tracked)
+                        }
                     }
-                }
 
-                // Log stats every 20 frames
-                if (frameCount % 20 == 0L) {
-                    val avgMs = perceptionLayer?.getAverageInferenceTimeMs() ?: 0f
-                    DebugLogger.info(
-                        this@ScreenUnderstandingService, LogCategory.UI_RECOGNITION_AI,
-                        "Detection stats",
-                        "Frame #$frameCount: ${latestElements.size} elements, avg: ${"%.1f".format(avgMs)}ms/frame (skip every 2nd)",
-                        TAG
-                    )
+                    // Update debug metrics overlay
+                    if (isDebugMode) {
+                        val debugMetrics = com.autonion.automationcompanion.features.screen_understanding_ml.ui.DebugMetrics(
+                            fps = currentFps,
+                            inferenceMs = perceptionLayer?.getLastInferenceTimeMs() ?: 0f,
+                            avgInferenceMs = perceptionLayer?.getAverageInferenceTimeMs() ?: 0f,
+                            elementCount = latestElements.size,
+                            a11yElementCount = latestElements.count { it.source == "accessibility" },
+                            temperature = readDeviceTemperature(),
+                            delegate = perceptionLayer?.getDelegate() ?: "Unknown",
+                            modelName = perceptionLayer?.getModelName() ?: "Unknown",
+                            frameCount = frameCount,
+                            inferenceCount = perceptionLayer?.getInferenceCount() ?: 0
+                        )
+                        withContext(Dispatchers.Main) {
+                            overlay?.updateMetrics(debugMetrics)
+                        }
+                    }
+
+                    // Log stats every 20 frames
+                    if (frameCount % 20 == 0L) {
+                        val avgMs = perceptionLayer?.getAverageInferenceTimeMs() ?: 0f
+                        DebugLogger.info(
+                            this@ScreenUnderstandingService, LogCategory.UI_RECOGNITION_AI,
+                            "Detection stats",
+                            "Frame #$frameCount: ${latestElements.size} elements, avg: ${"%.1f".format(avgMs)}ms/frame (skip every 2nd)",
+                            TAG
+                        )
+                    }
+                } finally {
+                    bitmap.recycle()
                 }
+            }
+        }
+    }
+
+    private fun resetCaptureWork() {
+        restoreJob?.cancel()
+        recoveryId = null
+        resumeAfterRecovery = null
+        activePlaybackPreset = null
+        playbackGeneration++
+        isPlaying = false
+        playbackJob?.cancel()
+        snapshotJob?.cancel()
+        frameJob?.cancel()
+        latestElements = emptyList()
+        latestBitmap = null
+        overlayVisible = true
+    }
+
+    private fun recoverProjection(requestImmediately: Boolean = true) {
+        if (recoveryId != null || instance !== this) return
+        recoveryId = UUID.randomUUID().toString()
+        resumeAfterRecovery = if (isPlaying) activePlaybackPreset else null
+        playbackGeneration++
+        isPlaying = false
+        playbackJob?.cancel()
+        val wasCapturing = snapshotJob?.isActive == true
+        snapshotJob?.cancel()
+        frameJob?.cancel()
+        mediaProjectionCore?.stopProjection()
+        mediaProjectionCore = null
+        latestBitmap = null
+        latestElements = emptyList()
+        overlay?.setPlaybackState(false)
+        overlay?.updateElements(emptyList())
+        if (wasCapturing) setOverlayVisibility(true)
+
+        // Keep the user's unsaved editing session, but no capture or actions run without consent.
+        startForegroundNotification(useMediaProjectionType = false)
+        Log.w(TAG, "Projection lost; UI Recognition AI paused, requesting fresh consent")
+        DebugLogger.warning(this, LogCategory.UI_RECOGNITION_AI, "Screen capture paused",
+            "Waiting for fresh system consent; selected elements are retained", TAG)
+        if (requestImmediately) requestProjectionRecovery()
+    }
+
+    private fun requestProjectionRecovery() {
+        val id = recoveryId ?: return
+        if (Settings.canDrawOverlays(this)) {
+            runCatching { startActivity(FlowMediaProjectionActivity.screenMlRecoveryIntent(this, id)) }
+                .onFailure { Log.w(TAG, "Could not open consent; use the Allow capture notification", it) }
+        }
+    }
+
+    private fun restoreProjection(resultCode: Int, data: Intent) {
+        val id = recoveryId ?: return
+        val previousFrames = frameJob
+        val previousPlayback = playbackJob
+        val preset = resumeAfterRecovery
+        restoreJob = scope.launch(Dispatchers.Main) {
+            previousFrames?.join()
+            previousPlayback?.join()
+            if (!isAwaitingProjection(id)) return@launch
+            recoveryId = null
+            resumeAfterRecovery = null
+            latestBitmap = null
+            latestElements = emptyList()
+            temporalTracker = TemporalTracker()
+            startForegroundNotification(useMediaProjectionType = true)
+            startProjectionCapture(resultCode, data)
+            if (recoveryId == null) {
+                overlay?.setVisibility(overlayVisible)
+                Log.i(TAG, "UI Recognition AI projection restored; editing session retained")
+                if (preset != null) playPreset(preset)
             }
         }
     }
@@ -642,48 +794,60 @@ class ScreenUnderstandingService : Service() {
     }
 
     private fun captureSnapshot() {
-        Log.d(TAG, "Snap clicked, latestBitmap=${latestBitmap != null}")
-        DebugLogger.info(
-            this, LogCategory.UI_RECOGNITION_AI,
-            "Snap captured",
-            "Screenshot taken for element selection",
-            TAG
-        )
-        scope.launch {
+        if (recoveryId != null) {
+            requestProjectionRecovery()
+            return
+        }
+        if (snapshotJob?.isActive == true) return
+        val core = mediaProjectionCore ?: return
+        val inference = frameJob
+        // Cancel the collector, not an in-flight inference call. Snapshot acquisition never waits for it.
+        inference?.cancel()
+        snapshotJob = scope.launch(Dispatchers.Main) {
+            var openedEditor = false
+            var bitmap: Bitmap? = null
             try {
-                // Hide overlay immediately so it doesn't appear in the captured screenshot
-                withContext(Dispatchers.Main) {
-                    setOverlayVisibility(false)
-                }
-
-                // Wait 120ms for WindowManager to remove overlay and VirtualDisplay to receive a clean frame
+                val requestedAt = SystemClock.uptimeMillis()
+                setOverlayVisibility(false)
+                // Allow overlay removal to reach the compositor before refreshing the capture surface.
                 delay(120)
-
-                val bitmap = latestBitmap
-                if (bitmap != null) {
-                    saveBitmapAndOpenEditor(bitmap)
-                } else {
-                    withContext(Dispatchers.Main) {
-                        setOverlayVisibility(true)
-                        Toast.makeText(this@ScreenUnderstandingService, "No frame captured yet, wait a moment...", Toast.LENGTH_SHORT).show()
-                    }
+                withContext(Dispatchers.Default) {
+                    bitmap = core.captureFreshBitmap()
                 }
+                val snapshot = bitmap
+                if (snapshot == null) {
+                    Toast.makeText(this@ScreenUnderstandingService, "No fresh screen frame available. Try Capture again.", Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+                Log.i(TAG, "Fresh snapshot acquired in ${SystemClock.uptimeMillis() - requestedAt}ms (independent of inference)")
+                openedEditor = saveBitmapAndOpenEditor(snapshot)
+                if (!openedEditor) {
+                    Toast.makeText(this@ScreenUnderstandingService, "Could not open the capture editor. Try again.", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.e(TAG, "Failed during captureSnapshot", e)
-                withContext(Dispatchers.Main) {
-                    setOverlayVisibility(true)
+                Toast.makeText(this@ScreenUnderstandingService, "Could not capture the screen. Try again.", Toast.LENGTH_SHORT).show()
+            } finally {
+                bitmap?.recycle()
+                withContext(NonCancellable + Dispatchers.Main) {
+                    if (mediaProjectionCore === core && instance === this@ScreenUnderstandingService) {
+                        if (!openedEditor) setOverlayVisibility(true)
+                        scope.launch(Dispatchers.Main) {
+                            inference?.join()
+                            if (mediaProjectionCore === core && frameJob === inference && snapshotJob?.isActive != true) collectFrames(core)
+                        }
+                    }
                 }
             }
         }
     }
 
-    private suspend fun saveBitmapAndOpenEditor(bitmap: Bitmap) {
+    private suspend fun saveBitmapAndOpenEditor(bitmap: Bitmap): Boolean {
         try {
             val filename = "capture_${UUID.randomUUID()}.png"
             val file = File(cacheDir, filename)
-            FileOutputStream(file).use { stream ->
-                bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)
-            }
 
             // Pre-capture accessibility data WHILE the target app is still in the foreground.
             // Once the Editor opens, rootInActiveWindow will point to the Editor, not the target.
@@ -710,6 +874,12 @@ class ScreenUnderstandingService : Service() {
             } else null
             Log.d(TAG, "Pre-captured ${accInteractiveElements.size} interactive accessibility elements for editor")
 
+            withContext(Dispatchers.IO) {
+                FileOutputStream(file).use { stream ->
+                    check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)) { "Could not encode snapshot" }
+                }
+            }
+
             withContext(Dispatchers.Main) {
                 // Don't stopSelf — service stays alive for multi-snap
                 val intent = Intent(this@ScreenUnderstandingService, CaptureEditorActivity::class.java).apply {
@@ -726,8 +896,12 @@ class ScreenUnderstandingService : Service() {
                 }
                 startActivity(intent)
             }
+            return true
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Failed to save snapshot", e)
+            return false
         }
     }
 
@@ -790,17 +964,27 @@ class ScreenUnderstandingService : Service() {
 
     private fun stopPlayback() {
         if (isPlaying) {
+            playbackGeneration++
             isPlaying = false
+            playbackJob?.cancel()
             Toast.makeText(this, "Playback Paused", Toast.LENGTH_SHORT).show()
             overlay?.setPlaybackState(false)
         }
     }
 
     fun playPreset(preset: AutomationPreset) {
+    if (recoveryId != null) {
+        requestProjectionRecovery()
+        return
+    }
+    if (!isA11yOnlyMode && mediaProjectionCore == null) return
     if (isPlaying) {
         Toast.makeText(this, "Already playing!", Toast.LENGTH_SHORT).show()
         return
     }
+    val generation = ++playbackGeneration
+    playbackJob?.cancel()
+    activePlaybackPreset = preset
     isPlaying = true
     overlay?.setPlaybackState(true)
     Toast.makeText(this, "Playing: ${preset.name}", Toast.LENGTH_SHORT).show()
@@ -811,12 +995,13 @@ class ScreenUnderstandingService : Service() {
         "ScreenUnderstandingService"
     )
 
-    scope.launch {
+    playbackJob = scope.launch {
             try {
                 // Loop continuously until user clicks Stop
                 while (isPlaying) {
                     for (step in preset.steps) {
-                        if (!isPlaying) break
+                        currentCoroutineContext().ensureActive()
+                        if (!isPlaying || generation != playbackGeneration) break
 
                         Log.d(TAG, "Looking for step ${step.orderIndex}: ${step.label}")
 
@@ -834,7 +1019,8 @@ class ScreenUnderstandingService : Service() {
                             waitForElement(step)
                         }
 
-                        if (!isPlaying) break
+                        currentCoroutineContext().ensureActive()
+                        if (!isPlaying || generation != playbackGeneration) break
 
                         if (foundElement != null) {
                             val centerX = (foundElement.bounds.left + foundElement.bounds.right) / 2
@@ -888,6 +1074,8 @@ class ScreenUnderstandingService : Service() {
                         delay(2000)
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
             Log.e(TAG, "Playback error", e)
             DebugLogger.error(
@@ -897,10 +1085,12 @@ class ScreenUnderstandingService : Service() {
                 "ScreenUnderstandingService"
             )
         } finally {
-                isPlaying = false
-                withContext(Dispatchers.Main) {
-                    overlay?.setPlaybackState(false)
-                    Toast.makeText(this@ScreenUnderstandingService, "Playback stopped", Toast.LENGTH_SHORT).show()
+                withContext(NonCancellable + Dispatchers.Main) {
+                    if (generation == playbackGeneration && instance === this@ScreenUnderstandingService) {
+                        isPlaying = false
+                        overlay?.setPlaybackState(false)
+                        Toast.makeText(this@ScreenUnderstandingService, "Playback stopped", Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
         }

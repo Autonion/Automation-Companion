@@ -159,7 +159,9 @@
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="mediaProjection|specialUse">
-            <property android:name="android.app.property.FOREGROUND_SERVICE_TYPE" android:value="specialUse" />
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-started UI recognition editing and accessibility controls, including retaining selected elements while screen capture is paused for renewed user consent." />
         </service>
 
         <!-- Flow Automation Engine -->

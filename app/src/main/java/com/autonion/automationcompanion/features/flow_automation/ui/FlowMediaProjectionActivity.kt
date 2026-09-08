@@ -24,6 +24,7 @@ import com.autonion.automationcompanion.features.flow_automation.engine.FlowOver
 import com.autonion.automationcompanion.features.system_context_automation.shared.ui.PermissionDisclosureDialog
 import com.autonion.automationcompanion.features.visual_trigger.service.CaptureOverlayService
 import com.autonion.automationcompanion.features.visual_trigger.service.VisionExecutionService
+import com.autonion.automationcompanion.features.screen_understanding_ml.core.ScreenUnderstandingService
 import com.autonion.automationcompanion.core.vision.createAutomationCaptureIntent
 import com.autonion.automationcompanion.ui.theme.AppTheme
 
@@ -39,12 +40,22 @@ class FlowMediaProjectionActivity : ComponentActivity() {
         const val ACTION_START_SCREEN_ML = "ACTION_START_SCREEN_ML"
         const val ACTION_RUN_FLOW = "ACTION_RUN_FLOW"
         const val ACTION_RECOVER_VISUAL_TRIGGER = "ACTION_RECOVER_VISUAL_TRIGGER"
+        const val ACTION_RECOVER_SCREEN_ML = "ACTION_RECOVER_SCREEN_ML"
         
         const val EXTRA_FLOW_ID = "EXTRA_FLOW_ID"
         const val EXTRA_NODE_ID = "EXTRA_NODE_ID"
         const val EXTRA_PRESET_ID = "EXTRA_PRESET_ID"
         const val EXTRA_RECOVERY_REQUEST = "EXTRA_RECOVERY_REQUEST"
         const val EXTRA_RESUME_AFTER_RECOVERY = "EXTRA_RESUME_AFTER_RECOVERY"
+        const val EXTRA_CAPTURE_RECOVERY_ID = "EXTRA_CAPTURE_RECOVERY_ID"
+
+        fun screenMlRecoveryIntent(context: Context, recoveryId: String): Intent =
+            Intent(context, FlowMediaProjectionActivity::class.java).apply {
+                action = ACTION_RECOVER_SCREEN_ML
+                putExtra(EXTRA_RECOVERY_REQUEST, true)
+                putExtra(EXTRA_CAPTURE_RECOVERY_ID, recoveryId)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            }
 
         fun flowRecoveryIntent(context: Context, flowId: String): Intent =
             Intent(context, FlowMediaProjectionActivity::class.java).apply {
@@ -133,6 +144,18 @@ class FlowMediaProjectionActivity : ComponentActivity() {
                     }
                     ContextCompat.startForegroundService(this, serviceIntent)
                 }
+                ACTION_RECOVER_SCREEN_ML -> {
+                    val recoveryId = intent.getStringExtra(EXTRA_CAPTURE_RECOVERY_ID)
+                    if (ScreenUnderstandingService.instance?.isAwaitingProjection(recoveryId) == true) {
+                        val serviceIntent = Intent(this, ScreenUnderstandingService::class.java).apply {
+                            action = ScreenUnderstandingService.ACTION_RESTORE_PROJECTION
+                            putExtra(EXTRA_CAPTURE_RECOVERY_ID, recoveryId)
+                            putExtra("resultCode", result.resultCode)
+                            putExtra("data", result.data)
+                        }
+                        ContextCompat.startForegroundService(this, serviceIntent)
+                    }
+                }
             }
         } else {
             Toast.makeText(
@@ -147,6 +170,7 @@ class FlowMediaProjectionActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        projectionRequestStarted = savedInstanceState?.getBoolean("projectionRequestStarted") ?: false
         requiresFullScreenCapture = shouldRequireFullScreenCapture()
         showMediaProjectionDisclosure = !isRecoveryRequest
 
@@ -184,6 +208,11 @@ class FlowMediaProjectionActivity : ComponentActivity() {
         if (isRecoveryRequest) requestProjectionIfAvailable()
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean("projectionRequestStarted", projectionRequestStarted)
+        super.onSaveInstanceState(outState)
+    }
+
     override fun onDestroy() {
         if (isRecoveryRequest) runCatching { unregisterReceiver(userPresentReceiver) }
         super.onDestroy()
@@ -191,6 +220,14 @@ class FlowMediaProjectionActivity : ComponentActivity() {
 
     private fun requestProjectionIfAvailable() {
         if (projectionRequestStarted || isFinishing) return
+        if (intent.action == ACTION_RECOVER_SCREEN_ML &&
+            ScreenUnderstandingService.instance?.isAwaitingProjection(
+                intent.getStringExtra(EXTRA_CAPTURE_RECOVERY_ID)
+            ) != true
+        ) {
+            finish()
+            return
+        }
         val keyguard = getSystemService(KeyguardManager::class.java)
         if (keyguard.isKeyguardLocked) return
         projectionRequestStarted = true
