@@ -10,7 +10,7 @@ data class Slot(
 
     // Multi-trigger support
     val triggerType: String = "LOCATION",  // LOCATION, BATTERY, TIME_OF_DAY, WIFI
-    val triggerConfigJson: String? = null,  // JSON of TriggerConfig; null for location (uses lat/lng)
+    val triggerConfigJson: String? = null,  // TriggerConfig JSON; location stores its local clock times here
 
     // Legacy location fields (kept for backward compat)
     val lat: Double? = null,
@@ -30,7 +30,7 @@ data class Slot(
     // Runtime state (authoritative)
     val isInsideGeofence: Boolean = false,
 
-    // Execution lock (ONE per day)
+    // Location execution lock: the occurrence's start date (including overnight windows).
     val lastExecutedDay: String? = null, // "2026-01-12"
 
     // Edge-trigger state (for continuous triggers like BATTERY: true when condition was met on last eval)

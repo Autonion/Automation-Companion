@@ -39,10 +39,16 @@ object PermissionUtils {
     }
 
     fun isLocationPermissionGranted(context: Context): Boolean {
-        return androidx.core.content.ContextCompat.checkSelfPermission(
+        val fineGranted = androidx.core.content.ContextCompat.checkSelfPermission(
             context,
             android.Manifest.permission.ACCESS_FINE_LOCATION
         ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        val backgroundGranted = android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q ||
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.ACCESS_BACKGROUND_LOCATION
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        return fineGranted && backgroundGranted
     }
 
     fun requestAccessibilityPermission(context: Context) {

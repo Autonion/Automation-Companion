@@ -37,9 +37,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.autonion.automationcompanion.features.system_context_automation.location.data.db.AppDatabase
 import com.autonion.automationcompanion.features.system_context_automation.location.data.models.Slot
+import com.autonion.automationcompanion.features.system_context_automation.location.helpers.LocationAutomationController
 import com.autonion.automationcompanion.features.system_context_automation.shared.ui.PermissionWarningCard
 import com.autonion.automationcompanion.features.system_context_automation.shared.utils.PermissionUtils
 import com.autonion.automationcompanion.ui.components.AuroraBackground
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Calendar
@@ -49,6 +51,7 @@ import java.util.Calendar
 fun LocationSlotsScreen(
     onAddClicked: () -> Unit,
     onEditSlot: (Long) -> Unit,
+    onRequestLocationPermission: (() -> Unit) -> Unit,
     onBack: () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -56,34 +59,48 @@ fun LocationSlotsScreen(
     val scope = rememberCoroutineScope()
 
     val snackbarHostState = remember { SnackbarHostState() }
-    var recentlyDeleted by remember { mutableStateOf<Slot?>(null) }
 
     val slots by dao.getSlotsByType("LOCATION").collectAsState(initial = emptyList())
-    val now = System.currentTimeMillis()
+    val grouped = slots.sortedByDescending { it.enabled }.groupBy { if (it.enabled) "Enabled" else "Paused" }
 
-    val grouped = slots.groupBy {
-        val start = it.startMillis ?: 0L
-        when {
-            start < now -> "Past"
-            start < now + 24 * 60 * 60 * 1000 -> "Today"
-            else -> "Upcoming"
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    var isLocationPermissionGranted by remember { mutableStateOf(PermissionUtils.isLocationPermissionGranted(context)) }
+    var showLocationDisclosure by remember { mutableStateOf(false) }
+    var pendingPermissionAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+
+    fun setSlotEnabled(slotId: Long, enabled: Boolean) {
+        scope.launch {
+            try {
+                LocationAutomationController.setEnabled(context, slotId, enabled)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                snackbarHostState.showSnackbar("Could not update automation: ${e.message ?: "please retry"}")
+            }
         }
     }
 
-    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
-    var isLocationPermissionGranted by remember { mutableStateOf(true) }
-    var showLocationDisclosure by remember { mutableStateOf(false) }
-
-    val permissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
-    ) { isGranted ->
-        isLocationPermissionGranted = isGranted
+    fun refreshLocationPermission() {
+        val granted = PermissionUtils.isLocationPermissionGranted(context)
+        val changed = granted != isLocationPermissionGranted
+        isLocationPermissionGranted = granted
+        if (changed) {
+            scope.launch {
+                try {
+                    LocationAutomationController.reconcile(context, resetPresence = true)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    snackbarHostState.showSnackbar("Could not refresh location monitoring: ${e.message ?: "please retry"}")
+                }
+            }
+        }
     }
 
     DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
-                isLocationPermissionGranted = PermissionUtils.isLocationPermissionGranted(context)
+                refreshLocationPermission()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -161,7 +178,7 @@ fun LocationSlotsScreen(
                     Box(modifier = Modifier.padding(16.dp)) {
                         PermissionWarningCard(
                             title = "Location Permission Required",
-                            description = "Location automation requires location access to trigger actions.",
+                            description = "Allow precise location all the time so geofence triggers can run while the app is closed.",
                             buttonText = "Allow",
                             onClick = {
                                 showLocationDisclosure = true
@@ -204,50 +221,31 @@ fun LocationSlotsScreen(
                                             slot = slot,
                                             onToggleEnabled = { enabled ->
                                                 if (enabled && !PermissionUtils.isLocationPermissionGranted(context)) {
-                                                    android.widget.Toast.makeText(
-                                                        context,
-                                                        "Location permission required to enable automation",
-                                                        android.widget.Toast.LENGTH_LONG
-                                                    ).show()
+                                                    pendingPermissionAction = { setSlotEnabled(slot.id, true) }
                                                     showLocationDisclosure = true
                                                 } else {
-                                                    scope.launch {
-                                                        dao.setEnabled(slot.id, enabled)
-                                                    }
+                                                    setSlotEnabled(slot.id, enabled)
                                                 }
                                             },
                                             onEdit = { onEditSlot(slot.id) },
                                             onDelete = {
-                                                recentlyDeleted = slot
                                                 scope.launch {
-                                                    dao.delete(slot)
-                                                    
-                                                    // Log deletion
-                                                    com.autonion.automationcompanion.features.automation_debugger.DebugLogger.info(
-                                                        context, com.autonion.automationcompanion.features.automation_debugger.data.LogCategory.SYSTEM_CONTEXT,
-                                                        "Location automation deleted",
-                                                        "Deleted slot ${slot.id}",
-                                                        "LocationSlotsScreen"
-                                                    )
-
-                                                    snackbarHostState.currentSnackbarData?.dismiss()
-                                                    val result = snackbarHostState.showSnackbar(
-                                                        message = "Slot deleted",
-                                                        actionLabel = "Undo",
-                                                        duration = SnackbarDuration.Short
-                                                    )
-                                                    if (result == SnackbarResult.ActionPerformed) {
-                                                        recentlyDeleted?.let {
-                                                            val newId = dao.insert(it.copy(id = 0))
-                                                            
-                                                            // Log undo
-                                                            com.autonion.automationcompanion.features.automation_debugger.DebugLogger.success(
-                                                                context, com.autonion.automationcompanion.features.automation_debugger.data.LogCategory.SYSTEM_CONTEXT,
-                                                                "Location automation restored",
-                                                                "Restored slot ${slot.id} as $newId",
-                                                                "LocationSlotsScreen"
-                                                            )
+                                                    try {
+                                                        val deletedSlot = LocationAutomationController.delete(context, slot.id)
+                                                            ?: return@launch
+                                                        snackbarHostState.currentSnackbarData?.dismiss()
+                                                        val result = snackbarHostState.showSnackbar(
+                                                            message = "Slot deleted",
+                                                            actionLabel = "Undo",
+                                                            duration = SnackbarDuration.Short
+                                                        )
+                                                        if (result == SnackbarResult.ActionPerformed) {
+                                                            LocationAutomationController.restore(context, deletedSlot)
                                                         }
+                                                    } catch (e: CancellationException) {
+                                                        throw e
+                                                    } catch (e: Exception) {
+                                                        snackbarHostState.showSnackbar("Could not complete change: ${e.message ?: "please retry"}")
                                                     }
                                                 }
                                             }
@@ -263,10 +261,18 @@ fun LocationSlotsScreen(
         
         com.autonion.automationcompanion.features.system_context_automation.shared.ui.PermissionDisclosureDialog(
             showDialog = showLocationDisclosure,
-            onDismiss = { showLocationDisclosure = false },
+            onDismiss = {
+                showLocationDisclosure = false
+                pendingPermissionAction = null
+            },
             onContinue = {
                 showLocationDisclosure = false
-                permissionLauncher.launch(android.Manifest.permission.ACCESS_FINE_LOCATION)
+                val action = pendingPermissionAction
+                pendingPermissionAction = null
+                onRequestLocationPermission {
+                    refreshLocationPermission()
+                    if (isLocationPermissionGranted) action?.invoke()
+                }
             },
             title = "Location Permission Required",
             description = "Autonion collects location data to enable geofence triggers even when the app is closed or not in use. We do not share your location data.",

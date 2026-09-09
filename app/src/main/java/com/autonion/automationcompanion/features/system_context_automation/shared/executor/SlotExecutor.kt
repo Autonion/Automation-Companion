@@ -6,6 +6,7 @@ import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
 import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
 import com.autonion.automationcompanion.features.system_context_automation.location.data.db.AppDatabase
 import com.autonion.automationcompanion.features.system_context_automation.location.helpers.SendHelper
+import com.autonion.automationcompanion.features.system_context_automation.location.helpers.LocationTriggerEvaluator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -39,6 +40,11 @@ object SlotExecutor {
     private suspend fun executeSlot(context: Context, slotId: Long) {
         val dao = AppDatabase.get(context).slotDao()
         val slot = dao.getById(slotId) ?: return
+
+        if (slot.triggerType == "LOCATION") {
+            LocationTriggerEvaluator.evaluate(context, slotId)
+            return
+        }
 
         if (!slot.enabled) {
             Log.i(TAG, "Slot $slotId disabled, skipping")

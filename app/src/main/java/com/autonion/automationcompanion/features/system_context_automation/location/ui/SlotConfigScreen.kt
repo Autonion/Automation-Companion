@@ -68,7 +68,8 @@ fun SlotConfigScreen(
     configuredActions: List<ConfiguredAction>,
     onActionsChanged: (List<ConfiguredAction>) -> Unit,
     volumeEnabled: Boolean,
-    context: android.content.Context
+    context: android.content.Context,
+    saveEnabled: Boolean = true
 ) {
     val ctx = LocalContext.current
     val scrollState = rememberScrollState()
@@ -378,7 +379,7 @@ fun SlotConfigScreen(
                 SectionEntry(index = 5) {
                     val hasAnyAction = ActionBuilder.hasAnyValidAction(configuredActions)
                     Button(
-                        enabled = hasAnyAction,
+                        enabled = hasAnyAction && saveEnabled,
                         onClick = {
                             val actions = ActionBuilder.buildActions(configuredActions)
                             onSaveClicked(
