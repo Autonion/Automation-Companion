@@ -3,7 +3,9 @@ package com.autonion.automationcompanion.features.system_context_automation.loca
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.util.Log
+import androidx.core.content.ContextCompat
 import com.autonion.automationcompanion.features.system_context_automation.location.data.db.AppDatabase
 import com.autonion.automationcompanion.features.system_context_automation.location.data.models.Slot
 import com.autonion.automationcompanion.features.system_context_automation.location.engine.location_receiver.GeofenceBroadcastReceiver
@@ -114,9 +116,17 @@ internal object LocationGeofenceRegistry {
 
         val client = LocationServices.getGeofencingClient(context)
         if (retired.isNotEmpty()) {
+            if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_FINE_LOCATION)
+                != PackageManager.PERMISSION_GRANTED) {
+                Log.w("LocationGeofences", "Missing ACCESS_FINE_LOCATION; skipping cleanup")
+                return current.keys
+            }
             try {
                 withTimeout(4_000) { client.removeGeofences(retired.toList()).await() }
                 prefs.edit().putStringSet(RETIRED, emptySet()).putBoolean(LEGACY_REMOVED, true).commit()
+            } catch (e: SecurityException) {
+                Log.w("LocationGeofences", "Permission revoked during cleanup", e)
+                return current.keys
             } catch (e: Exception) {
                 if (e is CancellationException && e !is TimeoutCancellationException) throw e
                 Log.w("LocationGeofences", "Cleanup pending; will retry", e)
@@ -144,6 +154,14 @@ internal object LocationGeofenceRegistry {
                 .putString("$SIGNATURE_PREFIX${slot.id}", signature(slot))
         }
         addEditor.commit()
+        if (ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_FINE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED) {
+            Log.w("LocationGeofences", "Missing ACCESS_FINE_LOCATION; skipping registration")
+            val failed = prefs.edit().remove(PENDING)
+            tokens.keys.forEach { failed.remove("$SLOT_PREFIX$it").remove("$SIGNATURE_PREFIX$it") }
+            failed.commit()
+            return current.keys
+        }
         var addition: com.google.android.gms.tasks.Task<Void>? = null
         try {
             addition = client.addGeofences(
@@ -154,6 +172,12 @@ internal object LocationGeofenceRegistry {
             withTimeout(4_000) { addition.await() }
             prefs.edit().remove(PENDING).commit()
             return current.keys + tokens.keys
+        } catch (e: SecurityException) {
+            val failed = prefs.edit().remove(PENDING)
+            tokens.keys.forEach { failed.remove("$SLOT_PREFIX$it").remove("$SIGNATURE_PREFIX$it") }
+            failed.commit()
+            Log.w("LocationGeofences", "Permission revoked during registration", e)
+            return current.keys
         } catch (e: Exception) {
             val failed = prefs.edit().remove(PENDING)
             tokens.keys.forEach { failed.remove("$SLOT_PREFIX$it").remove("$SIGNATURE_PREFIX$it") }
