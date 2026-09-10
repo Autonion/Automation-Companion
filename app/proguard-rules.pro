@@ -1,21 +1,48 @@
-# Add project specific ProGuard rules here.
-# You can control the set of applied configuration files using the
-# proguardFiles setting in build.gradle.
-#
-# For more details, see
-#   http://developer.android.com/guide/developing/tools/proguard.html
+# App-owned dynamic entry points and verified gaps in dependency consumer rules.
+# Retrofit, Gson, kotlinx.serialization, Room, WorkManager and OkHttp contribute
+# consumer rules. Do not blanket-keep the app or suppress all missing classes.
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# vision_engine.cpp uses exported JNI names and constructs this result by its
+# exact class name and constructor descriptor (IZFIIIIIFFI)V. It does not access
+# the Kotlin result fields by name; those can still be optimized and renamed.
+-keepclasseswithmembernames,includedescriptorclasses class com.autonion.automationcompanion.core.vision.VisionNativeBridge {
+    native <methods>;
+}
+-keep class com.autonion.automationcompanion.core.vision.MatchResultNative {
+    public <init>(int, boolean, float, int, int, int, int, int, float, float, int);
+}
 
-# Uncomment this to preserve the line number information for
-# debugging stack traces.
-#-keepattributes SourceFile,LineNumberTable
+# ONNX Runtime 1.22.0 has native-to-Java lookups and no bundled consumer rules.
+# Required by https://onnxruntime.ai/docs/build/android.html
+-keep class ai.onnxruntime.** { *; }
 
-# If you keep the line number information, uncomment this to
-# hide the original source file name.
-#-renamesourcefileattribute SourceFile
+# MediaPipe 0.10.35 calls this Java callback from native code by method name.
+# Native methods themselves are covered by the Android default JNI rules.
+-keep interface com.google.mediapipe.tasks.genai.llminference.LlmTaskRunnerDelegate {
+    void onAsyncResponse(byte[]);
+}
+-keepclassmembers class * implements com.google.mediapipe.tasks.genai.llminference.LlmTaskRunnerDelegate {
+    public void onAsyncResponse(byte[]);
+}
+
+# protobuf-javalite 4.26.1 does not bundle consumer rules. Its MessageSchema
+# resolves GeneratedMessageLite fields using names in generated schema strings
+# (including MediaPipe LLM options). Retain those fields and their exact names.
+-keepclassmembers class * extends com.google.protobuf.GeneratedMessageLite {
+    <fields>;
+}
+
+# Omni chatbot uses Jackson through LangChain4j 0.36.2 and openai4j 0.23.0.
+# These versions have no consumer rules. JSON DTO property names, constructors
+# and builder methods are discovered reflectively. Limit keeps to the Ollama
+# integration and the OpenAI chat/shared DTOs used by this app.
+-keepattributes RuntimeVisibleAnnotations,RuntimeVisibleParameterAnnotations,AnnotationDefault
+-keepattributes Signature,InnerClasses,EnclosingMethod
+-keep class dev.langchain4j.model.ollama.** { *; }
+-keep class dev.ai4j.openai4j.chat.** { *; }
+-keep class dev.ai4j.openai4j.shared.** { *; }
+-keepclassmembers class com.fasterxml.jackson.databind.PropertyNamingStrategies$SnakeCaseStrategy {
+    public <init>();
+}
+-keep,allowobfuscation class com.fasterxml.jackson.core.type.TypeReference
+-keep,allowobfuscation class * extends com.fasterxml.jackson.core.type.TypeReference

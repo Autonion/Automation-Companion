@@ -303,13 +303,21 @@ fun SemanticAutomationScreen(
             val cloudApiEngine = remember { com.autonion.automationcompanion.features.semantic_automation.ml.CloudApiLLMEngine.getInstance(context) }
             val cloudConnectionStatus by cloudApiEngine.connectionStatus.collectAsState()
 
+            val slmStorage = remember { com.autonion.automationcompanion.features.semantic_automation.ml.ModelStorageManager(context) }
+            val selectedSlmPath by slmStorage.activeModelPathFlow.collectAsState(initial = slmStorage.getActiveModelPath())
+            val slmState by com.autonion.automationcompanion.features.semantic_automation.ml.PredictorCache.slmState.collectAsState()
+            LaunchedEffect(localInferenceMode, selectedSlmPath) {
+                if (localInferenceMode == com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.LOCAL_SLM && selectedSlmPath != null) {
+                    com.autonion.automationcompanion.features.semantic_automation.ml.PredictorCache.getSLMEngine(context, slmStorage)
+                }
+            }
             val isAIReady = when (localInferenceMode) {
                 com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.SERVER_LLM ->
                     llmConnectionStatus == com.autonion.automationcompanion.features.semantic_automation.ml.ServerConnectionStatus.CONNECTED
                 com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.CLOUD_API ->
                     cloudConnectionStatus == com.autonion.automationcompanion.features.semantic_automation.ml.CloudApiConnectionStatus.CONNECTED
                 com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.LOCAL_SLM ->
-                    true // SLM runs locally, always ready
+                    slmState.isReadyFor(selectedSlmPath)
             }
 
             Box(
@@ -537,8 +545,7 @@ fun SemanticAutomationScreen(
                             "Configure your Cloud API key and select a model to use Semantic Automation."
                         com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.SERVER_LLM ->
                             "Connect to a Server LLM to use Semantic Automation."
-                        else ->
-                            "Configure a Local SLM or connect to a Server LLM to use Semantic Automation."
+                        else -> slmState.label
                     }
                     val overlaySteps = when (localInferenceMode) {
                         com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.CLOUD_API -> listOf(

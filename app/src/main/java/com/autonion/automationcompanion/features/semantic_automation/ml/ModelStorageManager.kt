@@ -1,10 +1,14 @@
 package com.autonion.automationcompanion.features.semantic_automation.ml
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
@@ -24,6 +28,14 @@ enum class ModelFormat {
 class ModelStorageManager(private val context: Context) {
     private val TAG = "ModelStorageManager"
     private val prefs = context.getSharedPreferences("AutonionModelSettings", Context.MODE_PRIVATE)
+    val activeModelPathFlow = callbackFlow {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == "ACTIVE_MODEL_PATH") trySend(getActiveModelPath())
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        trySend(getActiveModelPath())
+        awaitClose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }.distinctUntilChanged()
     
     // Directory where imported models are securely fully contained
     private val modelsDir: File = File(context.filesDir, "models")
@@ -48,7 +60,7 @@ class ModelStorageManager(private val context: Context) {
      */
     suspend fun importModelFromUri(uri: Uri): Result<File> = withContext(Dispatchers.IO) {
         try {
-            val fileName = getFileName(uri) ?: "imported_model_${System.currentTimeMillis()}.gguf"
+            val fileName = File(getFileName(uri) ?: "imported_model_${System.currentTimeMillis()}.gguf").name
             val lowerName = fileName.lowercase()
             val isModelExt = lowerName.endsWith(".gguf") || lowerName.endsWith(".bin") || lowerName.endsWith(".task") || lowerName.endsWith(".tflite")
             if (!isModelExt) {
@@ -57,7 +69,11 @@ class ModelStorageManager(private val context: Context) {
                 )
             }
 
-            val destFile = File(modelsDir, fileName)
+            // Never truncate a file which may still be memory-mapped by the native runtime.
+            val requestedFile = File(modelsDir, fileName)
+            val destFile = if (requestedFile.exists()) {
+                File(modelsDir, "${requestedFile.nameWithoutExtension}_${System.currentTimeMillis()}.${requestedFile.extension}")
+            } else requestedFile
 
             Log.d(TAG, "Importing heavy model $fileName from URI: $uri")
 
@@ -145,10 +161,12 @@ class ModelStorageManager(private val context: Context) {
     }
     
     fun removeModel(file: File): Boolean {
-        if (getActiveModelPath() == file.absolutePath) {
+        val wasActive = getActiveModelPath() == file.absolutePath
+        if (!file.delete()) return false
+        if (wasActive) {
             setActiveModelPath(null)
         }
-        return file.delete()
+        return true
     }
 
     private fun getFileName(uri: Uri): String? {

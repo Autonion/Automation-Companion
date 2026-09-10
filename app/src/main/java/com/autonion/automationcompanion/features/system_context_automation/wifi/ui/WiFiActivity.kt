@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.sp
 import com.autonion.automationcompanion.automation.actions.builders.ActionBuilder
 import com.autonion.automationcompanion.automation.actions.models.ConfiguredAction
 import com.autonion.automationcompanion.automation.actions.ui.ActionPicker
+import com.autonion.automationcompanion.automation.actions.ui.displayLabel
 import com.autonion.automationcompanion.automation.actions.ui.AppPickerActivity
 import com.autonion.automationcompanion.features.system_context_automation.location.data.db.AppDatabase
 import com.autonion.automationcompanion.features.system_context_automation.location.data.models.Slot
@@ -464,7 +465,7 @@ private fun WiFiSlotCard(
                 }
                 Spacer(Modifier.width(10.dp))
                 Text(
-                    slot.actions.joinToString { it.javaClass.simpleName.replace("Action", "") },
+                    slot.actions.joinToString { it.displayLabel() },
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,

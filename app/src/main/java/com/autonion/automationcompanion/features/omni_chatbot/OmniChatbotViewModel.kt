@@ -1,5 +1,7 @@
 package com.autonion.automationcompanion.features.omni_chatbot
 
+import com.autonion.automationcompanion.features.semantic_automation.ml.PredictorCache
+import kotlinx.coroutines.flow.collectLatest
 import android.content.Context
 import android.content.Intent
 import android.util.Log
@@ -101,19 +103,24 @@ class OmniChatbotViewModel(
     val cloudBaseUrl: String get() = cloudApiEngine.baseUrl
     val cloudModelName: String get() = cloudApiEngine.modelName
 
+    val slmLoadState = PredictorCache.slmState
+    private val selectedSlmPath = modelStorageManager.activeModelPathFlow
+        .stateIn(viewModelScope, SharingStarted.Eagerly, modelStorageManager.getActiveModelPath())
+
     val isAIReady: StateFlow<Boolean> = combine(
         llmConnectionStatus,
         cloudConnectionStatus,
-        inferenceMode
-    ) { serverStatus, cloudStatus, mode ->
+        inferenceMode,
+        slmLoadState,
+        selectedSlmPath
+    ) { serverStatus, cloudStatus, mode, slmState, selectedPath ->
         when (mode) {
             com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.SERVER_LLM ->
                 serverStatus == ServerConnectionStatus.CONNECTED
             com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.CLOUD_API ->
                 cloudStatus == CloudApiConnectionStatus.CONNECTED
             com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.LOCAL_SLM -> {
-                val activeModelPath = modelStorageManager.getActiveModelPath()
-                !activeModelPath.isNullOrBlank() && java.io.File(activeModelPath).exists()
+                slmState.isReadyFor(selectedPath)
             }
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
@@ -207,6 +214,14 @@ class OmniChatbotViewModel(
     // ─── Init: Wire up Desktop response flow ────────────────
     init {
         viewModelScope.launch {
+            combine(inferenceMode, selectedSlmPath) { mode, path -> mode to path }
+                .collectLatest { (mode, path) ->
+                    if (mode == com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.LOCAL_SLM && path != null) {
+                        PredictorCache.getSLMEngine(context, modelStorageManager)
+                    }
+                }
+        }
+        viewModelScope.launch {
             faqRepository.loadFAQs(context)
             _faqList.value = faqRepository.getAllFAQs()
             
@@ -226,6 +241,7 @@ class OmniChatbotViewModel(
                     onDesktopResponse(response)
                 }
             } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 Log.e(TAG, "Error collecting desktop responses", e)
             }
         }
@@ -447,6 +463,7 @@ class OmniChatbotViewModel(
                     IntentType.Q_AND_A -> handleQAndA(finalResult)
                 }
             } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 Log.e(TAG, "Error processing prompt", e)
                 addMessage(OmniChatMessage(
                     text = "Sorry, something went wrong: ${e.message}",
@@ -892,6 +909,7 @@ class OmniChatbotViewModel(
             }
 
             var rawAnswer: String? = null
+            var generationError: String? = null
             try {
                 if (currentMode == com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.LOCAL_SLM) {
                     withContext(Dispatchers.IO) {
@@ -959,6 +977,8 @@ class OmniChatbotViewModel(
                     }
                 }
             } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                generationError = e.message
                 Log.e(TAG, "Q&A generation failed (${_inferenceMode.value})", e)
             }
 
@@ -987,7 +1007,7 @@ class OmniChatbotViewModel(
                 val fallback = cleanKnowledgeChunk(chunks.first().text.take(1000), maxLength = 600)
                 val fallbackNote = when (currentMode) {
                     com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.LOCAL_SLM ->
-                        "$fallback\n\n💡 On-device SLM didn't respond. Showing knowledge base excerpt."
+                        "$fallback\n\n💡 ${generationError ?: slmLoadState.value.error ?: "On-device SLM returned an empty answer."} Showing knowledge base excerpt."
                     else ->
                         "$fallback\n\n💡 LLM didn't respond. Showing knowledge base excerpt."
                 }
@@ -1215,6 +1235,7 @@ class OmniChatbotViewModel(
                 }
             }
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.e(TAG, "Key dispatch failed", e)
         }
     }
@@ -1238,6 +1259,7 @@ class OmniChatbotViewModel(
                 rootNode?.recycle()
             }
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.e(TAG, "Text input failed", e)
         }
     }
@@ -1253,6 +1275,7 @@ class OmniChatbotViewModel(
             }
             context.startActivity(intent)
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.e(TAG, "Failed to launch semantic automation", e)
             addMessage(OmniChatMessage(
                 text = "❌ Failed to start automation: ${e.message}",

@@ -42,6 +42,8 @@ import com.autonion.automationcompanion.features.semantic_automation.core.Semant
 import com.autonion.automationcompanion.features.semantic_automation.ml.LocalServerLLMEngine
 import com.autonion.automationcompanion.features.semantic_automation.ml.ModelFormat
 import com.autonion.automationcompanion.features.semantic_automation.ml.ModelStorageManager
+import com.autonion.automationcompanion.features.semantic_automation.ml.PredictorCache
+import com.autonion.automationcompanion.features.semantic_automation.ml.SlmLoadPhase
 import com.autonion.automationcompanion.features.semantic_automation.ml.ServerConnectionStatus
 import com.autonion.automationcompanion.features.semantic_automation.ml.CloudApiLLMEngine
 import com.autonion.automationcompanion.features.semantic_automation.ml.CloudApiConnectionStatus
@@ -132,6 +134,12 @@ fun ModelManagerScreen(
     var importedModels by remember { mutableStateOf(storageManager.getImportedModels()) }
     var activeModelPath by remember { mutableStateOf(storageManager.getActiveModelPath()) }
     var isImporting by remember { mutableStateOf(false) }
+    val slmLoadState by PredictorCache.slmState.collectAsState()
+    LaunchedEffect(inferenceMode, activeModelPath) {
+        if (inferenceMode == SemanticAutomationEngine.InferenceMode.LOCAL_SLM && activeModelPath != null) {
+            PredictorCache.getSLMEngine(context, storageManager)
+        }
+    }
 
     // Server LLM state
     val connectionStatus by localServerEngine.connectionStatus.collectAsState()
@@ -365,6 +373,17 @@ fun ModelManagerScreen(
 
             // ── On-Device SLM Section ──
             if (inferenceMode == SemanticAutomationEngine.InferenceMode.LOCAL_SLM) {
+                item {
+                    Text(slmLoadState.label, color = if (slmLoadState.phase == SlmLoadPhase.FAILED)
+                        MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+                    if (slmLoadState.phase == SlmLoadPhase.LOADING) {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    } else if (activeModelPath != null && !slmLoadState.isReadyFor(activeModelPath)) {
+                        OutlinedButton(onClick = {
+                            coroutineScope.launch { PredictorCache.getSLMEngine(context, storageManager) }
+                        }) { Text("Load model") }
+                    }
+                }
                 // ── Hardware Assessment ──
                 item {
                 HardwareCard(totalRamGb)
@@ -1350,7 +1369,7 @@ private val SUPPORTED_MODELS_LIST = listOf(
     SupportedModelEntry("RWKV v5/v6", "rwkv", supported = true),
     SupportedModelEntry("GPT-2 / GPT-NeoX", "gpt2 / gptneox", supported = true),
     SupportedModelEntry("Gemma 2", "gemma2", supported = true),
-    SupportedModelEntry("Gemma 4", "gemma3 (v4)", supported = false, note = "Coming Soon"),
+    SupportedModelEntry("Gemma 4", "gemma4", supported = true),
     SupportedModelEntry("Gemma 3n", "gemma3n", supported = false, note = "Coming Soon"),
     SupportedModelEntry("DeepSeek V3", "deepseek3", supported = false, note = "Coming Soon"),
     SupportedModelEntry("Qwen 3", "qwen3 / qwen3moe", supported = false, note = "Coming Soon")
@@ -1379,7 +1398,8 @@ private fun SupportedModelsDialog(onDismiss: () -> Unit) {
             Column(modifier = Modifier.fillMaxWidth()) {
                 Text(
                     "The on-device GGUF engine currently supports these model families. " +
-                    "Any GGUF file using a supported architecture should work.",
+                    "Loading also depends on the model variant, file integrity, and available RAM. " +
+                    "These app features use text inference.",
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 12.dp)

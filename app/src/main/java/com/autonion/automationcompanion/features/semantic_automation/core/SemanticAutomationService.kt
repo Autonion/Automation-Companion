@@ -54,6 +54,7 @@ class SemanticAutomationService : Service() {
     }
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    private var automationJob: kotlinx.coroutines.Job? = null
 
     private var engine: SemanticAutomationEngine? = null
     private var wakeLock: PowerManager.WakeLock? = null
@@ -99,6 +100,7 @@ class SemanticAutomationService : Service() {
             ACTION_START -> handleStart(intent)
             ACTION_STOP -> {
                 engine?.stop()
+                automationJob?.cancel()
                 stopSelf()
             }
             else -> {
@@ -111,6 +113,10 @@ class SemanticAutomationService : Service() {
     }
 
     private fun handleStart(intent: Intent) {
+        if (automationJob?.isActive == true) {
+            Log.w(TAG, "Ignoring a duplicate start while automation is running")
+            return
+        }
         val command = intent.getStringExtra(EXTRA_COMMAND) ?: ""
 
         if (command.isBlank()) {
@@ -167,7 +173,7 @@ class SemanticAutomationService : Service() {
 
         // Run the engine loop — no screenshot provider needed,
         // the engine uses the Accessibility tree via UIStateBuilder
-        scope.launch {
+        automationJob = scope.launch {
             engine?.runLoop(command) {
                 // No MediaProjection screenshots — return null.
                 // UIStateBuilder will use Accessibility tree (Strategy 2) as primary source.

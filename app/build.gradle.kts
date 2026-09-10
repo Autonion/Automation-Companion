@@ -39,7 +39,8 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -61,6 +62,17 @@ android {
 
     androidResources {
         noCompress += listOf("tflite", "onnx", "gguf")
+    }
+}
+
+// AGP's default 2.2.10 Compose mapping tool was never published. Match the
+// Compose compiler so optimized releases also retain Compose crash mappings.
+configurations.matching { it.name == "composeMappingProducerClasspath" }.configureEach {
+    resolutionStrategy.eachDependency {
+        if (requested.group == "org.jetbrains.kotlin" && requested.name == "compose-group-mapping") {
+            useVersion(libs.versions.kotlin.get())
+            because("The mapping producer must match the project's Compose compiler")
+        }
     }
 }
 
