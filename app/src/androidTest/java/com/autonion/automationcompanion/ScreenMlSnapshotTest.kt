@@ -22,12 +22,53 @@ import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.channels.Channel
+import java.util.concurrent.atomic.AtomicBoolean
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class ScreenMlSnapshotTest {
+    @Test fun idleFramesDoNotReachDetectionAndEnablingWakesAStaticScreen() = runBlocking {
+        val fixture = Fixture()
+        val enabled = AtomicBoolean(false)
+        val skipped = Channel<Unit>(Channel.CONFLATED)
+        val delivered = Channel<Bitmap>(Channel.UNLIMITED)
+        val collector = launch(Dispatchers.Default) {
+            fixture.core.captureFramesWhen {
+                enabled.get().also { if (!it) skipped.trySend(Unit) }
+            }.collect { bitmap -> delivered.send(bitmap) }
+        }
+        try {
+            // The consumer exists before Snap/Play, but no bitmap enters its inference body.
+            fixture.queueOldRedFrame()
+            withTimeout(5000) { skipped.receive() }
+            assertTrue(delivered.tryReceive().isFailure)
+
+            // Play/debug must work even if the target screen has stayed completely static.
+            enabled.set(true)
+            fixture.core.requestFreshFrame()
+            val frame = withTimeout(5000) { delivered.receive() }
+            try { assertEquals(Color.BLUE, frame.getPixel(16, 32)) }
+            finally { frame.recycle() }
+
+            enabled.set(false)
+            collector.cancelAndJoin()
+            while (true) (delivered.tryReceive().getOrNull() ?: break).recycle()
+            // Snap remains independent of whether live inference was enabled.
+            val snapshot = fixture.core.captureFreshBitmap(4000)
+            try {
+                assertNotNull(snapshot)
+                assertEquals(Color.BLUE, snapshot!!.getPixel(16, 32))
+            } finally { snapshot?.recycle() }
+        } finally {
+            collector.cancelAndJoin()
+            while (true) (delivered.tryReceive().getOrNull() ?: break).recycle()
+            fixture.close()
+        }
+    }
+
     @Test fun snapshotDoesNotWaitForInferenceOrReturnItsOldFrame() = runBlocking {
         val fixture = Fixture()
         val held = CompletableDeferred<Bitmap>()

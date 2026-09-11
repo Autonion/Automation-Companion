@@ -20,6 +20,13 @@ import com.autonion.automationcompanion.features.screen_understanding_ml.model.A
 import com.autonion.automationcompanion.features.screen_understanding_ml.logic.ActionExecutor
 import kotlinx.serialization.json.Json
 import android.graphics.PointF
+import android.os.SystemClock
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import com.autonion.automationcompanion.features.screen_understanding_ml.core.OcrEngine
+import com.autonion.automationcompanion.features.screen_understanding_ml.core.OcrMatching
+import com.autonion.automationcompanion.features.screen_understanding_ml.core.textElements
 
 private const val TAG = "ScreenMLNodeExecutor"
 
@@ -120,6 +127,8 @@ class ScreenMLNodeExecutor(
             }
 
             return NodeResult.Success
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "OCR recognition failed", e)
             DebugLogger.error(ctx, LogCategory.FLOW_BUILDER, "OCR Failed", "OCR error: ${e.message}", TAG)
@@ -127,6 +136,7 @@ class ScreenMLNodeExecutor(
             return NodeResult.Failure("OCR error: ${e.message}")
         } finally {
             ocrEngine.close()
+            bitmap.recycle()
         }
     }
 
@@ -180,6 +190,8 @@ class ScreenMLNodeExecutor(
             }
 
             return NodeResult.Success
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Object detection failed", e)
             DebugLogger.error(ctx, LogCategory.FLOW_BUILDER, "Detection Failed", "Object detection error: ${e.message}", TAG)
@@ -187,6 +199,7 @@ class ScreenMLNodeExecutor(
             return NodeResult.Failure("Object detection error: ${e.message}")
         } finally {
             perceptionLayer.close()
+            bitmap.recycle()
         }
     }
 
@@ -198,7 +211,8 @@ class ScreenMLNodeExecutor(
             Log.d(TAG, "Playing back ${steps.size} ML automation steps")
             DebugLogger.info(ctx, LogCategory.FLOW_BUILDER, "ML Steps Started", "Playing back ${steps.size} automation steps", TAG)
             
-            val perceptionLayer = PerceptionLayer(ctx)
+            val perceptionLayer = lazy { PerceptionLayer(ctx) }
+            val ocrEngine = lazy { OcrEngine() }
             val dm = ctx.resources.displayMetrics
             val screenW = dm.widthPixels.toFloat()
             val screenH = dm.heightPixels.toFloat()
@@ -214,10 +228,10 @@ class ScreenMLNodeExecutor(
 
                     val foundElement: com.autonion.automationcompanion.features.screen_understanding_ml.model.UIElement? = if (isOcrStep) {
                         // OCR text step — find text on current screen
-                        findTextOnScreen(step, provider, screenW, screenH)
+                        findTextOnScreen(step, provider, screenW, screenH, ocrEngine)
                     } else {
                         // ML element step — use hybrid matching with retry
-                        findElementOnScreen(step, provider, perceptionLayer, screenW, screenH)
+                        findElementOnScreen(step, provider, perceptionLayer.value, screenW, screenH)
                     }
 
                     if (foundElement != null) {
@@ -247,9 +261,12 @@ class ScreenMLNodeExecutor(
                     }
                 }
             } finally {
-                perceptionLayer.close()
+                if (perceptionLayer.isInitialized()) perceptionLayer.value.close()
+                if (ocrEngine.isInitialized()) ocrEngine.value.close()
             }
             return NodeResult.Success
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Failed playing back ML automation steps", e)
             DebugLogger.error(ctx, LogCategory.FLOW_BUILDER, "ML Steps Failed", "Error: ${e.message}", TAG)
@@ -303,9 +320,14 @@ class ScreenMLNodeExecutor(
                 continue
             }
 
-            val detections = perceptionLayer.detectWithAccessibilityAugmentation(bitmap)
             val curW = bitmap.width.toFloat()
             val curH = bitmap.height.toFloat()
+            val detections = try {
+                val detected = perceptionLayer.detectWithAccessibilityAugmentation(bitmap)
+                if (anchorText.isNullOrBlank()) detected else perceptionLayer.enrichWithOcr(detected, bitmap)
+            } finally {
+                bitmap.recycle()
+            }
 
             // Filter by matching label
             val sameLabel = detections.filter { it.label.equals(step.anchor.label, ignoreCase = true) }
@@ -389,107 +411,31 @@ class ScreenMLNodeExecutor(
      * Find OCR text on the current screen. Uses live OCR + accessibility tree fallback.
      */
     private suspend fun findTextOnScreen(
-        step: com.autonion.automationcompanion.features.screen_understanding_ml.model.AutomationStep,
-        provider: ScreenCaptureProvider,
-        screenW: Float,
-        screenH: Float
-    ): com.autonion.automationcompanion.features.screen_understanding_ml.model.UIElement? {
-        val targetText = step.anchor.text
-        if (targetText.isNullOrBlank()) {
-            // No text stored — fall back to saved anchor coordinates
-            Log.d(TAG, "findTextOnScreen: OCR step without text — using saved anchor coords")
-            return step.anchor
-        }
-
-        Log.d(TAG, "findTextOnScreen: searching for '$targetText'")
-        val timeout = 5000L
-        val startTime = System.currentTimeMillis()
-        val ocrEngine = com.autonion.automationcompanion.features.screen_understanding_ml.core.OcrEngine()
-
-        try {
-            while (System.currentTimeMillis() - startTime < timeout) {
-                val bitmap = provider.captureFrame()
-                if (bitmap != null) {
-                    val result = ocrEngine.recognizeText(bitmap)
-
-                    // Strategy 1: Line-level match within blocks
-                    for (block in result.blocks) {
-                        for (line in block.lines) {
-                            if (HybridElementMatcher.isTextMatching(line.text, targetText)) {
-                                val bounds = line.bounds ?: block.bounds
-                                if (bounds != null) {
-                                    Log.d(TAG, "findTextOnScreen: LINE match '${line.text}' at $bounds")
-                                    return com.autonion.automationcompanion.features.screen_understanding_ml.model.UIElement(
-                                        id = java.util.UUID.randomUUID().toString(),
-                                        label = "Text",
-                                        confidence = line.confidence ?: block.confidence ?: 0.9f,
-                                        bounds = bounds,
-                                        text = line.text
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    // Strategy 2: Block-level match
-                    val matchBlock = result.blocks.firstOrNull { block ->
-                        HybridElementMatcher.isTextMatching(block.text, targetText)
-                    }
-                    if (matchBlock != null && matchBlock.bounds != null) {
-                        Log.d(TAG, "findTextOnScreen: BLOCK match '${matchBlock.text}' at ${matchBlock.bounds}")
-                        return com.autonion.automationcompanion.features.screen_understanding_ml.model.UIElement(
-                            id = java.util.UUID.randomUUID().toString(),
-                            label = "Text",
-                            confidence = matchBlock.confidence ?: 0.9f,
-                            bounds = matchBlock.bounds,
-                            text = matchBlock.text
-                        )
-                    }
-
-                    // Strategy 3: Reverse containment
-                    val reverseMatch = result.blocks.firstOrNull { block ->
-                        block.text.length >= 3 && HybridElementMatcher.isTextMatching(targetText, block.text)
-                    }
-                    if (reverseMatch != null && reverseMatch.bounds != null) {
-                        Log.d(TAG, "findTextOnScreen: REVERSE match '${reverseMatch.text}' at ${reverseMatch.bounds}")
-                        return com.autonion.automationcompanion.features.screen_understanding_ml.model.UIElement(
-                            id = java.util.UUID.randomUUID().toString(),
-                            label = "Text",
-                            confidence = (reverseMatch.confidence ?: 0.9f) * 0.8f,
-                            bounds = reverseMatch.bounds,
-                            text = reverseMatch.text
-                        )
-                    }
-                }
-
-                // Strategy 4: Accessibility tree fallback
+        step: AutomationStep, provider: ScreenCaptureProvider,
+        screenW: Float, screenH: Float, ocrEngine: Lazy<OcrEngine>
+    ): UIElement? {
+        if (step.anchor.text.isNullOrBlank()) return null
+        val started = SystemClock.elapsedRealtime()
+        while (SystemClock.elapsedRealtime() - started < 5000) {
+            currentCoroutineContext().ensureActive()
+            OcrMatching.findBest(AccessibilityAugmenter.captureAllInteractiveElements(),
+                step, screenW, screenH)?.let { return it }
+            val bitmap = provider.captureFrame()
+            if (bitmap != null) {
                 try {
-                    val elements = AccessibilityAugmenter.captureAllInteractiveElements()
-                    val match = elements.firstOrNull { el ->
-                        HybridElementMatcher.isTextMatching(el.text, targetText)
-                    }
-                    if (match != null) {
-                        Log.d(TAG, "findTextOnScreen: A11Y match for '$targetText' at ${match.bounds}")
-                        return com.autonion.automationcompanion.features.screen_understanding_ml.model.UIElement(
-                            id = java.util.UUID.randomUUID().toString(),
-                            label = "Text",
-                            confidence = 0.85f,
-                            bounds = match.bounds,
-                            text = match.text
-                        )
-                    }
+                    val result = ocrEngine.value.recognizeText(bitmap)
+                    OcrMatching.findBest(result.textElements(includeBlocks = true), step,
+                        bitmap.width.toFloat(), bitmap.height.toFloat())?.let { return it }
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
-                    Log.w(TAG, "Accessibility text search failed: ${e.message}")
+                    Log.w(TAG, "OCR attempt failed", e)
+                } finally {
+                    bitmap.recycle()
                 }
-
-                kotlinx.coroutines.delay(500)
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "findTextOnScreen failed", e)
-        } finally {
-            ocrEngine.close()
+            kotlinx.coroutines.delay(200)
         }
-        Log.w(TAG, "findTextOnScreen: '$targetText' not found within timeout")
         return null
     }
 
@@ -535,6 +481,8 @@ class ScreenMLNodeExecutor(
                 }
             }
             return NodeResult.Success
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Failed playing back A11y automation steps", e)
             DebugLogger.error(ctx, LogCategory.FLOW_BUILDER, "A11y Steps Failed", "Error: ${e.message}", TAG)

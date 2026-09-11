@@ -36,6 +36,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.lifecycleScope
+import com.autonion.automationcompanion.features.screen_understanding_ml.core.OcrMatching
+import com.autonion.automationcompanion.features.screen_understanding_ml.core.textElements
+import com.autonion.automationcompanion.features.screen_understanding_ml.model.OcrResult
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import com.autonion.automationcompanion.features.screen_understanding_ml.core.OcrEngine
 import com.autonion.automationcompanion.features.screen_understanding_ml.core.PerceptionLayer
 import com.autonion.automationcompanion.features.screen_understanding_ml.core.ScreenUnderstandingService
@@ -62,6 +68,14 @@ class CaptureEditorActivity : ComponentActivity() {
     private var perceptionLayer: PerceptionLayer? = null
     private var presetName: String = "Untitled"
     
+    private val ocrEngine = lazy { OcrEngine() }
+    private val ocrMutex = Mutex()
+    private var ocrResult: OcrResult? = null
+
+    private suspend fun recognizeSnapshot(bitmap: Bitmap): OcrResult = ocrMutex.withLock {
+        ocrResult ?: ocrEngine.value.recognizeText(bitmap).also { ocrResult = it }
+    }
+
     // OCR state
     private var ocrElements: List<UIElement>? = null // Cached OCR results
     
@@ -375,7 +389,14 @@ class CaptureEditorActivity : ComponentActivity() {
 
              // 3. Enrich with OCR text
              val detectedElements = if (augmentedElements.isNotEmpty()) {
-                 perceptionLayer?.enrichWithOcr(augmentedElements, sourceBitmap!!) ?: augmentedElements
+                 try {
+                     OcrMatching.enrich(augmentedElements, recognizeSnapshot(sourceBitmap!!))
+                 } catch (e: CancellationException) {
+                     throw e
+                 } catch (e: Exception) {
+                     android.util.Log.w("CaptureEditor", "OCR enrichment failed", e)
+                     augmentedElements
+                 }
              } else {
                  emptyList()
              }
@@ -417,39 +438,30 @@ class CaptureEditorActivity : ComponentActivity() {
     }
 
     private fun runOcr(onComplete: () -> Unit) {
-        val bitmap = sourceBitmap ?: return
+        val bitmap = sourceBitmap ?: run { onComplete(); return }
         lifecycleScope.launch(Dispatchers.Default) {
-            val ocrEngine = OcrEngine()
             try {
-                val result = ocrEngine.recognizeText(bitmap)
-                val elements = result.blocks.mapNotNull { block ->
-                    val bounds = block.bounds ?: return@mapNotNull null
-                    UIElement(
-                        id = UUID.randomUUID().toString(),
-                        label = "Text",
-                        confidence = block.confidence ?: 0.9f,
-                        bounds = bounds,
-                        text = block.text
-                    )
-                }
+                val result = recognizeSnapshot(bitmap)
+                val elements = result.textElements()
                 ocrElements = elements
                 withContext(Dispatchers.Main) {
                     if (elements.isEmpty()) {
                         Toast.makeText(this@CaptureEditorActivity, "No text found on screen", Toast.LENGTH_SHORT).show()
                     } else {
-                        Toast.makeText(this@CaptureEditorActivity, "Found ${elements.size} text blocks", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this@CaptureEditorActivity, "Found ${elements.size} text lines", Toast.LENGTH_SHORT).show()
                     }
                     editorViewInput?.setOcrElements(elements)
                     onComplete()
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 android.util.Log.e("CaptureEditor", "OCR failed", e)
                 withContext(Dispatchers.Main) {
                     Toast.makeText(this@CaptureEditorActivity, "OCR failed: ${e.message}", Toast.LENGTH_SHORT).show()
                     onComplete()
                 }
-            } finally {
-                ocrEngine.close()
+
             }
         }
     }
@@ -605,6 +617,7 @@ class CaptureEditorActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         perceptionLayer?.close()
+        if (ocrEngine.isInitialized()) ocrEngine.value.close()
     }
 
     data class SelectionState(

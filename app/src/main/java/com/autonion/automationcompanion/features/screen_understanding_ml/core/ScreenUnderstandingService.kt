@@ -87,7 +87,7 @@ class ScreenUnderstandingService : Service() {
     private var snapshotJob: Job? = null
     private var playbackJob: Job? = null
     private var restoreJob: Job? = null
-    private var playbackGeneration = 0
+    @Volatile private var playbackGeneration = 0
     private var activePlaybackPreset: AutomationPreset? = null
     private var resumeAfterRecovery: AutomationPreset? = null
     private var recoveryId: String? = null
@@ -108,8 +108,11 @@ class ScreenUnderstandingService : Service() {
 
     @Volatile
     private var latestElements: List<UIElement> = emptyList()
-    @Volatile
-    private var latestBitmap: Bitmap? = null
+    private val frameCache = ScreenFrameCache()
+    private val playbackOcr = lazy { OcrEngine() }
+    @Volatile private var isSearchingText = false
+    @Volatile private var isTextOnlyPreset = false
+    @Volatile private var activeDetectionStep: AutomationStep? = null
     @Volatile
     private var isPlaying = false
 
@@ -127,10 +130,11 @@ class ScreenUnderstandingService : Service() {
     private var isA11yOnlyMode = false
 
     // Debug metrics mode
-    var isDebugMode = false
+    @Volatile var isDebugMode = false
         set(value) {
             field = value
             overlay?.debugMode = value
+            if (value) mediaProjectionCore?.requestFreshFrame()
         }
 
     private fun readDeviceTemperature(): Float {
@@ -181,10 +185,13 @@ class ScreenUnderstandingService : Service() {
         instance = null
         recoveryId = null
         isPlaying = false
+        isSearchingText = false
+        activeDetectionStep = null
         scope.cancel()
+        if (playbackOcr.isInitialized()) playbackOcr.value.close()
         overlay?.dismiss()
         mediaProjectionCore?.stopProjection()
-        latestBitmap = null
+        frameCache.clear()
         perceptionLayer?.close()
         super.onDestroy()
     }
@@ -449,9 +456,7 @@ class ScreenUnderstandingService : Service() {
         Log.d(TAG, "Service received presetName: '$presetName', playPresetId: '$playPresetId', modelFile: '$modelFile'")
 
         // Check for debug mode flag
-        if (intent.getBooleanExtra("debugMode", false)) {
-            isDebugMode = true
-        }
+        isDebugMode = intent.getBooleanExtra("debugMode", false)
 
         if (resultCode == Activity.RESULT_OK && data != null) {
             // Store preset info before startCapture so overlay mode is correct
@@ -547,15 +552,18 @@ class ScreenUnderstandingService : Service() {
     }
 
     private fun collectFrames(core: MediaProjectionCore) {
+        val cacheGeneration = frameCache.generation()
         frameJob = scope.launch {
             var frameCount = 0L
             var lastFpsTime = android.os.SystemClock.elapsedRealtime()
             var framesInWindow = 0
             var currentFps = 0f
 
-            core.screenCaptureFlow.collect { bitmap ->
+            core.captureFramesWhen { isPlaying || isDebugMode }.collect { bitmap ->
+                var retained = false
                 try {
                     currentCoroutineContext().ensureActive()
+                    val generation = playbackGeneration
                     frameCount++
                     framesInWindow++
 
@@ -567,19 +575,27 @@ class ScreenUnderstandingService : Service() {
                         lastFpsTime = now
                     }
 
-                    // Playback/OCR cache only. Editor snapshots acquire independently below.
-                    latestBitmap = bitmap.copy(bitmap.config ?: Bitmap.Config.ARGB_8888, false)
-
-                    // Frame skipping: run detection every 2nd frame in normal mode, every frame in debug mode
-                    val shouldDetect = if (isDebugMode) true else (frameCount % 2 == 1L)
+                    // The capture backend already conflates frames. Skipping alternating
+                    // frames could miss the final update of a static screen entirely.
+                    // Mixed presets still need current detections ready for their next visual step.
+                    val shouldDetect = isDebugMode || (isPlaying && !(isSearchingText && isTextOnlyPreset))
                     if (shouldDetect) {
-                        val detections = perceptionLayer?.detectWithAccessibilityAugmentation(bitmap) ?: emptyList()
+                        var detections = perceptionLayer?.detectWithAccessibilityAugmentation(bitmap) ?: emptyList()
+                        val target = activeDetectionStep
+                        if (target != null && !target.anchor.text.isNullOrBlank() && detections.any {
+                                it.label.equals(target.anchor.label, ignoreCase = true) && it.text.isNullOrBlank()
+                            }) {
+                            // Custom views lack accessibility text. Capture-time OCR text must
+                            // also be available during playback to satisfy the text identity check.
+                            detections = perceptionLayer?.enrichWithOcr(detections, bitmap) ?: detections
+                        }
                         currentCoroutineContext().ensureActive()
                         val tracked = temporalTracker?.update(detections) ?: emptyList()
-                        latestElements = tracked
-
                         withContext(Dispatchers.Main) {
-                            overlay?.updateElements(tracked)
+                            if (generation == playbackGeneration && (isPlaying || isDebugMode)) {
+                                latestElements = tracked
+                                overlay?.updateElements(tracked)
+                            }
                         }
                     }
 
@@ -608,12 +624,15 @@ class ScreenUnderstandingService : Service() {
                         DebugLogger.info(
                             this@ScreenUnderstandingService, LogCategory.UI_RECOGNITION_AI,
                             "Detection stats",
-                            "Frame #$frameCount: ${latestElements.size} elements, avg: ${"%.1f".format(avgMs)}ms/frame (skip every 2nd)",
+                            "Frame #$frameCount: ${latestElements.size} elements, avg: ${"%.1f".format(avgMs)}ms/frame",
                             TAG
                         )
                     }
+                    currentCoroutineContext().ensureActive()
+                    if (generation != playbackGeneration || (!isPlaying && !isDebugMode)) return@collect
+                    retained = frameCache.publish(bitmap, cacheGeneration)
                 } finally {
-                    bitmap.recycle()
+                    if (!retained) bitmap.recycle()
                 }
             }
         }
@@ -626,11 +645,13 @@ class ScreenUnderstandingService : Service() {
         activePlaybackPreset = null
         playbackGeneration++
         isPlaying = false
+        isSearchingText = false
+        activeDetectionStep = null
         playbackJob?.cancel()
         snapshotJob?.cancel()
         frameJob?.cancel()
         latestElements = emptyList()
-        latestBitmap = null
+        frameCache.clear()
         overlayVisible = true
     }
 
@@ -640,13 +661,15 @@ class ScreenUnderstandingService : Service() {
         resumeAfterRecovery = if (isPlaying) activePlaybackPreset else null
         playbackGeneration++
         isPlaying = false
+        isSearchingText = false
+        activeDetectionStep = null
         playbackJob?.cancel()
         val wasCapturing = snapshotJob?.isActive == true
         snapshotJob?.cancel()
         frameJob?.cancel()
         mediaProjectionCore?.stopProjection()
         mediaProjectionCore = null
-        latestBitmap = null
+        frameCache.clear()
         latestElements = emptyList()
         overlay?.setPlaybackState(false)
         overlay?.updateElements(emptyList())
@@ -679,7 +702,7 @@ class ScreenUnderstandingService : Service() {
             if (!isAwaitingProjection(id)) return@launch
             recoveryId = null
             resumeAfterRecovery = null
-            latestBitmap = null
+            frameCache.clear()
             latestElements = emptyList()
             temporalTracker = TemporalTracker()
             startForegroundNotification(useMediaProjectionType = true)
@@ -966,6 +989,8 @@ class ScreenUnderstandingService : Service() {
         if (isPlaying) {
             playbackGeneration++
             isPlaying = false
+            isSearchingText = false
+            activeDetectionStep = null
             playbackJob?.cancel()
             Toast.makeText(this, "Playback Paused", Toast.LENGTH_SHORT).show()
             overlay?.setPlaybackState(false)
@@ -985,7 +1010,12 @@ class ScreenUnderstandingService : Service() {
     val generation = ++playbackGeneration
     playbackJob?.cancel()
     activePlaybackPreset = preset
+    isTextOnlyPreset = preset.steps.all { it.anchor.label.equals("Text", ignoreCase = true) }
+    latestElements = emptyList()
+    temporalTracker = TemporalTracker()
+    frameCache.discard()
     isPlaying = true
+    mediaProjectionCore?.requestFreshFrame()
     overlay?.setPlaybackState(true)
     Toast.makeText(this, "Playing: ${preset.name}", Toast.LENGTH_SHORT).show()
     DebugLogger.info(
@@ -999,7 +1029,7 @@ class ScreenUnderstandingService : Service() {
             try {
                 // Loop continuously until user clicks Stop
                 while (isPlaying) {
-                    for (step in preset.steps) {
+                    for (step in preset.steps.sortedBy { it.orderIndex }) {
                         currentCoroutineContext().ensureActive()
                         if (!isPlaying || generation != playbackGeneration) break
 
@@ -1007,13 +1037,15 @@ class ScreenUnderstandingService : Service() {
 
                         // OCR text steps: run live OCR to find text at its current position
                         val isOcrStep = step.anchor.label.equals("Text", ignoreCase = true)
+                        isSearchingText = isOcrStep
+                        activeDetectionStep = step.takeUnless { isOcrStep }
                         val foundElement: UIElement? = if (isOcrStep && !step.anchor.text.isNullOrBlank()) {
                             Log.d(TAG, "OCR text step — searching for '${step.anchor.text}' on current screen")
-                            findTextOnScreen(step.anchor.text)
+                            findTextOnScreen(step)
                         } else if (isOcrStep) {
-                            // No text stored — fall back to saved coordinates
-                            Log.d(TAG, "OCR step without text — using saved anchor coords")
-                            step.anchor
+                            // A text target needs an identity; saved coordinates can point elsewhere.
+                            Log.w(TAG, "OCR step has no saved text; recapture required")
+                            null
                         } else {
                             // ML detection step — keep searching via live detection
                             waitForElement(step)
@@ -1023,6 +1055,7 @@ class ScreenUnderstandingService : Service() {
                         if (!isPlaying || generation != playbackGeneration) break
 
                         if (foundElement != null) {
+                            Log.d(TAG, "Matched ${step.label}: source=${foundElement.source}, bounds=${foundElement.bounds}")
                             val centerX = (foundElement.bounds.left + foundElement.bounds.right) / 2
                             val centerY = (foundElement.bounds.top + foundElement.bounds.bottom) / 2
                             val point = PointF(centerX, centerY)
@@ -1038,25 +1071,28 @@ class ScreenUnderstandingService : Service() {
                             val success = ActionExecutor.execute(this@ScreenUnderstandingService, intent)
 
                             if (success) {
-                            Log.d(TAG, "Executed ${step.actionType} on ${step.label}")
-                            DebugLogger.success(
-                                this@ScreenUnderstandingService, LogCategory.UI_RECOGNITION_AI,
-                                "Step ${step.orderIndex}: ${step.label}",
-                                "${step.actionType} executed successfully",
-                                "ScreenUnderstandingService"
-                            )
-                        } else {
-                            Log.e(TAG, "Action ${step.actionType} failed for ${step.label}")
-                            DebugLogger.error(
-                                this@ScreenUnderstandingService, LogCategory.UI_RECOGNITION_AI,
-                                "Step ${step.orderIndex} failed: ${step.label}",
-                                "${step.actionType} failed — check accessibility",
-                                "ScreenUnderstandingService"
-                            )
-                            withContext(Dispatchers.Main) {
+                                val isScroll = step.actionType == ActionType.SCROLL_UP || step.actionType == ActionType.SCROLL_DOWN
+                                val result = if (isScroll) "${step.actionType} dispatched; content movement unverified"
+                                    else "${step.actionType} executed successfully"
+                                Log.d(TAG, "$result after matching ${step.label}")
+                                DebugLogger.success(
+                                    this@ScreenUnderstandingService, LogCategory.UI_RECOGNITION_AI,
+                                    "Step ${step.orderIndex}: ${step.label}", result,
+                                    "ScreenUnderstandingService"
+                                )
+                            } else {
+                                Log.e(TAG, "Action ${step.actionType} failed for ${step.label}")
+                                DebugLogger.error(
+                                    this@ScreenUnderstandingService, LogCategory.UI_RECOGNITION_AI,
+                                    "Step ${step.orderIndex} failed: ${step.label}",
+                                    "${step.actionType} failed — check accessibility",
+                                    "ScreenUnderstandingService"
+                                )
+                                withContext(Dispatchers.Main) {
                                     Toast.makeText(this@ScreenUnderstandingService, "Action failed. Accessibility enabled?", Toast.LENGTH_LONG).show()
                                 }
                                 isPlaying = false
+                                isSearchingText = false
                                 break
                             }
 
@@ -1088,6 +1124,8 @@ class ScreenUnderstandingService : Service() {
                 withContext(NonCancellable + Dispatchers.Main) {
                     if (generation == playbackGeneration && instance === this@ScreenUnderstandingService) {
                         isPlaying = false
+                        isSearchingText = false
+                        activeDetectionStep = null
                         overlay?.setPlaybackState(false)
                         Toast.makeText(this@ScreenUnderstandingService, "Playback stopped", Toast.LENGTH_SHORT).show()
                     }
@@ -1139,9 +1177,7 @@ class ScreenUnderstandingService : Service() {
 
         while (System.currentTimeMillis() - startTime < timeout && isPlaying) {
             val currentElements = latestElements
-            val currentBitmap = latestBitmap
-            val curW = currentBitmap?.width?.toFloat() ?: 0f
-            val curH = currentBitmap?.height?.toFloat() ?: 0f
+            val (curW, curH) = frameCache.size()
 
             // ── Primary: Hybrid matching (Accessibility + YOLO + OCR) ──
             val hybridResult = HybridElementMatcher.findBestMatch(
@@ -1278,103 +1314,36 @@ class ScreenUnderstandingService : Service() {
         }
     }
 
-    /**
-     * Run live OCR on the current screen to find where [targetText] appears right now.
-     * Returns a UIElement with the text's current bounds, or null if not found within timeout.
-     *
-     * Search strategy (in order of priority):
-     * 1. Exact line-level match within OCR blocks (handles block segmentation differences)
-     * 2. Exact block-level match (original behavior)
-     * 3. Target text contains a block (reverse containment for smaller blocks)
-     * 4. Accessibility tree text search (no OCR needed, uses live a11y nodes)
-     */
-    private suspend fun findTextOnScreen(targetText: String): UIElement? {
-        val timeout = 5000L
-        val startTime = System.currentTimeMillis()
-        val ocrEngine = OcrEngine()
-        val dm = resources.displayMetrics
+    /** Query live accessibility first; OCR is the fallback for custom-rendered text. */
+    private suspend fun findTextOnScreen(step: AutomationStep): UIElement? {
+        val started = SystemClock.elapsedRealtime()
+        var scannedRevision = -1L
+        while (SystemClock.elapsedRealtime() - started < 5000 && isPlaying) {
+            currentCoroutineContext().ensureActive()
+            val dm = resources.displayMetrics
+            OcrMatching.findBest(AccessibilityAugmenter.captureAllInteractiveElements(), step,
+                dm.widthPixels.toFloat(), dm.heightPixels.toFloat())?.let { return it }
 
-        try {
-            while (System.currentTimeMillis() - startTime < timeout && isPlaying) {
-                val bitmap = latestBitmap
-                if (bitmap != null) {
-                    val result = ocrEngine.recognizeText(bitmap)
-
-                    // ── Strategy 1: Line-level match within blocks ──
-                    // ML Kit can segment text differently between runs; searching lines
-                    // within blocks handles cases where a block was split or merged.
-                    for (block in result.blocks) {
-                        for (line in block.lines) {
-                            if (HybridElementMatcher.isTextMatching(line.text, targetText)) {
-                                val bounds = line.bounds ?: block.bounds
-                                if (bounds != null) {
-                                    Log.d(TAG, "findTextOnScreen: LINE match '${line.text}' for target '$targetText' at $bounds")
-                                    return UIElement(
-                                        id = java.util.UUID.randomUUID().toString(),
-                                        label = "Text",
-                                        confidence = line.confidence ?: block.confidence ?: 0.9f,
-                                        bounds = bounds,
-                                        text = line.text
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    // ── Strategy 2: Block-level exact match (block contains target) ──
-                    val matchBlock = result.blocks.firstOrNull { block ->
-                        HybridElementMatcher.isTextMatching(block.text, targetText)
-                    }
-                    if (matchBlock != null && matchBlock.bounds != null) {
-                        Log.d(TAG, "findTextOnScreen: BLOCK match '${matchBlock.text}' for target '$targetText' at ${matchBlock.bounds}")
-                        return UIElement(
-                            id = java.util.UUID.randomUUID().toString(),
-                            label = "Text",
-                            confidence = matchBlock.confidence ?: 0.9f,
-                            bounds = matchBlock.bounds,
-                            text = matchBlock.text
-                        )
-                    }
-
-                    // ── Strategy 3: Reverse containment (target contains block text) ──
-                    // Handles cases where the originally captured block was large but at
-                    // runtime it was split into smaller blocks.
-                    val reverseMatch = result.blocks.firstOrNull { block ->
-                        block.text.length >= 3 && HybridElementMatcher.isTextMatching(targetText, block.text)
-                    }
-                    if (reverseMatch != null && reverseMatch.bounds != null) {
-                        Log.d(TAG, "findTextOnScreen: REVERSE match '${reverseMatch.text}' for target '$targetText' at ${reverseMatch.bounds}")
-                        return UIElement(
-                            id = java.util.UUID.randomUUID().toString(),
-                            label = "Text",
-                            confidence = (reverseMatch.confidence ?: 0.9f) * 0.8f,
-                            bounds = reverseMatch.bounds,
-                            text = reverseMatch.text
-                        )
-                    }
-
-                    Log.d(TAG, "findTextOnScreen: '$targetText' not found via OCR in ${result.blocks.size} blocks, trying accessibility...")
+            val snapshot = frameCache.copyAfter(scannedRevision)
+            if (snapshot != null) {
+                val bitmap = snapshot.bitmap
+                try {
+                    val result = playbackOcr.value.recognizeText(bitmap)
+                    scannedRevision = snapshot.revision
+                    OcrMatching.findBest(result.textElements(includeBlocks = true), step,
+                        bitmap.width.toFloat(), bitmap.height.toFloat())?.let { return it }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // A transient OCR failure must not disable subsequent accessibility/retries.
+                    Log.w(TAG, "OCR attempt failed", e)
+                } finally {
+                    bitmap.recycle()
                 }
-
-                // ── Strategy 4: Accessibility tree fallback ──
-                // The accessibility tree often has reliable text regardless of OCR accuracy.
-                val accMatch = findAccessibilityElementByText(
-                    targetText, "Text",
-                    dm.widthPixels.toFloat(), dm.heightPixels.toFloat()
-                )
-                if (accMatch != null) {
-                    Log.d(TAG, "findTextOnScreen: A11Y fallback match for '$targetText' at ${accMatch.bounds}")
-                    return accMatch
-                }
-
-                delay(500)
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "findTextOnScreen failed", e)
-        } finally {
-            ocrEngine.close()
+            delay(200)
         }
-        Log.w(TAG, "findTextOnScreen: '$targetText' not found within timeout (tried OCR + accessibility)")
+        Log.w(TAG, "Text '${step.anchor.text}' not found within timeout")
         return null
     }
 
@@ -1429,8 +1398,8 @@ class ScreenUnderstandingService : Service() {
                 label = element.label,
                 anchor = element,
                 isOptional = isOptional,
-                captureScreenWidth = latestBitmap?.width?.toFloat() ?: 0f,
-                captureScreenHeight = latestBitmap?.height?.toFloat() ?: 0f
+                captureScreenWidth = frameCache.size().first,
+                captureScreenHeight = frameCache.size().second
             )
         }
 

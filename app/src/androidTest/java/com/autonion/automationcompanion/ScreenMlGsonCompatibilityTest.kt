@@ -60,6 +60,8 @@ class ScreenMlGsonCompatibilityTest {
         assertEquals("fingerprint", anchor.visualFingerprint)
         assertEquals(1200L, anchor.lastSeenTimestamp)
         assertEquals("accessibility", anchor.source)
-        assertEquals(JsonParser.parseString(legacy), gson.toJsonTree(preset))
+        // Compare the on-disk JSON. toJsonTree retains Float values whose binary
+        // precision differs from the decimal numbers parsed out of the fixture.
+        assertEquals(JsonParser.parseString(legacy), JsonParser.parseString(gson.toJson(preset)))
     }
 }

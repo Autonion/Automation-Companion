@@ -24,6 +24,14 @@ class MediaProjectionCore(
     // Each collector owns its bitmap and must release it when finished.
     val screenCaptureFlow: Flow<Bitmap> = projection.screenCaptureFlow
 
+    /** Drain idle frame signals without allocating screenshots or running detection. */
+    fun captureFramesWhen(shouldProcess: () -> Boolean): Flow<Bitmap> =
+        projection.frames.mapNotNull { frame -> if (shouldProcess()) frame.toBitmap() else null }
+
+    /** Wake a newly enabled consumer even when the screen has not changed. */
+    fun requestFreshFrame(): Int =
+        projection.resizeCapture(captureWidth, captureHeight, captureDensity)
+
     fun startProjection(resultCode: Int, data: Intent, width: Int, height: Int, density: Int) {
         captureWidth = width
         captureHeight = height
@@ -37,7 +45,7 @@ class MediaProjectionCore(
         var delivered = false
         try {
             // Reuse the existing VirtualDisplay and grant; do not create a second projection session.
-            val generation = projection.resizeCapture(captureWidth, captureHeight, captureDensity)
+            val generation = requestFreshFrame()
             val result = withTimeoutOrNull(timeoutMs) {
                 projection.frames.mapNotNull { frame ->
                     if (frame.captureGeneration < generation) null
