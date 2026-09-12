@@ -25,5 +25,7 @@ data class AutomationStep(
     @field:SerializedName("captureScreenWidth")
     val captureScreenWidth: Float = 0f,  // Screen width (px) at capture time; 0 = legacy preset
     @field:SerializedName("captureScreenHeight")
-    val captureScreenHeight: Float = 0f  // Screen height (px) at capture time; 0 = legacy preset
+    val captureScreenHeight: Float = 0f,  // Screen height (px) at capture time; 0 = legacy preset
+    @field:SerializedName("captureImagePath")
+    val captureImagePath: String? = null // Optional editor preview; never required for execution.
 )

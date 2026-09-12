@@ -76,6 +76,7 @@ fun ScreenMLRoute(onBack: () -> Unit) {
     val presets = remember { mutableStateListOf<AutomationPreset>() }
     var showDialog by remember { mutableStateOf(false) }
     var confirmDeleteFor by remember { mutableStateOf<AutomationPreset?>(null) }
+    var detailPreset by remember { mutableStateOf<AutomationPreset?>(null) }
 
     // ── First-visit Feature Tip ──
     val onboardingPrefs = remember { OnboardingPreferences.getInstance(context) }
@@ -143,6 +144,7 @@ fun ScreenMLRoute(onBack: () -> Unit) {
         onBack = onBack,
         onAddClick = { showDialog = true },
         onDelete = { preset -> confirmDeleteFor = preset },
+        onView = { preset -> detailPreset = preset },
         onPlay = { preset ->
             val intent = Intent(context, SetupFlowActivity::class.java).apply {
                 putExtra("ACTION_REQUEST_PERMISSION_PLAY_PRESET", preset.id)
@@ -159,6 +161,23 @@ fun ScreenMLRoute(onBack: () -> Unit) {
             context.startActivity(intent)
         }
     )
+    detailPreset?.let { preset ->
+        ScreenMlPresetDetailSheet(preset,
+            onDismiss = { detailPreset = null },
+            onEdit = {
+                detailPreset = null
+                context.startActivity(Intent(context, CaptureEditorActivity::class.java).putExtra("PRESET_ID", preset.id))
+            },
+            onRun = {
+                detailPreset = null
+                context.startActivity(Intent(context, SetupFlowActivity::class.java).apply {
+                    putExtra("ACTION_REQUEST_PERMISSION_PLAY_PRESET", preset.id)
+                    putExtra("presetName", preset.name)
+                })
+            },
+            onDelete = { detailPreset = null; confirmDeleteFor = preset }
+        )
+    }
 }
 
 // ─── Dashboard Content ──────────────────────────────────
@@ -171,6 +190,7 @@ private fun ScreenMLDashboardContent(
     onAddClick: () -> Unit,
     onDelete: (AutomationPreset) -> Unit,
     onPlay: (AutomationPreset) -> Unit,
+    onView: (AutomationPreset) -> Unit,
     onTest: (String) -> Unit = {}
 ) {
     val fabScale = remember { Animatable(0f) }
@@ -251,6 +271,7 @@ private fun ScreenMLDashboardContent(
                             ) {
                                 AgentPresetItem(
                                     preset = preset,
+                                    onView = { onView(preset) },
                                     onDelete = { onDelete(preset) },
                                     onPlay = { onPlay(preset) }
                                 )
@@ -277,6 +298,7 @@ private fun ScreenMLDashboardContent(
                             ) {
                                 AgentPresetItem(
                                     preset = preset,
+                                    onView = { onView(preset) },
                                     onDelete = { onDelete(preset) },
                                     onPlay = { onPlay(preset) }
                                 )
@@ -366,6 +388,7 @@ private fun AgentEmptyState() {
 @Composable
 private fun AgentPresetItem(
     preset: AutomationPreset,
+    onView: () -> Unit,
     onDelete: () -> Unit,
     onPlay: () -> Unit
 ) {
@@ -387,7 +410,7 @@ private fun AgentPresetItem(
                 scaleY = scale
             }
             .clip(RoundedCornerShape(16.dp))
-            .clickable(interactionSource = interactionSource, indication = null) {},
+            .clickable(interactionSource = interactionSource, indication = null, onClick = onView),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         border = if (isDark) BorderStroke(1.dp, Color.White.copy(alpha = 0.08f))

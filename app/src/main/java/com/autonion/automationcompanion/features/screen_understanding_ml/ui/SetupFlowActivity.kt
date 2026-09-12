@@ -167,7 +167,7 @@ class SetupFlowActivity : ComponentActivity() {
         PermissionDisclosureDialog(
             showDialog = showMediaProjectionDisclosure,
             title = "Screen Capture Required",
-            description = "Autonion needs to capture your screen to analyze UI elements for UI Recognition AI. The screen content is processed locally on your device and is not stored or shared.",
+            description = "Autonion needs to capture your screen to analyze UI elements for UI Recognition AI. Processing stays on your device. Saved presets keep their snapshots locally so you can review and edit selected targets.",
             icon = Icons.Default.Screenshot,
             onDismiss = {
                 showMediaProjectionDisclosure = false
@@ -239,6 +239,7 @@ class SetupFlowActivity : ComponentActivity() {
                     putExtra("resultCode", resultCode)
                     putExtra("data", data)
                     putExtra("presetName", presetName)
+                    intent.getStringExtra("EXTRA_EDITOR_DRAFT_PATH")?.let { putExtra("EXTRA_EDITOR_DRAFT_PATH", it) }
                     if (playPresetId != null) {
                         putExtra("playPresetId", playPresetId)
                     }

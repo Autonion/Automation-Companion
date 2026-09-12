@@ -105,6 +105,45 @@ class ScreenUnderstandingService : Service() {
     private val accumulatedSteps: MutableList<AutomationStep> = mutableListOf()
     // Tracks the preset ID across saves so subsequent saves update the same preset
     private var savedPresetId: String? = null
+    private var editorPresetBase: AutomationPreset? = null
+    private var editorExecutionMode = ExecutionMode.STRICT
+
+    fun getEditorPreset(): AutomationPreset? {
+        if (accumulatedSteps.isEmpty() && editorPresetBase == null) return null
+        return (editorPresetBase ?: AutomationPreset(
+            id = savedPresetId ?: UUID.randomUUID().toString(),
+            name = overlay?.getCurrentName() ?: "Untitled", scope = ScopeType.GLOBAL,
+            executionMode = editorExecutionMode, steps = emptyList()
+        )).copy(steps = accumulatedSteps.map { it.copy() }, executionMode = editorExecutionMode)
+    }
+
+    fun setEditorConfiguration(name: String, mode: ExecutionMode) {
+        editorExecutionMode = mode
+        editorPresetBase = editorPresetBase?.copy(name = name.trim(), executionMode = mode)
+        overlay?.setPresetName(name.trim())
+    }
+
+    fun replaceEditorSteps(steps: List<AutomationStep>) {
+        accumulatedSteps.clear()
+        accumulatedSteps.addAll(steps.mapIndexed { index, step -> step.copy(orderIndex = index) })
+        flowMlJson = null
+        clearOnStart = false
+        if (steps.isNotEmpty()) overlay?.showSaveButton()
+    }
+
+    private fun resetEditorDraft(path: String?) {
+        editorPresetBase = path?.let {
+            val file = File(it)
+            if (file.canonicalFile.parentFile == cacheDir.canonicalFile && file.name.startsWith("ml_draft_")) {
+                try { com.google.gson.Gson().fromJson(file.readText(), AutomationPreset::class.java) }
+                catch (error: Exception) { Log.w(TAG, "Could not restore editor draft", error); null }
+            } else null
+        }
+        editorExecutionMode = editorPresetBase?.executionMode ?: ExecutionMode.STRICT
+        savedPresetId = editorPresetBase?.id
+        accumulatedSteps.clear()
+        accumulatedSteps.addAll(editorPresetBase?.steps.orEmpty())
+    }
 
     @Volatile
     private var latestElements: List<UIElement> = emptyList()
@@ -226,45 +265,45 @@ class ScreenUnderstandingService : Service() {
 
     /** Save all accumulated steps as a preset */
     private fun saveAccumulatedPreset(name: String) {
-        val normalizedName = name.trim()
-        Log.d(TAG, "saveAccumulatedPreset called. Name: $normalizedName, Count: ${accumulatedSteps.size}")
-        if (normalizedName.isEmpty()) {
-            Toast.makeText(this, "Preset name is required", Toast.LENGTH_SHORT).show()
-            return
+        scope.launch(Dispatchers.Main) {
+            try { saveEditorPreset(name, editorExecutionMode) }
+            catch (error: Exception) {
+                if (error is CancellationException) throw error
+                Toast.makeText(this@ScreenUnderstandingService, error.message ?: "Could not save preset", Toast.LENGTH_LONG).show()
+            }
         }
-        if (accumulatedSteps.isEmpty()) {
-            Toast.makeText(this, "No elements to save (Count: 0) — snap and select first", Toast.LENGTH_SHORT).show()
-            return
-        }
-        if (presetRepository?.hasPresetNamed(normalizedName, excludingId = savedPresetId) == true) {
-            Toast.makeText(this, "A preset with this name already exists", Toast.LENGTH_SHORT).show()
-            return
-        }
+    }
 
-        // Reuse the same preset ID within a session so repeated saves update
-        // the same file instead of creating duplicates
-        val presetId = savedPresetId ?: UUID.randomUUID().toString()
-        savedPresetId = presetId
-
-        val preset = AutomationPreset(
-            id = presetId,
-            name = normalizedName,
-            scope = ScopeType.GLOBAL,
-            executionMode = ExecutionMode.STRICT,
-            steps = accumulatedSteps.toList()
-        )
-        presetRepository?.savePreset(preset)
-        Toast.makeText(this, "Preset '$normalizedName' saved with ${accumulatedSteps.size} steps!", Toast.LENGTH_LONG).show()
+    suspend fun saveEditorPreset(name: String, mode: ExecutionMode): Boolean {
+        if (isFlowMode && flowNodeId != null) return saveAccumulatedStepsForFlow()
+        val normalized = name.trim()
+        require(normalized.isNotEmpty()) { "Preset name is required" }
+        require(accumulatedSteps.isNotEmpty()) { "Select at least one target" }
+        val repository = presetRepository ?: return false
+        val base = getEditorPreset() ?: return false
+        val preset = base.copy(id = savedPresetId ?: base.id, name = normalized, executionMode = mode)
+        val stored = withContext(Dispatchers.IO) {
+            check(!repository.hasPresetNamed(normalized, preset.id)) { "A preset with this name already exists" }
+            repository.savePreset(preset)
+            repository.getPreset(preset.id) ?: error("Could not read saved preset")
+        }
+        savedPresetId = stored.id
+        currentPresetId = stored.id
+        editorPresetBase = stored
+        setEditorConfiguration(stored.name, mode)
+        replaceEditorSteps(stored.steps)
+        Toast.makeText(this, "Preset '$normalized' saved with ${stored.steps.size} targets", Toast.LENGTH_SHORT).show()
+        return true
     }
 
     /**
      * Flow mode: Broadcast all accumulated steps back to FlowEditorViewModel
      * via LocalBroadcast, then stop the service (overlay + MediaProjection).
      */
-    private fun saveAccumulatedStepsForFlow() {
+    private fun saveAccumulatedStepsForFlow(): Boolean {
         if (accumulatedSteps.isEmpty()) {
             Toast.makeText(this, "No elements captured — snap and select first", Toast.LENGTH_SHORT).show()
-            return
+            return false
         }
         try {
             val json = Json.encodeToString(accumulatedSteps.toList())
@@ -281,9 +320,11 @@ class ScreenUnderstandingService : Service() {
 
             Toast.makeText(this, "Flow node configured with ${accumulatedSteps.size} steps", Toast.LENGTH_SHORT).show()
             stopSelf()
+            return true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to save flow steps", e)
             Toast.makeText(this, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+            return false
         }
     }
 
@@ -401,8 +442,7 @@ class ScreenUnderstandingService : Service() {
         clearOnStart = intent.getBooleanExtra("EXTRA_CLEAR_ON_START", false)
         isA11yOnlyMode = true
 
-        accumulatedSteps.clear()
-        savedPresetId = null
+        resetEditorDraft(intent.getStringExtra("EXTRA_EDITOR_DRAFT_PATH"))
 
         overlay?.dismiss()
         mediaProjectionCore?.stopProjection()
@@ -461,11 +501,11 @@ class ScreenUnderstandingService : Service() {
         if (resultCode == Activity.RESULT_OK && data != null) {
             // Store preset info before startCapture so overlay mode is correct
             currentPresetId = playPresetId
-            startCapture(resultCode, data, presetName, playPresetId, modelFile)
+            startCapture(resultCode, data, presetName, playPresetId, modelFile, intent.getStringExtra("EXTRA_EDITOR_DRAFT_PATH"))
         }
     }
 
-    private fun startCapture(resultCode: Int, data: Intent, presetName: String?, playPresetId: String?, modelFile: String? = null) {
+    private fun startCapture(resultCode: Int, data: Intent, presetName: String?, playPresetId: String?, modelFile: String? = null, editorDraftPath: String? = null) {
         // Cleanup existing resources
         resetCaptureWork()
         startForegroundNotification(useMediaProjectionType = true)
@@ -482,8 +522,7 @@ class ScreenUnderstandingService : Service() {
         } else null
 
         // Clear accumulated steps for new capture session
-        accumulatedSteps.clear()
-        savedPresetId = null
+        resetEditorDraft(editorDraftPath)
 
         overlay = ScreenAgentOverlay(
             context = this,
@@ -1039,16 +1078,19 @@ class ScreenUnderstandingService : Service() {
                         val isOcrStep = step.anchor.label.equals("Text", ignoreCase = true)
                         isSearchingText = isOcrStep
                         activeDetectionStep = step.takeUnless { isOcrStep }
-                        val foundElement: UIElement? = if (isOcrStep && !step.anchor.text.isNullOrBlank()) {
-                            Log.d(TAG, "OCR text step — searching for '${step.anchor.text}' on current screen")
-                            findTextOnScreen(step)
-                        } else if (isOcrStep) {
-                            // A text target needs an identity; saved coordinates can point elsewhere.
-                            Log.w(TAG, "OCR step has no saved text; recapture required")
-                            null
-                        } else {
-                            // ML detection step — keep searching via live detection
-                            waitForElement(step)
+                        val foundElement = findStepTarget(step, preset.executionMode,
+                            isPlaying = { isPlaying && generation == playbackGeneration }) {
+                            if (isOcrStep && !step.anchor.text.isNullOrBlank()) {
+                                Log.d(TAG, "OCR text step — searching for '${step.anchor.text}' on current screen")
+                                findTextOnScreen(step)
+                            } else if (isOcrStep) {
+                                // A text target needs an identity; saved coordinates can point elsewhere.
+                                Log.w(TAG, "OCR step has no saved text; recapture required")
+                                null
+                            } else {
+                                // ML detection step — keep searching via live detection
+                                waitForElement(step)
+                            }
                         }
 
                         currentCoroutineContext().ensureActive()
