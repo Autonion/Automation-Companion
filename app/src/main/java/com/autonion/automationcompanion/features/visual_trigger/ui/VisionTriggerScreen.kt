@@ -1,17 +1,11 @@
 package com.autonion.automationcompanion.features.visual_trigger.ui
 
 import android.content.Intent as AndroidIntent
-import android.graphics.BitmapFactory
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.*
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -24,9 +18,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.BrokenImage
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -35,18 +26,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.autonion.automationcompanion.features.visual_trigger.models.VisionPreset
 import com.autonion.automationcompanion.features.visual_trigger.service.CaptureOverlayService
 import com.autonion.automationcompanion.features.visual_trigger.service.VisionExecutionService
+import com.autonion.automationcompanion.ui.components.PresetPreviewCard
 import com.autonion.automationcompanion.ui.components.AuroraBackground
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.filled.PlayCircle
@@ -56,9 +43,6 @@ import com.autonion.automationcompanion.features.omni_chatbot.ui.LocalStartWalkt
 import com.autonion.automationcompanion.ui.isTablet
 import com.autonion.automationcompanion.ui.rememberWindowWidthSize
 import com.autonion.automationcompanion.ui.WindowWidthSize
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -439,237 +423,15 @@ fun VisionPresetCard(
     onDelete: () -> Unit,
     useVerticalLayout: Boolean = false
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(targetValue = if (isPressed) 0.97f else 1f, label = "scale")
-
-    // Load thumbnail asynchronously
-    var thumbnail by remember(preset.captureImagePath) {
-        mutableStateOf<android.graphics.Bitmap?>(null)
-    }
-    var thumbnailLoaded by remember(preset.captureImagePath) { mutableStateOf(false) }
-
-    LaunchedEffect(preset.captureImagePath) {
-        val path = preset.captureImagePath
-        if (path != null && File(path).exists()) {
-            withContext(Dispatchers.IO) {
-                // Decode a down-sampled thumbnail to save memory
-                val options = BitmapFactory.Options().apply { inSampleSize = 4 }
-                thumbnail = BitmapFactory.decodeFile(path, options)
-            }
-        }
-        thumbnailLoaded = true
-    }
-
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-            }
-            .clip(RoundedCornerShape(20.dp))
-            .clickable(
-                interactionSource = interactionSource,
-                indication = androidx.compose.foundation.LocalIndication.current
-            ) { onClick() },
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(20.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        border = if (isDark) BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)) else null
-    ) {
-        if (useVerticalLayout) {
-            // ─── Vertical layout for tablet grid cells ──────────
-            Column(modifier = Modifier.fillMaxWidth()) {
-                // Thumbnail on top
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(120.dp)
-                        .clip(RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
-                        .background(
-                            if (isDark) Color(0xFF15171C) else Color(0xFFE8E8EC)
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (thumbnail != null) {
-                        Image(
-                            bitmap = thumbnail!!.asImageBitmap(),
-                            contentDescription = "Capture preview",
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
-                        )
-                    } else if (thumbnailLoaded) {
-                        Icon(
-                            Icons.Default.BrokenImage,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f),
-                            modifier = Modifier.size(28.dp)
-                        )
-                    }
-                }
-
-                // Content below
-                Column(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)
-                ) {
-                    Text(
-                        text = preset.name,
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        ),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "${preset.regions.size} region${if (preset.regions.size != 1) "s" else ""} • ${preset.executionMode.displayLabel}",
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 12.sp
-                        )
-                    )
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        FilledTonalButton(
-                            onClick = onRun,
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = primary.copy(alpha = 0.12f),
-                                contentColor = primary
-                            ),
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.PlayArrow,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Run", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        IconButton(
-                            onClick = onDelete,
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Delete,
-                                contentDescription = "Delete",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-                }
-            }
-        } else {
-            // ─── Horizontal layout for phones ──────────
-            Row(modifier = Modifier.fillMaxWidth()) {
-                // ─── Thumbnail ──────────────────────────
-                Box(
-                    modifier = Modifier
-                        .width(80.dp)
-                        .fillMaxHeight()
-                        .heightIn(min = 90.dp)
-                        .clip(RoundedCornerShape(topStart = 20.dp, bottomStart = 20.dp))
-                        .background(
-                            if (isDark) Color(0xFF15171C) else Color(0xFFE8E8EC)
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (thumbnail != null) {
-                        Image(
-                            bitmap = thumbnail!!.asImageBitmap(),
-                            contentDescription = "Capture preview",
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
-                        )
-                    } else if (thumbnailLoaded) {
-                        Icon(
-                            Icons.Default.BrokenImage,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.25f),
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                }
-
-                // ─── Content ────────────────────────────
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(horizontal = 14.dp, vertical = 12.dp)
-                ) {
-                    Text(
-                        text = preset.name,
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        ),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "${preset.regions.size} region${if (preset.regions.size != 1) "s" else ""} • ${preset.executionMode.displayLabel}",
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 12.sp
-                        )
-                    )
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // Action buttons row
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // Run button
-                        FilledTonalButton(
-                            onClick = onRun,
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.filledTonalButtonColors(
-                                containerColor = primary.copy(alpha = 0.12f),
-                                contentColor = primary
-                            ),
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.PlayArrow,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Run", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        }
-
-                        Spacer(modifier = Modifier.width(8.dp))
-
-                        // Delete button
-                        IconButton(
-                            onClick = onDelete,
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Delete,
-                                contentDescription = "Delete",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
+    PresetPreviewCard(
+        name = preset.name,
+        summary = "${preset.regions.size} region${if (preset.regions.size != 1) "s" else ""} • ${preset.executionMode.displayLabel}",
+        captureImagePath = preset.captureImagePath,
+        isDark = isDark,
+        primary = primary,
+        onClick = onClick,
+        onRun = onRun,
+        onDelete = onDelete,
+        useVerticalLayout = useVerticalLayout
+    )
 }

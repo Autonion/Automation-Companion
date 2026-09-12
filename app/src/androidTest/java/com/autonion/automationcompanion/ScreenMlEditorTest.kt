@@ -39,6 +39,7 @@ class ScreenMlEditorTest {
         Editor(data).use { editor ->
             editor.main { editor.model.chooseMode(EditorDisplayMode.TEXT) }
             editor.await { !editor.model.scanning && editor.model.textElements.any { it.text == "Continue" } }
+            editor.screenshot("screen-ml-text-outlines.png")
             val recognized = editor.model.textElements.first { it.text == "Continue" }
             editor.main { editor.model.add(recognized) }
             assertEquals(4, editor.model.steps.size)
@@ -226,6 +227,7 @@ class ScreenMlEditorTest {
             .putExtra("ACC_ELEMENTS_DATA", Json.encodeToString(listOf(bottom)))
         Editor(data, intent).use { editor ->
             editor.await { !editor.model.scanning && editor.model.elements.isNotEmpty() }
+            editor.screenshot("screen-ml-element-outlines.png")
             editor.tapBitmap(bottom.bounds.centerX(), bottom.bounds.centerY())
             editor.await { editor.model.steps.size == 1 }
             assertEquals(bottom.bounds, editor.model.steps.single().anchor.bounds)
@@ -251,6 +253,8 @@ class ScreenMlEditorTest {
         OnboardingPreferences.getInstance(data.context).markTipSeen("screen_ml")
         ActivityScenario.launch<PresetDashboardActivity>(Intent(data.context, PresetDashboardActivity::class.java)).use {
             val ui = Ui()
+            ui.await { ui.find(data.preset.name) != null && ui.find("Capture preview") != null }
+            ui.screenshot("screen-ml-preset-cards.png")
             ui.click(data.preset.name)
             ui.await { ui.find("View target #2") != null }
             ui.screenshot("screen-ml-preset-details.png")

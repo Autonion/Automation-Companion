@@ -307,7 +307,11 @@ private fun CaptureCanvas(bitmap: Bitmap, model: CaptureEditorViewModel, fitRevi
                 candidates.forEach { element ->
                     if (model.pageSteps.none { it.anchor.id == element.id }) {
                         val b = element.bounds
-                        drawRect(Color.White.copy(alpha = 0.8f), Offset(b.left, b.top), Size(b.width(), b.height()), style = Stroke(1.2f / scale))
+                        val position = Offset(b.left, b.top)
+                        val size = Size(b.width(), b.height())
+                        // Both edges remain visible regardless of the captured app's theme or zoom.
+                        drawRect(Color(0xFF15171C), position, size, style = Stroke(2.5.dp.toPx() / scale))
+                        drawRect(Color.White, position, size, style = Stroke(1.dp.toPx() / scale))
                     }
                 }
                 model.pageSteps.forEach { step ->
