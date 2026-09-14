@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -745,20 +746,19 @@ private fun DeviceGlassCard(
 
     val statusColor = when {
         device.isPairingRequired -> Color(0xFFFFB74D)
-        device.isServiceOnly && device.status == DeviceStatus.ONLINE -> Color(0xFFFFB74D)
-        device.status == DeviceStatus.ONLINE -> OnlineGreen
+        device.isServiceOnly && device.isConnected -> Color(0xFFFFB74D)
+        device.isConnected -> OnlineGreen
         device.status == DeviceStatus.OFFLINE -> OfflineRed
         else -> UnknownGray
     }
-    val statusLabel = when {
-        device.isPairingRequired -> "PIN Required"
-        device.isServiceOnly && device.isSelected && device.status == DeviceStatus.ONLINE -> "Service Only"
-        device.isServiceOnly && device.status == DeviceStatus.ONLINE -> "Service Available"
-        device.isSelected && device.status == DeviceStatus.ONLINE -> if (device.isPaired) "Paired" else "Connected"
-        device.isSelected -> "Selected"
-        device.status == DeviceStatus.ONLINE -> if (device.isPaired) "Paired" else "Available"
-        device.status == DeviceStatus.OFFLINE -> "Offline"
-        else -> "Unknown"
+    val statusLabel = when (device.connectionState) {
+        com.autonion.automationcompanion.features.cross_device_automation.domain.ConnectionState.CONNECTED ->
+            if (device.isServiceOnly) "Service Connected" else "Connected"
+        com.autonion.automationcompanion.features.cross_device_automation.domain.ConnectionState.CONNECTING -> "Connecting…"
+        com.autonion.automationcompanion.features.cross_device_automation.domain.ConnectionState.AUTHENTICATING -> "Authenticating…"
+        com.autonion.automationcompanion.features.cross_device_automation.domain.ConnectionState.PAIRING -> "PIN Required"
+        com.autonion.automationcompanion.features.cross_device_automation.domain.ConnectionState.RECONNECTING -> "Reconnecting…"
+        else -> if (device.status == DeviceStatus.ONLINE) "Available" else "Offline"
     }
 
     val iconBgColor = when (device.role) {
@@ -787,50 +787,70 @@ private fun DeviceGlassCard(
             )
             .clickable { onToggleSelection() }
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Device icon with colored background
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(iconBgColor.copy(alpha = 0.15f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = getDeviceIcon(device.role),
-                    contentDescription = null,
-                    tint = iconBgColor,
-                    modifier = Modifier.size(26.dp)
-                )
-            }
+        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                // Device icon with colored background
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(iconBgColor.copy(alpha = 0.15f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = getDeviceIcon(device.role),
+                        contentDescription = null,
+                        tint = iconBgColor,
+                        modifier = Modifier.size(26.dp)
+                    )
+                }
 
-            Spacer(Modifier.width(14.dp))
+                Spacer(Modifier.width(14.dp))
 
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    device.name,
-                    color = textColor,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 15.sp
-                )
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    if (device.isServiceOnly && device.status == DeviceStatus.ONLINE)
-                        "${device.ipAddress} • Unlock Service"
-                    else
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        device.name,
+                        color = textColor,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 15.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
                         device.ipAddress,
-                    color = textColor.copy(alpha = 0.4f),
-                    fontSize = 12.sp
+                        color = textColor.copy(alpha = 0.4f),
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (device.isServiceOnly) {
+                        Text("Unlock Service", color = textColor.copy(alpha = 0.4f),
+                            fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+
+                Spacer(Modifier.width(8.dp))
+                if (device.isPaired) {
+                    IconButton(onClick = { showUnpairDialog = true }, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Default.DeleteOutline, contentDescription = "Unpair device",
+                            tint = OfflineRed.copy(alpha = 0.85f), modifier = Modifier.size(20.dp))
+                    }
+                    Spacer(Modifier.width(4.dp))
+                }
+                Icon(
+                    imageVector = if (device.isSelected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                    contentDescription = if (device.isSelected) "Tap to disconnect" else "Tap to connect",
+                    tint = if (device.isSelected) AccentPurple else textColor.copy(alpha = 0.3f),
+                    modifier = Modifier.size(24.dp)
                 )
             }
 
-            // Status indicator
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // Give status a separate row; longer labels must not take width from the address.
+            Spacer(Modifier.height(8.dp))
+            Row(modifier = Modifier.fillMaxWidth().padding(start = 62.dp),
+                verticalAlignment = Alignment.CenterVertically) {
                 // Animated pulse dot for online
                 if (device.status == DeviceStatus.ONLINE) {
                     val infiniteTransition = rememberInfiniteTransition(label = "statusPulse")
@@ -862,35 +882,12 @@ private fun DeviceGlassCard(
                     statusLabel,
                     color = (if (device.isSelected) AccentPurple else statusColor).copy(alpha = 0.8f),
                     fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
-
-            Spacer(Modifier.width(8.dp))
-
-            // Unpair button (only when device is paired)
-            if (device.isPaired) {
-                IconButton(
-                    onClick = { showUnpairDialog = true },
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.DeleteOutline,
-                        contentDescription = "Unpair device",
-                        tint = OfflineRed.copy(alpha = 0.85f),
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                Spacer(Modifier.width(4.dp))
-            }
-
-            // Selection toggle icon
-            Icon(
-                imageVector = if (device.isSelected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
-                contentDescription = if (device.isSelected) "Connected" else "Tap to connect",
-                tint = if (device.isSelected) AccentPurple else textColor.copy(alpha = 0.3f),
-                modifier = Modifier.size(24.dp)
-            )
         }
     }
 }

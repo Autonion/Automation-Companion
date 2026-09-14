@@ -183,7 +183,7 @@ class LocalServerLLMEngine private constructor(
                     val crossDeviceManager = com.autonion.automationcompanion.features.cross_device_automation.CrossDeviceAutomationManager.getInstance(context)
                     val devices = crossDeviceManager.deviceRepository.getAllDevices().first()
                     val onlineDevice = devices.firstOrNull {
-                        it.status == com.autonion.automationcompanion.features.cross_device_automation.domain.DeviceStatus.ONLINE
+                        it.isConnected
                     }
                     onlineDevice?.let { device ->
                         val url = "http://${device.ipAddress}:11434"

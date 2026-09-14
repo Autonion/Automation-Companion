@@ -50,7 +50,8 @@ data class DesktopFlowManifest(
     val nodeCount: Int = 0,
     val triggerType: String = "manual",
     val version: Int = 1,
-    val updatedAt: String = ""
+    val updatedAt: String = "",
+    val deviceId: String = ""
 )
 
 /** Response status for flow trigger operations. */

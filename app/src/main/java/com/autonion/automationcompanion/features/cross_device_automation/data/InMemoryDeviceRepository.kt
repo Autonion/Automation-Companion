@@ -24,15 +24,19 @@ class InMemoryDeviceRepository : DeviceRepository {
 
     override suspend fun addOrUpdateDevice(device: Device) {
         _devices.update { currentList ->
-            val existingIndex = currentList.indexOfFirst { it.id == device.id }
+            val existingIndex = currentList.indexOfFirst { it.id == device.id ||
+                (device.agentId != null && it.agentId == device.agentId) }
             if (existingIndex >= 0) {
                 val existing = currentList[existingIndex]
                 val mutableList = currentList.toMutableList()
                 // Discovery refreshes should not overwrite explicit user/auth state.
                 mutableList[existingIndex] = device.copy(
+                    id = existing.id,
+                    connectionState = existing.connectionState,
+                    isServiceOnly = if (existing.isConnected) existing.isServiceOnly else device.isServiceOnly,
                     role = existing.role,
                     isSelected = existing.isSelected,
-                    agentId = existing.agentId,
+                    agentId = device.agentId ?: existing.agentId,
                     isPaired = existing.isPaired,
                     isPairingRequired = existing.isPairingRequired
                 )
@@ -40,16 +44,20 @@ class InMemoryDeviceRepository : DeviceRepository {
             } else {
                 // Deduplicate by IP:port — same network address but different id
                 val ipPortIndex = currentList.indexOfFirst {
-                    it.ipAddress == device.ipAddress && it.port == device.port && it.ipAddress.isNotEmpty()
+                    it.ipAddress == device.ipAddress && it.port == device.port && it.ipAddress.isNotEmpty() &&
+                        (it.agentId == null || it.agentId == device.agentId)
                 }
                 if (ipPortIndex >= 0) {
                     val existing = currentList[ipPortIndex]
                     val mutableList = currentList.toMutableList()
                     Log.d("InMemoryDeviceRepo", "Merging device by IP:port (old id=${existing.id}, new id=${device.id})")
                     mutableList[ipPortIndex] = device.copy(
+                        id = existing.id,
+                        connectionState = existing.connectionState,
+                        isServiceOnly = if (existing.isConnected) existing.isServiceOnly else device.isServiceOnly,
                         role = existing.role,
                         isSelected = existing.isSelected,
-                        agentId = existing.agentId,
+                        agentId = device.agentId ?: existing.agentId,
                         isPaired = existing.isPaired,
                         isPairingRequired = existing.isPairingRequired
                     )
@@ -71,6 +79,10 @@ class InMemoryDeviceRepository : DeviceRepository {
         _devices.update { currentList ->
             currentList.map { if (it.id == device.id) device else it }
         }
+    }
+
+    override suspend fun mutateDevice(id: String, transform: (Device) -> Device) {
+        _devices.update { devices -> devices.map { if (it.id == id) transform(it) else it } }
     }
 
     override suspend fun removeDevice(id: String) {

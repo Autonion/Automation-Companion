@@ -8,6 +8,7 @@ interface DeviceRepository {
     suspend fun getDeviceById(id: String): Device?
     suspend fun addOrUpdateDevice(device: Device)
     suspend fun updateDevice(device: Device)
+    suspend fun mutateDevice(id: String, transform: (Device) -> Device)
     suspend fun removeDevice(id: String)
     suspend fun toggleDeviceSelection(id: String)
     suspend fun deselectAllDevices()

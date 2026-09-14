@@ -157,7 +157,7 @@ fun ModelManagerScreen(
     val connectedDevices by crossDeviceManager.deviceRepository.getAllDevices().collectAsState(initial = emptyList())
     LaunchedEffect(connectedDevices, inferenceMode) {
         if (inferenceMode != SemanticAutomationEngine.InferenceMode.SERVER_LLM) return@LaunchedEffect
-        val onlineDevice = connectedDevices.firstOrNull { it.status == com.autonion.automationcompanion.features.cross_device_automation.domain.DeviceStatus.ONLINE }
+        val onlineDevice = connectedDevices.firstOrNull { it.isConnected }
         if (onlineDevice != null && manualIpInput.isBlank() && serverUrl.isBlank()) {
             val ip = onlineDevice.ipAddress
             manualIpInput = ip
