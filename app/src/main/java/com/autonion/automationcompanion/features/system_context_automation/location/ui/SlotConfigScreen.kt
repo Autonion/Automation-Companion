@@ -74,6 +74,7 @@ fun SlotConfigScreen(
     val ctx = LocalContext.current
     val scrollState = rememberScrollState()
     val isDark = isSystemInDarkTheme()
+    val isScrolled by remember { derivedStateOf { scrollState.value > 0 } }
 
     // ── Material 3 Time Picker dialog state ──
     var showTimePickerFor by remember { mutableStateOf<String?>(null) } // "start" or "end" or null
@@ -124,7 +125,10 @@ fun SlotConfigScreen(
                         }
                     },
                     colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = Color.Transparent,
+                        containerColor = if (isScrolled) {
+                            if (isDark) Color(0xFF1E2228).copy(alpha = 0.95f)
+                            else MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
+                        } else Color.Transparent,
                         titleContentColor = MaterialTheme.colorScheme.onSurface,
                         navigationIconContentColor = MaterialTheme.colorScheme.onSurface
                     )
