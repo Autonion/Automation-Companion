@@ -2,6 +2,13 @@
 # Retrofit, Gson, kotlinx.serialization, Room, WorkManager and OkHttp contribute
 # consumer rules. Do not blanket-keep the app or suppress all missing classes.
 
+# The optimized Java-WebSocket 1.5.3 server loop failed ART verification on
+# Android 16: WebSocketServer.run() has an instruction outside a catch-all
+# while a monitor is held. ExtensionBridgeServer loads this superclass at
+# startup. Preserve this class's bytecode structure; names may still change.
+# Recheck with tools/release-smoke before removing this targeted workaround.
+-keep,allowobfuscation class org.java_websocket.server.WebSocketServer { *; }
+
 # vision_engine.cpp uses exported JNI names and constructs this result by its
 # exact class name and constructor descriptor (IZFIIIIIFFI)V. It does not access
 # the Kotlin result fields by name; those can still be optimized and renamed.

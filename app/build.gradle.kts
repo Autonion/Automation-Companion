@@ -15,8 +15,8 @@ android {
         applicationId = "com.autonion.automationcompanion"
         minSdk = 24
         targetSdk = 36
-        versionCode = 12
-        versionName = "1.1.3"
+        versionCode = 13
+        versionName = "1.1.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
