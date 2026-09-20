@@ -19,6 +19,15 @@
     public <init>(int, boolean, float, int, int, int, int, int, float, float, int);
 }
 
+# firebase-components 16.1.0 keeps ComponentRegistrar classes but not their
+# members. ML Kit discovers the three registrars named in the manifest via
+# Class.forName(...).getDeclaredConstructor().newInstance(); R8 shrinks the
+# no-arg constructors, discovery fails silently, and MlKitContext.get(zzo)
+# returns null -> NPE in OcrEngine's TextRecognition.getClient().
+-keep class * implements com.google.firebase.components.ComponentRegistrar {
+    <init>();
+}
+
 # ONNX Runtime 1.22.0 has native-to-Java lookups and no bundled consumer rules.
 # Required by https://onnxruntime.ai/docs/build/android.html
 -keep class ai.onnxruntime.** { *; }

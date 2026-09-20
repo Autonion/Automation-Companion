@@ -2,9 +2,15 @@ package com.autonion.automationcompanion.features.screen_understanding_ml.core
 
 import android.graphics.RectF
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.AutomationStep
+import com.autonion.automationcompanion.features.screen_understanding_ml.model.CapturedTextNode
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.OcrResult
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.UIElement
 import java.util.UUID
+
+fun CapturedTextNode.textElement(): UIElement = UIElement(
+    UUID.randomUUID().toString(), "Text", 1f,
+    RectF(boundsLeft, boundsTop, boundsRight, boundsBottom), text = text, source = "accessibility"
+)
 
 /** Lines give precise tap bounds; blocks retain compatibility with saved multiline anchors. */
 fun OcrResult.textElements(includeBlocks: Boolean = false): List<UIElement> = blocks.flatMap { block ->
@@ -49,11 +55,19 @@ object OcrMatching {
             .firstOrNull()?.first
     }
 
-    fun enrich(elements: List<UIElement>, result: OcrResult): List<UIElement> {
-        val lines = result.textElements()
+    fun enrich(elements: List<UIElement>, result: OcrResult): List<UIElement> =
+        enrichWithText(elements, result.textElements())
+
+    /**
+     * Capture and playback must derive the same complete text for a visual element.
+     * Keep source order: existing presets joined accessibility nodes in traversal order
+     * (and OCR lines in recognition order), which need not match top/left sorting.
+     */
+    fun enrichWithText(elements: List<UIElement>, textElements: List<UIElement>): List<UIElement> {
         return elements.map { element ->
             if (!element.text.isNullOrBlank()) return@map element
-            val text = lines.filter { line ->
+            val text = textElements.filter { line ->
+                if (line.text.isNullOrBlank() || line.bounds.isEmpty) return@filter false
                 val intersection = RectF(line.bounds)
                 intersection.intersect(element.bounds) &&
                     intersection.width() * intersection.height() /

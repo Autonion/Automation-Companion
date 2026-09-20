@@ -972,54 +972,9 @@ class ScreenUnderstandingService : Service() {
      * This must be called BEFORE opening the CaptureEditorActivity.
      */
     private fun captureAccessibilityTextNodes(): List<CapturedTextNode> {
-        try {
-            val service = AccessibilityRouter.getService() ?: return emptyList()
-            val root = try { service.rootInActiveWindow } catch (_: Exception) { null } ?: return emptyList()
-            val nodes = mutableListOf<CapturedTextNode>()
-            try {
-                collectTextNodes(root, nodes, depth = 0)
-            } finally {
-                try { root.recycle() } catch (_: Exception) {}
-            }
-            Log.d(TAG, "Captured ${nodes.size} text nodes from accessibility tree")
-            return nodes
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to capture accessibility text: ${e.message}")
-            return emptyList()
-        }
-    }
-
-    /**
-     * Recursively collect all text/contentDescription nodes from the accessibility tree.
-     */
-    private fun collectTextNodes(
-        node: android.view.accessibility.AccessibilityNodeInfo,
-        result: MutableList<CapturedTextNode>,
-        depth: Int
-    ) {
-        if (depth > 15) return
-        val bounds = android.graphics.Rect()
-        node.getBoundsInScreen(bounds)
-
-        val text = node.text?.toString() ?: node.contentDescription?.toString()
-        if (!text.isNullOrBlank() && bounds.width() > 0 && bounds.height() > 0) {
-            result.add(CapturedTextNode(
-                text = text,
-                boundsLeft = bounds.left.toFloat(),
-                boundsTop = bounds.top.toFloat(),
-                boundsRight = bounds.right.toFloat(),
-                boundsBottom = bounds.bottom.toFloat()
-            ))
-        }
-
-        for (i in 0 until node.childCount) {
-            val child = node.getChild(i) ?: continue
-            try {
-                collectTextNodes(child, result, depth + 1)
-            } finally {
-                try { child.recycle() } catch (_: Exception) {}
-            }
-        }
+        val nodes = AccessibilityAugmenter.captureAllTextNodes()
+        Log.d(TAG, "Captured ${nodes.size} text nodes from accessibility tree")
+        return nodes
     }
 
 

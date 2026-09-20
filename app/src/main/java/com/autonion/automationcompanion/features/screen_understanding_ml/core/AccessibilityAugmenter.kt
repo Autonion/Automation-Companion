@@ -5,6 +5,7 @@ import android.graphics.RectF
 import android.util.Log
 import android.view.accessibility.AccessibilityNodeInfo
 import com.autonion.automationcompanion.AccessibilityRouter
+import com.autonion.automationcompanion.features.screen_understanding_ml.model.CapturedTextNode
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.UIElement
 import java.util.UUID
 
@@ -117,43 +118,54 @@ object AccessibilityAugmenter {
         return gapFills
     }
 
-    /**
-     * Enriches existing YOLO elements with accessibility text where they overlap.
-     * Returns the enriched list (modifies elements that have null text but overlap
-     * an accessibility node with text).
-     */
+    /** All text used by the capture editor, including descriptions on non-interactive nodes. */
+    fun captureAllTextNodes(): List<CapturedTextNode> {
+        val service = AccessibilityRouter.getService() ?: return emptyList()
+        val root = try { service.rootInActiveWindow } catch (_: Exception) { null } ?: return emptyList()
+        return try {
+            textNodesFrom(root)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to capture accessibility text: ${e.message}")
+            emptyList()
+        } finally {
+            try { root.recycle() } catch (_: Exception) {}
+        }
+    }
+
+    // The caller owns root. Keep the editor's traversal depth, text preference and order
+    // so previously saved composite anchors can be reproduced during playback.
+    internal fun textNodesFrom(root: AccessibilityNodeInfo): List<CapturedTextNode> {
+        val nodes = mutableListOf<CapturedTextNode>()
+        collectTextNodes(root, nodes, 0)
+        return nodes
+    }
+
+    private fun collectTextNodes(node: AccessibilityNodeInfo, out: MutableList<CapturedTextNode>, depth: Int) {
+        if (depth > 15) return
+        val bounds = Rect()
+        node.getBoundsInScreen(bounds)
+        val text = node.text?.toString() ?: node.contentDescription?.toString()
+        if (!text.isNullOrBlank() && bounds.width() > 0 && bounds.height() > 0) {
+            out.add(CapturedTextNode(text, bounds.left.toFloat(), bounds.top.toFloat(),
+                bounds.right.toFloat(), bounds.bottom.toFloat()))
+        }
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            try {
+                collectTextNodes(child, out, depth + 1)
+            } finally {
+                try { child.recycle() } catch (_: Exception) {}
+            }
+        }
+    }
+
+    /** Enrich YOLO bounds from the same full text snapshot and containment rule as the editor. */
     fun enrichWithAccessibilityText(
         yoloElements: List<UIElement>,
         accessibilityElements: List<UIElement>? = null
     ): List<UIElement> {
-        val accElements = accessibilityElements ?: run {
-            val service = AccessibilityRouter.getService() ?: return yoloElements
-            val root = try { service.rootInActiveWindow } catch (_: Exception) { null } ?: return yoloElements
-            val elements = mutableListOf<UIElement>()
-            try {
-                traverseForInteractive(root, elements, depth = 0)
-            } finally {
-                try { root.recycle() } catch (_: Exception) {}
-            }
-            elements
-        }
-
-        if (accElements.isEmpty()) return yoloElements
-
-        return yoloElements.map { yolo ->
-            if (!yolo.text.isNullOrBlank()) return@map yolo // Already has text
-
-            // Find the best overlapping accessibility element with text
-            val bestMatch = accElements
-                .filter { acc -> !acc.text.isNullOrBlank() && calculateIoU(yolo.bounds, acc.bounds) > OVERLAP_THRESHOLD }
-                .maxByOrNull { acc -> calculateIoU(yolo.bounds, acc.bounds) }
-
-            if (bestMatch != null) {
-                yolo.copy(text = bestMatch.text)
-            } else {
-                yolo
-            }
-        }
+        val textElements = accessibilityElements ?: captureAllTextNodes().map { it.textElement() }
+        return OcrMatching.enrichWithText(yoloElements, textElements)
     }
 
     // ── Tree Traversal ──────────────────────────────────────────

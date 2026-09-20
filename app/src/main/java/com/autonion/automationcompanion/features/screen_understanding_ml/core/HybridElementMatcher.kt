@@ -303,8 +303,11 @@ object HybridElementMatcher {
                     "[acc=${"%.2f".format(best.accessibilityScore)}, yolo=${"%.2f".format(best.yoloScore)}, " +
                     "ocr=${"%.2f".format(best.ocrScore)}] via ${best.source}")
         } else {
+            val sameLabel = yoloCandidates.filter { it.label.equals(anchorLabel, ignoreCase = true) }
+            val textMatches = sameLabel.count { anchorText.isNullOrBlank() || isTextMatching(it.text, anchorText) }
             Log.d(TAG, "No match above $MIN_HYBRID_CONFIDENCE for label=$anchorLabel " +
-                    "(${results.size} candidates, best=${results.maxByOrNull { it.hybridConfidence }?.hybridConfidence})")
+                    "(${results.size} candidates, best=${results.maxByOrNull { it.hybridConfidence }?.hybridConfidence}, " +
+                    "detected=${yoloCandidates.size}, sameLabel=${sameLabel.size}, textMatches=$textMatches)")
         }
         return best
     }

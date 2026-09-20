@@ -176,11 +176,10 @@ class CaptureEditorViewModel(application: Application, private val saved: SavedS
                         } else {
                             val detector = PerceptionLayer(getApplication())
                             val visual = try { detector.detect(source) } finally { detector.close() }
-                            val textBoxes = OcrResult("", capturedText.map {
-                                val bounds = android.graphics.RectF(it.boundsLeft, it.boundsTop, it.boundsRight, it.boundsBottom)
-                                OcrBlock(it.text, bounds, listOf(OcrLine(it.text, bounds, 1f)), 1f)
-                            })
-                            val combined = OcrMatching.enrich(visual + AccessibilityAugmenter.filterUndetected(accessibility, visual), textBoxes)
+                            val combined = OcrMatching.enrichWithText(
+                                visual + AccessibilityAugmenter.filterUndetected(accessibility, visual),
+                                capturedText.map { it.textElement() }
+                            )
                             if (combined.none { it.text.isNullOrBlank() }) combined else try { OcrMatching.enrich(combined, recognize()) }
                             catch (failure: Exception) {
                                 if (failure is CancellationException) throw failure
