@@ -4,6 +4,16 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import com.autonion.automationcompanion.core.backup.BackupManager
+import com.autonion.automationcompanion.core.backup.BackupManifest
+import com.autonion.automationcompanion.features.system_context_automation.location.engine.location_receiver.BootReceiver
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import java.io.File
+import java.util.UUID
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.autonion.automationcompanion.features.system_context_automation.location.data.dao.SlotDao
@@ -13,6 +23,8 @@ import com.autonion.automationcompanion.features.system_context_automation.locat
 import com.autonion.automationcompanion.features.system_context_automation.location.engine.location_receiver.SlotStartAlarmReceiver
 import com.autonion.automationcompanion.features.system_context_automation.location.helpers.LocationAlarmScheduler
 import com.autonion.automationcompanion.features.system_context_automation.location.helpers.LocationAutomationController
+import com.autonion.automationcompanion.features.system_context_automation.location.helpers.LocationGeofenceRegistry
+import kotlinx.coroutines.sync.withLock
 import com.autonion.automationcompanion.features.system_context_automation.shared.utils.PermissionUtils
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -21,6 +33,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeFalse
 import org.junit.Assume.assumeTrue
 import org.junit.Before
@@ -123,6 +136,131 @@ class LocationLifecycleTest {
         assertAlarms(id, expected = false)
         assertFalse(LocationAutomationController.hasCurrentGeofence(context, id))
         assertNoLocationNotifications(id)
+    }
+
+    @Test
+    fun legacyImportReactivatesPresentPresetWithFreshPresenceAndKeepsLaterPause() = runBlocking {
+        val id = createFutureSlot()
+        val saved = dao.getById(id)!!.copy(isInsideGeofence = true, lastExecutedDay = "2020-01-01", lastTriggerState = true)
+        val backup = legacyBackup(saved)
+        try {
+            LocationAutomationController.delete(context, id)
+            LocationAutomationController.onAlarm(context, id)
+            assertAlarms(id, false)
+            val imported = BackupManager(context).import(Uri.fromFile(backup), null)
+            assertTrueResult(imported)
+            val restored = dao.getById(id)!!
+            assertTrue(restored.enabled)
+            assertFalse(restored.isInsideGeofence)
+            assertNull(restored.lastExecutedDay)
+            assertNull(restored.lastTriggerState)
+            assertAlarms(id, true)
+            assertEquals(0, LocationAutomationController.monitoringCount(context)) // No permission: no tracking notification.
+
+            LocationAutomationController.setEnabled(context, id, false)
+            assertTrueResult(BackupManager(context).import(Uri.fromFile(backup), null))
+            assertFalse("Import must not undo the user's later pause", dao.getById(id)!!.enabled)
+            assertAlarms(id, false)
+        } finally { backup.delete() }
+    }
+
+    @Test
+    fun updateRecoveryAndEmptyImportCannotResurrectDeletedLocation() = runBlocking {
+        assumeTrue("Requires an isolated empty location configuration", dao.getLocationSlots().isEmpty())
+        val id = createFutureSlot()
+        // Simulate the old bug: a row was deleted without cancelling its registered alarms.
+        dao.delete(dao.getById(id)!!)
+        assertAlarms(id, true)
+        val registry = context.getSharedPreferences("location_geofence_registry_v2", Context.MODE_PRIVATE)
+        registry.edit().putString("slot_$id", "$id:stale-before-update").commit()
+
+        BootReceiver.recoverRegistrations(context)
+        assertAlarms(id, false)
+        assertFalse(LocationAutomationController.hasCurrentGeofence(context, id))
+        assertEquals(0, LocationAutomationController.monitoringCount(context))
+        assertNoLocationNotifications(id)
+
+        val backup = legacyBackup(null)
+        try {
+            assertTrueResult(BackupManager(context).import(Uri.fromFile(backup), null))
+            LocationAutomationController.onAlarm(context, id)
+            assertNull(dao.getById(id))
+            assertAlarms(id, false)
+            assertEquals(0, LocationAutomationController.monitoringCount(context))
+            assertNoLocationNotifications(id)
+        } finally { backup.delete() }
+    }
+
+    private fun assertTrueResult(result: BackupManager.ImportResult) {
+        org.junit.Assert.assertTrue(result.toString(), result is BackupManager.ImportResult.Success)
+    }
+
+    @Test
+    fun updateRecoveryRearmsEnabledPresetAndKeepsPausedPresetOff() = runBlocking {
+        val enabledId = createFutureSlot()
+        val pausedId = createFutureSlot()
+        LocationAutomationController.setEnabled(context, pausedId, false)
+        dao.updateInsideGeofence(enabledId, true)
+        // Reboot/package replacement can discard alarms; recovery must use the saved state.
+        LocationAlarmScheduler.cancel(context, enabledId)
+        assertAlarms(enabledId, false)
+
+        BootReceiver.recoverRegistrations(context)
+
+        assertTrue(dao.getById(enabledId)!!.enabled)
+        assertFalse(dao.getById(enabledId)!!.isInsideGeofence)
+        assertAlarms(enabledId, true)
+        assertFalse(dao.getById(pausedId)!!.enabled)
+        assertAlarms(pausedId, false)
+        assertEquals(0, LocationAutomationController.monitoringCount(context)) // No location permission in this suite.
+    }
+
+    @Test
+    fun upgradeFindsNumericGeofencesEvenWhenTheirOldPresetWasDeleted() = runBlocking {
+        val id = createFutureSlot()
+        dao.delete(dao.getById(id)!!)
+        val prefs = context.getSharedPreferences("location_geofence_registry_v2", Context.MODE_PRIVATE)
+        val previous = prefs.all.filterKeys { it == "legacy_range_end" || it == "legacy_range_done" }
+        try {
+            LocationAutomationController.mutex.withLock {
+                prefs.edit().remove("legacy_range_end").remove("legacy_range_done").commit()
+                LocationGeofenceRegistry.prepareLegacyCleanup(context)
+                val end = prefs.getLong("legacy_range_end", 0)
+                assertTrue("Deleted ID must remain covered by migration cleanup", end >= id)
+                // Locate the batch containing this ID, also checking that cleanup stays bounded.
+                prefs.edit().putLong("legacy_range_done", ((id - 1) / 100) * 100).commit()
+                val batch = LocationGeofenceRegistry.legacyCleanupBatch(context)
+                assertTrue(id in batch)
+                assertTrue(batch.last - batch.first < 100)
+            }
+            BootReceiver.recoverRegistrations(context)
+            assertAlarms(id, false)
+            assertNoLocationNotifications(id)
+        } finally {
+            val edit = prefs.edit().remove("legacy_range_end").remove("legacy_range_done")
+            previous.forEach { (key, value) -> edit.putLong(key, value as Long) }
+            edit.commit()
+        }
+    }
+
+    private suspend fun legacyBackup(slot: Slot?): File {
+        val root = File(context.cacheDir, "legacy-location-${UUID.randomUUID()}").apply { mkdirs() }
+        val database = File(root, "locauto.db")
+        val copy = AppDatabase.openFile(context, database.absolutePath)
+        try {
+            if (slot != null) copy.slotDao().insert(slot) else copy.backupDao().slots()
+        } finally { copy.close() }
+        val archive = File(context.cacheDir, "legacy-location-${UUID.randomUUID()}.atnbak")
+        ZipOutputStream(archive.outputStream()).use { zip ->
+            zip.putNextEntry(ZipEntry("database/locauto.db"))
+            database.inputStream().use { it.copyTo(zip) }
+            zip.closeEntry()
+            zip.putNextEntry(ZipEntry("manifest.json"))
+            zip.write(Json.encodeToString(BackupManifest("1.1.2", 1234, false, listOf(BackupManifest.FEATURE_SYSTEM_CONTEXT_DB))).toByteArray())
+            zip.closeEntry()
+        }
+        root.deleteRecursively()
+        return archive
     }
 
     private suspend fun createFutureSlot(): Long {

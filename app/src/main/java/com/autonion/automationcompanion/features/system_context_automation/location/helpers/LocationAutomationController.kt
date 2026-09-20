@@ -180,6 +180,7 @@ object LocationAutomationController {
         val slots = dao.getLocationSlots().map { slot ->
             LocationSchedule.ensureLocalClock(slot).also { if (it != slot) dao.update(it) }
         }
+        LocationAlarmScheduler.cancelOrphans(context, slots.filter { it.enabled }.map { it.id }.toSet())
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val reminderIds = slots.filter { it.enabled && it.remindBeforeMinutes > 0 }
                 .map { ("reminder_${it.id}").hashCode() }.toSet()

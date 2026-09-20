@@ -116,7 +116,7 @@ class AppSpecificAutomationEngine(private val context: Context) : AccessibilityF
                             "App: $currentPackageName",
                             TAG
                         )
-                        SlotExecutor.execute(context, slot.id)
+                        SlotExecutor.execute(context, slot.id, slot)
                     }
                 }
             } catch (e: Exception) {

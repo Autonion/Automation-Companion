@@ -106,7 +106,10 @@
             android:name=".features.system_context_automation.battery.engine.BatteryMonitoringService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="dataSync" />
+            android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-enabled battery threshold automations; monitors battery broadcasts while enabled presets exist, with a persistent notification and Stop control." />
+        </service>
 
         <!-- Time-of-Day Trigger Activities -->
         <activity

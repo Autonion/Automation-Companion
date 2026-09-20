@@ -1,5 +1,7 @@
 package com.autonion.automationcompanion.features.system_context_automation.wifi.ui
 
+import com.autonion.automationcompanion.features.system_context_automation.shared.SystemSlotController
+
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
@@ -100,7 +102,6 @@ fun WiFiSlotsScreen(
     val scope = rememberCoroutineScope()
 
     val snackbarHostState = remember { SnackbarHostState() }
-    var recentlyDeleted by remember { mutableStateOf<Slot?>(null) }
 
     val slots by dao.getSlotsByType("WIFI").collectAsState(initial = emptyList())
 
@@ -229,13 +230,12 @@ fun WiFiSlotsScreen(
                                                 return@WiFiSlotCard
                                             }
                                         }
-                                        scope.launch { dao.setEnabled(slot.id, enabled) }
+                                        scope.launch { SystemSlotController.setEnabled(context, slot.id, enabled) }
                                     },
                                     onEdit = { onEditClicked(slot.id) },
                                     onDelete = {
                                         scope.launch {
-                                            dao.delete(slot)
-                                            recentlyDeleted = slot
+                                            val deletedSlot = SystemSlotController.delete(context, slot.id) ?: return@launch
 
                                             // Log deletion
                                             com.autonion.automationcompanion.features.automation_debugger.DebugLogger.info(
@@ -252,9 +252,9 @@ fun WiFiSlotsScreen(
                                                 duration = SnackbarDuration.Short
                                             )
                                             if (result == SnackbarResult.ActionPerformed) {
-                                                recentlyDeleted?.let { 
-                                                    val newId = dao.insert(it.copy(id = 0)) 
-                                                    
+                                                deletedSlot.let {
+                                                    val newId = SystemSlotController.restore(context, it)
+
                                                     // Log undo
                                                     com.autonion.automationcompanion.features.automation_debugger.DebugLogger.success(
                                                         context, com.autonion.automationcompanion.features.automation_debugger.data.LogCategory.SYSTEM_CONTEXT,
@@ -273,7 +273,7 @@ fun WiFiSlotsScreen(
                 }
             }
         }
-        
+
         com.autonion.automationcompanion.features.system_context_automation.shared.ui.PermissionDisclosureDialog(
             showDialog = showLocationDisclosure,
             onDismiss = { showLocationDisclosure = false },
@@ -618,7 +618,7 @@ class WiFiConfigActivity : AppCompatActivity() {
                             }
                         }
                     )
-                    
+
                     com.autonion.automationcompanion.features.system_context_automation.shared.ui.PermissionDisclosureDialog(
                         showDialog = showLocationDisclosure,
                         onDismiss = { showLocationDisclosure = false },
@@ -959,12 +959,7 @@ private fun saveWiFiSlot(
                 activeDays = "ALL"
             )
 
-            val dao = AppDatabase.get(context).slotDao()
-            if (slotId != -1L) {
-                dao.update(slot)
-            } else {
-                dao.insert(slot)
-            }
+            SystemSlotController.save(context, slot)
 
             android.os.Handler(android.os.Looper.getMainLooper()).post {
                 Toast.makeText(context, "Wi-Fi automation saved", Toast.LENGTH_SHORT).show()

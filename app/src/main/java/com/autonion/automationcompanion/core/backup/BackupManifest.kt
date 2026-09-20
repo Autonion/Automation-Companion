@@ -21,7 +21,10 @@ data class BackupManifest(
     val includedFeatures: List<String>,
 
     /** Human-readable backup description (optional). */
-    val description: String? = null
+    val description: String? = null,
+    /** Version 2 uses portable archive-relative image paths. Missing means a legacy archive. */
+    val formatVersion: Int = 1,
+    val warnings: List<String> = emptyList()
 ) {
     companion object {
         // Feature identifiers — used in includedFeatures list

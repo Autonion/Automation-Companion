@@ -24,27 +24,27 @@ open class BootReceiver : BroadcastReceiver() {
             action != Intent.ACTION_MY_PACKAGE_REPLACED) return
 
         val appContext = context.applicationContext
-        if (action == Intent.ACTION_BOOT_COMPLETED) {
-            WiFiMonitorManager.initialize(appContext)
-            BatteryServiceManager.startMonitoringIfNeeded(appContext)
-        }
         val result = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 withTimeout(8_000) {
-                    // RTC alarms can point to a stale wall-clock time after a clock edit.
-                    LocationAutomationController.mutex.withLock {
-                        AppInitManager.update(appContext, false)
-                    }
-                    // Preserve the other feature's existing reboot recovery.
-                    TimeOfDayReceiver.scheduleAllEnabled(appContext)
-                    LocationAutomationController.reconcile(appContext, resetPresence = true)
+                    recoverRegistrations(appContext)
                 }
             } catch (e: Exception) {
                 Log.e("BootReceiver", "Could not restore automations after $action", e)
             } finally {
                 result.finish()
             }
+        }
+    }
+
+    companion object {
+        /** Shared by boot, app replacement and clock changes; always derive registrations from current rows. */
+        internal suspend fun recoverRegistrations(context: Context) {
+            LocationAutomationController.mutex.withLock { AppInitManager.update(context, false) }
+            WiFiMonitorManager.initialize(context)
+            com.autonion.automationcompanion.features.system_context_automation.shared.SystemSlotController.recover(context)
+            LocationAutomationController.reconcile(context, resetPresence = true)
         }
     }
 }

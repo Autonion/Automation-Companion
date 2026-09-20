@@ -9,6 +9,7 @@ import com.autonion.automationcompanion.features.automation_debugger.data.LogCat
 import com.autonion.automationcompanion.features.system_context_automation.location.data.db.AppDatabase
 import com.autonion.automationcompanion.features.system_context_automation.location.helpers.LocationAutomationController
 import com.autonion.automationcompanion.features.system_context_automation.location.helpers.LocationTriggerEvaluator
+import com.autonion.automationcompanion.features.system_context_automation.location.helpers.LocationGeofenceRegistry
 import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofenceStatusCodes
 import com.google.android.gms.location.GeofencingEvent
@@ -50,14 +51,20 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
         launchBroadcastWork {
             val dao = AppDatabase.get(appContext).slotDao()
             val inside = transition == Geofence.GEOFENCE_TRANSITION_ENTER
+            var staleRegistration = false
             for (geofence in triggering) {
                 val slotId = LocationAutomationController.mutex.withLock {
                     // Generation IDs reject queued events from removed/edited registrations.
                     val id = LocationAutomationController.slotIdForCurrentGeofence(
                         appContext, geofence.requestId
-                    ) ?: return@withLock null
-                    val slot = dao.getById(id) ?: return@withLock null
-                    if (!slot.enabled || slot.triggerType != "LOCATION") return@withLock null
+                    )
+                    val slot = id?.let { dao.getById(it) }
+                    if (id == null || slot == null || !slot.enabled || slot.triggerType != "LOCATION") {
+                        // Includes numeric IDs from old versions whose rows had already been deleted.
+                        LocationGeofenceRegistry.retireTokens(appContext, setOf(geofence.requestId))
+                        staleRegistration = true
+                        return@withLock null
+                    }
                     dao.updateInsideGeofence(id, inside)
                     id
                 } ?: continue
@@ -71,6 +78,7 @@ class GeofenceBroadcastReceiver : BroadcastReceiver() {
                 // Release the mutation lock before entering the evaluator, which rechecks it.
                 if (inside) LocationTriggerEvaluator.evaluate(appContext, slotId)
             }
+            if (staleRegistration) LocationAutomationController.ensureMonitoring(appContext)
         }
     }
 

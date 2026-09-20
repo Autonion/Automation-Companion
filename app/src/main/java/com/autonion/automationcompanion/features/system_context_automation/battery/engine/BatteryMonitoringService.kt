@@ -12,12 +12,21 @@ import com.autonion.automationcompanion.features.automation_debugger.data.LogCat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
+import com.autonion.automationcompanion.features.system_context_automation.location.data.db.AppDatabase
+import com.autonion.automationcompanion.features.system_context_automation.shared.SystemSlotController
 
 class BatteryMonitoringService : Service() {
     private lateinit var batteryReceiver: BatteryBroadcastReceiver
     private val NOTIFICATION_ID = 1001
     private val CHANNEL_ID = "battery_monitoring_channel"
     private val TAG = "BatteryMonitoringService"
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var receiverRegistered = false
+    private var foregroundReady = false
 
     override fun onCreate() {
         super.onCreate()
@@ -29,8 +38,13 @@ class BatteryMonitoringService : Service() {
             TAG
         )
         createNotificationChannel()
-        startForegroundService()
-        registerBatteryReceiver()
+        try {
+            startForegroundService()
+            foregroundReady = true
+        } catch (error: Exception) {
+            Log.e(TAG, "Battery foreground service is unavailable", error)
+            stopSelf()
+        }
     }
 
     private fun createNotificationChannel() {
@@ -69,6 +83,7 @@ class BatteryMonitoringService : Service() {
     }
 
     private fun registerBatteryReceiver() {
+        if (receiverRegistered) return
         batteryReceiver = BatteryBroadcastReceiver()
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_BATTERY_CHANGED)
@@ -78,24 +93,42 @@ class BatteryMonitoringService : Service() {
             addAction(Intent.ACTION_POWER_DISCONNECTED)
         }
         registerReceiver(batteryReceiver, filter)
+        receiverRegistered = true
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
-            ACTION_STOP -> {
-                Log.i(TAG, "Stop action received — stopping battery monitoring")
+        if (!foregroundReady) return START_NOT_STICKY
+        serviceScope.launch {
+            try {
+                if (intent?.action == ACTION_STOP) {
+                    SystemSlotController.stopBattery(applicationContext)
+                    stopForeground(true)
+                    stopSelf()
+                } else {
+                    val enabled = withContext(Dispatchers.IO) {
+                        AppDatabase.get(applicationContext).slotDao().getEnabledSlotsByType("BATTERY").isNotEmpty()
+                    }
+                    if (enabled) registerBatteryReceiver() else {
+                        stopForeground(true)
+                        stopSelfResult(startId)
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                Log.e(TAG, "Could not restore battery monitoring", error)
                 stopForeground(true)
                 stopSelf()
-                return START_NOT_STICKY
             }
         }
-        return START_STICKY // Service will restart if killed
+        return if (intent?.action == ACTION_STOP) START_NOT_STICKY else START_STICKY
     }
 
     override fun onDestroy() {
+        serviceScope.cancel()
         super.onDestroy()
         try {
-            unregisterReceiver(batteryReceiver)
+            if (receiverRegistered) unregisterReceiver(batteryReceiver)
         } catch (e: Exception) {
             // Receiver was not registered
         }
@@ -110,7 +143,7 @@ class BatteryMonitoringService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     companion object {
-        private const val ACTION_STOP = "com.autonion.automationcompanion.ACTION_STOP_BATTERY_MONITORING"
+        internal const val ACTION_STOP = "com.autonion.automationcompanion.ACTION_STOP_BATTERY_MONITORING"
 
         fun startService(context: Context) {
             val intent = Intent(context, BatteryMonitoringService::class.java)

@@ -1,5 +1,7 @@
 package com.autonion.automationcompanion.features.system_context_automation.app_specific.ui
 
+import com.autonion.automationcompanion.features.system_context_automation.shared.SystemSlotController
+
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.compose.setContent
@@ -81,7 +83,6 @@ fun AppSpecificSlotsScreen(
     val scope = rememberCoroutineScope()
 
     val snackbarHostState = remember { SnackbarHostState() }
-    var recentlyDeleted by remember { mutableStateOf<Slot?>(null) }
 
     val allSlots by dao.getAllFlow().collectAsState(initial = emptyList())
     val slots = allSlots.filter { it.triggerType == "APP" }
@@ -212,14 +213,14 @@ fun AppSpecificSlotsScreen(
                                             )
                                             showAccessibilityDisclosure = true
                                         } else {
-                                            scope.launch { dao.setEnabled(slot.id, enabled) }
+                                            scope.launch { SystemSlotController.setEnabled(context, slot.id, enabled) }
                                         }
                                     },
                                     onEdit = { onEditClicked(slot.id) },
                                     onDelete = {
                                         scope.launch {
-                                            dao.delete(slot)
-                                            
+                                            val deletedSlot = SystemSlotController.delete(context, slot.id) ?: return@launch
+
                                             // Log deletion
                                             DebugLogger.info(
                                                 context, LogCategory.SYSTEM_CONTEXT,
@@ -228,7 +229,6 @@ fun AppSpecificSlotsScreen(
                                                 "AppSpecificConfig"
                                             )
 
-                                            recentlyDeleted = slot
                                             snackbarHostState.currentSnackbarData?.dismiss()
                                             val result = snackbarHostState.showSnackbar(
                                                 message = "Slot deleted",
@@ -236,8 +236,8 @@ fun AppSpecificSlotsScreen(
                                                 duration = SnackbarDuration.Short
                                             )
                                             if (result == SnackbarResult.ActionPerformed) {
-                                                recentlyDeleted?.let { 
-                                                    val newId = dao.insert(it.copy(id = 0)) 
+                                                deletedSlot.let {
+                                                    val newId = SystemSlotController.restore(context, it)
                                                     // Log undo
                                                     DebugLogger.success(
                                                         context, LogCategory.SYSTEM_CONTEXT,
@@ -256,7 +256,7 @@ fun AppSpecificSlotsScreen(
                 }
             }
         }
-        
+
         com.autonion.automationcompanion.features.system_context_automation.shared.ui.PermissionDisclosureDialog(
             showDialog = showAccessibilityDisclosure,
             onDismiss = { showAccessibilityDisclosure = false },

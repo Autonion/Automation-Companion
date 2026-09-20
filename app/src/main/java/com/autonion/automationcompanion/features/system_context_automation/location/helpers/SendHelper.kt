@@ -49,6 +49,11 @@ object SendHelper {
         executeSlotActions(context, slot)
     }
 
+    internal suspend fun executeClaimedSystemActions(context: Context, slot: Slot) {
+        require(slot.triggerType != "LOCATION" && slot.enabled)
+        executeSlotActions(context, slot)
+    }
+
     private suspend fun executeSlotActions(context: Context, slot: Slot) {
         val slotId = slot.id
         DebugLogger.info(

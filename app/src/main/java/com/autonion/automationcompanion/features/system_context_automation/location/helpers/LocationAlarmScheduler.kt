@@ -16,12 +16,21 @@ object LocationAlarmScheduler {
     const val ACTION_SLOT_START = "com.autonion.automationcompanion.ACTION_SLOT_START"
     const val EXTRA_OCCURRENCE_START = "occurrenceStartMillis"
     private const val REMINDER_INTERVAL_MILLIS = 3 * 60_000L
+    private const val SCHEDULED = "scheduled_ids"
+    private fun preferences(context: Context) = context.getSharedPreferences("location_alarm_registry", Context.MODE_PRIVATE)
+
+    fun cancelOrphans(context: Context, enabledIds: Set<Long>) {
+        preferences(context).getStringSet(SCHEDULED, emptySet()).orEmpty().mapNotNull(String::toLongOrNull)
+            .filter { it !in enabledIds }.forEach { cancel(context, it) }
+    }
 
     fun schedule(context: Context, slot: Slot) {
         cancel(context, slot.id)
         if (!slot.enabled || slot.triggerType != "LOCATION") return
         val now = System.currentTimeMillis()
         val next = LocationSchedule.nextWindow(slot, now) ?: return
+        val prefs = preferences(context)
+        prefs.edit().putStringSet(SCHEDULED, prefs.getStringSet(SCHEDULED, emptySet()).orEmpty() + slot.id.toString()).commit()
         setAlarm(context, next.startMillis, startIntent(context, slot.id, PendingIntent.FLAG_UPDATE_CURRENT)!!)
         if (slot.remindBeforeMinutes > 0) {
             val leadStart = next.startMillis - slot.remindBeforeMinutes.toLong() * 60_000L
@@ -32,6 +41,8 @@ object LocationAlarmScheduler {
     fun cancel(context: Context, slotId: Long) {
         cancelIntent(context, startIntent(context, slotId, PendingIntent.FLAG_NO_CREATE))
         cancelReminder(context, slotId)
+        val prefs = preferences(context)
+        prefs.edit().putStringSet(SCHEDULED, prefs.getStringSet(SCHEDULED, emptySet()).orEmpty() - slotId.toString()).commit()
     }
 
     fun cancelReminder(context: Context, slotId: Long) {

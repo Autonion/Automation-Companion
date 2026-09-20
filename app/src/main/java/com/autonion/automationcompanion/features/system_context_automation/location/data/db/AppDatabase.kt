@@ -22,6 +22,8 @@ import com.autonion.automationcompanion.features.omni_chatbot.data.db.OmniChatSe
 @TypeConverters(AutomationActionConverter::class)
 abstract class AppDatabase : RoomDatabase() {
 
+    abstract fun backupDao(): com.autonion.automationcompanion.core.backup.BackupDao
+
     abstract fun slotDao(): SlotDao
     abstract fun executionLogDao(): ExecutionLogDao
     abstract fun omniChatDao(): OmniChatDao
@@ -33,15 +35,15 @@ abstract class AppDatabase : RoomDatabase() {
 
         fun get(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
-                INSTANCE ?: Room.databaseBuilder(
-                    context.applicationContext,
-                    AppDatabase::class.java,
-                    "locauto.db"
-                )
-                    .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
-                    .build()
+                INSTANCE ?: openFile(context.applicationContext, "locauto.db")
                     .also { INSTANCE = it }
             }
         }
+
+        /** Independent, migrated backup database. Never assigned to the live singleton. */
+        internal fun openFile(context: Context, name: String): AppDatabase =
+            Room.databaseBuilder(context, AppDatabase::class.java, name)
+                .addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+                .build()
     }
 }

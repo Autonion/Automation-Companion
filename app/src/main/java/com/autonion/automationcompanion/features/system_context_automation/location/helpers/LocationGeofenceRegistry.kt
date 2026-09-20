@@ -25,6 +25,8 @@ internal object LocationGeofenceRegistry {
     private const val RETIRED = "retired_ids"
     private const val PENDING = "pending_additions"
     private const val LEGACY_REMOVED = "legacy_removed"
+    private const val LEGACY_RANGE_END = "legacy_range_end"
+    private const val LEGACY_RANGE_DONE = "legacy_range_done"
     private const val SLOT_PREFIX = "slot_"
     private const val SIGNATURE_PREFIX = "signature_"
 
@@ -50,7 +52,25 @@ internal object LocationGeofenceRegistry {
 
     fun hasPendingCleanup(context: Context): Boolean =
         !preferences(context).getStringSet(RETIRED, emptySet()).isNullOrEmpty() ||
-            !preferences(context).getStringSet(PENDING, emptySet()).isNullOrEmpty()
+            !preferences(context).getStringSet(PENDING, emptySet()).isNullOrEmpty() ||
+            preferences(context).getLong(LEGACY_RANGE_DONE, 0) < preferences(context).getLong(LEGACY_RANGE_END, 0)
+
+    /** Old versions used numeric IDs but kept no registry after deleting a row. SQLite retains the allocation watermark. */
+    fun prepareLegacyCleanup(context: Context) {
+        val prefs = preferences(context)
+        if (prefs.contains(LEGACY_RANGE_END)) return
+        val end = AppDatabase.get(context).openHelper.readableDatabase
+            .query("SELECT seq FROM sqlite_sequence WHERE name = 'slots'").use { if (it.moveToFirst()) it.getLong(0) else 0L }
+        check(prefs.edit().putLong(LEGACY_RANGE_END, end.coerceAtLeast(0)).putLong(LEGACY_RANGE_DONE, 0).commit())
+    }
+
+    internal fun legacyCleanupBatch(context: Context): LongRange {
+        val prefs = preferences(context)
+        val done = prefs.getLong(LEGACY_RANGE_DONE, 0)
+        val end = prefs.getLong(LEGACY_RANGE_END, 0)
+        if (done >= end) return LongRange.EMPTY
+        return (done + 1)..(done + minOf(100L, end - done))
+    }
 
     fun retireSlot(context: Context, slotId: Long) {
         val prefs = preferences(context)
@@ -84,6 +104,7 @@ internal object LocationGeofenceRegistry {
      * are persisted before API calls, rejecting late events and allowing cleanup to be retried.
      */
     suspend fun synchronize(context: Context, slots: List<Slot>, resetPresence: Boolean = false): Set<Long> {
+        prepareLegacyCleanup(context)
         val prefs = preferences(context)
         val dao = AppDatabase.get(context).slotDao()
         val permitted = PermissionUtils.isLocationPermissionGranted(context) &&
@@ -103,6 +124,7 @@ internal object LocationGeofenceRegistry {
             val slot = desired[id]
             if (resetPresence || token in pending || slot == null ||
                 prefs.getString("$SIGNATURE_PREFIX$id", null) != signature(slot)) {
+                if (slot == null) LocationAlarmScheduler.cancel(context, id)
                 retired.add(token)
                 editor.remove("$SLOT_PREFIX$id").remove("$SIGNATURE_PREFIX$id")
                 current.remove(id)
@@ -111,6 +133,13 @@ internal object LocationGeofenceRegistry {
         }
         // Old registrations used numeric IDs and a different PendingIntent for each slot.
         if (!prefs.getBoolean(LEGACY_REMOVED, false)) retired.addAll(slots.map { it.id.toString() })
+        // Bounded batches also retire orphaned numeric registrations from presets deleted before the update.
+        val legacyBatch = legacyCleanupBatch(context)
+        val enabledIds = slots.filter { it.enabled }.map { it.id }.toSet()
+        legacyBatch.forEach { id ->
+            retired.add(id.toString())
+            if (id !in enabledIds) LocationAlarmScheduler.cancel(context, id)
+        }
         retired.addAll(pending)
         editor.putStringSet(RETIRED, retired).remove(PENDING).commit()
 
@@ -123,7 +152,9 @@ internal object LocationGeofenceRegistry {
             }
             try {
                 withTimeout(4_000) { client.removeGeofences(retired.toList()).await() }
-                prefs.edit().putStringSet(RETIRED, emptySet()).putBoolean(LEGACY_REMOVED, true).commit()
+                val cleaned = prefs.edit().putStringSet(RETIRED, emptySet()).putBoolean(LEGACY_REMOVED, true)
+                if (!legacyBatch.isEmpty()) cleaned.putLong(LEGACY_RANGE_DONE, legacyBatch.last)
+                cleaned.commit()
             } catch (e: SecurityException) {
                 Log.w("LocationGeofences", "Permission revoked during cleanup", e)
                 return current.keys

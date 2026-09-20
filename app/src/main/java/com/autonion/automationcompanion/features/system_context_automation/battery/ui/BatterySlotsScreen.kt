@@ -1,5 +1,7 @@
 package com.autonion.automationcompanion.features.system_context_automation.battery.ui
 
+import com.autonion.automationcompanion.features.system_context_automation.shared.SystemSlotController
+
 import android.content.Intent
 import android.os.Bundle
 import androidx.activity.compose.setContent
@@ -79,7 +81,6 @@ fun BatterySlotsScreen(
     val scope = rememberCoroutineScope()
 
     val snackbarHostState = remember { SnackbarHostState() }
-    var recentlyDeleted by remember { mutableStateOf<Slot?>(null) }
 
     val allSlots by dao.getAllFlow().collectAsState(initial = emptyList())
     val slots = allSlots.filter { it.triggerType == "BATTERY" }
@@ -160,20 +161,14 @@ fun BatterySlotsScreen(
                                     slot = slot,
                                     onToggleEnabled = { enabled ->
                                         scope.launch {
-                                            dao.setEnabled(slot.id, enabled)
-                                            if (enabled) {
-                                                com.autonion.automationcompanion.features.system_context_automation.battery.engine.BatteryServiceManager.startMonitoringIfNeeded(context)
-                                            } else {
-                                                com.autonion.automationcompanion.features.system_context_automation.battery.engine.BatteryServiceManager.stopMonitoringIfNeeded(context)
-                                            }
+                                            SystemSlotController.setEnabled(context, slot.id, enabled)
+
                                         }
                                     },
                                     onEdit = { onEditClicked(slot.id) },
                                     onDelete = {
                                         scope.launch {
-                                            dao.delete(slot)
-                                            com.autonion.automationcompanion.features.system_context_automation.battery.engine.BatteryServiceManager.stopMonitoringIfNeeded(context)
-                                            recentlyDeleted = slot
+                                            val deletedSlot = SystemSlotController.delete(context, slot.id) ?: return@launch
 
                                             // Log deletion
                                             com.autonion.automationcompanion.features.automation_debugger.DebugLogger.info(
@@ -190,10 +185,9 @@ fun BatterySlotsScreen(
                                                 duration = SnackbarDuration.Short
                                             )
                                             if (result == SnackbarResult.ActionPerformed) {
-                                                recentlyDeleted?.let { 
-                                                    val newId = dao.insert(it.copy(id = 0))
-                                                    com.autonion.automationcompanion.features.system_context_automation.battery.engine.BatteryServiceManager.startMonitoringIfNeeded(context)
-                                                    
+                                                deletedSlot.let {
+                                                    val newId = SystemSlotController.restore(context, it)
+
                                                     // Log undo
                                                     com.autonion.automationcompanion.features.automation_debugger.DebugLogger.success(
                                                         context, com.autonion.automationcompanion.features.automation_debugger.data.LogCategory.SYSTEM_CONTEXT,

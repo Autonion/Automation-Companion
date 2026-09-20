@@ -327,8 +327,12 @@ private fun ExportCard(
             FeatureToggle("Screen ML Presets", Icons.Default.Psychology, uiState.mlPresets, onToggleMl)
             FeatureToggle("Flow Graphs", Icons.Default.AccountTree, uiState.flows, onToggleFlows)
             FeatureToggle("Flow Assets", Icons.Default.Folder, uiState.flowAssets, onToggleFlowAssets)
-            FeatureToggle("System Context Slots", Icons.Default.SettingsSystemDaydream, uiState.systemContextDb, onToggleSystemContext)
+            FeatureToggle("System presets, chat history & logs", Icons.Default.SettingsSystemDaydream, uiState.systemContextDb, onToggleSystemContext)
             FeatureToggle("Excluded Apps", Icons.Default.Security, uiState.excludedApps, onToggleExcludedApps)
+
+            Text("Images referenced by selected presets and flows are included automatically. Models, AI credentials/settings, device pairings and Android permissions are not included.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 8.dp))
 
             // Estimated size
             if (estimatedSize > 0) {
@@ -442,7 +446,7 @@ private fun ImportCard() {
             }
             Spacer(modifier = Modifier.height(8.dp))
             Text(
-                "Select an .atnbak file to restore your data. If the backup is password-protected, you'll be prompted to enter the password. Existing data will be preserved — imported presets and flows are added alongside your current ones.",
+                "Select an .atnbak file to import your data. Password-protected backups require the password. Existing presets and conversations are kept; matching items in the backup are skipped. New system presets retain their enabled setting and monitoring resumes when permissions allow. Old presets without saved images remain editable.",
                 style = MaterialTheme.typography.bodySmall.copy(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 18.sp
