@@ -50,6 +50,8 @@ android {
 
     // Use Java 17 for Compose
     compileOptions {
+        // Backport java.time used by System Context triggers to Android 7 (API 24/25).
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -77,6 +79,7 @@ configurations.matching { it.name == "composeMappingProducerClasspath" }.configu
 }
 
 dependencies {
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
     implementation(libs.java.websocket)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.core.ktx)
