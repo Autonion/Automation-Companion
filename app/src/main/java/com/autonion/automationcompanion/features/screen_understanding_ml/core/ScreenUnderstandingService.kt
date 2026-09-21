@@ -29,6 +29,7 @@ import com.autonion.automationcompanion.R
 import com.autonion.automationcompanion.features.flow_automation.ui.FlowMediaProjectionActivity
 import com.autonion.automationcompanion.features.screen_understanding_ml.logic.ActionExecutor
 import com.autonion.automationcompanion.features.screen_understanding_ml.logic.PresetRepository
+import com.autonion.automationcompanion.features.screen_understanding_ml.logic.CaptureMetadataStore
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.AutomationPreset
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.AutomationStep
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.ExecutionMode
@@ -792,9 +793,20 @@ class ScreenUnderstandingService : Service() {
                 f
             }
 
-            // 3. Serialize a11y data
-            val accElementsJson = try { Json.encodeToString(a11yElements) } catch (_: Exception) { null }
-            val accTextJson = try { Json.encodeToString(accTextNodes) } catch (_: Exception) { null }
+            // Persist all boxes, including unselected ones, with this exact screenshot.
+            val metadataPath = try {
+                withContext(Dispatchers.IO) {
+                    CaptureMetadataStore.saveForImage(file, a11yElements, accTextNodes, accessibilityOnly = true)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to save accessibility snapshot", e)
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(this@ScreenUnderstandingService, "Could not save the capture. Try again.", Toast.LENGTH_SHORT).show()
+                }
+                return@launch
+            }
 
             // 4. Launch CaptureEditorActivity
             withContext(Dispatchers.Main) {
@@ -805,8 +817,7 @@ class ScreenUnderstandingService : Service() {
                     putExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_MODE, isFlowMode)
                     putExtra(com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract.EXTRA_FLOW_NODE_ID, flowNodeId)
                     putExtra("A11Y_ONLY_MODE", true)
-                    accElementsJson?.let { putExtra("ACC_ELEMENTS_DATA", it) }
-                    accTextJson?.let { putExtra("ACC_TEXT_DATA", it) }
+                    putExtra(CaptureMetadataStore.EXTRA_METADATA_PATH, metadataPath)
                     flowMlJson?.let { putExtra("EXTRA_FLOW_ML_JSON", it) }
                     if (clearOnStart) putExtra("EXTRA_CLEAR_ON_START", true)
                 }
@@ -914,32 +925,17 @@ class ScreenUnderstandingService : Service() {
             // Pre-capture accessibility data WHILE the target app is still in the foreground.
             // Once the Editor opens, rootInActiveWindow will point to the Editor, not the target.
             val accTextNodes = captureAccessibilityTextNodes()
-            val accTextJson = if (accTextNodes.isNotEmpty()) {
-                try {
-                    Json.encodeToString(accTextNodes)
-                } catch (e: Exception) {
-                    Log.w(TAG, "Failed to serialize acc text nodes", e)
-                    null
-                }
-            } else null
             Log.d(TAG, "Pre-captured ${accTextNodes.size} accessibility text nodes for editor")
 
             // Pre-capture interactive accessibility elements for augmenting YOLO in the editor
             val accInteractiveElements = AccessibilityAugmenter.captureAllInteractiveElements()
-            val accElementsJson = if (accInteractiveElements.isNotEmpty()) {
-                try {
-                    Json.encodeToString(accInteractiveElements)
-                } catch (e: Exception) {
-                    Log.w(TAG, "Failed to serialize acc interactive elements", e)
-                    null
-                }
-            } else null
             Log.d(TAG, "Pre-captured ${accInteractiveElements.size} interactive accessibility elements for editor")
 
-            withContext(Dispatchers.IO) {
+            val metadataPath = withContext(Dispatchers.IO) {
                 FileOutputStream(file).use { stream ->
                     check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)) { "Could not encode snapshot" }
                 }
+                CaptureMetadataStore.saveForImage(file, accInteractiveElements, accTextNodes, isA11yOnlyMode)
             }
 
             withContext(Dispatchers.Main) {
@@ -953,8 +949,7 @@ class ScreenUnderstandingService : Service() {
                     putExtra("A11Y_ONLY_MODE", isA11yOnlyMode)
                     flowMlJson?.let { putExtra("EXTRA_FLOW_ML_JSON", it) }
                     if (clearOnStart) putExtra("EXTRA_CLEAR_ON_START", true)
-                    accTextJson?.let { putExtra("ACC_TEXT_DATA", it) }
-                    accElementsJson?.let { putExtra("ACC_ELEMENTS_DATA", it) }
+                    putExtra(CaptureMetadataStore.EXTRA_METADATA_PATH, metadataPath)
                 }
                 startActivity(intent)
             }

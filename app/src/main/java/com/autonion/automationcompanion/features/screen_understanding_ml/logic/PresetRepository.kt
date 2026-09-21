@@ -26,25 +26,33 @@ class PresetRepository(private val context: Context) {
         val images = File(presetsDir, "${preset.id}_images")
         val copied = mutableMapOf<String, String?>()
         val created = mutableListOf<File>()
+        // Older steps on the same screenshot may not yet carry its metadata reference.
+        val metadataByImage = preset.steps.groupBy { it.captureImagePath }.mapValues { (_, steps) ->
+            steps.firstNotNullOfOrNull { it.captureMetadataPath?.takeIf(String::isNotBlank) }
+        }
+        fun retainAsset(path: String, extension: String): String? = copied.getOrPut(path) {
+            val source = File(path)
+            when {
+                !source.isFile -> null // Legacy/missing assets must not prevent editing.
+                source.canonicalFile.parentFile == images.canonicalFile -> source.absolutePath
+                else -> {
+                    check(images.isDirectory || images.mkdirs()) { "Cannot create snapshot directory" }
+                    val destination = File(images, "${UUID.randomUUID()}.$extension")
+                    created.add(destination)
+                    source.copyTo(destination)
+                    destination.absolutePath
+                }
+            }
+        }
         try {
             val steps = preset.steps.sortedBy { it.orderIndex }.mapIndexed { index, step ->
                 val preview = step.captureImagePath?.let { path ->
-                    copied.getOrPut(path) {
-                        val source = File(path)
-                        when {
-                            !source.isFile -> null // Legacy/missing previews must not prevent editing.
-                            source.canonicalFile.parentFile == images.canonicalFile -> source.absolutePath
-                            else -> {
-                                check(images.isDirectory || images.mkdirs()) { "Cannot create snapshot directory" }
-                                val destination = File(images, "${UUID.randomUUID()}.png")
-                                created.add(destination)
-                                source.copyTo(destination)
-                                destination.absolutePath
-                            }
-                        }
-                    }
+                    retainAsset(path, "png")
                 }
-                step.copy(orderIndex = index, captureImagePath = preview)
+                val metadata = if (preview != null) metadataByImage[step.captureImagePath]?.let {
+                    retainAsset(it, "capture.json")
+                } else null
+                step.copy(orderIndex = index, captureImagePath = preview, captureMetadataPath = metadata)
             }
             val file = AtomicFile(File(presetsDir, "${preset.id}.json"))
             val output = file.startWrite()
@@ -55,7 +63,7 @@ class PresetRepository(private val context: Context) {
                 file.failWrite(output)
                 throw error
             }
-            val retained = steps.mapNotNull { it.captureImagePath }.toSet()
+            val retained = steps.flatMap { listOfNotNull(it.captureImagePath, it.captureMetadataPath) }.toSet()
             images.listFiles()?.filter { it.isFile && it.absolutePath !in retained }?.forEach { it.delete() }
         } catch (error: Exception) {
             created.forEach { it.delete() }

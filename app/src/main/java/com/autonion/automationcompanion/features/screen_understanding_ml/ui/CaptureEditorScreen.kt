@@ -86,7 +86,7 @@ internal fun CaptureEditorScreen(
             bottom = if (landscape) 0.dp else toolbarHeight)) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.Center) {
                 listOf(EditorDisplayMode.ELEMENTS, EditorDisplayMode.TEXT, EditorDisplayMode.SELECTED)
-                    .filterNot { model.a11yOnly && it == EditorDisplayMode.TEXT }.forEach { mode ->
+                    .filterNot { model.pageAccessibilityOnly && it == EditorDisplayMode.TEXT }.forEach { mode ->
                         FilterChip(selected = model.mode == mode,
                             onClick = { model.chooseMode(mode) }, enabled = !model.saving,
                             modifier = Modifier.padding(horizontal = 3.dp),
@@ -103,6 +103,11 @@ internal fun CaptureEditorScreen(
             Text(if (model.scanning) "Finding ${if (model.mode == EditorDisplayMode.TEXT) "text" else "elements"}…"
                 else "Tap a target to select · Pinch to zoom · Hold for settings",
                 color = Color.LightGray, fontSize = 11.sp, modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 6.dp))
+            if (model.mode == EditorDisplayMode.ELEMENTS && model.missingAccessibilityData) {
+                Text("Additional accessibility elements weren't saved with this capture. Recapture to include them.",
+                    color = Color.LightGray, fontSize = 11.sp,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp))
+            }
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 val bitmap = model.bitmap
                 if (bitmap != null) CaptureCanvas(bitmap, model, fitRevision, onSettings = { showSettings = true })

@@ -16,6 +16,11 @@ import com.autonion.automationcompanion.core.backup.BackupManager
 import com.autonion.automationcompanion.core.backup.BackupManifest
 import com.autonion.automationcompanion.core.backup.CryptoUtils
 import com.autonion.automationcompanion.features.screen_understanding_ml.logic.PresetRepository
+import com.autonion.automationcompanion.features.screen_understanding_ml.logic.CaptureMetadataStore
+import com.autonion.automationcompanion.features.screen_understanding_ml.model.CaptureMetadata
+import com.autonion.automationcompanion.features.screen_understanding_ml.model.CapturedTextNode
+import com.autonion.automationcompanion.features.screen_understanding_ml.model.UIElement
+import android.graphics.RectF
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.AutomationPreset
 import com.autonion.automationcompanion.features.flow_automation.data.FlowRepository
 import com.autonion.automationcompanion.features.flow_automation.model.FlowGraph
@@ -68,14 +73,48 @@ class BackupCompatibilityTest {
 
     @Test fun newScreenMlBackupIncludesSavedSnapshotSubdirectories() = Fixture().use { f ->
         val image = File(f.root, "capture.png").apply { writeBytes(byteArrayOf(1, 2, 3)) }
+        val metadata = metadata(image)
         val old = Gson().fromJson(legacy, AutomationPreset::class.java)
         val repository = PresetRepository(f.source)
-        repository.savePreset(old.copy(steps = old.steps.map { it.copy(captureImagePath = image.absolutePath) }))
-        val savedImage = File(repository.getPreset("legacy")!!.steps.single().captureImagePath!!)
+        repository.savePreset(old.copy(steps = old.steps.map { it.copy(captureImagePath = image.absolutePath, captureMetadataPath = metadata) }))
+        val saved = repository.getPreset("legacy")!!.steps.single()
+        val savedImage = File(saved.captureImagePath!!)
         val output = File(f.root, "new.atnbak")
         assertTrue(BackupManager(f.source).export(Uri.fromFile(output), listOf(BackupManifest.FEATURE_ML_PRESETS), null))
         ZipFile(output).use { zip ->
             assertNotNull("New Screen ML snapshot is missing from exported archive", zip.getEntry(savedImage.relativeTo(f.source.filesDir).invariantSeparatorsPath))
+            assertNotNull("Accessibility metadata is missing from exported archive",
+                zip.getEntry(File(saved.captureMetadataPath!!).relativeTo(f.source.filesDir).invariantSeparatorsPath))
+        }
+    }
+
+    @Test fun accessibilityMetadataSurvivesPlainAndEncryptedImportIntoDifferentStorage() {
+        for (password in listOf(null, "metadata-password")) Fixture().use { f ->
+            val image = File(f.root, "capture.png").apply { writeBytes(byteArrayOf(7, 8, 9)) }
+            val metadataPath = metadata(image)
+            val before = CaptureMetadataStore.read(metadataPath, 1080, 2400)!!
+            val preset = Gson().fromJson(legacy, AutomationPreset::class.java)
+            val source = PresetRepository(f.source)
+            val steps = preset.steps.map { it.copy(captureImagePath = image.path, captureMetadataPath = metadataPath) }
+            source.savePreset(preset.copy(steps = steps + steps.single().copy(id = "second", orderIndex = 1)))
+            val output = File(f.root, "metadata.atnbak")
+            assertTrue(BackupManager(f.source).export(Uri.fromFile(output), listOf(BackupManifest.FEATURE_ML_PRESETS), password))
+            source.deletePreset(preset.id)
+            assertTrue(image.delete())
+            assertTrue(File(metadataPath).delete())
+            val target = PresetRepository(f.target)
+            assertTrue(BackupManager(f.target).import(Uri.fromFile(output), password) is BackupManager.ImportResult.Success)
+            val imported = target.getPreset(preset.id)!!
+            assertEquals(1, imported.steps.map { it.captureMetadataPath }.distinct().size)
+            val relocated = imported.steps.first().captureMetadataPath!!
+            assertTrue(relocated.startsWith(f.target.filesDir.path))
+            val restored = CaptureMetadataStore.read(relocated, 1080, 2400)!!
+            assertEquals(before.captureId, restored.captureId)
+            assertEquals(before.textNodes, restored.textNodes)
+            assertEquals("Unselected Lens description", restored.accessibilityElements.last().text)
+            assertEquals(RectF(800f, 300f, 950f, 450f), restored.accessibilityElements.last().bounds)
+            target.savePreset(imported.copy(name = "Edited after import"))
+            assertEquals(before.captureId, CaptureMetadataStore.read(target.getPreset(preset.id)!!.steps.first().captureMetadataPath, 1080, 2400)!!.captureId)
         }
     }
 
@@ -121,6 +160,26 @@ class BackupCompatibilityTest {
         assertArrayEquals(byteArrayOf(2), restoredImage.readBytes())
     }
 
+    @Test fun metadataCollisionPreservesCurrentAssetAndRelocatesIncomingReference() = Fixture().use { f ->
+        val assetName = "ml_presets/legacy_images/snapshot.capture.json"
+        val current = File(f.target.filesDir, assetName).apply { parentFile!!.mkdirs(); writeText("existing metadata") }
+        val sourceImage = File(f.root, "snapshot.png").apply { writeBytes(byteArrayOf(1)) }
+        val metadataPath = metadata(sourceImage)
+        val preset = Gson().fromJson(legacy, AutomationPreset::class.java)
+        val incoming = preset.copy(steps = preset.steps.map { it.copy(
+            captureImagePath = "/old/files/ml_presets/legacy_images/snapshot.png",
+            captureMetadataPath = "/old/files/$assetName") })
+        val input = File(f.root, "metadata-collision.atnbak").apply {
+            writeBytes(archive(mapOf("ml_presets/legacy.json" to Gson().toJson(incoming).toByteArray(),
+                "ml_presets/legacy_images/snapshot.png" to sourceImage.readBytes(), assetName to File(metadataPath).readBytes())))
+        }
+        assertTrue(BackupManager(f.target).import(Uri.fromFile(input), null) is BackupManager.ImportResult.Success)
+        assertEquals("existing metadata", current.readText())
+        val restored = PresetRepository(f.target).getPreset("legacy")!!.steps.single()
+        assertNotEquals(current.path, restored.captureMetadataPath)
+        assertEquals("Unselected Lens description", CaptureMetadataStore.read(restored.captureMetadataPath, 1080, 2400)!!.textNodes.last().text)
+    }
+
     @Test fun invalidImageEntryCannotBypassPresetValidationOrPublishFiles() = Fixture().use { f ->
         for (entry in listOf("vision_images/presets/unvalidated.json", "ml_presets//alias/snapshot.png", "flow_assets/../escape.png")) {
             val input = File(f.root, "invalid-image.atnbak").apply {
@@ -133,16 +192,20 @@ class BackupCompatibilityTest {
 
     @Test fun fullFlowBackupCollectsPerStepImagesOutsideFlowAssets() = Fixture().use { f ->
         val image = File(f.source.filesDir, "temporary-snapshot.png").apply { writeBytes(byteArrayOf(4, 5)) }
-        val steps = Json.encodeToString(Gson().fromJson(legacy, AutomationPreset::class.java).steps.map { it.copy(captureImagePath = image.absolutePath) })
+        val metadataPath = metadata(image)
+        val steps = Json.encodeToString(Gson().fromJson(legacy, AutomationPreset::class.java).steps.map { it.copy(captureImagePath = image.absolutePath, captureMetadataPath = metadataPath) })
         val graph = FlowGraph(name = "Nested image", nodes = listOf(ScreenMLNode(automationStepsJson = steps)))
         FlowRepository(f.source).save(graph)
         val output = File(f.root, "flow-full.atnbak")
         assertTrue(BackupManager(f.source).export(Uri.fromFile(output), listOf(BackupManifest.FEATURE_FLOWS), null))
         image.delete()
+        File(metadataPath).delete()
         assertTrue(BackupManager(f.target).import(Uri.fromFile(output), null) is BackupManager.ImportResult.Success)
         val restored = FlowRepository(f.target).load(graph.id)!!.nodes.single() as ScreenMLNode
         val path = (Gson().fromJson(restored.automationStepsJson, List::class.java).single() as Map<*, *>)["captureImagePath"] as String
         assertArrayEquals(byteArrayOf(4, 5), File(path).readBytes())
+        val relocated = (Gson().fromJson(restored.automationStepsJson, List::class.java).single() as Map<*, *>)["captureMetadataPath"] as String
+        assertEquals("Unselected Lens description", CaptureMetadataStore.read(relocated, 1080, 2400)!!.textNodes.last().text)
     }
 
     @Test fun globalBackupRebasesVisionPathsForDestinationStorage() = Fixture().use { f ->
@@ -161,19 +224,31 @@ class BackupCompatibilityTest {
 
     @Test fun individualFlowImportRebasesSnapshotInsideAutomationSteps() = Fixture().use { f ->
         val sourceImage = File(f.source.filesDir, "snapshot.png").apply { writeBytes(byteArrayOf(1, 2, 3)) }
-        val steps = Json.encodeToString(Gson().fromJson(legacy, AutomationPreset::class.java).steps.map { it.copy(captureImagePath = sourceImage.absolutePath) })
+        val metadataPath = metadata(sourceImage)
+        val steps = Json.encodeToString(Gson().fromJson(legacy, AutomationPreset::class.java).steps.map { it.copy(captureImagePath = sourceImage.absolutePath, captureMetadataPath = metadataPath) })
         val graph = FlowGraph(name = "Screen ML flow", nodes = listOf(ScreenMLNode(captureImagePath = sourceImage.absolutePath, automationStepsJson = steps)))
         val sourceRepository = FlowRepository(f.source)
         sourceRepository.save(graph)
         val output = File(f.root, "flow.zip")
         assertTrue(sourceRepository.exportToUri(graph.id, Uri.fromFile(output)))
         assertTrue(sourceImage.delete())
+        assertTrue(File(metadataPath).delete())
         val imported = FlowRepository(f.target).importFromUri(Uri.fromFile(output))!!
         val node = imported.nodes.single() as ScreenMLNode
         assertTrue(File(node.captureImagePath).isFile)
         val nested = Gson().fromJson(node.automationStepsJson, List::class.java).single() as Map<*, *>
         assertEquals("Per-step snapshot must be remapped along with node snapshot", node.captureImagePath, nested["captureImagePath"])
+        val relocated = nested["captureMetadataPath"] as String
+        assertTrue(relocated.startsWith(f.target.filesDir.path))
+        assertEquals("Unselected Lens description", CaptureMetadataStore.read(relocated, 1080, 2400)!!.textNodes.last().text)
     }
+
+    private fun metadata(image: File): String = CaptureMetadataStore.write(image, CaptureMetadata(
+        width = 1080, height = 2400,
+        accessibilityElements = listOf(UIElement("unselected", "icon", 0.85f,
+            RectF(800f, 300f, 950f, 450f), "Unselected Lens description", source = "accessibility")),
+        textNodes = listOf(CapturedTextNode("Search", 10f, 300f, 700f, 450f),
+            CapturedTextNode("Unselected Lens description", 800f, 300f, 950f, 450f))))
 
     @Test fun globalImportPreservesExistingSameNamePresetAsPromisedByUi() = Fixture().use { f ->
         File(f.target.filesDir, "presets").mkdirs()

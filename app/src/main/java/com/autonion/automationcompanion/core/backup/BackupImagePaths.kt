@@ -2,9 +2,9 @@ package com.autonion.automationcompanion.core.backup
 
 import kotlinx.serialization.json.*
 
-/** Visits persisted image references, including JSON embedded in Flow nodes. */
+/** Visits persisted capture assets (images and metadata), including JSON embedded in Flow nodes. */
 internal object BackupImagePaths {
-    private val imageKeys = setOf("captureImagePath", "templateImagePath", "templatePath", "sourceCapturePath")
+    private val imageKeys = setOf("captureImagePath", "captureMetadataPath", "templateImagePath", "templatePath", "sourceCapturePath")
     private val embeddedKeys = setOf("visionPresetJson", "automationStepsJson")
     private val json = Json { ignoreUnknownKeys = true }
 

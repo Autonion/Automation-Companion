@@ -11,6 +11,7 @@ import androidx.lifecycle.viewModelScope
 import com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract
 import com.autonion.automationcompanion.features.screen_understanding_ml.core.*
 import com.autonion.automationcompanion.features.screen_understanding_ml.logic.PresetRepository
+import com.autonion.automationcompanion.features.screen_understanding_ml.logic.CaptureMetadataStore
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.*
 import com.google.gson.Gson
 import kotlinx.coroutines.*
@@ -23,7 +24,8 @@ import java.util.UUID
 internal val AutomationStep.captureKey: String
     get() = captureImagePath ?: "legacy:${captureScreenWidth}x$captureScreenHeight"
 
-internal data class CapturePage(val key: String, val path: String?, val width: Float, val height: Float)
+internal data class CapturePage(val key: String, val path: String?, val width: Float, val height: Float,
+    val metadataPath: String? = null)
 enum class EditorDisplayMode { ELEMENTS, TEXT, SELECTED }
 
 /** Owns the draft independently of the capture service and retains it across rotation. */
@@ -33,7 +35,6 @@ class CaptureEditorViewModel(application: Application, private val saved: SavedS
     private val gson = Gson()
     private var initialized = false
     private var original: AutomationPreset? = null
-    private var input: Intent? = null
     private val undo = ArrayDeque<List<AutomationStep>>()
     private val ocrEngine = lazy { OcrEngine() }
     private val ocrLock = Mutex()
@@ -62,6 +63,9 @@ class CaptureEditorViewModel(application: Application, private val saved: SavedS
     var standaloneEdit = false; private set
     var flowMode = false; private set
     var a11yOnly = false; private set
+    internal var captureMetadata by mutableStateOf<CaptureMetadata?>(null); private set
+    internal val pageAccessibilityOnly get() = captureMetadata?.accessibilityOnly ?: a11yOnly
+    internal val missingAccessibilityData get() = !loading && bitmap != null && captureMetadata == null
     val selected get() = steps.find { it.id == selectedId }
     internal val page get() = pages.getOrNull(pageIndex)
     internal val pageSteps get() = steps.filter { it.captureKey == page?.key }
@@ -71,7 +75,6 @@ class CaptureEditorViewModel(application: Application, private val saved: SavedS
     fun load(intent: Intent) {
         if (initialized) return
         initialized = true
-        input = intent
         standaloneEdit = intent.hasExtra("PRESET_ID")
         flowMode = intent.getBooleanExtra(FlowOverlayContract.EXTRA_FLOW_MODE, false)
         a11yOnly = intent.getBooleanExtra("A11Y_ONLY_MODE", false)
@@ -84,6 +87,16 @@ class CaptureEditorViewModel(application: Application, private val saved: SavedS
                 executionMode = saved.get<String>("executionMode")?.let(ExecutionMode::valueOf)
                     ?: original?.executionMode ?: ExecutionMode.STRICT
                 val imagePath = intent.getStringExtra("IMAGE_PATH")
+                // Accept older capture intents as well; all new captures already have an asset.
+                val metadataPath = intent.getStringExtra(CaptureMetadataStore.EXTRA_METADATA_PATH)
+                    ?: if (imagePath != null && (intent.hasExtra("ACC_ELEMENTS_DATA") || intent.hasExtra("ACC_TEXT_DATA"))) {
+                        withContext(Dispatchers.IO) {
+                            CaptureMetadataStore.saveForImage(File(imagePath),
+                                intent.getStringExtra("ACC_ELEMENTS_DATA")?.let { json.decodeFromString<List<UIElement>>(it) }.orEmpty(),
+                                intent.getStringExtra("ACC_TEXT_DATA")?.let { json.decodeFromString<List<CapturedTextNode>>(it) }.orEmpty(),
+                                a11yOnly)
+                        }
+                    } else null
                 steps = saved.get<String>("steps")?.let { json.decodeFromString<List<AutomationStep>>(it) }
                     ?: original?.steps?.sortedBy { it.orderIndex }
                     ?: intent.getStringExtra("EXTRA_FLOW_ML_JSON")?.takeUnless {
@@ -93,11 +106,18 @@ class CaptureEditorViewModel(application: Application, private val saved: SavedS
                 if (!standaloneEdit && original == null) steps = steps.map {
                     if (it.captureImagePath == null) it.copy(captureImagePath = imagePath) else it
                 }
+                val metadataByImage = steps.groupBy { it.captureImagePath }.mapValues { (_, targets) ->
+                    targets.firstNotNullOfOrNull { it.captureMetadataPath }
+                }
+                steps = steps.map { step ->
+                    step.copy(captureMetadataPath = if (step.captureImagePath == imagePath && metadataPath != null)
+                        metadataPath else metadataByImage[step.captureImagePath])
+                }
                 pages = steps.distinctBy { it.captureKey }.map {
-                    CapturePage(it.captureKey, it.captureImagePath, it.captureScreenWidth, it.captureScreenHeight)
+                    CapturePage(it.captureKey, it.captureImagePath, it.captureScreenWidth, it.captureScreenHeight, it.captureMetadataPath)
                 }
                 if (imagePath != null && pages.none { it.path == imagePath }) {
-                    pages = pages + CapturePage(imagePath, imagePath, 0f, 0f)
+                    pages = pages + CapturePage(imagePath, imagePath, 0f, 0f, metadataPath)
                 }
                 mode = saved.get<String>("mode")?.let(EditorDisplayMode::valueOf)
                     ?: if (standaloneEdit) EditorDisplayMode.SELECTED else EditorDisplayMode.ELEMENTS
@@ -120,13 +140,23 @@ class CaptureEditorViewModel(application: Application, private val saved: SavedS
         analysisVersion++
         analysisJob?.cancel()
         bitmap = null
+        captureMetadata = null
         elements = emptyList()
         textElements = emptyList()
         scanning = false
         loading = true
         val current = page!!
         pageJob = viewModelScope.launch {
-            bitmap = withContext(Dispatchers.IO) { current.path?.let(BitmapFactory::decodeFile) }
+            val loaded = withContext(Dispatchers.IO) {
+                val image = current.path?.let(BitmapFactory::decodeFile)
+                image to image?.let { CaptureMetadataStore.read(current.metadataPath, it.width, it.height) }
+            }
+            bitmap = loaded.first
+            captureMetadata = loaded.second
+            if (pageAccessibilityOnly && mode == EditorDisplayMode.TEXT) {
+                mode = EditorDisplayMode.ELEMENTS
+                saved["mode"] = mode.name
+            }
             loading = false
             elements = analyses[current.key].orEmpty()
             textElements = textAnalyses[current.key]?.textElements().orEmpty()
@@ -143,6 +173,8 @@ class CaptureEditorViewModel(application: Application, private val saved: SavedS
     private fun scanIfNeeded() {
         val current = page ?: return
         val source = bitmap ?: return
+        val metadata = captureMetadata
+        val accessibilityOnly = pageAccessibilityOnly
         if (loading || mode == EditorDisplayMode.SELECTED) return
         val requested = mode
         if (requested == EditorDisplayMode.ELEMENTS && analyses.containsKey(current.key)) return
@@ -160,19 +192,14 @@ class CaptureEditorViewModel(application: Application, private val saved: SavedS
                         val result = recognize()
                         withContext(Dispatchers.Main) { textElements = result.textElements() }
                     } else {
-                        // Only the fresh page can use accessibility data captured before opening the editor.
-                        val fresh = current.path == input?.getStringExtra("IMAGE_PATH")
-                        val accessibility = if (fresh) input?.getStringExtra("ACC_ELEMENTS_DATA")
-                            ?.let { json.decodeFromString<List<UIElement>>(it) }.orEmpty() else emptyList()
-                        val capturedText = if (fresh) input?.getStringExtra("ACC_TEXT_DATA")
-                            ?.let { json.decodeFromString<List<CapturedTextNode>>(it) }.orEmpty() else emptyList()
-                        val detected = if (a11yOnly) accessibility.ifEmpty {
-                            input?.getStringExtra("ACC_TEXT_DATA")?.let { json.decodeFromString<List<CapturedTextNode>>(it) }
-                                .orEmpty().map {
-                                    UIElement(UUID.randomUUID().toString(), "button", 0.85f,
-                                        android.graphics.RectF(it.boundsLeft, it.boundsTop, it.boundsRight, it.boundsBottom),
-                                        it.text, source = "accessibility")
-                                }
+                        val accessibility = metadata?.accessibilityElements.orEmpty()
+                        val capturedText = metadata?.textNodes.orEmpty()
+                        val detected = if (accessibilityOnly) accessibility.ifEmpty {
+                            capturedText.map {
+                                UIElement(UUID.randomUUID().toString(), "button", 0.85f,
+                                    android.graphics.RectF(it.boundsLeft, it.boundsTop, it.boundsRight, it.boundsBottom),
+                                    it.text, source = "accessibility")
+                            }
                         } else {
                             val detector = PerceptionLayer(getApplication())
                             val visual = try { detector.detect(source) } finally { detector.close() }
@@ -217,7 +244,7 @@ class CaptureEditorViewModel(application: Application, private val saved: SavedS
         val image = bitmap ?: return
         change(steps + AutomationStep(UUID.randomUUID().toString(), steps.size, element.label,
             anchor = element, captureScreenWidth = image.width.toFloat(), captureScreenHeight = image.height.toFloat(),
-            captureImagePath = page?.path))
+            captureImagePath = page?.path, captureMetadataPath = page?.metadataPath))
         select(steps.last().id)
     }
 

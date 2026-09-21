@@ -19,6 +19,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.autonion.automationcompanion.core.onboarding.OnboardingPreferences
 import com.autonion.automationcompanion.features.flow_automation.engine.FlowOverlayContract
 import com.autonion.automationcompanion.features.screen_understanding_ml.logic.PresetRepository
+import com.autonion.automationcompanion.features.screen_understanding_ml.logic.CaptureMetadataStore
 import com.autonion.automationcompanion.features.screen_understanding_ml.core.findStepTarget
 import com.autonion.automationcompanion.features.screen_understanding_ml.core.ScreenUnderstandingService
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.*
@@ -65,6 +66,12 @@ class ScreenMlEditorTest {
         }
     }
     @Test fun recaptureRetainsUnsavedTargetsWithoutOverwritingTheSavedPreset() = Data().use { data ->
+        val metadataPath = CaptureMetadataStore.saveForImage(data.sources[0], listOf(data.preset.steps[0].anchor), emptyList(), true)
+        data.repository.savePreset(data.preset.copy(steps = data.preset.steps.map {
+            if (it.captureImagePath == data.sources[0].path) it.copy(captureMetadataPath = metadataPath) else it
+        }))
+        File(metadataPath).delete()
+        val storedMetadata = data.repository.getPreset(data.preset.id)!!.steps[0].captureMetadataPath
         var draftPath: String? = null
         Editor(data).use { editor ->
             editor.main {
@@ -88,6 +95,8 @@ class ScreenMlEditorTest {
             Editor(data, intent).use { editor ->
                 assertEquals(3, editor.model.steps.size)
                 assertEquals(ActionType.WAIT, editor.model.steps[0].actionType)
+                assertEquals(storedMetadata, editor.model.steps[0].captureMetadataPath)
+                assertNotNull(CaptureMetadataStore.read(editor.model.steps[0].captureMetadataPath, 900, 1800))
                 assertEquals(3, editor.model.pages.size)
                 assertEquals(2, editor.model.pageIndex)
                 editor.main { editor.model.add(data.preset.steps[2].anchor) }
@@ -101,6 +110,7 @@ class ScreenMlEditorTest {
                 editor.await { returned }
                 assertEquals("Renamed draft", service.getEditorPreset()!!.name)
                 assertEquals(4, service.getEditorPreset()!!.steps.size)
+                assertEquals(storedMetadata, service.getEditorPreset()!!.steps[0].captureMetadataPath)
                 assertEquals(ActionType.CLICK, data.repository.getPreset(data.preset.id)!!.steps[0].actionType)
             }
         } finally { ScreenUnderstandingService.instance = previous; File(draftPath!!).delete() }
@@ -136,17 +146,106 @@ class ScreenMlEditorTest {
         assertEquals(1, attempts)
     }
     @Test fun snapshotsSurviveCacheRemovalAndAreCleanedUpWithTheirPreset() = Data().use { data ->
+        val metadata = data.sources.map { CaptureMetadataStore.saveForImage(it, emptyList(), emptyList(), false) }
+        data.repository.savePreset(data.preset.copy(steps = data.preset.steps.map { step ->
+            step.copy(captureMetadataPath = metadata[data.sources.indexOfFirst { it.path == step.captureImagePath }])
+        }))
         val stored = data.repository.getPreset(data.preset.id)!!
         val paths = stored.steps.mapNotNull { it.captureImagePath }.distinct()
+        val metadataPaths = stored.steps.mapNotNull { it.captureMetadataPath }.distinct()
         assertEquals(2, paths.size)
+        assertEquals(2, metadataPaths.size)
         assertEquals(stored.steps[0].captureImagePath, stored.steps[1].captureImagePath)
+        assertEquals(stored.steps[0].captureMetadataPath, stored.steps[1].captureMetadataPath)
         data.sources.forEach { assertTrue(it.delete()) }
+        metadata.forEach { assertTrue(File(it).delete()) }
         assertTrue(paths.all { File(it).isFile })
+        assertTrue(metadataPaths.all { CaptureMetadataStore.read(it, 900, 1800) != null })
         data.repository.savePreset(stored.copy(steps = stored.steps.take(2)))
         assertTrue(File(paths[0]).exists())
         assertFalse("Unused page should be removed after saving", File(paths[1]).exists())
+        assertTrue(File(metadataPaths[0]).exists())
+        assertFalse(File(metadataPaths[1]).exists())
         data.repository.deletePreset(stored.id)
         assertFalse(File(paths[0]).exists())
+        assertFalse(File(metadataPaths[0]).exists())
+    }
+
+    @Test fun savedUnselectedAccessibilityBoxesCanBeAddedAfterReopeningAndPaging() = Data().use { data ->
+        val extras = listOf("Saved only", "Second capture only").map { text ->
+            UIElement(UUID.randomUUID().toString(), "checkbox", 0.85f,
+                RectF(60f, 1200f, 210f, 1330f), text, source = "accessibility")
+        }
+        val metadataPaths = data.sources.mapIndexed { index, file ->
+            CaptureMetadataStore.saveForImage(file, listOf(extras[index]), listOf(
+                CapturedTextNode(extras[index].text!!, 60f, 1200f, 210f, 1330f)), false)
+        }
+        data.repository.savePreset(data.preset.copy(steps = data.preset.steps.map { step ->
+            step.copy(captureMetadataPath = metadataPaths[data.sources.indexOfFirst { it.path == step.captureImagePath }])
+        }))
+        data.sources.forEach { assertTrue(it.delete()) }
+        metadataPaths.forEach { assertTrue(File(it).delete()) }
+        Editor(data).use { editor ->
+            editor.main { editor.model.chooseMode(EditorDisplayMode.ELEMENTS) }
+            editor.await { !editor.model.scanning && editor.model.elements.any { it.id == extras[0].id } }
+            assertFalse(editor.model.missingAccessibilityData)
+            assertEquals("Saved only", editor.model.captureMetadata!!.textNodes.single().text)
+            editor.tapBitmap(extras[0].bounds.centerX(), extras[0].bounds.centerY())
+            assertEquals(4, editor.model.steps.size)
+            assertEquals(editor.model.steps.first().captureMetadataPath, editor.model.steps.last().captureMetadataPath)
+            editor.main { editor.model.navigate(1) }
+            editor.await { !editor.model.loading && !editor.model.scanning && editor.model.elements.any { it.id == extras[1].id } }
+            assertFalse(editor.model.elements.any { it.id == extras[0].id })
+            editor.scenario.recreate()
+            editor.scenario.onActivity { editor.model = ViewModelProvider(it)[CaptureEditorViewModel::class.java] }
+            editor.await { !editor.model.loading && !editor.model.scanning && editor.model.elements.any { it.id == extras[1].id } }
+            assertEquals(4, editor.model.steps.size)
+            editor.screenshot("screen-ml-restored-accessibility.png")
+            editor.click("Save")
+            editor.await { data.repository.getPreset(data.preset.id)!!.steps.size == 4 }
+        }
+    }
+
+    @Test fun legacyCaptureShowsNoticeButKnownEmptySnapshotDoesNot() = Data().use { data ->
+        val notice = "Additional accessibility elements weren't saved with this capture. Recapture to include them."
+        Editor(data).use { editor ->
+            editor.main { editor.model.chooseMode(EditorDisplayMode.ELEMENTS) }
+            // The notice must be available during detection too. Cold NNAPI/OCR startup
+            // can exceed the UI wait budget and is not what this assertion verifies.
+            editor.await { editor.find(notice) != null }
+            assertEquals(3, editor.model.steps.size)
+            assertTrue(editor.model.missingAccessibilityData)
+            editor.screenshot("screen-ml-legacy-accessibility-notice.png")
+        }
+        val metadata = CaptureMetadataStore.saveForImage(data.sources[0], emptyList(), emptyList(), true)
+        data.repository.savePreset(data.preset.copy(steps = data.preset.steps.map {
+            if (it.captureImagePath == data.sources[0].path) it.copy(captureMetadataPath = metadata) else it
+        }))
+        File(metadata).delete()
+        Editor(data).use { editor ->
+            editor.main { editor.model.chooseMode(EditorDisplayMode.ELEMENTS) }
+            editor.await { !editor.model.scanning }
+            assertFalse(editor.model.missingAccessibilityData)
+            assertTrue(editor.model.pageAccessibilityOnly)
+            assertTrue(editor.model.elements.isEmpty())
+            assertNull(editor.find(notice))
+        }
+    }
+
+    @Test fun invalidOrWrongSizeMetadataFallsBackToLegacyEditing() = Data().use { data ->
+        val metadata = CaptureMetadataStore.saveForImage(data.sources[0], emptyList(), emptyList(), false)
+        assertNull(CaptureMetadataStore.read(metadata, 1800, 900))
+        File(metadata).writeText("not JSON")
+        assertNull(CaptureMetadataStore.read(metadata, 900, 1800))
+        data.repository.savePreset(data.preset.copy(steps = data.preset.steps.map { it.copy(captureMetadataPath = metadata) }))
+        File(metadata).delete()
+        Editor(data).use { editor ->
+            editor.main { editor.model.chooseMode(EditorDisplayMode.ELEMENTS) }
+            editor.await { !editor.model.scanning }
+            assertTrue(editor.model.missingAccessibilityData)
+            assertTrue(editor.model.canSave)
+            assertEquals(3, editor.model.steps.size)
+        }
     }
 
     @Test fun editingPreservesIdentityMetadataAndCoordinatesAndSurvivesRecreation() = Data().use { data ->

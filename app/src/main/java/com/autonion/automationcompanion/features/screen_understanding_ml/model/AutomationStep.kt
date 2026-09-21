@@ -27,5 +27,7 @@ data class AutomationStep(
     @field:SerializedName("captureScreenHeight")
     val captureScreenHeight: Float = 0f,  // Screen height (px) at capture time; 0 = legacy preset
     @field:SerializedName("captureImagePath")
-    val captureImagePath: String? = null // Optional editor preview; never required for execution.
+    val captureImagePath: String? = null, // Optional editor preview; never required for execution.
+    @field:SerializedName("captureMetadataPath")
+    val captureMetadataPath: String? = null // Shared per screenshot; editor-only accessibility snapshot.
 )

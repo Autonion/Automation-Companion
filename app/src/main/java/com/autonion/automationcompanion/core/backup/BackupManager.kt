@@ -83,7 +83,7 @@ class BackupManager(private val context: Context) {
                         files[name] = source
                         paths[canonical] = name
                     }
-                } else warnings.add("An image was unavailable when this backup was created: ${source.name}")
+                } else warnings.add("A capture file was unavailable when this backup was created: ${source.name}")
             }
             val portable = texts.mapValues { (_, text) ->
                 BackupImagePaths.rewrite(text) { paths[File(it).canonicalPath] ?: "" }
@@ -200,7 +200,7 @@ class BackupManager(private val context: Context) {
                     if (entry != null) destinations.getValue(entry).absolutePath
                     else if (File(path).isFile && inside(context.filesDir, File(path))) File(path).absolutePath
                     else {
-                        warnings.add("An imported preset has an unavailable image; recapture it to restore the preview or template.")
+                        warnings.add("An imported preset has unavailable capture data; recapture it to restore the missing data.")
                         ""
                     }
                 }
