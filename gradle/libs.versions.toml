@@ -1,5 +1,5 @@
 [versions]
-agp = "9.3.1"
+agp = "9.3.2"
 biometric = "1.1.0"
 composeBom = "2026.08.00"
 gson = "2.14.0"
@@ -40,13 +40,16 @@ mediapipeGenai = "0.10.35"
 retrofit = "2.11.0"
 javaWebsocket = "1.5.3"
 securityCrypto = "1.1.0-alpha06"
-llamaKotlinAndroid = "0.1.1"
+# Includes the native Gemma 4 architecture (absent in 0.1.1).
+llamaKotlinAndroid = "0.1.7"
 coreSplashScreen = "1.0.1"
 playAgeSignals = "0.0.4"
 playAppUpdate = "2.1.0"
 coroutinesPlayServices = "1.7.3"
+desugarJdkLibs = "2.1.5"
 
 [libraries]
+desugar-jdk-libs = { module = "com.android.tools:desugar_jdk_libs", version.ref = "desugarJdkLibs" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activity" }
 androidx-biometric = { module = "androidx.biometric:biometric", version.ref = "biometric" }
 androidx-compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }

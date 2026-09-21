@@ -69,9 +69,12 @@ class VisionEditorActivity : ComponentActivity() {
     }
 
     private fun showOverlayAgain(presetId: String?) {
+        // A standalone edit must never start or retarget a capture session.
+        val sessionId = intent.getStringExtra(CaptureOverlayService.EXTRA_CAPTURE_SESSION_ID) ?: return
         try {
             val intent = Intent(this, CaptureOverlayService::class.java).apply {
                 action = "ACTION_SHOW_OVERLAY"
+                putExtra(CaptureOverlayService.EXTRA_CAPTURE_SESSION_ID, sessionId)
                 if (presetId != null) {
                     putExtra("EXTRA_PRESET_ID", presetId)
                 }

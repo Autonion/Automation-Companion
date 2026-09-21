@@ -308,6 +308,7 @@ private fun OmniChatSheet(viewModel: OmniChatbotViewModel) {
                     connectionStatus = viewModel.llmConnectionStatus.collectAsState().value,
                     cloudConnectionStatus = viewModel.cloudConnectionStatus.collectAsState().value,
                     inferenceMode = viewModel.inferenceMode.collectAsState().value,
+                    slmReady = viewModel.isAIReady.collectAsState().value,
                     showSettings = showSettings,
                     isDragging = dragOffsetY > 0f
                 )
@@ -324,6 +325,15 @@ private fun OmniChatSheet(viewModel: OmniChatbotViewModel) {
 
             // ── Main Content Area ──
             val isAIReady by viewModel.isAIReady.collectAsState()
+            val slmLoadState by viewModel.slmLoadState.collectAsState()
+            val currentInferenceMode by viewModel.inferenceMode.collectAsState()
+            if (currentInferenceMode == InferenceMode.LOCAL_SLM && !isAIReady) {
+                Text(
+                    slmLoadState.label,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
             val showHistory by viewModel.showHistory.collectAsState()
             val chatHistorySessions by viewModel.chatHistorySessions.collectAsState()
 
@@ -531,6 +541,7 @@ private fun ChatSheetHeader(
     connectionStatus: ServerConnectionStatus,
     cloudConnectionStatus: CloudApiConnectionStatus = CloudApiConnectionStatus.DISCONNECTED,
     inferenceMode: InferenceMode = InferenceMode.SERVER_LLM,
+    slmReady: Boolean = false,
     showSettings: Boolean,
     isDragging: Boolean = false
 ) {
@@ -608,7 +619,7 @@ private fun ChatSheetHeader(
                     ServerConnectionStatus.CONNECTING -> AccentOrange
                     ServerConnectionStatus.DISCONNECTED -> AccentRed
                 }
-                InferenceMode.LOCAL_SLM -> AccentPurple // SLM is always "local"
+                InferenceMode.LOCAL_SLM -> if (slmReady) AccentPurple else AccentOrange
             }
 
             // New Chat button

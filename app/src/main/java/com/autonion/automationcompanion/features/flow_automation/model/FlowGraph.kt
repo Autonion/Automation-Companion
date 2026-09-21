@@ -59,6 +59,16 @@ data class FlowGraph(
         return nodes.filter { it.id in visited }
     }
 
+    /** Full-display capture is needed when automation can leave the initially shared app. */
+    fun requiresFullDisplayCapture(): Boolean {
+        val reachable = reachableNodes()
+        val switchesApps = reachable.any { it is LaunchAppNode }
+        val capturesScreen = reachable.any {
+            it is VisualTriggerNode || (it is ScreenMLNode && it.needsMediaProjection())
+        }
+        return switchesApps && capturesScreen
+    }
+
     /** Create an updated copy with a new/replaced node. */
     fun withNode(node: FlowNode): FlowGraph {
         val updated = nodes.toMutableList()

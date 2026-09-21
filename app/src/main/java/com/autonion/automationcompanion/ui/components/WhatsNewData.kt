@@ -44,6 +44,15 @@ object WhatsNewRepository {
             youtubeUrl = YouTubeTutorials.WHATS_NEW,
             features = listOf(
                 WhatsNewItem(
+                    title = "Improved Visual Trigger Feature",
+                    category = "Visual Trigger",
+                    description = "Multi-tap support, faster detection & execution speed. Improved edit screens for UI Recognition AI and Visual Trigger with a cleaner, more intuitive layout.",
+                    icon = Icons.Default.Visibility,
+                    iconTint = WhatsNewAccentRed,
+                    route = AutomationRoutes.VISUAL_TRIGGER,
+                    tag = "IMPROVED"
+                ),
+                WhatsNewItem(
                     title = "Screen Understanding Node (3 Modes)",
                     category = "Flow Builder",
                     description = "Choose Elements (YOLO + A11y), UI Attribute (A11y-only), or OCR (Text recognition) for precise on-screen target detection.",

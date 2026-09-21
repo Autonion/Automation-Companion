@@ -9,6 +9,12 @@ import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import java.security.SecureRandom
 import java.util.UUID
+import com.google.gson.Gson
+import com.google.gson.JsonObject
+import com.autonion.automationcompanion.features.cross_device_automation.domain.Device
+import com.autonion.automationcompanion.features.cross_device_automation.domain.DeviceStatus
+import com.autonion.automationcompanion.features.cross_device_automation.domain.ConnectionState
+import com.autonion.automationcompanion.features.cross_device_automation.domain.DeviceRole
 
 /**
  * Generates and securely persists this companion device's identity (UUID & secret token)
@@ -95,20 +101,70 @@ class DeviceAuthManager(private val context: Context) {
         return paired.contains(agentId)
     }
 
-    fun markAgentPaired(agentId: String) {
+    /** Remember only trusted endpoints; every restored connection must authenticate again. */
+    @Synchronized
+    fun rememberDevice(device: Device) {
+        val agentId = device.agentId ?: return
+        if (!isAgentPaired(agentId) || device.ipAddress.isBlank() || device.port !in 1..65535) return
+        val key = "agent_endpoint_$agentId"
+        // Explicit keys keep the on-disk format stable across optimized app builds.
+        val json = Gson().toJson(mapOf("id" to device.id, "agentId" to agentId,
+            "name" to device.name, "ip" to device.ipAddress, "port" to device.port,
+            "selected" to device.isSelected, "serviceOnly" to device.isServiceOnly, "role" to device.role.name))
+        if (prefs.getString(key, null) != json) prefs.edit().putString(key, json).apply()
+    }
+
+    @Synchronized
+    fun rememberedDevices(): List<Device> =
+        (prefs.getStringSet(KEY_PAIRED_AGENTS, emptySet()) ?: emptySet()).mapNotNull { agentId ->
+            runCatching {
+                val json = prefs.getString("agent_endpoint_$agentId", null) ?: return@mapNotNull null
+                val data = Gson().fromJson(json, JsonObject::class.java)
+                Device(id = data.get("id").asString, agentId = data.get("agentId").asString,
+                    name = data.get("name").asString, ipAddress = data.get("ip").asString,
+                    port = data.get("port").asInt, isSelected = data.get("selected").asBoolean,
+                    isServiceOnly = data.get("serviceOnly").asBoolean,
+                    role = DeviceRole.valueOf(data.get("role").asString)).takeIf {
+                    it.agentId == agentId && it.ipAddress.isNotBlank() && it.port in 1..65535
+                }?.copy(status = DeviceStatus.OFFLINE, connectionState = ConnectionState.DISCONNECTED,
+                    isPaired = true, isPairingRequired = false)
+            }.getOrNull()
+        }
+
+    @Synchronized
+    fun markAgentPaired(agentId: String, secret: String = secretForAgent(agentId)) {
         if (agentId.isBlank()) return
         val current = prefs.getStringSet(KEY_PAIRED_AGENTS, emptySet())?.toMutableSet() ?: mutableSetOf()
         current.add(agentId)
-        prefs.edit().putStringSet(KEY_PAIRED_AGENTS, current).apply()
+        prefs.edit().putStringSet(KEY_PAIRED_AGENTS, current)
+            .putString("agent_secret_$agentId", secret).apply()
         Log.d(TAG, "Marked agent as paired: $agentId")
     }
 
+    /** Existing pairings retain their legacy token; new pairings get independent credentials. */
+    @Synchronized
+    fun secretForAgent(agentId: String?): String {
+        if (agentId.isNullOrBlank()) return deviceSecret
+        val key = "agent_secret_$agentId"
+        prefs.getString(key, null)?.let { return it }
+        val secret = if (isAgentPaired(agentId)) deviceSecret else newSecret()
+        prefs.edit().putString(key, secret).apply()
+        return secret
+    }
+
+    private fun newSecret(): String {
+        val bytes = ByteArray(32)
+        SecureRandom().nextBytes(bytes)
+        return Base64.encodeToString(bytes, Base64.NO_WRAP)
+    }
+
+    @Synchronized
     fun unpairAgent(agentId: String) {
         if (agentId.isBlank()) return
         val current = prefs.getStringSet(KEY_PAIRED_AGENTS, emptySet())?.toMutableSet() ?: mutableSetOf()
-        if (current.remove(agentId)) {
-            prefs.edit().putStringSet(KEY_PAIRED_AGENTS, current).apply()
-            Log.d(TAG, "Removed paired agent: $agentId")
-        }
+        current.remove(agentId)
+        prefs.edit().putStringSet(KEY_PAIRED_AGENTS, current)
+            .putString("agent_secret_$agentId", newSecret()).apply()
+        Log.d(TAG, "Removed paired agent: $agentId")
     }
 }

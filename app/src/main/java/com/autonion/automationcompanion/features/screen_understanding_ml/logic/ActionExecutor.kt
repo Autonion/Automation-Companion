@@ -4,7 +4,10 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.graphics.Path
 import android.graphics.PointF
+import android.graphics.RectF
+import android.util.DisplayMetrics
 import android.util.Log
+import android.view.WindowManager
 import com.autonion.automationcompanion.AccessibilityFeature
 import com.autonion.automationcompanion.AccessibilityRouter
 import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
@@ -13,7 +16,10 @@ import com.autonion.automationcompanion.features.screen_understanding_ml.model.A
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.ActionType
 import kotlinx.coroutines.delay
 import kotlin.coroutines.resume
-import kotlin.coroutines.suspendCoroutine
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 object ActionExecutor : AccessibilityFeature {
 
@@ -87,7 +93,7 @@ object ActionExecutor : AccessibilityFeature {
         val s = serviceRef?.get() ?: return false
         
         // 1. First click to focus
-        dispatchClick(s, point)
+        if (!dispatchClick(s, point)) return false
         delay(500) // Wait for focus
         
         // 2. Try to find the node and set text directly
@@ -154,58 +160,45 @@ object ActionExecutor : AccessibilityFeature {
         val stroke = GestureDescription.StrokeDescription(path, 0, 100)
         val gesture = GestureDescription.Builder().addStroke(stroke).build()
 
-        return suspendCoroutine { continuation ->
-            service.dispatchGesture(gesture, object : AccessibilityService.GestureResultCallback() {
-                override fun onCompleted(gestureDescription: GestureDescription?) {
-                    continuation.resume(true)
-                }
-
-                override fun onCancelled(gestureDescription: GestureDescription?) {
-                    continuation.resume(false)
-                }
-            }, null)
-        }
+        return dispatchGesture(service, gesture)
     }
     
-    private suspend fun dispatchScroll(service: AccessibilityService, point: PointF, direction: String): Boolean {
-        val path = Path()
-        val displayWidth = service.resources.displayMetrics.widthPixels.toFloat()
-        val displayHeight = service.resources.displayMetrics.heightPixels.toFloat()
-        val distance = displayHeight * 0.3f // Swipe 30% of screen height
-
-        // Clamp the anchor point to valid screen area (avoid edges)
-        val safeX = point.x.coerceIn(10f, displayWidth - 10f)
-
-        val fromY: Float
-        val toY: Float
-
-        if (direction == "down") {
-            // "Scroll Down" = reveal bottom content = finger swipes UP
-            fromY = (point.y + 100f).coerceIn(10f, displayHeight - 10f)
-            toY = (fromY - distance).coerceAtLeast(10f)
-        } else {
-            // "Scroll Up" = reveal top content = finger swipes DOWN
-            fromY = (point.y - 100f).coerceIn(10f, displayHeight - 10f)
-            toY = (fromY + distance).coerceAtMost(displayHeight - 10f)
+    @Suppress("DEPRECATION")
+    private suspend fun dispatchScroll(service: AccessibilityService, point: PointF, direction: String): Boolean =
+        withContext(Dispatchers.Default) {
+            if (direction != "up" && direction != "down") return@withContext false
+            val metrics = DisplayMetrics()
+            service.getSystemService(WindowManager::class.java).defaultDisplay.getRealMetrics(metrics)
+            val display = RectF(0f, 0f, metrics.widthPixels.toFloat(), metrics.heightPixels.toFloat())
+            val root = service.rootInActiveWindow
+            try {
+                ScrollAction.execute(root, display, point, direction == "down") { swipe ->
+                    val path = Path().apply {
+                        moveTo(swipe.x, swipe.fromY)
+                        lineTo(swipe.x, swipe.toY)
+                    }
+                    val stroke = GestureDescription.StrokeDescription(path, 0, 500)
+                    dispatchGesture(service, GestureDescription.Builder().addStroke(stroke).build())
+                }
+            } finally { root?.recycle() }
         }
 
-        Log.d("ActionExecutor", "Scroll $direction: ($safeX, $fromY) → ($safeX, $toY)")
-
-        path.moveTo(safeX, fromY)
-        path.lineTo(safeX, toY)
-
-        val stroke = GestureDescription.StrokeDescription(path, 0, 500)
-        val gesture = GestureDescription.Builder().addStroke(stroke).build()
-
-        return suspendCoroutine { continuation ->
-            service.dispatchGesture(gesture, object : AccessibilityService.GestureResultCallback() {
-                 override fun onCompleted(gestureDescription: GestureDescription?) {
-                    continuation.resume(true)
+    private suspend fun dispatchGesture(service: AccessibilityService, gesture: GestureDescription): Boolean =
+        withContext(Dispatchers.Main.immediate) {
+            withTimeoutOrNull(3000L) {
+                suspendCancellableCoroutine { continuation ->
+                    val accepted = service.dispatchGesture(gesture, object : AccessibilityService.GestureResultCallback() {
+                        override fun onCompleted(gestureDescription: GestureDescription?) {
+                            if (continuation.isActive) continuation.resume(true)
+                        }
+                        override fun onCancelled(gestureDescription: GestureDescription?) {
+                            if (continuation.isActive) continuation.resume(false)
+                        }
+                    }, null)
+                    // Rejected dispatches do not receive a completion callback.
+                    if (!accepted && continuation.isActive) continuation.resume(false)
                 }
-                override fun onCancelled(gestureDescription: GestureDescription?) {
-                    continuation.resume(false)
-                }
-            }, null)
+            } ?: false
         }
-    }
+
 }

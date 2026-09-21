@@ -5,90 +5,69 @@ import android.util.Log
 import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
 import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
 import com.autonion.automationcompanion.features.system_context_automation.location.data.db.AppDatabase
+import com.autonion.automationcompanion.features.system_context_automation.location.data.models.Slot
+import com.autonion.automationcompanion.features.system_context_automation.location.helpers.LocationAutomationController
+import com.autonion.automationcompanion.features.system_context_automation.location.helpers.LocationTriggerEvaluator
 import com.autonion.automationcompanion.features.system_context_automation.location.helpers.SendHelper
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
+import com.autonion.automationcompanion.features.system_context_automation.shared.models.TriggerConfig
+import com.autonion.automationcompanion.features.system_context_automation.timeofday.engine.TimeOfDayReceiver
+import kotlinx.coroutines.*
+import kotlinx.coroutines.sync.withLock
+import kotlinx.serialization.json.Json
+import java.time.LocalDate
 
-/**
- * SlotExecutor is the unified entry point for executing actions from ANY trigger type.
- * It handles slot state transitions and delegates to SendHelper for action execution.
- *
- * Flow:
- * 1. Trigger fires (Location geofence, Battery broadcast, Time alarm, WiFi change)
- * 2. Trigger calls SlotExecutor.execute(context, slotId)
- * 3. SlotExecutor checks execution lock (lastExecutedDay)
- * 4. SlotExecutor calls SendHelper.executeSlotActions() which reuses existing action executor logic
- *
- * Benefits:
- * - Single entry point for all triggers
- * - Centralized execution lock logic (one per day)
- * - Reuses tested SendHelper action execution
- * - Trigger-agnostic (doesn't care about trigger type)
- */
+/** Claims against current rows before actions. Deleted/paused/edited snapshots cannot start a new execution. */
 object SlotExecutor {
+    private val json = Json { ignoreUnknownKeys = true }
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + CoroutineExceptionHandler { _, error ->
+        Log.e("SlotExecutor", "System trigger failed", error)
+    })
 
-    private const val TAG = "SlotExecutor"
-
-    fun execute(context: Context, slotId: Long) {
-        CoroutineScope(Dispatchers.IO).launch {
-            executeSlot(context, slotId)
-        }
+    fun execute(context: Context, slotId: Long, expected: Slot? = null) {
+        scope.launch { executeNow(context.applicationContext, slotId, expected) }
     }
 
-    private suspend fun executeSlot(context: Context, slotId: Long) {
-        val dao = AppDatabase.get(context).slotDao()
-        val slot = dao.getById(slotId) ?: return
-
-        if (!slot.enabled) {
-            Log.i(TAG, "Slot $slotId disabled, skipping")
-            DebugLogger.warning(
-                context, LogCategory.SYSTEM_CONTEXT,
-                "Slot #$slotId skipped",
-                "Slot is disabled (type=${slot.triggerType})",
-                TAG
-            )
-            return
+    suspend fun executeNow(context: Context, slotId: Long, expected: Slot? = null, batteryLevel: Int? = null): Boolean {
+        if (AppDatabase.get(context).slotDao().getById(slotId)?.triggerType == "LOCATION") {
+            LocationTriggerEvaluator.evaluate(context, slotId)
+            return false
         }
+        val claimed = claim(context, slotId, expected, batteryLevel) ?: return false
+        DebugLogger.success(context, LogCategory.SYSTEM_CONTEXT, "Slot #$slotId executed",
+            "Trigger type: ${claimed.triggerType}, actions: ${claimed.actions.size}", "SlotExecutor")
+        // Already claimed actions may finish. Deletion/Stop prevents future claims without waiting for side effects.
+        SendHelper.executeClaimedSystemActions(context, claimed)
+        return true
+    }
 
-        // Check execution lock (once per day per slot) - SKIP for App/WiFi/Battery
-        // App and WiFi triggers should run every time event occurs.
-        // Battery uses edge-trigger state tracking (lastTriggerState) instead of calendar-day locks.
-        // Location/Time triggers use the daily lock.
-        if (slot.triggerType != "APP" && slot.triggerType != "WIFI" && slot.triggerType != "BATTERY") {
-            val today = getTodayKey()
-            if (slot.lastExecutedDay == today) {
-                Log.i(TAG, "Slot $slotId already executed today, skipping")
-                DebugLogger.info(
-                    context, LogCategory.SYSTEM_CONTEXT,
-                    "Slot #$slotId already ran",
-                    "Already executed today (${slot.triggerType}), skipping duplicate",
-                    TAG
-                )
-                return
+    internal suspend fun claim(context: Context, slotId: Long, expected: Slot? = null, batteryLevel: Int? = null): Slot? =
+        LocationAutomationController.mutex.withLock {
+            val dao = AppDatabase.get(context).slotDao()
+            val slot = dao.getById(slotId) ?: return@withLock null
+            if (!slot.enabled || slot.triggerType == "LOCATION") return@withLock null
+            if (expected != null && (slot.triggerType != expected.triggerType ||
+                    slot.triggerConfigJson != expected.triggerConfigJson || slot.actions != expected.actions)) return@withLock null
+            when (slot.triggerType) {
+                "BATTERY" -> {
+                    if (batteryLevel == null || batteryLevel !in 0..100) return@withLock null
+                    val config = json.decodeFromString<TriggerConfig.Battery>(slot.triggerConfigJson ?: return@withLock null)
+                    val met = when (config.thresholdType) {
+                        TriggerConfig.Battery.ThresholdType.REACHES_OR_BELOW -> batteryLevel <= config.batteryPercentage
+                        TriggerConfig.Battery.ThresholdType.REACHES_OR_ABOVE -> batteryLevel >= config.batteryPercentage
+                    }
+                    dao.updateLastTriggerState(slotId, met)
+                    if (!met || slot.lastTriggerState == true) return@withLock null
+                }
+                "TIME_OF_DAY" -> {
+                    val config = json.decodeFromString<TriggerConfig.TimeOfDay>(slot.triggerConfigJson ?: return@withLock null)
+                    val today = LocalDate.now()
+                    if (!TimeOfDayReceiver.isActiveDay(config.activeDays, today.dayOfWeek) ||
+                        slot.lastExecutedDay == today.toString() || (!config.repeatDaily && slot.lastExecutedDay != null)) return@withLock null
+                    dao.update(slot.copy(lastExecutedDay = today.toString(), enabled = config.repeatDaily))
+                }
+                "APP", "WIFI" -> Unit
+                else -> return@withLock null
             }
-             // Update execution lock
-            dao.updateLastExecutedDay(slotId, today)
+            slot
         }
-
-        Log.i(TAG, "Executing slot $slotId (type=${slot.triggerType})")
-        DebugLogger.success(
-            context, LogCategory.SYSTEM_CONTEXT,
-            "Slot #$slotId executed",
-            "Trigger type: ${slot.triggerType}, actions: ${slot.actions.size}",
-            TAG
-        )
-
-        // Delegate to SendHelper which reuses the existing action executor logic
-        SendHelper.startSendIfNeeded(context, slotId)
-    }
-
-    private fun getTodayKey(): String {
-        val now = java.util.Calendar.getInstance()
-        val year = now.get(java.util.Calendar.YEAR)
-        val month = now.get(java.util.Calendar.MONTH) + 1
-        val day = now.get(java.util.Calendar.DAY_OF_MONTH)
-        return String.format("%04d-%02d-%02d", year, month, day)
-    }
 }
-

@@ -2,6 +2,10 @@ package com.autonion.automationcompanion.features.flow_automation.ui
 
 import android.content.Context
 import android.content.Intent
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.runtime.Composable
@@ -16,6 +20,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.autonion.automationcompanion.core.onboarding.OnboardingPreferences
 import com.autonion.automationcompanion.features.flow_automation.engine.FlowExecutionService
@@ -27,6 +32,8 @@ import com.autonion.automationcompanion.features.flow_automation.ui.list.FlowLis
 import com.autonion.automationcompanion.ui.components.FeatureTipSheet
 import com.autonion.automationcompanion.ui.components.YouTubeTutorials
 
+private const val INNER_NAV_ANIM_DURATION = 250
+
 /**
  * Main entry composable for the Flow Builder feature.
  * Manages internal navigation between the list and editor screens.
@@ -37,6 +44,16 @@ fun FlowBuilderMainScreen(
 ) {
     val navController = rememberNavController()
     val context = LocalContext.current
+
+    // ── Intercept system back on the start destination ──
+    // Without this, the nested NavHost tries to handle back first and tears down
+    // its content before the outer NavHost's pop animation finishes, causing a
+    // black flash (the dark canvas background is briefly visible).
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val isOnStartDestination = navBackStackEntry?.destination?.route == "flow_list"
+    BackHandler(enabled = isOnStartDestination) {
+        onBack()
+    }
 
     // ── First-visit Feature Tip ──
     val onboardingPrefs = remember { OnboardingPreferences.getInstance(context) }
@@ -59,7 +76,11 @@ fun FlowBuilderMainScreen(
 
     NavHost(
         navController = navController,
-        startDestination = "flow_list"
+        startDestination = "flow_list",
+        enterTransition = { fadeIn(animationSpec = tween(INNER_NAV_ANIM_DURATION)) },
+        exitTransition = { fadeOut(animationSpec = tween(INNER_NAV_ANIM_DURATION)) },
+        popEnterTransition = { fadeIn(animationSpec = tween(INNER_NAV_ANIM_DURATION)) },
+        popExitTransition = { fadeOut(animationSpec = tween(INNER_NAV_ANIM_DURATION)) }
     ) {
         composable("flow_list") {
             val listViewModel: FlowListViewModel = viewModel()

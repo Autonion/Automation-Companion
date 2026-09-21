@@ -38,6 +38,9 @@ jobs:
       - name: Build (assembleDebug)
         run: ./gradlew -Pandroid.debug.obsoleteApiUsage=ignore assembleDebug --no-daemon
 
+      - name: Build optimized release
+        run: ./gradlew assembleRelease bundleRelease --no-daemon
+
       - name: Run unit tests
         run: ./gradlew test --no-daemon --stacktrace
 
@@ -55,3 +58,13 @@ jobs:
         with:
           name: app-apk
           path: app/build/outputs/apk/debug/*.apk
+
+      - name: Upload optimized release and matching R8 reports
+        if: success()
+        uses: actions/upload-artifact@v7
+        with:
+          name: app-release-r8
+          path: |
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/bundle/release/*.aab
+            app/build/outputs/mapping/release/

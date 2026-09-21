@@ -1,7 +1,9 @@
 package com.autonion.automationcompanion.features.visual_trigger.ui
 
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
+import com.autonion.automationcompanion.core.util.BitmapUtils
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -24,6 +26,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.autonion.automationcompanion.features.visual_trigger.models.VisionAction
 import com.autonion.automationcompanion.features.visual_trigger.models.VisionPreset
 import com.autonion.automationcompanion.features.visual_trigger.models.VisionRegion
@@ -57,6 +61,12 @@ fun VisionPresetDetailSheet(
     val isDark = isSystemInDarkTheme()
     val primary = MaterialTheme.colorScheme.primary
 
+    // Screen metrics for downsampling targets
+    val screenWidthPx = with(LocalDensity.current) {
+        LocalConfiguration.current.screenWidthDp.dp.roundToPx()
+    }
+    val dp300Px = with(LocalDensity.current) { 300.dp.roundToPx() }
+
     // Load capture image + region crops asynchronously
     var captureBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var regionDetails by remember { mutableStateOf<List<RegionDetail>>(emptyList()) }
@@ -64,17 +74,17 @@ fun VisionPresetDetailSheet(
 
     LaunchedEffect(preset.id) {
         withContext(Dispatchers.IO) {
-            // Load main capture image
+            // Load main capture image (downsampled — display only)
             val capPath = preset.captureImagePath
             val capBmp = if (capPath != null && File(capPath).exists()) {
-                BitmapFactory.decodeFile(capPath)
+                BitmapUtils.decodeSampledBitmapFromFile(capPath, screenWidthPx, dp300Px)
             } else null
             captureBitmap = capBmp
 
-            // Load each region template crop
+            // Load each region template crop (downsampled — display only)
             val details = preset.regions.mapIndexed { index, region ->
                 val bmp = if (File(region.templatePath).exists()) {
-                    BitmapFactory.decodeFile(region.templatePath)
+                    BitmapUtils.decodeSampledBitmapFromFile(region.templatePath, 400, 400)
                 } else null
                 RegionDetail(region, bmp, index)
             }
@@ -134,29 +144,24 @@ fun VisionPresetDetailSheet(
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "${preset.regions.size} region${if (preset.regions.size != 1) "s" else ""} • ${
-                            preset.executionMode.name.replace("_", " ").lowercase()
-                                .replaceFirstChar { it.uppercase() }
-                        }",
+                        text = "${preset.regions.size} region${if (preset.regions.size != 1) "s" else ""}",
                         style = MaterialTheme.typography.bodySmall.copy(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     )
                 }
 
-                // Status badge
+                // Execution mode badge
                 Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = if (preset.isActive) Color(0xFF00C853).copy(alpha = 0.15f)
-                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.1f)
+                    shape = RoundedCornerShape(12.dp),
+                    color = primary.copy(alpha = 0.12f)
                 ) {
                     Text(
-                        text = if (preset.isActive) "Active" else "Inactive",
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        text = preset.executionMode.displayLabel.replaceFirstChar { it.uppercase() },
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = if (preset.isActive) Color(0xFF00C853)
-                        else MaterialTheme.colorScheme.onSurfaceVariant
+                        color = primary
                     )
                 }
             }
@@ -298,8 +303,8 @@ fun VisionPresetDetailSheet(
                     .padding(horizontal = 20.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Edit button
-                Button(
+                // Edit button (Secondary action)
+                FilledTonalButton(
                     onClick = {
                         onDismiss()
                         onEdit()
@@ -308,9 +313,9 @@ fun VisionPresetDetailSheet(
                         .weight(1f)
                         .height(48.dp),
                     shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 ) {
                     Icon(
@@ -322,7 +327,7 @@ fun VisionPresetDetailSheet(
                     Text("Edit", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 }
 
-                // Run button
+                // Run button (Primary action)
                 Button(
                     onClick = {
                         onDismiss()
@@ -333,8 +338,8 @@ fun VisionPresetDetailSheet(
                         .height(48.dp),
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF00C853),
-                        contentColor = Color.White
+                        containerColor = primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary
                     )
                 ) {
                     Icon(
@@ -499,133 +504,142 @@ private fun EnlargedRegionOverlay(
         is VisionAction.Scroll -> "Scroll ${(detail.region.action as VisionAction.Scroll).direction.name.lowercase()}"
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.85f))
-            .clickable(
-                indication = null,
-                interactionSource = remember { MutableInteractionSource() }
-            ) { onDismiss() },
-        contentAlignment = Alignment.Center
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true,
+            usePlatformDefaultWidth = false
+        )
     ) {
-        Card(
+        Box(
             modifier = Modifier
-                .widthIn(max = 340.dp)
-                .padding(24.dp)
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.85f))
                 .clickable(
                     indication = null,
                     interactionSource = remember { MutableInteractionSource() }
-                ) { /* prevent dismiss on card tap */ },
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = if (isDark) Color(0xFF22252B) else Color.White
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 16.dp)
+                ) { onDismiss() },
+            contentAlignment = Alignment.Center
         ) {
-            Column(
-                modifier = Modifier.padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+            Card(
+                modifier = Modifier
+                    .widthIn(max = 340.dp)
+                    .padding(24.dp)
+                    .clickable(
+                        indication = null,
+                        interactionSource = remember { MutableInteractionSource() }
+                    ) { /* prevent dismiss on card tap */ },
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isDark) Color(0xFF22252B) else Color.White
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 16.dp)
             ) {
-                // Header
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(24.dp)
-                                .clip(CircleShape)
-                                .background(Color(detail.region.color)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "${detail.index + 1}",
-                                color = Color.White,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Text(
-                            text = "Region #${detail.index + 1}",
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontSize = 16.sp
-                        )
-                    }
-                    IconButton(
-                        onClick = onDismiss,
-                        modifier = Modifier.size(32.dp)
+                    // Header
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            Icons.Default.Close,
-                            contentDescription = "Close",
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Enlarged image
-                Card(
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.Black)
-                ) {
-                    if (detail.bitmap != null) {
-                        Image(
-                            bitmap = detail.bitmap.asImageBitmap(),
-                            contentDescription = "Region #${detail.index + 1} enlarged",
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 100.dp, max = 280.dp),
-                            contentScale = ContentScale.Fit
-                        )
-                    } else {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(120.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(detail.region.color)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "${detail.index + 1}",
+                                    color = Color.White,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
                             Text(
-                                "Image not found",
-                                color = Color.White.copy(alpha = 0.5f),
-                                fontSize = 13.sp
+                                text = "Region #${detail.index + 1}",
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontSize = 16.sp
+                            )
+                        }
+                        IconButton(
+                            onClick = onDismiss,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = "Close",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                     }
-                }
 
-                Spacer(modifier = Modifier.height(14.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
-                // Info row
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    InfoChip(
-                        label = "Action",
-                        value = actionLabel,
-                        color = Color(detail.region.color),
-                        isDark = isDark
-                    )
-                    InfoChip(
-                        label = "Size",
-                        value = "${detail.region.width}×${detail.region.height}",
-                        color = MaterialTheme.colorScheme.primary,
-                        isDark = isDark
-                    )
-                    InfoChip(
-                        label = "Position",
-                        value = "(${detail.region.x}, ${detail.region.y})",
-                        color = MaterialTheme.colorScheme.tertiary,
-                        isDark = isDark
-                    )
+                    // Enlarged image
+                    Card(
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.Black)
+                    ) {
+                        if (detail.bitmap != null) {
+                            Image(
+                                bitmap = detail.bitmap.asImageBitmap(),
+                                contentDescription = "Region #${detail.index + 1} enlarged",
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 100.dp, max = 280.dp),
+                                contentScale = ContentScale.Fit
+                            )
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(120.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    "Image not found",
+                                    color = Color.White.copy(alpha = 0.5f),
+                                    fontSize = 13.sp
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Info row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        InfoChip(
+                            label = "Action",
+                            value = actionLabel,
+                            color = Color(detail.region.color),
+                            isDark = isDark
+                        )
+                        InfoChip(
+                            label = "Size",
+                            value = "${detail.region.width}×${detail.region.height}",
+                            color = MaterialTheme.colorScheme.primary,
+                            isDark = isDark
+                        )
+                        InfoChip(
+                            label = "Position",
+                            value = "(${detail.region.x}, ${detail.region.y})",
+                            color = MaterialTheme.colorScheme.tertiary,
+                            isDark = isDark
+                        )
+                    }
                 }
             }
         }

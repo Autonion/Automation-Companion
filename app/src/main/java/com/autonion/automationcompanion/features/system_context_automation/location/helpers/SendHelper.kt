@@ -16,12 +16,12 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.autonion.automationcompanion.automation.actions.models.AppActionType
 import com.autonion.automationcompanion.features.system_context_automation.location.data.db.AppDatabase
+import com.autonion.automationcompanion.features.system_context_automation.location.data.models.Slot
 import com.autonion.automationcompanion.automation.actions.models.AutomationAction
 import com.autonion.automationcompanion.automation.actions.models.NotificationType
 import com.autonion.automationcompanion.automation.actions.receivers.DelayedNotificationReceiver
 import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
 import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
-import com.autonion.automationcompanion.features.system_context_automation.location.engine.location_receiver.TrackingForegroundService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -31,22 +31,31 @@ object SendHelper {
     private const val TAG = "SendHelper"
     private const val SUCCESS_CHANNEL_ID = "automation_success"
 
-    /**
-     * ENTRY POINT — called ONLY after all checks pass
-     * (TimeTickReceiver / GeofenceReceiver)
-     */
+    /** Legacy async entry point. Location calls always use the shared eligibility/claim path. */
     fun startSendIfNeeded(context: Context, slotId: Long) {
         CoroutineScope(Dispatchers.IO).launch {
-            executeSlotActions(context, slotId)
+            val slot = AppDatabase.get(context).slotDao().getById(slotId) ?: return@launch
+            if (slot.triggerType == "LOCATION") {
+                LocationTriggerEvaluator.evaluate(context, slotId)
+            } else if (slot.enabled) {
+                executeSlotActions(context, slot)
+            }
         }
     }
 
-    private suspend fun executeSlotActions(context: Context, slotId: Long) {
-        val dao = AppDatabase.get(context).slotDao()
-        val slot = dao.getById(slotId) ?: return
+    /** Called only after the evaluator atomically claims this location occurrence. */
+    internal suspend fun executeClaimedLocationActions(context: Context, slot: Slot) {
+        require(slot.triggerType == "LOCATION" && slot.enabled)
+        executeSlotActions(context, slot)
+    }
 
-        if (!slot.enabled) return
+    internal suspend fun executeClaimedSystemActions(context: Context, slot: Slot) {
+        require(slot.triggerType != "LOCATION" && slot.enabled)
+        executeSlotActions(context, slot)
+    }
 
+    private suspend fun executeSlotActions(context: Context, slot: Slot) {
+        val slotId = slot.id
         DebugLogger.info(
             context, LogCategory.SYSTEM_CONTEXT,
             "Executing slot $slotId",

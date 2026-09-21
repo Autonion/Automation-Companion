@@ -159,7 +159,7 @@ class WiFiBroadcastReceiver : BroadcastReceiver() {
                 }
 
                 Log.i(TAG, "Wi-Fi slot ${slot.id} triggered (state=$wifiState, SSID=$currentSsid)")
-                SlotExecutor.execute(context, slot.id)
+                SlotExecutor.execute(context, slot.id, slot)
             }
         }
 

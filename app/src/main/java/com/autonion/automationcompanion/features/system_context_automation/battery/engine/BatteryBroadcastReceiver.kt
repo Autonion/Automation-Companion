@@ -50,7 +50,9 @@ class BatteryBroadcastReceiver : BroadcastReceiver() {
                 TAG
             )
 
+            val pending = goAsync()
             CoroutineScope(Dispatchers.IO).launch {
+                try {
                 // 1. Maintain existing Slot logic (optional, keep for backward compatibility)
                 evaluateBatterySlots(context, batteryPercentage)
                 
@@ -66,59 +68,18 @@ class BatteryBroadcastReceiver : BroadcastReceiver() {
                     )
                 )
                 com.autonion.automationcompanion.features.cross_device_automation.event_pipeline.EventBus.publish(event)
+                } catch (error: Exception) { Log.e(TAG, "Battery event failed", error) }
+                finally { pending.finish() }
             }
         }
     }
 
-    private suspend fun evaluateBatterySlots(context: Context, currentLevel: Int) {
-        val dao = AppDatabase.get(context).slotDao()
-        val allSlots = dao.getAllEnabled()
-
-        val json = Json {
-            ignoreUnknownKeys = true
-            classDiscriminator = "type"
-        }
-
-        for (slot in allSlots) {
-            if (slot.triggerType != "BATTERY") continue
-
-            val triggerConfig = try {
-                slot.triggerConfigJson?.let { json.decodeFromString<TriggerConfig.Battery>(it) }
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to deserialize battery config for slot ${slot.id}", e)
-                DebugLogger.error(
-                    context, LogCategory.SYSTEM_CONTEXT,
-                    "Bad battery config",
-                    "Slot ${slot.id}: ${e.message}",
-                    TAG
-                )
-                null
-            } ?: continue
-
-            // Check if battery level matches threshold
-            val shouldTrigger = when (triggerConfig.thresholdType) {
-                TriggerConfig.Battery.ThresholdType.REACHES_OR_BELOW -> currentLevel <= triggerConfig.batteryPercentage
-                TriggerConfig.Battery.ThresholdType.REACHES_OR_ABOVE -> currentLevel >= triggerConfig.batteryPercentage
-            }
-
-            // Edge detection: only fire when transitioning into the threshold (false -> true or first check)
-            val isEdgeTrigger = shouldTrigger && (slot.lastTriggerState != true)
-
-            if (isEdgeTrigger) {
-                Log.i(TAG, "Battery slot ${slot.id} triggered (level=$currentLevel, threshold=${triggerConfig.batteryPercentage})")
-                DebugLogger.success(
-                    context, LogCategory.SYSTEM_CONTEXT,
-                    "Battery slot ${slot.id} triggered",
-                    "Level=$currentLevel%, threshold=${triggerConfig.batteryPercentage}% (${triggerConfig.thresholdType})",
-                    TAG
-                )
-                SlotExecutor.execute(context, slot.id)
-            }
-
-            // Update persisted state whenever transition occurs to re-arm or lock
-            if (slot.lastTriggerState != shouldTrigger) {
-                dao.updateLastTriggerState(slot.id, shouldTrigger)
-            }
+    internal suspend fun evaluateBatterySlots(context: Context, currentLevel: Int) {
+        if (currentLevel !in 0..100) return
+        val slots = AppDatabase.get(context).slotDao().getEnabledSlotsByType("BATTERY")
+        for (slot in slots) {
+            try { SlotExecutor.executeNow(context, slot.id, slot, batteryLevel = currentLevel) }
+            catch (error: Exception) { Log.e(TAG, "Could not evaluate battery preset ${slot.id}", error) }
         }
     }
 }

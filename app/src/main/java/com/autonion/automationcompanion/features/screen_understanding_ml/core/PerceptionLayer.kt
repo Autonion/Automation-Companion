@@ -21,6 +21,7 @@ class PerceptionLayer(private val context: Context, modelFile: String? = null) {
     }
 
     private var interpreter: Interpreter? = null
+    private var currentDelegate = "Unknown"
     
     // Model selection: allow override, default to yolov11s int8
     val modelFilename = modelFile ?: "yolov11s_model.tflite"
@@ -113,17 +114,24 @@ class PerceptionLayer(private val context: Context, modelFile: String? = null) {
 
     @Throws(java.io.IOException::class)
     private fun loadModelFile(context: Context, modelFilename: String): java.nio.MappedByteBuffer {
-        val fileDescriptor = context.assets.openFd(modelFilename)
-        val inputStream = java.io.FileInputStream(fileDescriptor.fileDescriptor)
-        val fileChannel = inputStream.channel
-        val startOffset = fileDescriptor.startOffset
-        val declaredLength = fileDescriptor.declaredLength
-        return fileChannel.map(java.nio.channels.FileChannel.MapMode.READ_ONLY, startOffset, declaredLength)
+        return context.assets.openFd(modelFilename).use { descriptor ->
+            java.io.FileInputStream(descriptor.fileDescriptor).use { stream ->
+                stream.channel.map(java.nio.channels.FileChannel.MapMode.READ_ONLY,
+                    descriptor.startOffset, descriptor.declaredLength)
+            }
+        }
     }
 
+    private val imageProcessor by lazy {
+        ImageProcessor.Builder()
+            .add(ResizeOp(inputSize, inputSize, ResizeOp.ResizeMethod.BILINEAR))
+            .add(NormalizeOp(0f, 255f)).build()
+    }
+    private val reusableImage = TensorImage(org.tensorflow.lite.DataType.FLOAT32)
+    private var floatOutputBuffer: Array<Array<FloatArray>>? = null
+    private val ocrEngine = lazy { OcrEngine() }
     private val lock = Any()
     private var isClosed = false
-    private var currentDelegate = "Unknown"
 
     fun getDelegate(): String = currentDelegate
 
@@ -153,14 +161,8 @@ class PerceptionLayer(private val context: Context, modelFile: String? = null) {
             val frameStartNs = android.os.SystemClock.elapsedRealtimeNanos()
             
             // 1. Preprocess — always use FLOAT32 input; TFLite handles quantization
-            val imageProcessor = ImageProcessor.Builder()
-                .add(ResizeOp(inputSize, inputSize, ResizeOp.ResizeMethod.BILINEAR))
-                .add(NormalizeOp(0f, 255f))
-                .build()
-    
-            var tensorImage = TensorImage(org.tensorflow.lite.DataType.FLOAT32)
-            tensorImage.load(bitmap)
-            tensorImage = imageProcessor.process(tensorImage)
+            reusableImage.load(bitmap)
+            val tensorImage = imageProcessor.process(reusableImage)
 
             val preprocessNs = android.os.SystemClock.elapsedRealtimeNanos() - frameStartNs
     
@@ -181,7 +183,9 @@ class PerceptionLayer(private val context: Context, modelFile: String? = null) {
             try {
                 if (outputType == org.tensorflow.lite.DataType.FLOAT32) {
                     // Float model — direct read
-                    val floatOutput = Array(outputShape[0]) { Array(outputShape[1]) { FloatArray(outputShape[2]) } }
+                    val floatOutput = floatOutputBuffer ?: Array(outputShape[0]) {
+                        Array(outputShape[1]) { FloatArray(outputShape[2]) }
+                    }.also { floatOutputBuffer = it }
                     interpreter!!.run(tensorImage.buffer, floatOutput)
                     outputData = floatOutput
                 } else {
@@ -197,7 +201,9 @@ class PerceptionLayer(private val context: Context, modelFile: String? = null) {
                     outputData = Array(outputShape[0]) { b ->
                         Array(outputShape[1]) { c ->
                             FloatArray(outputShape[2]) { a ->
-                                ((byteOutput[b][c][a].toInt() and 0xFF) - zeroPoint) * scale
+                                (if (outputType == org.tensorflow.lite.DataType.UINT8)
+                                    (byteOutput[b][c][a].toInt() and 0xFF) - zeroPoint
+                                else byteOutput[b][c][a].toInt() - zeroPoint) * scale
                             }
                         }
                     }
@@ -409,39 +415,18 @@ class PerceptionLayer(private val context: Context, modelFile: String? = null) {
      * and you want to add OCR text without re-running detection.
      */
     suspend fun enrichWithOcr(elements: List<UIElement>, bitmap: Bitmap): List<UIElement> {
-        if (elements.isEmpty()) return elements
-
-        val ocrEngine = OcrEngine()
-        try {
-            val ocrResult = ocrEngine.recognizeText(bitmap)
-            if (ocrResult.blocks.isEmpty()) return elements
-
-            Log.d(TAG, "OCR found ${ocrResult.blocks.size} text blocks to match against ${elements.size} elements")
-
-            return elements.map { element ->
-                // Skip elements that already have text (e.g. from accessibility)
-                if (!element.text.isNullOrBlank()) return@map element
-
-                val matchingTexts = ocrResult.blocks
-                    .filter { block ->
-                        block.bounds != null && calculateIoU(element.bounds, block.bounds) > 0.05f
-                    }
-                    .sortedByDescending { block ->
-                        calculateIoU(element.bounds, block.bounds!!)
-                    }
-
-                if (matchingTexts.isNotEmpty()) {
-                    val text = matchingTexts.joinToString(" ") { it.text }
-                    element.copy(text = text)
-                } else {
-                    element
-                }
-            }
+        if (elements.none { it.text.isNullOrBlank() }) return elements
+        val engine = synchronized(lock) {
+            if (isClosed) return elements
+            ocrEngine.value
+        }
+        return try {
+            OcrMatching.enrich(elements, engine.recognizeText(bitmap))
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.w(TAG, "OCR enrichment failed, returning elements without text", e)
-            return elements
-        } finally {
-            ocrEngine.close()
+            elements
         }
     }
 
@@ -495,6 +480,8 @@ class PerceptionLayer(private val context: Context, modelFile: String? = null) {
             isClosed = true
             interpreter?.close()
             interpreter = null
+            floatOutputBuffer = null
+            if (ocrEngine.isInitialized()) ocrEngine.value.close()
         }
     }
 }

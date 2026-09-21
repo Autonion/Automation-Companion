@@ -62,7 +62,7 @@ class TemporalTracker {
         trackedElements.clear()
         trackedElements.addAll(updatedTracks)
 
-        return trackedElements
+        return updatedTracks.toList()
     }
 
     private fun calculateIoU(rect1: RectF, rect2: RectF): Float {

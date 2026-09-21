@@ -15,6 +15,8 @@ enum class DeviceStatus {
     UNKNOWN
 }
 
+enum class ConnectionState { DISCONNECTED, CONNECTING, AUTHENTICATING, PAIRING, CONNECTED, RECONNECTING }
+
 data class Device(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
@@ -28,5 +30,8 @@ data class Device(
     val isServiceOnly: Boolean = false,
     val agentId: String? = null,
     val isPaired: Boolean = false,
-    val isPairingRequired: Boolean = false
-)
+    val isPairingRequired: Boolean = false,
+    val connectionState: ConnectionState = ConnectionState.DISCONNECTED
+) {
+    val isConnected: Boolean get() = connectionState == ConnectionState.CONNECTED
+}

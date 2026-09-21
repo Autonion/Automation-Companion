@@ -1,5 +1,7 @@
 package com.autonion.automationcompanion.features.system_context_automation.app_specific.ui
 
+import com.autonion.automationcompanion.features.system_context_automation.shared.SystemSlotController
+
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
@@ -483,13 +485,7 @@ private fun saveAppSlot(
                 activeDays = "ALL"
             )
 
-            val dao = AppDatabase.get(context).slotDao()
-            val finalId = if (slotId != -1L) {
-                dao.update(slot)
-                slotId
-            } else {
-                dao.insert(slot)
-            }
+            val finalId = SystemSlotController.save(context, slot)
 
             // Log success to Debugger so user verifies it was saved
             com.autonion.automationcompanion.features.automation_debugger.DebugLogger.success(

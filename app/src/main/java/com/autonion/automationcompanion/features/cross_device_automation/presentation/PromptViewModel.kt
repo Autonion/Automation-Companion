@@ -143,10 +143,10 @@ class PromptViewModel(
             // Guard: block if only background service is connected (no full agent)
             val devices = manager.deviceRepository.getAllDevices().first()
             val hasFullAgent = devices.any {
-                it.isSelected && it.status == DeviceStatus.ONLINE && !it.isServiceOnly
+                it.isConnected && !it.isServiceOnly
             }
             val hasServiceOnly = devices.any {
-                it.isSelected && it.status == DeviceStatus.ONLINE && it.isServiceOnly
+                it.isConnected && it.isServiceOnly
             }
             if (!hasFullAgent && hasServiceOnly) {
                 addMessage(ChatMessage(

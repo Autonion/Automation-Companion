@@ -5,11 +5,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.*
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -24,13 +20,10 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ViewQuilt
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.BugReport
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -46,6 +39,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import com.autonion.automationcompanion.features.screen_understanding_ml.core.ScreenUnderstandingService
 import com.autonion.automationcompanion.features.screen_understanding_ml.logic.PresetRepository
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.AutomationPreset
+import com.autonion.automationcompanion.features.screen_understanding_ml.model.ExecutionMode
+import com.autonion.automationcompanion.ui.components.PresetPreviewCard
 import com.autonion.automationcompanion.ui.components.AuroraBackground
 import androidx.compose.material.icons.outlined.Info
 import com.autonion.automationcompanion.ui.components.YouTubeTutorials
@@ -76,6 +71,7 @@ fun ScreenMLRoute(onBack: () -> Unit) {
     val presets = remember { mutableStateListOf<AutomationPreset>() }
     var showDialog by remember { mutableStateOf(false) }
     var confirmDeleteFor by remember { mutableStateOf<AutomationPreset?>(null) }
+    var detailPreset by remember { mutableStateOf<AutomationPreset?>(null) }
 
     // ── First-visit Feature Tip ──
     val onboardingPrefs = remember { OnboardingPreferences.getInstance(context) }
@@ -143,6 +139,7 @@ fun ScreenMLRoute(onBack: () -> Unit) {
         onBack = onBack,
         onAddClick = { showDialog = true },
         onDelete = { preset -> confirmDeleteFor = preset },
+        onView = { preset -> detailPreset = preset },
         onPlay = { preset ->
             val intent = Intent(context, SetupFlowActivity::class.java).apply {
                 putExtra("ACTION_REQUEST_PERMISSION_PLAY_PRESET", preset.id)
@@ -159,6 +156,23 @@ fun ScreenMLRoute(onBack: () -> Unit) {
             context.startActivity(intent)
         }
     )
+    detailPreset?.let { preset ->
+        ScreenMlPresetDetailSheet(preset,
+            onDismiss = { detailPreset = null },
+            onEdit = {
+                detailPreset = null
+                context.startActivity(Intent(context, CaptureEditorActivity::class.java).putExtra("PRESET_ID", preset.id))
+            },
+            onRun = {
+                detailPreset = null
+                context.startActivity(Intent(context, SetupFlowActivity::class.java).apply {
+                    putExtra("ACTION_REQUEST_PERMISSION_PLAY_PRESET", preset.id)
+                    putExtra("presetName", preset.name)
+                })
+            },
+            onDelete = { detailPreset = null; confirmDeleteFor = preset }
+        )
+    }
 }
 
 // ─── Dashboard Content ──────────────────────────────────
@@ -171,6 +185,7 @@ private fun ScreenMLDashboardContent(
     onAddClick: () -> Unit,
     onDelete: (AutomationPreset) -> Unit,
     onPlay: (AutomationPreset) -> Unit,
+    onView: (AutomationPreset) -> Unit,
     onTest: (String) -> Unit = {}
 ) {
     val fabScale = remember { Animatable(0f) }
@@ -233,8 +248,8 @@ private fun ScreenMLDashboardContent(
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(2),
                         contentPadding = PaddingValues(start = horizontalPad, top = 12.dp, end = horizontalPad, bottom = 88.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         gridItemsIndexed(
                             presets,
@@ -251,8 +266,10 @@ private fun ScreenMLDashboardContent(
                             ) {
                                 AgentPresetItem(
                                     preset = preset,
+                                    onView = { onView(preset) },
                                     onDelete = { onDelete(preset) },
-                                    onPlay = { onPlay(preset) }
+                                    onPlay = { onPlay(preset) },
+                                    useVerticalLayout = true
                                 )
                             }
                         }
@@ -260,7 +277,7 @@ private fun ScreenMLDashboardContent(
                 } else {
                     LazyColumn(
                         contentPadding = PaddingValues(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 88.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         itemsIndexed(
                             presets,
@@ -277,6 +294,7 @@ private fun ScreenMLDashboardContent(
                             ) {
                                 AgentPresetItem(
                                     preset = preset,
+                                    onView = { onView(preset) },
                                     onDelete = { onDelete(preset) },
                                     onPlay = { onPlay(preset) }
                                 )
@@ -366,68 +384,27 @@ private fun AgentEmptyState() {
 @Composable
 private fun AgentPresetItem(
     preset: AutomationPreset,
+    onView: () -> Unit,
     onDelete: () -> Unit,
-    onPlay: () -> Unit
+    onPlay: () -> Unit,
+    useVerticalLayout: Boolean = false
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.98f else 1f,
-        animationSpec = tween(100),
-        label = "scale"
-    )
-    val isDark = isSystemInDarkTheme()
-
-    Card(
-        shape = RoundedCornerShape(16.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .graphicsLayer {
-                scaleX = scale
-                scaleY = scale
-            }
-            .clip(RoundedCornerShape(16.dp))
-            .clickable(interactionSource = interactionSource, indication = null) {},
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        border = if (isDark) BorderStroke(1.dp, Color.White.copy(alpha = 0.08f))
-        else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = preset.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-                Text(
-                    text = "${preset.steps.size} steps • ${preset.scope}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
-            }
-            IconButton(onClick = onPlay, modifier = Modifier.size(44.dp)) {
-                Icon(
-                    Icons.Default.PlayArrow,
-                    contentDescription = "Run",
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            }
-            IconButton(onClick = onDelete, modifier = Modifier.size(44.dp)) {
-                Icon(
-                    Icons.Default.Delete,
-                    contentDescription = "Delete",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-        }
+    val mode = when (preset.executionMode) {
+        ExecutionMode.STRICT -> "Follow a sequence - wait"
+        ExecutionMode.FLEXIBLE -> "Follow a sequence - skip"
     }
+    PresetPreviewCard(
+        name = preset.name,
+        summary = "${preset.steps.size} target${if (preset.steps.size != 1) "s" else ""} • $mode",
+        captureImagePath = remember(preset.steps) {
+            preset.steps.sortedBy { it.orderIndex }.firstNotNullOfOrNull { it.captureImagePath }
+        },
+        isDark = isSystemInDarkTheme(),
+        onClick = onView,
+        onRun = onPlay,
+        onDelete = onDelete,
+        useVerticalLayout = useVerticalLayout
+    )
 }
 
 // ─── New Automation Dialog ──────────────────────────────

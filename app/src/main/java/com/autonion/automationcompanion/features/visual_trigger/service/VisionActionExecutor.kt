@@ -9,9 +9,13 @@ import com.autonion.automationcompanion.AccessibilityFeature
 import com.autonion.automationcompanion.AccessibilityRouter
 import com.autonion.automationcompanion.features.visual_trigger.models.VisionAction
 import kotlin.coroutines.resume
-import kotlin.coroutines.suspendCoroutine
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.sync.Mutex
 
 object VisionActionExecutor : AccessibilityFeature {
+    private val gestureMutex = Mutex()
 
     private var serviceRef: java.lang.ref.WeakReference<AccessibilityService>? = null
 
@@ -31,6 +35,8 @@ object VisionActionExecutor : AccessibilityFeature {
     
     fun isConnected(): Boolean = serviceRef?.get() != null
 
+    fun maxConcurrentTapCount(): Int = GestureDescription.getMaxStrokeCount()
+
     suspend fun execute(action: VisionAction, point: PointF): Boolean {
         val service = serviceRef?.get() ?: return false
         
@@ -39,6 +45,31 @@ object VisionActionExecutor : AccessibilityFeature {
             is VisionAction.LongClick -> dispatchLongClick(service, point)
             is VisionAction.Scroll -> dispatchScroll(service, point, action.direction)
         }
+    }
+
+    suspend fun executeMultiTap(points: List<PointF>, durationMs: Long = 50): Boolean {
+        val service = serviceRef?.get() ?: run {
+            Log.w("VisionActionExecutor", "Tap rejected: accessibility service disconnected")
+            return false
+        }
+        if (points.isEmpty()) return false
+
+        val maxStrokeCount = maxConcurrentTapCount()
+        if (points.size > maxStrokeCount) {
+            Log.w("VisionActionExecutor", "Too many concurrent taps: ${points.size} > $maxStrokeCount")
+            return false
+        }
+
+        val builder = GestureDescription.Builder()
+        points.forEach { point ->
+            val path = Path().apply {
+                moveTo(point.x, point.y)
+                lineTo(point.x, point.y)
+            }
+            builder.addStroke(GestureDescription.StrokeDescription(path, 0, durationMs.coerceIn(1, 1000)))
+        }
+
+        return dispatchGesture(service, builder.build())
     }
 
     suspend fun dispatchPath(path: Path, duration: Long): Boolean {
@@ -106,16 +137,37 @@ object VisionActionExecutor : AccessibilityFeature {
     }
 
     private suspend fun dispatchGesture(service: AccessibilityService, gesture: GestureDescription): Boolean {
-        return suspendCoroutine { continuation ->
-            service.dispatchGesture(gesture, object : AccessibilityService.GestureResultCallback() {
+        if (!gestureMutex.tryLock()) {
+            Log.w("VisionActionExecutor", "Gesture rejected: another gesture is in flight")
+            return false
+        }
+        return try {
+          val duration = (0 until gesture.strokeCount).maxOf { gesture.getStroke(it).startTime + gesture.getStroke(it).duration }
+          withTimeoutOrNull(duration + 1000) {
+          suspendCancellableCoroutine { continuation ->
+            val resumed = AtomicBoolean(false)
+            continuation.invokeOnCancellation { resumed.set(true) }
+            val accepted = service.dispatchGesture(gesture, object : AccessibilityService.GestureResultCallback() {
                 override fun onCompleted(gestureDescription: GestureDescription?) {
-                    continuation.resume(true)
+                    if (resumed.compareAndSet(false, true)) continuation.resume(true)
                 }
 
                 override fun onCancelled(gestureDescription: GestureDescription?) {
-                    continuation.resume(false)
+                    Log.w("VisionActionExecutor", "Gesture cancelled by Android")
+                    if (resumed.compareAndSet(false, true)) continuation.resume(false)
                 }
             }, null)
+            if (!accepted && resumed.compareAndSet(false, true)) {
+                Log.w("VisionActionExecutor", "dispatchGesture returned false")
+                continuation.resume(false)
+            }
+          }
+          } ?: run {
+              Log.w("VisionActionExecutor", "Gesture callback timed out")
+              false
+          }
+        } finally {
+            gestureMutex.unlock()
         }
     }
 }

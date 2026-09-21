@@ -38,13 +38,13 @@ class MainActivity : ComponentActivity() {
 
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
-        
+
         // Initialize WiFi monitoring for Android 7+
         WiFiMonitorManager.initialize(this)
 
         // Resume battery monitoring if any battery automations are active
-        BatteryServiceManager.startMonitoringIfNeeded(this)
-        
+        com.autonion.automationcompanion.features.system_context_automation.shared.SystemSlotController.requestRecovery(this)
+
         // Start ExtensionBridgeServer in background — no longer blocks first frame
         lifecycleScope.launch(Dispatchers.IO) {
             com.autonion.automationcompanion.features.semantic_automation.core.ExtensionBridgeServer.getInstance(this@MainActivity)
@@ -57,7 +57,7 @@ class MainActivity : ComponentActivity() {
                 .getInstance(this@MainActivity)
                 .requestAndFetchAgeSignals(this@MainActivity)
         }
-        
+
         setContent {
             AppTheme {
                 AppNavHost()
@@ -67,4 +67,4 @@ class MainActivity : ComponentActivity() {
         // ── Check for updates after UI is ready ──
         inAppUpdateManager.checkForUpdate()
     }
-}
+}

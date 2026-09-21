@@ -37,6 +37,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <application
+        android:name=".AutomationCompanionApplication"
         android:allowBackup="false"
         android:largeHeap="true"
         android:icon="@mipmap/ic_launcher"
@@ -105,7 +106,10 @@
             android:name=".features.system_context_automation.battery.engine.BatteryMonitoringService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="dataSync" />
+            android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-enabled battery threshold automations; monitors battery broadcasts while enabled presets exist, with a persistent notification and Stop control." />
+        </service>
 
         <!-- Time-of-Day Trigger Activities -->
         <activity
@@ -159,7 +163,9 @@
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="mediaProjection|specialUse">
-            <property android:name="android.app.property.FOREGROUND_SERVICE_TYPE" android:value="specialUse" />
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-started UI recognition editing and accessibility controls, including retaining selected elements while screen capture is paused for renewed user consent." />
         </service>
 
         <!-- Flow Automation Engine -->
@@ -207,6 +213,9 @@
             android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
 

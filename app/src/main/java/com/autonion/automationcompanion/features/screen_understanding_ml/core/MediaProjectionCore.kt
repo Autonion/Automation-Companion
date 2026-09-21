@@ -3,120 +3,62 @@ package com.autonion.automationcompanion.features.screen_understanding_ml.core
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.PixelFormat
-import android.hardware.display.DisplayManager
-import android.hardware.display.VirtualDisplay
-import android.media.ImageReader
-import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
-import android.os.Handler
-import android.os.Looper
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
+import com.autonion.automationcompanion.features.visual_trigger.core.VisionMediaProjection
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.withTimeoutOrNull
 
 class MediaProjectionCore(
-    private val context: Context,
-    private val projectionManager: MediaProjectionManager,
-    private val onProjectionLost: (() -> Unit)? = null
+    context: Context,
+    projectionManager: MediaProjectionManager,
+    onProjectionLost: (() -> Unit)? = null
 ) {
+    private val projection = VisionMediaProjection(context, projectionManager, onProjectionLost)
+    private var captureWidth = 0
+    private var captureHeight = 0
+    private var captureDensity = 0
 
-    private var mediaProjection: MediaProjection? = null
-    private var virtualDisplay: VirtualDisplay? = null
-    private var imageReader: ImageReader? = null
+    // The backend queues frame signals, not old bitmaps waiting for slow inference.
+    // Each collector owns its bitmap and must release it when finished.
+    val screenCaptureFlow: Flow<Bitmap> = projection.screenCaptureFlow
 
-    /** True when [stopProjection] is called by the consumer, to avoid firing [onProjectionLost]. */
-    @Volatile
-    private var stoppedByUser = false
-    
-    // Emissions of screen bitmaps
-    private val _screenCaptureFlow = MutableSharedFlow<Bitmap>(replay = 1)
-    val screenCaptureFlow: SharedFlow<Bitmap> = _screenCaptureFlow.asSharedFlow()
+    /** Drain idle frame signals without allocating screenshots or running detection. */
+    fun captureFramesWhen(shouldProcess: () -> Boolean): Flow<Bitmap> =
+        projection.frames.mapNotNull { frame -> if (shouldProcess()) frame.toBitmap() else null }
+
+    /** Wake a newly enabled consumer even when the screen has not changed. */
+    fun requestFreshFrame(): Int =
+        projection.resizeCapture(captureWidth, captureHeight, captureDensity)
 
     fun startProjection(resultCode: Int, data: Intent, width: Int, height: Int, density: Int) {
-        stoppedByUser = false
-        mediaProjection = projectionManager.getMediaProjection(resultCode, data)
-        
-        // Callback to handle stop — fires when OS revokes projection (screen off, etc.)
-        mediaProjection?.registerCallback(object : MediaProjection.Callback() {
-            override fun onStop() {
-                releaseResources()
-                if (!stoppedByUser) {
-                    android.util.Log.w("MediaProjectionCore", "Projection lost externally")
-                    onProjectionLost?.invoke()
-                }
+        captureWidth = width
+        captureHeight = height
+        captureDensity = density
+        projection.startProjection(resultCode, data, width, height, density)
+    }
+
+    /** A new output surface excludes queued frames and refreshes even an otherwise static screen. */
+    suspend fun captureFreshBitmap(timeoutMs: Long = 1500): Bitmap? {
+        var snapshot: Bitmap? = null
+        var delivered = false
+        try {
+            // Reuse the existing VirtualDisplay and grant; do not create a second projection session.
+            val generation = requestFreshFrame()
+            val result = withTimeoutOrNull(timeoutMs) {
+                projection.frames.mapNotNull { frame ->
+                    if (frame.captureGeneration < generation) null
+                    else frame.toBitmap().also { snapshot = it }
+                }.firstOrNull()
             }
-        }, Handler(Looper.getMainLooper()))
-
-        setupVirtualDisplay(width, height, density)
+            delivered = result != null
+            return result
+        } finally {
+            // A timeout/cancellation can race with bitmap conversion.
+            if (!delivered) snapshot?.recycle()
+        }
     }
 
-    private fun setupVirtualDisplay(width: Int, height: Int, density: Int) {
-        imageReader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 2)
-        
-        virtualDisplay = mediaProjection?.createVirtualDisplay(
-            "ScreenUnderstandingDisplay",
-            width,
-            height,
-            density,
-            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-            imageReader?.surface,
-            null,
-            null
-        )
-
-        imageReader?.setOnImageAvailableListener({ reader ->
-            val image = reader.acquireLatestImage()
-            if (image != null) {
-                try {
-                    val planes = image.planes
-                    val buffer = planes[0].buffer
-                    val pixelStride = planes[0].pixelStride
-                    val rowStride = planes[0].rowStride
-                    val rowPadding = rowStride - pixelStride * width
-    
-                    // Create bitmap
-                    val bitmap = Bitmap.createBitmap(
-                        width + rowPadding / pixelStride,
-                        height,
-                        Bitmap.Config.ARGB_8888
-                    )
-                    bitmap.copyPixelsFromBuffer(buffer)
-                    
-                    // Emit bitmap
-                    // Note: We should probably crop the padding if necessary, but for ML it might be fine or resized anyway.
-                    // For precise UI work, we might want to crop.
-                    // Let's crop to exact width if padding exists
-                    val finalBitmap = if (rowPadding == 0) {
-                        bitmap
-                    } else {
-                        val cropped = Bitmap.createBitmap(bitmap, 0, 0, width, height)
-                        bitmap.recycle() // Recycle original
-                        cropped
-                    }
-
-                    _screenCaptureFlow.tryEmit(finalBitmap)
-                } catch (e: Exception) {
-                    android.util.Log.e("MediaProjectionCore", "Error converting image to bitmap", e)
-                } finally {
-                    image.close()
-                }
-            }
-        }, Handler(Looper.getMainLooper()))
-    }
-
-    /** Release internal resources without calling [MediaProjection.stop]. */
-    private fun releaseResources() {
-        virtualDisplay?.release()
-        imageReader?.close()
-        virtualDisplay = null
-        imageReader = null
-    }
-
-    fun stopProjection() {
-        stoppedByUser = true
-        mediaProjection?.stop()
-        releaseResources()
-        mediaProjection = null
-    }
+    fun stopProjection() = projection.stopProjection()
 }

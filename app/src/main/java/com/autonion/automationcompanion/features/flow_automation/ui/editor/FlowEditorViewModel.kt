@@ -251,20 +251,6 @@ class FlowEditorViewModel(application: Application) : AndroidViewModel(applicati
                 isDirty = true
             )
         }
-        // Warn about MediaProjection when adding LaunchApp alongside visual/ML nodes
-        if (type == FlowNodeType.LAUNCH_APP) {
-            val hasVisualNodes = _state.value.graph.nodes.any {
-                it is VisualTriggerNode || (it is ScreenMLNode && it.needsMediaProjection())
-            }
-            if (hasVisualNodes) {
-                val app = getApplication<android.app.Application>()
-                android.widget.Toast.makeText(
-                    app,
-                    "\u26a0 This flow uses screen capture nodes. When running, select \"Entire screen\" in the permission dialog for app switching to work.",
-                    android.widget.Toast.LENGTH_LONG
-                ).show()
-            }
-        }
     }
 
     fun deleteNode(nodeId: String) {
