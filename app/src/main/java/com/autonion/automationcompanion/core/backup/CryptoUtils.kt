@@ -2,6 +2,7 @@ package com.autonion.automationcompanion.core.backup
 
 import java.io.InputStream
 import java.io.OutputStream
+import java.io.DataInputStream
 import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.SecretKeyFactory
@@ -86,7 +87,9 @@ object CryptoUtils {
     fun decrypt(input: InputStream, output: OutputStream, password: String) {
         // Read and validate header
         val header = ByteArray(4)
-        if (input.read(header) != 4 || !header.contentEquals(MAGIC_HEADER)) {
+        val data = DataInputStream(input)
+        try { data.readFully(header) } catch (_: java.io.EOFException) { throw InvalidBackupException("Truncated backup header") }
+        if (!header.contentEquals(MAGIC_HEADER)) {
             throw InvalidBackupException("Not a valid Autonion backup file")
         }
 
@@ -97,14 +100,10 @@ object CryptoUtils {
 
         // Read salt and IV
         val salt = ByteArray(SALT_LENGTH)
-        if (input.read(salt) != SALT_LENGTH) {
-            throw InvalidBackupException("Backup file is corrupted (salt truncated)")
-        }
+        try { data.readFully(salt) } catch (_: java.io.EOFException) { throw InvalidBackupException("Backup salt is truncated") }
 
         val iv = ByteArray(IV_LENGTH)
-        if (input.read(iv) != IV_LENGTH) {
-            throw InvalidBackupException("Backup file is corrupted (IV truncated)")
-        }
+        try { data.readFully(iv) } catch (_: java.io.EOFException) { throw InvalidBackupException("Backup IV is truncated") }
 
         // Derive key from password
         val key = deriveKey(password, salt)
@@ -114,12 +113,18 @@ object CryptoUtils {
         val gcmSpec = GCMParameterSpec(GCM_TAG_LENGTH, iv)
         cipher.init(Cipher.DECRYPT_MODE, key, gcmSpec)
 
-        // Read all remaining encrypted data (GCM needs it all for auth tag verification)
-        val encryptedData = input.readBytes()
-
         try {
-            val decrypted = cipher.doFinal(encryptedData)
-            output.write(decrypted)
+            // Caller must stage this output and publish it only after doFinal authenticates it.
+            val buffer = ByteArray(32 * 1024)
+            var total = 0L
+            while (true) {
+                val count = input.read(buffer)
+                if (count == -1) break
+                total += count
+                if (total > 2L * 1024 * 1024 * 1024) throw InvalidBackupException("Backup exceeds the 2 GB limit")
+                cipher.update(buffer, 0, count)?.let(output::write)
+            }
+            output.write(cipher.doFinal())
             output.flush()
         } catch (e: javax.crypto.AEADBadTagException) {
             throw WrongPasswordException("Incorrect password or corrupted backup")

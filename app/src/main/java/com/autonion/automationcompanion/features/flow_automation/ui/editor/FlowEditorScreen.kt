@@ -39,8 +39,8 @@ import androidx.compose.material.icons.filled.Accessibility
 import androidx.compose.material.icons.filled.Layers
 import androidx.compose.material.icons.filled.Screenshot
 import androidx.activity.compose.BackHandler
+import com.autonion.automationcompanion.core.vision.createAutomationCaptureIntent
 import com.autonion.automationcompanion.features.flow_automation.engine.FlowExecutionState
-import com.autonion.automationcompanion.features.flow_automation.model.LaunchAppNode
 import com.autonion.automationcompanion.features.flow_automation.model.ScreenMLNode
 import com.autonion.automationcompanion.features.flow_automation.model.VisualTriggerNode
 import com.autonion.automationcompanion.features.flow_automation.model.needsMediaProjection
@@ -86,9 +86,6 @@ fun FlowEditorScreen(
         }
     }
 
-    // ── MediaProjection blocking dialog ──
-    var showFullScreenDialog by remember { mutableStateOf(false) }
-
     // ── Disclosure dialog states ──
     var showAccessibilityDisclosure by remember { mutableStateOf(false) }
     var showOverlayDisclosure by remember { mutableStateOf(false) }
@@ -99,19 +96,13 @@ fun FlowEditorScreen(
     val reachableNodes = remember(state.graph.nodes, state.graph.edges) {
         state.graph.reachableNodes()
     }
-    val hasLaunchAppNode = remember(reachableNodes) {
-        reachableNodes.any { it is LaunchAppNode }
-    }
     val hasVisualNodes = remember(reachableNodes) {
         reachableNodes.any {
             it is VisualTriggerNode || (it is ScreenMLNode && it.needsMediaProjection())
         }
     }
-    val needsFullScreen = hasLaunchAppNode && hasVisualNodes
-
-    // ── Warning banner for flows that need full-screen capture ──
-    val showScreenCaptureWarning = remember(reachableNodes) {
-        needsFullScreen
+    val needsFullScreen = remember(state.graph.nodes, state.graph.edges) {
+        state.graph.requiresFullDisplayCapture()
     }
 
     val projectionLauncher = rememberLauncherForActivityResult(
@@ -223,7 +214,15 @@ fun FlowEditorScreen(
             }
 
             if (showEditTitleDialog) {
-                var tempTitle by remember { mutableStateOf(state.graph.name) }
+                val initialText = state.graph.name.ifEmpty { "Untitled Flow" }
+                var titleValue by remember {
+                    mutableStateOf(
+                        androidx.compose.ui.text.input.TextFieldValue(
+                            text = initialText,
+                            selection = androidx.compose.ui.text.TextRange(initialText.length)
+                        )
+                    )
+                }
                 val focusRequester = remember { FocusRequester() }
                 
                 AlertDialog(
@@ -231,8 +230,8 @@ fun FlowEditorScreen(
                     title = { Text("Edit Flow Name", color = Color.White) },
                     text = {
                         OutlinedTextField(
-                            value = tempTitle,
-                            onValueChange = { tempTitle = it },
+                            value = titleValue,
+                            onValueChange = { titleValue = it },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .focusRequester(focusRequester),
@@ -242,8 +241,9 @@ fun FlowEditorScreen(
                             ),
                             keyboardActions = androidx.compose.foundation.text.KeyboardActions(
                                 onDone = {
-                                    if (tempTitle.isNotBlank()) {
-                                        viewModel.renameFlow(tempTitle)
+                                    val newTitle = titleValue.text.trim()
+                                    if (newTitle.isNotBlank()) {
+                                        viewModel.renameFlow(newTitle)
                                     }
                                     showEditTitleDialog = false
                                 }
@@ -260,8 +260,9 @@ fun FlowEditorScreen(
                     confirmButton = {
                         TextButton(
                             onClick = {
-                                if (tempTitle.isNotBlank()) {
-                                    viewModel.renameFlow(tempTitle)
+                                val newTitle = titleValue.text.trim()
+                                if (newTitle.isNotBlank()) {
+                                    viewModel.renameFlow(newTitle)
                                 }
                                 showEditTitleDialog = false
                             }
@@ -325,30 +326,6 @@ fun FlowEditorScreen(
                     color = if (state.isDirty) editorColors.accentTealText else editorColors.topBarDimText,
                     fontSize = 13.sp,
                     fontWeight = if (state.isDirty) FontWeight.Bold else FontWeight.Normal
-                )
-            }
-        }
-
-        // Screen capture warning banner (when flow has LaunchApp + visual nodes)
-        AnimatedVisibility(
-            visible = showScreenCaptureWarning && !isExecuting,
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .statusBarsPadding()
-                .padding(top = 52.dp),
-            enter = fadeIn() + slideInVertically(),
-            exit = fadeOut() + slideOutVertically()
-        ) {
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = Color(0xFFE65100).copy(alpha = 0.9f),
-                modifier = Modifier.padding(horizontal = 48.dp)
-            ) {
-                Text(
-                    "⚠ This flow switches apps — use \"Entire screen\" when granting capture permission",
-                    color = Color.White,
-                    fontSize = 11.sp,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                 )
             }
         }
@@ -510,11 +487,8 @@ fun FlowEditorScreen(
                             } else if (!hasVisualNodes) {
                                 // No visual/ML nodes → execute directly without MediaProjection
                                 viewModel.executeFlow()
-                            } else if (needsFullScreen) {
-                                // Has LaunchApp + visual nodes → show blocking dialog first
-                                showFullScreenDialog = true
                             } else {
-                                // Has visual nodes but no LaunchApp → show disclosure then request MP
+                                // Capture scope is selected by the app after the disclosure.
                                 showMediaProjectionDisclosure = true
                             }
                         }
@@ -545,58 +519,6 @@ fun FlowEditorScreen(
                 }
             }
         }
-    }
-
-    // ── Full-screen MediaProjection blocking dialog ──
-    if (showFullScreenDialog) {
-        AlertDialog(
-            onDismissRequest = { showFullScreenDialog = false },
-            containerColor = Color(0xFF1A1C1E),
-            titleContentColor = Color.White,
-            textContentColor = Color.White.copy(alpha = 0.8f),
-            title = {
-                Text("⚠ Full Screen Capture Required", fontWeight = FontWeight.Bold)
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        "This flow contains a \"Launch App\" node along with screen capture nodes (Image Match / Screen ML)."
-                    )
-                    Text(
-                        "When the permission dialog appears, you MUST select \"Entire screen\" instead of a single app. " +
-                        "Otherwise, screen capture will stop working after the app switches."
-                    )
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = Color(0xFFE65100).copy(alpha = 0.15f)
-                    ) {
-                        Text(
-                            "If single-app sharing is selected, the flow will continue running but visual/ML nodes may fail after the app switch. " +
-                            "The flow will follow failure edges instead of crashing.",
-                            color = Color(0xFFFFA726),
-                            fontSize = 12.sp,
-                            modifier = Modifier.padding(12.dp)
-                        )
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showFullScreenDialog = false
-                        showMediaProjectionDisclosure = true
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32))
-                ) {
-                    Text("I understand — proceed", color = Color.White)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showFullScreenDialog = false }) {
-                    Text("Cancel", color = Color.White.copy(alpha = 0.6f))
-                }
-            }
-        )
     }
 
     // ── Disclosure dialogs ──
@@ -634,7 +556,7 @@ fun FlowEditorScreen(
         showDialog = showMediaProjectionDisclosure,
         title = "Screen Capture Required",
         description = if (needsFullScreen) {
-            "Autonion needs to capture your screen to detect visual elements during flow execution. This flow switches apps, so select Entire screen in the Android permission dialog. The screen content is processed locally on your device and is not stored or shared."
+            "Autonion needs to capture your screen to detect visual elements during flow execution. Because this flow switches apps, Android will request the entire display. Screen content is processed locally on your device and is not stored or shared."
         } else {
             "Autonion needs to capture your screen to detect visual elements during flow execution. The screen content is processed locally on your device and is not stored or shared."
         },
@@ -643,7 +565,7 @@ fun FlowEditorScreen(
         onContinue = {
             showMediaProjectionDisclosure = false
             val mpManager = context.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as android.media.projection.MediaProjectionManager
-            projectionLauncher.launch(mpManager.createScreenCaptureIntent())
+            projectionLauncher.launch(mpManager.createAutomationCaptureIntent(needsFullScreen))
         }
     )
 

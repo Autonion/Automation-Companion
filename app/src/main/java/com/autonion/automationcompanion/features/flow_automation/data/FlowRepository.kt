@@ -3,6 +3,7 @@ package com.autonion.automationcompanion.features.flow_automation.data
 import android.content.Context
 import android.net.Uri
 import android.util.Log
+import com.autonion.automationcompanion.core.backup.BackupImagePaths
 import com.autonion.automationcompanion.features.flow_automation.model.FlowGraph
 import com.autonion.automationcompanion.features.flow_automation.model.FlowNode
 import com.autonion.automationcompanion.features.flow_automation.model.ScreenMLNode
@@ -141,7 +142,8 @@ class FlowRepository(private val context: Context) {
             val exportGraph = remapImagePaths(graph, pathToArchiveName)
 
             // 4. Write the ZIP archive
-            context.contentResolver.openOutputStream(uri)?.use { outStream ->
+            val output = context.contentResolver.openOutputStream(uri, "wt") ?: error("Cannot open export destination")
+            output.use { outStream ->
                 ZipOutputStream(outStream).use { zip ->
                     // Write flow.json
                     zip.putNextEntry(ZipEntry(FLOW_JSON_ENTRY))
@@ -228,6 +230,9 @@ class FlowRepository(private val context: Context) {
                     entry.name.startsWith(ASSETS_DIR_PREFIX) && !entry.isDirectory -> {
                         val fileName = entry.name.removePrefix(ASSETS_DIR_PREFIX)
                         val outFile = File(importDir, fileName)
+                        require(!fileName.contains('\\') && !fileName.startsWith('/') &&
+                            outFile.canonicalPath.startsWith(importDir.canonicalPath + File.separator)) { "Invalid asset path" }
+                        outFile.parentFile?.mkdirs()
                         outFile.outputStream().use { out ->
                             zip.copyTo(out)
                         }
@@ -374,6 +379,7 @@ class FlowRepository(private val context: Context) {
                     if (node.captureImagePath.isNotBlank()) {
                         paths.add(node.captureImagePath)
                     }
+                    if (node.automationStepsJson.isNotBlank()) paths.addAll(BackupImagePaths.collect(node.automationStepsJson))
                 }
                 else -> { /* No image paths for other node types */ }
             }
@@ -428,7 +434,9 @@ class FlowRepository(private val context: Context) {
                 }
                 is ScreenMLNode -> {
                     val newCapturePath = pathMap[node.captureImagePath] ?: node.captureImagePath
-                    node.copy(captureImagePath = newCapturePath)
+                    val steps = if (node.automationStepsJson.isBlank()) node.automationStepsJson
+                        else BackupImagePaths.rewrite(node.automationStepsJson) { pathMap[it] ?: it }
+                    node.copy(captureImagePath = newCapturePath, automationStepsJson = steps)
                 }
                 else -> node
             }

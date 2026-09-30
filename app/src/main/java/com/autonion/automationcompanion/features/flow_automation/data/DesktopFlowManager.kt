@@ -2,323 +2,142 @@ package com.autonion.automationcompanion.features.flow_automation.data
 
 import android.content.Context
 import android.util.Log
-import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
-import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
 import com.autonion.automationcompanion.features.cross_device_automation.CrossDeviceAutomationManager
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.*
 import java.util.UUID
 
-/**
- * Manages Desktop Flow interactions from Android.
- *
- * Responsibilities:
- * - Request the list of desktop flows via WebSocket (`list_flows`)
- * - Trigger a desktop flow by ID (`trigger_flow`)
- * - Parse incoming `flow_list_response` and `flow_trigger_response` messages
- * - Expose state flows for UI consumption
- */
-class DesktopFlowManager(
-    private val context: Context,
-    private val crossDeviceManager: CrossDeviceAutomationManager
-) {
-    companion object {
-        private const val TAG = "DesktopFlowManager"
-    }
-
+/** Flow results belong to a peer and transaction; losing a socket never proves completion. */
+class DesktopFlowManager(private val context: Context, private val crossDeviceManager: CrossDeviceAutomationManager) {
     private val gson = Gson()
-    private val scope = CoroutineScope(Dispatchers.IO)
-
-    // ── State ──────────────────────────────────────────────────
-
-    /** Desktop flows fetched from the connected host. */
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val _desktopFlows = MutableStateFlow<List<DesktopFlowManifest>>(emptyList())
     val desktopFlows: StateFlow<List<DesktopFlowManifest>> = _desktopFlows.asStateFlow()
-
-    /** Whether we are currently fetching flows from desktop. */
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
-
-    /** The ID of the flow currently being executed on the desktop (if any). */
     private val _runningFlowId = MutableStateFlow<String?>(null)
     val runningFlowId: StateFlow<String?> = _runningFlowId.asStateFlow()
-
-    /** Real-time progress updates from the executing flow. */
     private val _progressUpdates = MutableSharedFlow<FlowTriggerProgress>(extraBufferCapacity = 32)
     val progressUpdates: SharedFlow<FlowTriggerProgress> = _progressUpdates.asSharedFlow()
 
-    /** Pending transaction IDs we are waiting for responses. */
-    private val pendingTransactions = mutableMapOf<String, String>() // txnId → purpose
+    private data class Pending(val deviceId: String, val purpose: String, val flowId: String? = null, var timeout: Job? = null)
+    private val pending = mutableMapOf<String, Pending>()
+    private var runningTransaction: String? = null
 
-    // ── Outgoing Commands ──────────────────────────────────────
-
-    /**
-     * Request desktop to list all saved flows.
-     * The response arrives asynchronously via [handleIncomingMessage].
-     */
-    fun requestFlowList() {
-        if (!crossDeviceManager.networkingManager.hasActiveConnections()) {
-            Log.w(TAG, "No desktop connected — cannot list flows")
-            _desktopFlows.value = emptyList()
-            return
+    @Synchronized
+    fun requestFlowList(deviceId: String? = null) {
+        val peers = deviceId?.let { setOf(it) } ?: crossDeviceManager.networkingManager.connectedDeviceIds()
+        for (peer in peers) {
+            pending.filterValues { it.deviceId == peer && it.purpose == "list" }.keys.toList().forEach { remove(it) }
+            val txn = UUID.randomUUID().toString()
+            pending[txn] = Pending(peer, "list")
+            if (!crossDeviceManager.networkingManager.sendCommand(peer, ListFlowsRequest(transactionId = txn))) {
+                remove(txn); continue
+            }
+            armTimeout(txn, 20_000)
         }
-
-        val transactionId = UUID.randomUUID().toString()
-        pendingTransactions[transactionId] = "list_flows"
-
-        val request = ListFlowsRequest(transactionId = transactionId)
-        crossDeviceManager.networkingManager.broadcast(request)
-
-        _isLoading.value = true
-        Log.d(TAG, "Requested flow list (txn=$transactionId)")
-        DebugLogger.info(
-            context, LogCategory.CROSS_DEVICE_SYNC,
-            "Desktop Flows", "Requesting flow list from desktop",
-            TAG
-        )
+        refreshLoading()
     }
 
-    /** Watchdog job to auto-clear running state if connection drops or response is lost. */
-    private var watchdogJob: kotlinx.coroutines.Job? = null
-
-    /**
-     * Trigger a desktop flow by ID.
-     * Progress is streamed back via [progressUpdates].
-     */
+    @Synchronized
     fun triggerFlow(flowId: String) {
-        if (!crossDeviceManager.networkingManager.hasActiveConnections()) {
-            Log.w(TAG, "No desktop connected — cannot trigger flow")
-            scope.launch {
-                _progressUpdates.emit(
-                    FlowTriggerProgress(
-                        flowId = flowId,
-                        status = FlowTriggerStatus.FAILED,
-                        message = "No desktop connected"
-                    )
-                )
-            }
-            return
+        if (runningTransaction != null) return
+        val peer = _desktopFlows.value.firstOrNull { it.id == flowId }?.deviceId
+            ?.takeIf { it.isNotBlank() } ?: crossDeviceManager.networkingManager.connectedDeviceIds().firstOrNull()
+        if (peer == null) { emitFailure(flowId, "No desktop connected"); return }
+        val txn = UUID.randomUUID().toString()
+        pending[txn] = Pending(peer, "trigger", flowId)
+        runningTransaction = txn; _runningFlowId.value = flowId
+        if (!crossDeviceManager.networkingManager.sendCommand(peer, TriggerFlowRequest(transactionId = txn, flowId = flowId))) {
+            remove(txn); emitFailure(flowId, "Could not send the flow request"); return
         }
-
-        // Guard: don't re-trigger while a flow is already running
-        if (_runningFlowId.value != null) {
-            Log.w(TAG, "Flow already running — ignoring trigger for $flowId")
-            return
-        }
-
-        val transactionId = UUID.randomUUID().toString()
-        pendingTransactions[transactionId] = "trigger_flow"
-
-        val request = TriggerFlowRequest(
-            transactionId = transactionId,
-            flowId = flowId
-        )
-
-        _runningFlowId.value = flowId
-        crossDeviceManager.networkingManager.broadcast(request)
-
-        Log.d(TAG, "Triggered flow $flowId (txn=$transactionId)")
-        DebugLogger.info(
-            context, LogCategory.CROSS_DEVICE_SYNC,
-            "Desktop Flows", "Triggering flow: $flowId",
-            TAG
-        )
-
-        // Watchdog: If desktop restarts, switches sockets, or unlocks without delivery,
-        // auto-clear the running state after 8 seconds so UI never stays stuck on [X].
-        watchdogJob?.cancel()
-        watchdogJob = scope.launch {
-            kotlinx.coroutines.delay(8000)
-            if (_runningFlowId.value == flowId) {
-                _runningFlowId.value = null
-                _progressUpdates.emit(
-                    FlowTriggerProgress(
-                        flowId = flowId,
-                        status = FlowTriggerStatus.COMPLETED,
-                        message = "Unlock sent to desktop"
-                    )
-                )
-                Log.d(TAG, "Watchdog: Auto-cleared running state for flow $flowId")
-            }
-        }
+        armTimeout(txn, 20_000)
     }
 
-    /**
-     * Request desktop to stop the currently running flow.
-     */
+    @Synchronized
     fun stopFlow(flowId: String) {
-        watchdogJob?.cancel()
-        watchdogJob = null
-
-        if (!crossDeviceManager.networkingManager.hasActiveConnections()) {
-            Log.w(TAG, "No desktop connected — cannot stop flow")
-            _runningFlowId.value = null
-            return
-        }
-
-        val transactionId = UUID.randomUUID().toString()
-        pendingTransactions[transactionId] = "stop_flow"
-
-        val request = StopFlowRequest(
-            transactionId = transactionId,
-            flowId = flowId
-        )
-
-        crossDeviceManager.networkingManager.broadcast(request)
-        _runningFlowId.value = null
-
-        Log.d(TAG, "Requested stop for flow $flowId (txn=$transactionId)")
-        DebugLogger.info(
-            context, LogCategory.CROSS_DEVICE_SYNC,
-            "Desktop Flows", "Stopping flow: $flowId",
-            TAG
-        )
+        val running = pending[runningTransaction] ?: return
+        val txn = UUID.randomUUID().toString()
+        pending[txn] = Pending(running.deviceId, "stop", flowId)
+        if (!crossDeviceManager.networkingManager.sendCommand(running.deviceId, StopFlowRequest(transactionId = txn, flowId = flowId))) {
+            remove(txn); emitFailure(flowId, "Connection lost; stopping the desktop flow could not be confirmed")
+        } else armTimeout(txn, 20_000)
     }
 
-    /**
-     * Called when a device disconnects or connection resets (e.g. desktop unlocks).
-     */
+    @Synchronized
     fun onDeviceDisconnected(deviceId: String? = null) {
-        watchdogJob?.cancel()
-        watchdogJob = null
-
-        val flowId = _runningFlowId.value
-        if (flowId != null) {
-            _runningFlowId.value = null
-            scope.launch {
-                _progressUpdates.emit(
-                    FlowTriggerProgress(
-                        flowId = flowId,
-                        status = FlowTriggerStatus.COMPLETED,
-                        message = "Desktop unlocked successfully"
-                    )
-                )
-            }
+        pending.filterValues { deviceId == null || it.deviceId == deviceId }.keys.toList().forEach { txn ->
+            val request = pending[txn] ?: return@forEach
+            if (request.purpose == "trigger") emitFailure(request.flowId.orEmpty(), "Connection lost; the flow outcome could not be confirmed")
+            remove(txn)
         }
-        _isLoading.value = false
+        _desktopFlows.value = if (deviceId == null) emptyList() else _desktopFlows.value.filterNot { it.deviceId == deviceId }
+        refreshLoading()
     }
 
-    // ── Incoming Message Handler ───────────────────────────────
-
-    /**
-     * Called by the networking layer when a message arrives from Desktop.
-     * Checks if it's a flow-related response and processes it.
-     *
-     * @return true if the message was handled (flow-related), false otherwise.
-     */
-    fun handleIncomingMessage(rawJson: String): Boolean {
+    @Synchronized
+    fun handleIncomingMessage(rawJson: String, deviceId: String? = null): Boolean {
         try {
-            val mapType = object : TypeToken<Map<String, Any>>() {}.type
-            val map: Map<String, Any> = gson.fromJson(rawJson, mapType)
-            val type = map["type"]?.toString() ?: return false
-
-            return when (type) {
-                "flow_list_response" -> {
-                    handleFlowListResponse(map)
-                    true
-                }
-                "flow_trigger_response" -> {
-                    handleFlowTriggerResponse(map)
-                    true
-                }
-                else -> false
+            val map: Map<String, Any> = gson.fromJson(rawJson, object : TypeToken<Map<String, Any>>() {}.type)
+            val type = map["type"]?.toString()
+            if (type != "flow_list_response" && type != "flow_trigger_response") return false
+            val txn = map["transactionId"]?.toString() ?: return true
+            val request = pending[txn] ?: return true
+            if (deviceId != null && request.deviceId != deviceId) return true
+            if (type == "flow_list_response" && request.purpose == "list") {
+                @Suppress("UNCHECKED_CAST")
+                val flows = if (map["error"] != null) emptyList() else
+                    (map["flows"] as? List<Map<String, Any>>).orEmpty().map { flow ->
+                        DesktopFlowManifest(id = flow["id"]?.toString().orEmpty(), name = flow["name"]?.toString() ?: "Unnamed",
+                            description = flow["description"]?.toString().orEmpty(), nodeCount = (flow["nodeCount"] as? Number)?.toInt() ?: 0,
+                            triggerType = flow["triggerType"]?.toString() ?: "manual", version = (flow["version"] as? Number)?.toInt() ?: 1,
+                            updatedAt = flow["updatedAt"]?.toString().orEmpty(), deviceId = request.deviceId)
+                    }
+                _desktopFlows.value = _desktopFlows.value.filterNot { it.deviceId == request.deviceId } + flows
+                remove(txn)
+            } else if (type == "flow_trigger_response" && request.purpose != "list") {
+                val flowId = map["flowId"]?.toString().orEmpty()
+                if (flowId != request.flowId) return true
+                val status = FlowTriggerStatus.fromString(map["status"]?.toString().orEmpty())
+                val progress = FlowTriggerProgress(flowId, status, map["message"]?.toString().orEmpty(),
+                    (map["currentStep"] as? Number)?.toInt() ?: 0, (map["totalSteps"] as? Number)?.toInt() ?: 0,
+                    map["nodeLabel"]?.toString())
+                scope.launch { _progressUpdates.emit(progress) }
+                val terminal = status in setOf(FlowTriggerStatus.COMPLETED, FlowTriggerStatus.FAILED, FlowTriggerStatus.STOPPED)
+                if (terminal) {
+                    remove(txn)
+                    if (request.purpose == "stop" && status == FlowTriggerStatus.STOPPED) {
+                        runningTransaction?.takeIf { pending[it]?.deviceId == request.deviceId && pending[it]?.flowId == flowId }?.let { remove(it) }
+                    }
+                } else armTimeout(txn, 120_000)
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to parse incoming message", e)
-            return false
-        }
+            return true
+        } catch (e: Exception) { Log.e("DesktopFlowManager", "Invalid flow response", e); return false }
     }
 
-    private fun handleFlowListResponse(map: Map<String, Any>) {
-        _isLoading.value = false
+    private fun emitFailure(flowId: String, message: String) {
+        scope.launch { _progressUpdates.emit(FlowTriggerProgress(flowId, FlowTriggerStatus.FAILED, message)) }
+    }
 
-        val error = map["error"]?.toString()
-        if (error != null) {
-            Log.e(TAG, "Flow list error from desktop: $error")
-            _desktopFlows.value = emptyList()
-            return
-        }
-
-        try {
-            @Suppress("UNCHECKED_CAST")
-            val flowsJson = map["flows"] as? List<Map<String, Any>> ?: emptyList()
-
-            val manifests = flowsJson.map { flowMap ->
-                DesktopFlowManifest(
-                    id = flowMap["id"]?.toString() ?: "",
-                    name = flowMap["name"]?.toString() ?: "Unnamed",
-                    description = flowMap["description"]?.toString() ?: "",
-                    nodeCount = (flowMap["nodeCount"] as? Double)?.toInt() ?: 0,
-                    triggerType = flowMap["triggerType"]?.toString() ?: "manual",
-                    version = (flowMap["version"] as? Double)?.toInt() ?: 1,
-                    updatedAt = flowMap["updatedAt"]?.toString() ?: ""
-                )
+    private fun armTimeout(txn: String, delayMs: Long) {
+        val request = pending[txn] ?: return
+        request.timeout?.cancel()
+        request.timeout = scope.launch {
+            delay(delayMs)
+            synchronized(this@DesktopFlowManager) {
+                if (pending[txn] !== request) return@synchronized
+                if (request.purpose != "list") emitFailure(request.flowId.orEmpty(), "No response from desktop; the flow outcome could not be confirmed")
+                remove(txn)
             }
-
-            _desktopFlows.value = manifests
-            Log.d(TAG, "Received ${manifests.size} desktop flows")
-            DebugLogger.info(
-                context, LogCategory.CROSS_DEVICE_SYNC,
-                "Desktop Flows", "Received ${manifests.size} flows from desktop",
-                TAG
-            )
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to parse flow list response", e)
-            _desktopFlows.value = emptyList()
         }
     }
 
-    private fun handleFlowTriggerResponse(map: Map<String, Any>) {
-        val flowId = map["flowId"]?.toString() ?: ""
-        val statusStr = map["status"]?.toString() ?: "failed"
-        val message = map["message"]?.toString() ?: ""
-        val currentStep = (map["currentStep"] as? Double)?.toInt() ?: 0
-        val totalSteps = (map["totalSteps"] as? Double)?.toInt() ?: 0
-        val nodeLabel = map["nodeLabel"]?.toString()
-        val isFinal = map["isFinal"] as? Boolean ?: false
-
-        val status = FlowTriggerStatus.fromString(statusStr)
-
-        val progress = FlowTriggerProgress(
-            flowId = flowId,
-            status = status,
-            message = message,
-            currentStep = currentStep,
-            totalSteps = totalSteps,
-            nodeLabel = nodeLabel
-        )
-
-        scope.launch {
-            _progressUpdates.emit(progress)
-        }
-
-        // Clear running state on final response OR any terminal status (COMPLETED, FAILED, STOPPED)
-        val isTerminal = isFinal ||
-                status == FlowTriggerStatus.COMPLETED ||
-                status == FlowTriggerStatus.FAILED ||
-                status == FlowTriggerStatus.STOPPED
-
-        if (isTerminal) {
-            watchdogJob?.cancel()
-            watchdogJob = null
-            _runningFlowId.value = null
-            Log.d(TAG, "Flow $flowId finished: $statusStr - $message")
-        }
-
-        DebugLogger.info(
-            context, LogCategory.CROSS_DEVICE_SYNC,
-            "Desktop Flow Progress",
-            "[$statusStr] $message (step $currentStep/$totalSteps)",
-            TAG
-        )
+    private fun remove(txn: String) {
+        pending.remove(txn)?.timeout?.cancel()
+        if (runningTransaction == txn) { runningTransaction = null; _runningFlowId.value = null }
+        refreshLoading()
     }
+    private fun refreshLoading() { _isLoading.value = pending.values.any { it.purpose == "list" } }
 }

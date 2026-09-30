@@ -145,6 +145,19 @@ object ExclusionManager {
         }
     }
 
+    /** Add exclusions without replacing this installation's existing choices. */
+    fun mergeFromBackup(context: Context, packages: Set<String>, strictMode: Boolean) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val merged = prefs.getStringSet(KEY_EXCLUDED_PACKAGES, emptySet()).orEmpty() + packages
+        val strict = if (prefs.contains(KEY_STRICT_MODE)) prefs.getBoolean(KEY_STRICT_MODE, false) else strictMode
+        check(prefs.edit().putStringSet(KEY_EXCLUDED_PACKAGES, merged).putBoolean(KEY_STRICT_MODE, strict).commit()) {
+            "Could not save excluded apps"
+        }
+        sharedPreferences = prefs
+        _excludedPackages.value = merged
+        _isStrictMode.value = strict
+    }
+
     private fun save(context: Context, packages: Set<String>) {
         sharedPreferences?.edit()?.putStringSet(KEY_EXCLUDED_PACKAGES, packages)?.apply()
     }

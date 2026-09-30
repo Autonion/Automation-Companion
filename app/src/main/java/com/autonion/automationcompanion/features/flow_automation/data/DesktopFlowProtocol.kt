@@ -1,5 +1,7 @@
 package com.autonion.automationcompanion.features.flow_automation.data
 
+import com.google.gson.annotations.SerializedName
+
 /**
  * Protocol models for Desktop ↔ Android flow communication over WebSocket.
  *
@@ -12,21 +14,29 @@ package com.autonion.automationcompanion.features.flow_automation.data
 
 /** Request the desktop to list all saved flows. */
 data class ListFlowsRequest(
+    @field:SerializedName("type")
     val type: String = "list_flows",
+    @field:SerializedName("transactionId")
     val transactionId: String
 )
 
 /** Request the desktop to trigger (execute) a flow by ID. */
 data class TriggerFlowRequest(
+    @field:SerializedName("type")
     val type: String = "trigger_flow",
+    @field:SerializedName("transactionId")
     val transactionId: String,
+    @field:SerializedName("flowId")
     val flowId: String
 )
 
 /** Request the desktop to stop the currently running flow. */
 data class StopFlowRequest(
+    @field:SerializedName("type")
     val type: String = "stop_flow",
+    @field:SerializedName("transactionId")
     val transactionId: String,
+    @field:SerializedName("flowId")
     val flowId: String
 )
 
@@ -40,7 +50,8 @@ data class DesktopFlowManifest(
     val nodeCount: Int = 0,
     val triggerType: String = "manual",
     val version: Int = 1,
-    val updatedAt: String = ""
+    val updatedAt: String = "",
+    val deviceId: String = ""
 )
 
 /** Response status for flow trigger operations. */

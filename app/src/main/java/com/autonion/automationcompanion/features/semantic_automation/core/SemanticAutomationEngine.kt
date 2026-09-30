@@ -23,6 +23,7 @@ import com.autonion.automationcompanion.features.semantic_automation.model.Autom
 import com.autonion.automationcompanion.features.semantic_automation.model.SemanticGoal
 import com.autonion.automationcompanion.features.semantic_automation.model.ScreenUIState
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -124,7 +125,21 @@ class SemanticAutomationEngine(private val context: Context) {
      *   3. For complex commands (N sub-goals): parses the FULL command once via GoalParser,
      *      then runs the screen loop for each sub-goal with inherited app context.
      */
-    suspend fun runLoop(rawCommand: String, screenshotProvider: suspend () -> Bitmap?) {
+    @Volatile private var runJob: kotlinx.coroutines.Job? = null
+
+    suspend fun runLoop(rawCommand: String, screenshotProvider: suspend () -> Bitmap?) =
+        kotlinx.coroutines.coroutineScope {
+            val owner = coroutineContext[kotlinx.coroutines.Job]!!
+            check(runJob == null) { "Semantic automation is already running." }
+            runJob = owner
+            try {
+                runCommand(rawCommand, screenshotProvider)
+            } finally {
+                if (runJob === owner) runJob = null
+            }
+        }
+
+    private suspend fun runCommand(rawCommand: String, screenshotProvider: suspend () -> Bitmap?) {
         // ── Step 0: Decompose command ──
         val decompositionProvider: (suspend (String, String) -> String?)? = when (inferenceMode) {
             InferenceMode.CLOUD_API ->
@@ -191,6 +206,7 @@ class SemanticAutomationEngine(private val context: Context) {
                 }
             }
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.e(TAG, "Goal parsing exception: ${e.message}", e)
             null
         }
@@ -294,6 +310,7 @@ class SemanticAutomationEngine(private val context: Context) {
                 }
             }
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.e(TAG, "Goal parsing exception: ${e.message}", e)
             null
         }
@@ -550,6 +567,7 @@ class SemanticAutomationEngine(private val context: Context) {
             val success = try {
                 executeAction(action, uiState)
             } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 Log.e(TAG, "Action execution crashed: ${e.message}", e)
                 DebugLogger.error(
                     context, LogCategory.SEMANTIC_AUTOMATION,
@@ -926,6 +944,7 @@ class SemanticAutomationEngine(private val context: Context) {
      * Attempts to execute the action using the most reliable method available.
      */
     private suspend fun executeAction(action: ActionIntent, uiState: ScreenUIState): Boolean {
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
         // ── Extension DOM path: route actions through the browser extension ──
         // When the UI state came from DOM snapshots, actions must go through the extension
         // because Android accessibility can't interact with web page content inside Firefox/Chrome.
@@ -1025,6 +1044,7 @@ class SemanticAutomationEngine(private val context: Context) {
     }
 
     fun stop() {
+        runJob?.cancel()
         isRunning = false
         _status.value = AutomationStatus.CANCELLED
         _lastActionDescription.value = "Cancelled by user"
@@ -1060,6 +1080,7 @@ class SemanticAutomationEngine(private val context: Context) {
                 return plannerAction
             }
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.e(TAG, "TaskPlanner failed, falling through to LLM", e)
         }
 
@@ -1079,6 +1100,7 @@ class SemanticAutomationEngine(private val context: Context) {
                             if (resolved != null) return resolved
                         }
                     } catch (e: Exception) {
+                        if (e is kotlinx.coroutines.CancellationException) throw e
                         Log.e(TAG, "Server LLM prediction failed, falling through to ML", e)
                     }
                 } else {
@@ -1100,6 +1122,7 @@ class SemanticAutomationEngine(private val context: Context) {
                             if (resolved != null) return resolved
                         }
                     } catch (e: Exception) {
+                        if (e is kotlinx.coroutines.CancellationException) throw e
                         Log.e(TAG, "Cloud API prediction failed, falling through to ML", e)
                     }
                 } else {
@@ -1118,6 +1141,7 @@ class SemanticAutomationEngine(private val context: Context) {
                             if (resolved != null) return resolved
                         }
                     } catch (e: Exception) {
+                        if (e is kotlinx.coroutines.CancellationException) throw e
                         Log.e(TAG, "SLM prediction failed, falling through to ML", e)
                     }
                 }
@@ -1129,6 +1153,7 @@ class SemanticAutomationEngine(private val context: Context) {
             val mlAction = mlPredictor?.predict(goal, uiState)
             if (mlAction != null) return mlAction
         } catch (e: Exception) {
+            if (e is kotlinx.coroutines.CancellationException) throw e
             Log.e(TAG, "ML prediction failed, falling through to rules", e)
         }
 

@@ -1,9 +1,12 @@
 package com.autonion.automationcompanion.features.visual_trigger.data
 
 import android.content.Context
+import android.util.AtomicFile
 import com.autonion.automationcompanion.features.visual_trigger.models.VisionPreset
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
@@ -13,6 +16,10 @@ import java.io.File
  * Stores presets as JSON files in app's internal storage.
  */
 class VisionRepository(private val context: Context) {
+
+    companion object {
+        private val writeMutex = Mutex()
+    }
 
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
     private val presetsDir = File(context.filesDir, "vision_presets")
@@ -24,7 +31,7 @@ class VisionRepository(private val context: Context) {
     }
 
     suspend fun getAllPresets(): List<VisionPreset> = withContext(Dispatchers.IO) {
-        presetsDir.listFiles()?.mapNotNull { file ->
+        presetsDir.listFiles()?.filter { it.extension == "json" }?.mapNotNull { file ->
             try {
                 val text = file.readText()
                 json.decodeFromString<VisionPreset>(text)
@@ -39,9 +46,18 @@ class VisionRepository(private val context: Context) {
         val normalizedName = preset.name.trim()
         require(normalizedName.isNotEmpty()) { "Preset name cannot be blank" }
 
-        val file = File(presetsDir, "${preset.id}.json")
-        val text = json.encodeToString(preset.copy(name = normalizedName))
-        file.writeText(text)
+        writeMutex.withLock {
+            val file = AtomicFile(File(presetsDir, "${preset.id}.json"))
+            val bytes = json.encodeToString(preset.copy(name = normalizedName)).toByteArray(Charsets.UTF_8)
+            val output = file.startWrite()
+            try {
+                output.write(bytes)
+                file.finishWrite(output)
+            } catch (error: Exception) {
+                file.failWrite(output)
+                throw error
+            }
+        }
     }
 
     suspend fun deletePreset(presetId: String) = withContext(Dispatchers.IO) {

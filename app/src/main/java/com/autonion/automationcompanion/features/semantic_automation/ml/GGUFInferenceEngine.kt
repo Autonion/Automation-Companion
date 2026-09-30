@@ -6,6 +6,7 @@ import android.util.Log
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.ActionIntent
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.ActionType
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
@@ -77,6 +78,14 @@ class GGUFInferenceEngine(
 
     override suspend fun initialize() {
         withContext(Dispatchers.IO) {
+            check(android.os.Process.is64Bit()) {
+                "GGUF models require a 64-bit app/device. Use a compatible MediaPipe model on this device."
+            }
+            try {
+                Log.d(TAG, "Native runtime: ${LlamaModel.getVersion()}")
+            } catch (e: LinkageError) {
+                throw IllegalStateException("The GGUF native runtime is unavailable on this device.", e)
+            }
             Log.d(TAG, "Initializing llama.cpp with model: $modelPath")
 
             // Validate model file
@@ -126,6 +135,7 @@ class GGUFInferenceEngine(
                         throw IllegalStateException(
                             "llama.cpp could not load this model. This usually means:\n" +
                             "• The model's architecture is not supported by this llama.cpp version\n" +
+                            "• There is not enough free RAM for the model and its context\n" +
                             "• The .gguf file is corrupted or incompletely downloaded\n" +
                             "Try a different model (e.g., Phi-3.5, Llama 3.2, Qwen 2.5) or re-download this one.\n" +
                             "Original error: $message",
@@ -147,12 +157,14 @@ class GGUFInferenceEngine(
 
         val responseBuilder = StringBuilder()
         try {
-            model.generateStream(prompt).collect { token ->
-                responseBuilder.append(token)
+            withNativeGenerationCancellation(model::cancelGeneration) {
+                model.generateStream(formatPrompt(model, prompt)).collect { token -> responseBuilder.append(token) }
             }
-        } catch (e: Throwable) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
             Log.e(TAG, "Error generating stream for action prediction", e)
-            return@withContext null
+            throw e
         }
 
         val rawResponse = responseBuilder.toString()
@@ -171,12 +183,14 @@ class GGUFInferenceEngine(
 
         val responseBuilder = StringBuilder()
         try {
-            model.generateStream(prompt).collect { token ->
-                responseBuilder.append(token)
+            withNativeGenerationCancellation(model::cancelGeneration) {
+                model.generateStream(formatPrompt(model, prompt)).collect { token -> responseBuilder.append(token) }
             }
-        } catch (e: Throwable) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
             Log.e(TAG, "Error generating stream for chat response", e)
-            return@withContext null
+            throw e
         }
 
         val response = responseBuilder.toString()
@@ -194,16 +208,28 @@ class GGUFInferenceEngine(
         val startTime = System.currentTimeMillis()
 
         try {
-            model.generateStream(prompt).collect { token ->
-                emit(token)
+            withNativeGenerationCancellation(model::cancelGeneration) {
+                model.generateStream(formatPrompt(model, prompt)).collect { token -> emit(token) }
             }
-        } catch (e: Throwable) {
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
             Log.e(TAG, "Error in GGUF chat response stream", e)
+            throw e
         }
 
         val elapsed = System.currentTimeMillis() - startTime
         Log.d(TAG, "GGUF streaming complete in ${elapsed}ms")
     }.flowOn(Dispatchers.IO)
+
+    private fun formatPrompt(model: LlamaModel, prompt: String): String {
+        // Instruction-tuned models need their own role/control tokens (Qwen and Gemma differ).
+        GgufPromptFormatter.knownTemplate(model.getChatTemplate(), prompt)?.let { return it }
+        // Preserve the existing plain-prompt behavior for other/custom model templates.
+        // The library's legacy native template formatter cannot evaluate arbitrary Jinja.
+        Log.w(TAG, "Unrecognized chat template; using plain prompt")
+        return prompt
+    }
 
     private fun parseJsonResponse(raw: String): ActionIntent? {
         return try {

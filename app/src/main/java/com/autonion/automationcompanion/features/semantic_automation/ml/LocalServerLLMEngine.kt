@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Log
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.ActionIntent
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.ActionType
+import com.google.gson.annotations.SerializedName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -45,13 +46,18 @@ private interface OllamaApi {
 }
 
 data class OllamaTagsResponse(
+    @field:SerializedName("models")
     val models: List<OllamaModel> = emptyList()
 )
 
 data class OllamaModel(
+    @field:SerializedName("name")
     val name: String = "",
+    @field:SerializedName("size")
     val size: Long = 0,
+    @field:SerializedName("digest")
     val digest: String = "",
+    @field:SerializedName("modified_at")
     val modified_at: String = ""
 )
 
@@ -61,24 +67,37 @@ data class OllamaModel(
  * and `options` for temperature control.
  */
 data class OllamaChatRequest(
+    @field:SerializedName("model")
     val model: String,
+    @field:SerializedName("messages")
     val messages: List<OllamaChatMessage>,
+    @field:SerializedName("stream")
     val stream: Boolean = false,
+    @field:SerializedName("format")
     val format: Any? = null,
+    @field:SerializedName("options")
     val options: Map<String, Any>? = null,
+    @field:SerializedName("think")
     val think: Boolean? = null  // Qwen3: set to false to disable <think> reasoning
 )
 
 data class OllamaChatMessage(
+    @field:SerializedName("role")
     val role: String,    // "system", "user", or "assistant"
+    @field:SerializedName("content")
     val content: String
 )
 
 data class OllamaChatResponse(
+    @field:SerializedName("model")
     val model: String = "",
+    @field:SerializedName("message")
     val message: OllamaChatMessage = OllamaChatMessage("assistant", ""),
+    @field:SerializedName("done")
     val done: Boolean = false,
+    @field:SerializedName("total_duration")
     val total_duration: Long = 0,
+    @field:SerializedName("eval_count")
     val eval_count: Int = 0
 )
 
@@ -164,7 +183,7 @@ class LocalServerLLMEngine private constructor(
                     val crossDeviceManager = com.autonion.automationcompanion.features.cross_device_automation.CrossDeviceAutomationManager.getInstance(context)
                     val devices = crossDeviceManager.deviceRepository.getAllDevices().first()
                     val onlineDevice = devices.firstOrNull {
-                        it.status == com.autonion.automationcompanion.features.cross_device_automation.domain.DeviceStatus.ONLINE
+                        it.isConnected
                     }
                     onlineDevice?.let { device ->
                         val url = "http://${device.ipAddress}:11434"

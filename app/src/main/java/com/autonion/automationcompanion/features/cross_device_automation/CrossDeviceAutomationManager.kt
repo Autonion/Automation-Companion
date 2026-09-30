@@ -105,7 +105,9 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
             }
         }
         
-        hostManager = HostManager(context, deviceRepository)
+        hostManager = HostManager(context, deviceRepository,
+            onNetworkReady = { networkingManager.retrySelectedConnections() },
+            onDeviceResolved = { networkingManager.retrySelectedConnections(it) })
         
         val stateEvaluator = com.autonion.automationcompanion.features.cross_device_automation.state.StateEvaluator()
 
@@ -184,10 +186,9 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
         hostManager.stopDiscovery()
         networkingManager.stop()
         releaseLocks()
-        // Clear all devices from memory and state so UI and repo reflect that discovery is stopped
+        // Mark devices offline while preserving selection and pairing for reconnection.
         scope.launch {
-            deviceRepository.deselectAllDevices()
-            deviceRepository.clearAllDevices()
+            deviceRepository.markAllDevicesOffline()
         }
         _compatibilityWarning.value = null
         _activePairingDevice.value = null
@@ -254,7 +255,7 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
 
     private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO + kotlinx.coroutines.SupervisorJob())
 
-    fun syncRulesToDesktop() {
+    fun syncRulesToDesktop(deviceId: String? = null) {
         // Launch in IO scope to avoid blocking main thread
         scope.launch {
             val allRules = ruleRepository.getAllRules().first()
@@ -275,7 +276,7 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
                 } else null
             }
 
-            if (payloadRules.isNotEmpty()) {
+            run {
                 val command = mapOf(
                     "type" to "register_triggers",
                     "payload" to mapOf("rules" to payloadRules)
@@ -288,7 +289,8 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
                     "Rule synchronization triggered",
                     TAG
                 )
-                networkingManager.broadcast(command)
+                if (deviceId == null) networkingManager.broadcast(command)
+                else networkingManager.sendCommand(deviceId, command)
             }
         }
     }
@@ -306,10 +308,10 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
 
     override fun onDeviceConnected(device: com.autonion.automationcompanion.features.cross_device_automation.domain.Device) {
         Log.d("CrossDeviceManager", "Device connected: ${device.name}")
-        syncRulesToDesktop() // Sync rules immediately on connection
-        desktopFlowManager.requestFlowList() // Also fetch desktop flows
+        syncRulesToDesktop(device.id)
+        desktopFlowManager.requestFlowList(device.id)
         // Push clipboard sync state to desktop on connect (one-shot, no polling)
-        syncClipboardStateToDesktop()
+        if (!device.isServiceOnly) syncClipboardStateToDesktop(device.id)
     }
 
     override fun onDeviceDisconnected(deviceId: String) {
@@ -379,6 +381,11 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
     }
 
     fun dismissPairing() {
+        val deviceId = _activePairingDevice.value?.id
+        if (deviceId != null) scope.launch {
+            deviceRepository.mutateDevice(deviceId) { it.copy(isSelected = false) }
+            networkingManager.disconnectDevice(deviceId)
+        }
         _activePairingDevice.value = null
         _pairingError.value = null
     }
@@ -396,13 +403,12 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
             // 2. Query latest device record from repository
             val device = deviceRepository.getDeviceById(deviceId)
             if (device != null) {
-                // 3. Clear paired agent ID
+                // 3. Revoke this agent's credential while retaining its stable identity.
                 if (device.agentId != null) {
                     deviceAuthManager.unpairAgent(device.agentId)
                 }
 
-                // 4. Rotate deviceSecret so offline desktops cannot re-auth with old secret
-                deviceAuthManager.rotateSecret()
+                // unpairAgent rotates only this peer's credential, preserving other pairings.
 
                 // 5. Cleanly disconnect socket
                 if (::networkingManager.isInitialized) {
@@ -410,14 +416,13 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
                 }
 
                 // 6. Update repository with reset pairing state
-                deviceRepository.updateDevice(
-                    device.copy(
+                deviceRepository.mutateDevice(deviceId) {
+                    it.copy(
                         isPaired = false,
                         isSelected = false,
-                        isPairingRequired = true,
-                        agentId = null
+                        isPairingRequired = true
                     )
-                )
+                }
             }
         }
     }
@@ -439,7 +444,7 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
 
             // ── Flow System messages from Desktop ──
             if (type == "flow_list_response" || type == "flow_trigger_response") {
-                desktopFlowManager.handleIncomingMessage(message)
+                desktopFlowManager.handleIncomingMessage(message, deviceId)
                 return
             }
 
@@ -478,13 +483,13 @@ class CrossDeviceAutomationManager(private val context: Context) : NetworkingMan
     }
 
     /// Push clipboard sync preference to desktop on connect (one-shot, no polling).
-    private fun syncClipboardStateToDesktop() {
+    private fun syncClipboardStateToDesktop(deviceId: String) {
         if (!::networkingManager.isInitialized || !isStarted) return
         val command = mapOf(
             "type" to "clipboard.set_sync_enabled",
             "payload" to mapOf("enabled" to isClipboardSyncEnabled())
         )
-        networkingManager.broadcast(command)
+        networkingManager.sendCommand(deviceId, command)
         Log.d(TAG, "Pushed clipboard sync state to desktop on connect: ${isClipboardSyncEnabled()}")
     }
 

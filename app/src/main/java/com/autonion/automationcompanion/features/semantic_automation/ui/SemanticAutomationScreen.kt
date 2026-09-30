@@ -34,6 +34,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationService
@@ -80,7 +81,6 @@ fun SemanticAutomationScreen(
     onStop: () -> Unit
 ) {
     var command by remember { mutableStateOf("") }
-    var showLiveStatus by remember { mutableStateOf(true) }
     val startWalkthrough = LocalStartWalkthrough.current
 
     val isDark = isSystemInDarkTheme()
@@ -239,28 +239,43 @@ fun SemanticAutomationScreen(
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("Semantic Automation", color = headerTextColor, fontWeight = FontWeight.Bold) },
+                    title = {
+                        Text(
+                            text = "Semantic Automation",
+                            color = headerTextColor,
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontSize = 18.sp,
+                                letterSpacing = (-0.2).sp
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            softWrap = false
+                        )
+                    },
                     navigationIcon = {
-                        IconButton(onClick = onBack) {
+                        IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = headerTextColor)
                         }
                     },
                     actions = {
                         val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
-                        IconButton(onClick = { uriHandler.openUri(YouTubeTutorials.SEMANTIC_AUTOMATION) }) {
+                        IconButton(
+                            onClick = { uriHandler.openUri(YouTubeTutorials.SEMANTIC_AUTOMATION) },
+                            modifier = Modifier.size(40.dp)
+                        ) {
                             Icon(Icons.Default.PlayCircle, contentDescription = "Watch Video Tutorial", tint = headerTextColor)
                         }
-                        IconButton(onClick = { startWalkthrough("semantic_automation") }) {
+                        IconButton(
+                            onClick = { startWalkthrough("semantic_automation") },
+                            modifier = Modifier.size(40.dp)
+                        ) {
                             Icon(Icons.Outlined.Info, contentDescription = "Take a Walkthrough", tint = headerTextColor)
                         }
-                        IconButton(onClick = { showLiveStatus = !showLiveStatus }) {
-                            Icon(
-                                if (showLiveStatus) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                                contentDescription = "Toggle Live Status",
-                                tint = if (isActive && showLiveStatus) AccentPurple else headerTextColor
-                            )
-                        }
-                        IconButton(onClick = onOpenModelManager) {
+                        IconButton(
+                            onClick = onOpenModelManager,
+                            modifier = Modifier.size(40.dp)
+                        ) {
                             Icon(Icons.Default.Settings, contentDescription = "SLM Hub", tint = headerTextColor)
                         }
                     },
@@ -288,13 +303,21 @@ fun SemanticAutomationScreen(
             val cloudApiEngine = remember { com.autonion.automationcompanion.features.semantic_automation.ml.CloudApiLLMEngine.getInstance(context) }
             val cloudConnectionStatus by cloudApiEngine.connectionStatus.collectAsState()
 
+            val slmStorage = remember { com.autonion.automationcompanion.features.semantic_automation.ml.ModelStorageManager(context) }
+            val selectedSlmPath by slmStorage.activeModelPathFlow.collectAsState(initial = slmStorage.getActiveModelPath())
+            val slmState by com.autonion.automationcompanion.features.semantic_automation.ml.PredictorCache.slmState.collectAsState()
+            LaunchedEffect(localInferenceMode, selectedSlmPath) {
+                if (localInferenceMode == com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.LOCAL_SLM && selectedSlmPath != null) {
+                    com.autonion.automationcompanion.features.semantic_automation.ml.PredictorCache.getSLMEngine(context, slmStorage)
+                }
+            }
             val isAIReady = when (localInferenceMode) {
                 com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.SERVER_LLM ->
                     llmConnectionStatus == com.autonion.automationcompanion.features.semantic_automation.ml.ServerConnectionStatus.CONNECTED
                 com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.CLOUD_API ->
                     cloudConnectionStatus == com.autonion.automationcompanion.features.semantic_automation.ml.CloudApiConnectionStatus.CONNECTED
                 com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.LOCAL_SLM ->
-                    true // SLM runs locally, always ready
+                    slmState.isReadyFor(selectedSlmPath)
             }
 
             Box(
@@ -387,7 +410,7 @@ fun SemanticAutomationScreen(
 
                 // ─── Floating Live Status Card ────────────────
                 AnimatedVisibility(
-                    visible = showLiveStatus && (isActive || status == AutomationStatus.COMPLETED || status == AutomationStatus.FAILED)
+                    visible = isActive || status == AutomationStatus.COMPLETED || status == AutomationStatus.FAILED
                 ) {
                     Card(
                         modifier = Modifier
@@ -522,8 +545,7 @@ fun SemanticAutomationScreen(
                             "Configure your Cloud API key and select a model to use Semantic Automation."
                         com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.SERVER_LLM ->
                             "Connect to a Server LLM to use Semantic Automation."
-                        else ->
-                            "Configure a Local SLM or connect to a Server LLM to use Semantic Automation."
+                        else -> slmState.label
                     }
                     val overlaySteps = when (localInferenceMode) {
                         com.autonion.automationcompanion.features.semantic_automation.core.SemanticAutomationEngine.InferenceMode.CLOUD_API -> listOf(

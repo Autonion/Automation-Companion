@@ -1,5 +1,7 @@
 package com.autonion.automationcompanion.features.system_context_automation.timeofday.ui
 
+import com.autonion.automationcompanion.features.system_context_automation.shared.SystemSlotController
+
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
@@ -46,6 +48,7 @@ import androidx.compose.ui.unit.sp
 import com.autonion.automationcompanion.automation.actions.builders.ActionBuilder
 import com.autonion.automationcompanion.automation.actions.models.ConfiguredAction
 import com.autonion.automationcompanion.automation.actions.ui.ActionPicker
+import com.autonion.automationcompanion.automation.actions.ui.displayLabel
 import com.autonion.automationcompanion.automation.actions.ui.AppPickerActivity
 import com.autonion.automationcompanion.features.system_context_automation.location.data.db.AppDatabase
 import com.autonion.automationcompanion.features.system_context_automation.location.data.models.Slot
@@ -97,7 +100,6 @@ fun TimeOfDaySlotsScreen(
     val scope = rememberCoroutineScope()
 
     val snackbarHostState = remember { SnackbarHostState() }
-    var recentlyDeleted by remember { mutableStateOf<Slot?>(null) }
 
     val allSlots by dao.getAllFlow().collectAsState(initial = emptyList())
     val slots = allSlots.filter { it.triggerType == "TIME_OF_DAY" }
@@ -178,26 +180,14 @@ fun TimeOfDaySlotsScreen(
                                     slot = slot,
                                     onToggleEnabled = { enabled ->
                                         scope.launch {
-                                            dao.setEnabled(slot.id, enabled)
-                                            if (enabled) {
-                                                val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
-                                                val config = try {
-                                                    slot.triggerConfigJson?.let { json.decodeFromString<com.autonion.automationcompanion.features.system_context_automation.shared.models.TriggerConfig.TimeOfDay>(it) }
-                                                } catch (_: Exception) { null }
-                                                config?.let {
-                                                    TimeOfDayReceiver.scheduleAlarm(context, slot.id, it.hour, it.minute)
-                                                }
-                                            } else {
-                                                TimeOfDayReceiver.cancelAlarm(context, slot.id)
-                                            }
+                                            SystemSlotController.setEnabled(context, slot.id, enabled)
+
                                         }
                                     },
                                     onEdit = { onEditClicked(slot.id) },
                                     onDelete = {
                                         scope.launch {
-                                            dao.delete(slot)
-                                            TimeOfDayReceiver.cancelAlarm(context, slot.id)
-                                            recentlyDeleted = slot
+                                            val deletedSlot = SystemSlotController.delete(context, slot.id) ?: return@launch
 
                                             // Log deletion
                                             com.autonion.automationcompanion.features.automation_debugger.DebugLogger.info(
@@ -214,18 +204,8 @@ fun TimeOfDaySlotsScreen(
                                                 duration = SnackbarDuration.Short
                                             )
                                             if (result == SnackbarResult.ActionPerformed) {
-                                                recentlyDeleted?.let { 
-                                                    val newId = dao.insert(it.copy(id = 0)) 
-                                                    if (it.enabled) {
-                                                        val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
-                                                        val config = try {
-                                                            it.triggerConfigJson?.let { raw -> json.decodeFromString<com.autonion.automationcompanion.features.system_context_automation.shared.models.TriggerConfig.TimeOfDay>(raw) }
-                                                        } catch (_: Exception) { null }
-                                                        config?.let { c ->
-                                                            TimeOfDayReceiver.scheduleAlarm(context, newId, c.hour, c.minute)
-                                                        }
-                                                    }
-                                                    
+                                                deletedSlot.let {
+                                                    val newId = SystemSlotController.restore(context, it)
                                                     // Log undo
                                                     com.autonion.automationcompanion.features.automation_debugger.DebugLogger.success(
                                                         context, com.autonion.automationcompanion.features.automation_debugger.data.LogCategory.SYSTEM_CONTEXT,
@@ -420,7 +400,7 @@ private fun TimeOfDaySlotCard(
                 }
                 Spacer(Modifier.width(10.dp))
                 Text(
-                    slot.actions.joinToString { it.javaClass.simpleName.replace("Action", "") },
+                    slot.actions.joinToString { it.displayLabel() },
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -940,15 +920,7 @@ private fun saveTimeOfDaySlot(
                 activeDays = "ALL"
             )
 
-            val dao = AppDatabase.get(context).slotDao()
-            val finalSlotId = if (slotId != -1L) {
-                dao.update(slot)
-                slotId
-            } else {
-                dao.insert(slot)
-            }
-
-            TimeOfDayReceiver.scheduleAlarm(context, finalSlotId, hour, minute)
+            SystemSlotController.save(context, slot)
 
             android.os.Handler(android.os.Looper.getMainLooper()).post {
                 Toast.makeText(context, "Time-of-day automation saved", Toast.LENGTH_SHORT).show()

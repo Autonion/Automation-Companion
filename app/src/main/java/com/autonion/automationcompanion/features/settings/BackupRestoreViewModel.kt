@@ -152,7 +152,7 @@ class BackupRestoreViewModel(application: Application) : AndroidViewModel(applic
                 it.copy(
                     isExporting = false,
                     progress = if (success) 100 else 0,
-                    successMessage = if (success) "Backup exported successfully!" else null,
+                    successMessage = if (success) (listOf("Backup exported successfully!") + backupManager.lastExportWarnings).joinToString("\n") else null,
                     errorMessage = if (!success) "Export failed. Please try again." else null
                 )
             }
@@ -202,12 +202,14 @@ class BackupRestoreViewModel(application: Application) : AndroidViewModel(applic
 
         when (result) {
             is BackupManager.ImportResult.Success -> {
-                val featureCount = result.manifest.includedFeatures.size
                 _uiState.update {
                     it.copy(
                         isImporting = false,
                         progress = 100,
-                        successMessage = "Backup restored! ($featureCount data sets imported)",
+                        successMessage = buildString {
+                            append("Backup imported: ${result.imported} items added, ${result.skipped} existing items kept.")
+                            if (result.warnings.isNotEmpty()) append("\n" + result.warnings.joinToString("\n"))
+                        },
                         importUri = null
                     )
                 }

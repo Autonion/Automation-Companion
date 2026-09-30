@@ -181,12 +181,13 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
             // ─── Connection State for Overlay ────────────
             // Distinguish full desktop agent from background service (unlock helper)
             val crossManager = remember { CrossDeviceAutomationManager.getInstance(context) }
-            val devices by crossManager.deviceRepository.getAllDevices().collectAsState(initial = emptyList())
+            val deviceFlow = remember(crossManager) { crossManager.deviceRepository.getAllDevices() }
+            val devices by deviceFlow.collectAsState(initial = emptyList())
             val hasFullAgentConnection = devices.any {
-                it.isSelected && it.status == com.autonion.automationcompanion.features.cross_device_automation.domain.DeviceStatus.ONLINE && !it.isServiceOnly
+                it.isConnected && !it.isServiceOnly
             }
             val hasAnyConnection = devices.any {
-                it.isSelected && it.status == com.autonion.automationcompanion.features.cross_device_automation.domain.DeviceStatus.ONLINE
+                it.isConnected
             }
             val isServiceOnlyConnected = hasAnyConnection && !hasFullAgentConnection
 
@@ -265,13 +266,12 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
                             }
                         }
                         2 -> {
-                            // Flows tab: accessible with any connection (including service-only for unlock flows)
-                            val shouldBlur = !hasAnyConnection
+                            // Flows remain accessible during helper discovery and handoff.
+                            // Execution is guarded by the authenticated socket in NetworkingManager.
                             Box(modifier = Modifier.fillMaxSize()) {
                                 Box(
                                     modifier = Modifier
                                         .fillMaxSize()
-                                        .then(if (shouldBlur) Modifier.blur(12.dp) else Modifier)
                                 ) {
                                     Column(modifier = Modifier.fillMaxSize()) {
                                         // Service-only banner when connected to background service
@@ -302,14 +302,16 @@ fun CrossDeviceAutomationScreen(onBack: () -> Unit) {
                                                 )
                                             }
                                         }
+                                        if (!hasAnyConnection) {
+                                            Text(
+                                                "Waiting for your paired desktop or unlock service to connect…",
+                                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                                                color = headerSubTextColor,
+                                                fontSize = 12.sp
+                                            )
+                                        }
                                         DesktopFlowsTab()
                                     }
-                                }
-                                if (shouldBlur) {
-                                    BlurOverlay(
-                                        isDark = isDark,
-                                        isServiceOnlyConnected = false // No service; fully disconnected
-                                    )
                                 }
                             }
                         }

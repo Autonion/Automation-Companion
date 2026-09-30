@@ -46,4 +46,23 @@ interface SlotDao {
     @Query("SELECT * FROM slots WHERE enabled = 1 AND triggerType = :type")
     suspend fun getEnabledSlotsByType(type: String): List<Slot>
 
+    @Query("SELECT * FROM slots WHERE triggerType = 'LOCATION'")
+    suspend fun getLocationSlots(): List<Slot>
+
+    @Query("UPDATE slots SET enabled = 0, isInsideGeofence = 0 WHERE triggerType = 'LOCATION'")
+    suspend fun disableLocationSlots()
+
+    @Query("UPDATE slots SET isInsideGeofence = 0 WHERE triggerType = 'LOCATION'")
+    suspend fun resetLocationPresence()
+
+    // A single database write arbitrates simultaneous ENTER, start-alarm and tick deliveries.
+    // NULL is the initial state, so a plain != comparison would never claim a new slot.
+    @Query("""
+        UPDATE slots SET lastExecutedDay = :day
+        WHERE id = :slotId AND enabled = 1 AND triggerType = 'LOCATION'
+          AND isInsideGeofence = 1
+          AND (lastExecutedDay IS NULL OR lastExecutedDay != :day)
+    """)
+    suspend fun claimLocationExecution(slotId: Long, day: String): Int
+
 }

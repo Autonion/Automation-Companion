@@ -11,6 +11,7 @@ import android.content.Intent
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.IBinder
+import android.provider.Settings
 import android.util.Log
 import android.view.Gravity
 import android.view.WindowManager
@@ -22,6 +23,7 @@ import com.autonion.automationcompanion.R
 import com.autonion.automationcompanion.features.automation_debugger.DebugLogger
 import com.autonion.automationcompanion.features.automation_debugger.data.LogCategory
 import com.autonion.automationcompanion.features.flow_automation.data.FlowRepository
+import com.autonion.automationcompanion.features.flow_automation.ui.FlowMediaProjectionActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -49,6 +51,8 @@ class FlowExecutionService : Service() {
     private lateinit var executionEngine: FlowExecutionEngine
     private lateinit var repository: FlowRepository
     private var screenCaptureProvider: ScreenCaptureProvider? = null
+    private var activeFlowId: String? = null
+    private var recoveryStarted = false
 
     // Overlay
     private var windowManager: WindowManager? = null
@@ -97,6 +101,9 @@ class FlowExecutionService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
+        activeFlowId = flowId
+        recoveryStarted = false
+        isStopping = false
 
         // Determine if MediaProjection data is present
         val hasMediaProjection = intent.hasExtra(EXTRA_RESULT_CODE) && intent.hasExtra(EXTRA_RESULT_DATA)
@@ -122,15 +129,7 @@ class FlowExecutionService : Service() {
             DebugLogger.info(applicationContext, DBG_CATEGORY, "MediaProjection Ready", "Screen capture initialized for visual nodes", TAG)
             screenCaptureProvider = ScreenCaptureProvider(this).also {
                 it.onProjectionLost = {
-                    Log.w(TAG, "MediaProjection lost — stopping flow execution")
-                    DebugLogger.warning(applicationContext, DBG_CATEGORY,
-                        "Screen capture lost",
-                        "MediaProjection revoked by the system — flow stopped", TAG)
-                    android.os.Handler(android.os.Looper.getMainLooper()).post {
-                        android.widget.Toast.makeText(this@FlowExecutionService,
-                            "Screen capture lost — flow stopped", android.widget.Toast.LENGTH_LONG).show()
-                    }
-                    stopExecution()
+                    recoverProjection()
                 }
                 it.start(resultCode, resultData)
             }
@@ -236,8 +235,54 @@ class FlowExecutionService : Service() {
     }
 
     private fun updateNotification(text: String) {
+        if (recoveryStarted) return
         val nm = getSystemService(NotificationManager::class.java)
         nm.notify(NOTIFICATION_ID, buildNotification(text))
+    }
+
+    private fun recoverProjection() {
+        if (recoveryStarted) return
+        val flowId = activeFlowId ?: run {
+            Log.e(TAG, "MediaProjection lost without an active flow ID")
+            stopExecution()
+            return
+        }
+
+        recoveryStarted = true
+        val recoveryIntent = FlowMediaProjectionActivity.flowRecoveryIntent(this, flowId)
+        val recoveryPendingIntent = PendingIntent.getActivity(
+            this,
+            NOTIFICATION_ID,
+            recoveryIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("Screen capture stopped")
+            .setContentText("Tap to allow capture and restart the flow")
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentIntent(recoveryPendingIntent)
+            .addAction(android.R.drawable.ic_menu_view, "Allow capture", recoveryPendingIntent)
+            .setOngoing(false)
+            .setAutoCancel(false)
+            .setOnlyAlertOnce(true)
+            .build()
+        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification)
+
+        Log.w(TAG, "MediaProjection lost; requesting fresh consent for flow $flowId")
+        DebugLogger.warning(
+            applicationContext,
+            DBG_CATEGORY,
+            "Screen capture lost",
+            "Waiting for a fresh system screen-capture grant; the flow will restart after approval",
+            TAG
+        )
+
+        if (Settings.canDrawOverlays(this)) {
+            runCatching { startActivity(recoveryIntent) }
+                .onFailure { Log.w(TAG, "Could not open screen-capture consent automatically", it) }
+        }
+
+        stopExecution(detachNotification = true)
     }
 
     // ─── Floating Overlay (Panic Button + Status) ────────────────────────
@@ -332,20 +377,20 @@ class FlowExecutionService : Service() {
 
     private var isStopping = false
 
-    private fun stopExecution() {
+    private fun stopExecution(detachNotification: Boolean = false) {
         if (isStopping) return  // Prevent re-entrant calls
         isStopping = true
-        executionEngine.stop()
+        if (::executionEngine.isInitialized) executionEngine.stop()
         screenCaptureProvider?.stop()
         screenCaptureProvider = null
         removeOverlay()
-        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopForeground(if (detachNotification) STOP_FOREGROUND_DETACH else STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        executionEngine.stop()
+        if (::executionEngine.isInitialized) executionEngine.stop()
         screenCaptureProvider?.stop()
         screenCaptureProvider = null
         removeOverlay()

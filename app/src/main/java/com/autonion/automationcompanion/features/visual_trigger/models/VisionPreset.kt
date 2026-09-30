@@ -9,7 +9,8 @@ data class VisionPreset(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
     val regions: List<VisionRegion> = emptyList(),
-    val executionMode: ExecutionMode = ExecutionMode.MANDATORY_SEQUENTIAL,
+    val executionMode: ExecutionMode = ExecutionMode.DETECT_ONLY,
+    val tapDispatchMode: TapDispatchMode = TapDispatchMode.SEQUENTIAL,
     val isActive: Boolean = false,
     val captureImagePath: String? = null
 )
@@ -19,4 +20,10 @@ enum class ExecutionMode {
     @SerialName("mandatory_sequential") MANDATORY_SEQUENTIAL,
     @SerialName("optional_sequential") OPTIONAL_SEQUENTIAL,
     @SerialName("detect_only") DETECT_ONLY
+}
+
+@Serializable
+enum class TapDispatchMode {
+    @SerialName("sequential") SEQUENTIAL,
+    @SerialName("concurrent") CONCURRENT
 }

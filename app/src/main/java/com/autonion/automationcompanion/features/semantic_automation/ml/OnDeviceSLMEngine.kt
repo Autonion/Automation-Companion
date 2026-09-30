@@ -4,6 +4,15 @@ import android.content.Context
 import android.util.Log
 import com.autonion.automationcompanion.features.screen_understanding_ml.model.ActionIntent
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -21,10 +30,21 @@ import kotlinx.coroutines.withContext
  */
 class OnDeviceSLMEngine(
     private val context: Context,
-    private val storageManager: ModelStorageManager
+    private val storageManager: ModelStorageManager,
+    private val requestedModelPath: String
 ) : GenerativeUIEngine {
 
     private val TAG = "OnDeviceSLM"
+    private val operations = Mutex()
+    private val retired = AtomicBoolean(false)
+    private val closeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    private suspend fun <T> withLoadedModel(block: suspend () -> T): T = operations.withLock {
+        check(!retired.get() && !needsReinitialization()) {
+            "The selected model changed. Load the selected model and try again."
+        }
+        withContext(Dispatchers.IO) { block() }
+    }
 
     // MediaPipe backend (for .bin / .task)
     private var llmInference: LlmInference? = null
@@ -37,48 +57,50 @@ class OnDeviceSLMEngine(
     private var activeModelPath: String? = null
 
     override suspend fun initialize() {
-        withContext(Dispatchers.IO) {
-            val modelPath = storageManager.getActiveModelPath()
-                ?: throw IllegalStateException("No SLM model imported. Please import a model via the SLM Hub.")
+        operations.withLock {
+            check(!retired.get()) { "This on-device engine has been closed." }
+            // Loading allocates native resources; retain ownership even if the caller cancels.
+            withContext(NonCancellable + Dispatchers.IO) {
+                val modelPath = requestedModelPath
+                val format = storageManager.getModelFormat(java.io.File(modelPath))
 
-            val format = storageManager.getActiveModelFormat()
-                ?: throw IllegalStateException("Could not determine model format.")
-
-            // If the same model is already loaded, skip re-init
-            if (modelPath == activeModelPath && activeFormat == format) {
-                Log.d(TAG, "Model already loaded: $modelPath ($format)")
-                return@withContext
-            }
-
-            // Close any previously loaded backend
-            closeBackends()
-
-            Log.d(TAG, "Initializing with model: $modelPath (format: $format)")
-
-            when (format) {
-                ModelFormat.MEDIAPIPE -> {
-                    val options = LlmInference.LlmInferenceOptions.builder()
-                        .setModelPath(modelPath)
-                        .setMaxTokens(1024)
-                        .build()
-
-                    llmInference = LlmInference.createFromOptions(context, options)
-                    Log.d(TAG, "MediaPipe LlmInference initialized successfully")
+                // If the same model is already loaded, skip re-init
+                if (modelPath == activeModelPath && activeFormat == format) {
+                    Log.d(TAG, "Model already loaded: $modelPath ($format)")
+                    return@withContext
                 }
-                ModelFormat.GGUF -> {
-                    val engine = GGUFInferenceEngine(context, modelPath)
-                    engine.initialize()
-                    ggufEngine = engine
-                    Log.d(TAG, "GGUF engine initialized successfully")
-                }
-            }
 
-            activeFormat = format
-            activeModelPath = modelPath
+                // Close any previously loaded backend
+                closeBackends()
+
+                Log.d(TAG, "Initializing with model: $modelPath (format: $format)")
+
+                when (format) {
+                    ModelFormat.MEDIAPIPE -> {
+                        val options = LlmInference.LlmInferenceOptions.builder()
+                            .setModelPath(modelPath)
+                            .setMaxTokens(1024)
+                            .build()
+
+                        llmInference = LlmInference.createFromOptions(context, options)
+                        Log.d(TAG, "MediaPipe LlmInference initialized successfully")
+                    }
+                    ModelFormat.GGUF -> {
+                        val engine = GGUFInferenceEngine(context, modelPath)
+                        engine.initialize()
+                        ggufEngine = engine
+                        Log.d(TAG, "GGUF engine initialized successfully")
+                    }
+                }
+
+                activeFormat = format
+                activeModelPath = modelPath
+            }
+            currentCoroutineContext().ensureActive()
         }
     }
 
-    override suspend fun predictNextAction(prompt: String): ActionIntent? = withContext(Dispatchers.IO) {
+    override suspend fun predictNextAction(prompt: String): ActionIntent? = withLoadedModel {
         when (activeFormat) {
             ModelFormat.MEDIAPIPE -> {
                 val inference = llmInference
@@ -93,17 +115,16 @@ class OnDeviceSLMEngine(
                 parseJsonResponse(rawResponse)
             }
             ModelFormat.GGUF -> {
-                ggufEngine?.predictNextAction(prompt)
-                    ?: throw IllegalStateException("GGUF engine not initialized.")
+                (ggufEngine ?: throw IllegalStateException("GGUF engine not initialized.")).predictNextAction(prompt)
             }
             null -> throw IllegalStateException("No model loaded. Call initialize() first.")
         }
     }
 
-    override suspend fun generateChatResponse(prompt: String): String? = withContext(Dispatchers.IO) {
+    override suspend fun generateChatResponse(prompt: String): String? = withLoadedModel {
         when (activeFormat) {
             ModelFormat.MEDIAPIPE -> {
-                val inference = llmInference ?: return@withContext null
+                val inference = llmInference ?: throw IllegalStateException("MediaPipe model not loaded.")
                 Log.d(TAG, "MediaPipe: Generating chat response (${prompt.length} chars)")
                 val startTime = System.currentTimeMillis()
                 val response = inference.generateResponse(prompt)
@@ -119,19 +140,15 @@ class OnDeviceSLMEngine(
     }
 
     override fun generateChatResponseStream(prompt: String): Flow<String> = flow {
-        when (activeFormat) {
-            ModelFormat.MEDIAPIPE -> {
-                // MediaPipe doesn't support streaming — emit the full response at once
-                val response = generateChatResponse(prompt)
-                if (response != null) emit(response)
-            }
-            ModelFormat.GGUF -> {
-                ggufEngine?.generateChatResponseStream(prompt)?.collect { token ->
-                    emit(token)
+        operations.withLock {
+            check(!retired.get() && !needsReinitialization()) { "The selected model changed. Try again." }
+            when (activeFormat) {
+                ModelFormat.MEDIAPIPE -> {
+                    val response = llmInference?.generateResponse(prompt)
+                    if (!response.isNullOrBlank()) emit(response)
                 }
-            }
-            null -> {
-                // No model loaded
+                ModelFormat.GGUF -> ggufEngine!!.generateChatResponseStream(prompt).collect { emit(it) }
+                null -> error("No on-device model loaded.")
             }
         }
     }.flowOn(Dispatchers.IO)
@@ -159,7 +176,7 @@ class OnDeviceSLMEngine(
      */
     fun needsReinitialization(): Boolean {
         val currentPath = storageManager.getActiveModelPath()
-        return currentPath != activeModelPath
+        return retired.get() || currentPath != activeModelPath
     }
 
     /**
@@ -274,8 +291,15 @@ class OnDeviceSLMEngine(
         activeModelPath = null
     }
 
+    suspend fun closeAndAwait() {
+        retired.set(true)
+        withContext(NonCancellable + Dispatchers.IO) {
+            operations.withLock { closeBackends() }
+        }
+    }
+
     override fun close() {
-        closeBackends()
-        Log.d(TAG, "OnDeviceSLMEngine closed")
+        retired.set(true)
+        closeScope.launch { closeAndAwait() }
     }
 }

@@ -303,8 +303,11 @@ object HybridElementMatcher {
                     "[acc=${"%.2f".format(best.accessibilityScore)}, yolo=${"%.2f".format(best.yoloScore)}, " +
                     "ocr=${"%.2f".format(best.ocrScore)}] via ${best.source}")
         } else {
+            val sameLabel = yoloCandidates.filter { it.label.equals(anchorLabel, ignoreCase = true) }
+            val textMatches = sameLabel.count { anchorText.isNullOrBlank() || isTextMatching(it.text, anchorText) }
             Log.d(TAG, "No match above $MIN_HYBRID_CONFIDENCE for label=$anchorLabel " +
-                    "(${results.size} candidates, best=${results.maxByOrNull { it.hybridConfidence }?.hybridConfidence})")
+                    "(${results.size} candidates, best=${results.maxByOrNull { it.hybridConfidence }?.hybridConfidence}, " +
+                    "detected=${yoloCandidates.size}, sameLabel=${sameLabel.size}, textMatches=$textMatches)")
         }
         return best
     }
@@ -393,43 +396,10 @@ object HybridElementMatcher {
     // UTILITIES
     // ═══════════════════════════════════════════════════════════════════════
 
-    fun normalizeText(text: String): String {
-        return text.lowercase()
-            .replace("…", "...")
-            .replace(Regex("\\.{2,}"), " ")
-            .replace(Regex("[^\\p{L}\\p{N}\\s]"), " ")
-            .replace(Regex("\\s+"), " ")
-            .trim()
-    }
+    fun normalizeText(text: String): String = TextMatching.normalize(text)
 
-    fun isTextMatching(candidateText: String?, targetText: String): Boolean {
-        if (candidateText.isNullOrBlank() || targetText.isBlank()) return false
-        val normCand = normalizeText(candidateText)
-        val normTarget = normalizeText(targetText)
-        if (normCand.isEmpty() || normTarget.isEmpty()) return false
-
-        // 1. Direct containment
-        if (normCand.contains(normTarget) || normTarget.contains(normCand)) return true
-
-        // 2. Token overlap (handles truncation / ellipsis like "bo..." vs "born", or multiline fragments)
-        val candWords = normCand.split(" ").filter { it.isNotBlank() }
-        val targetWords = normTarget.split(" ").filter { it.isNotBlank() }
-        if (candWords.isNotEmpty() && targetWords.isNotEmpty()) {
-            val candSet = candWords.toSet()
-            val commonCount = targetWords.count { word ->
-                candSet.contains(word) || candWords.any { cw ->
-                    (cw.startsWith(word) || word.startsWith(cw)) && minOf(cw.length, word.length) >= 3
-                }
-            }
-            val targetMatchRatio = commonCount.toFloat() / targetWords.size
-            if (targetMatchRatio >= 0.70f || (commonCount >= 4 && targetWords.size >= 4)) {
-                return true
-            }
-        }
-
-        // 3. Fuzzy bigram similarity
-        return fuzzyTextSimilarity(normCand, normTarget) >= 0.70f
-    }
+    fun isTextMatching(candidateText: String?, targetText: String): Boolean =
+        TextMatching.score(candidateText, targetText) > 0f
 
     private fun classMatchScore(node: AccessibilityNodeInfo, label: String): Float {
         val cn = node.className?.toString()?.lowercase() ?: return 0f
@@ -445,17 +415,7 @@ object HybridElementMatcher {
         }
     }
 
-    fun fuzzyTextSimilarity(a: String, b: String): Float {
-        val normA = normalizeText(a)
-        val normB = normalizeText(b)
-        if (normA.isBlank() || normB.isBlank()) return 0f
-        val ba = normA.windowed(2).toSet()
-        val bb = normB.windowed(2).toSet()
-        if (ba.isEmpty() && bb.isEmpty()) return 1f
-        val inter = ba.intersect(bb).size.toFloat()
-        val union = ba.union(bb).size.toFloat()
-        return if (union > 0) inter / union else 0f
-    }
+    fun fuzzyTextSimilarity(a: String, b: String): Float = TextMatching.similarity(a, b)
 
     private fun normalizeRect(rect: RectF, w: Float, h: Float) = RectF(rect.left / w, rect.top / h, rect.right / w, rect.bottom / h)
 

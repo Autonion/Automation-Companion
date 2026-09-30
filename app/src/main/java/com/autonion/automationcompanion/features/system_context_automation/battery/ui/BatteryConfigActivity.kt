@@ -1,5 +1,7 @@
 package com.autonion.automationcompanion.features.system_context_automation.battery.ui
 
+import com.autonion.automationcompanion.features.system_context_automation.shared.SystemSlotController
+
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
@@ -517,31 +519,11 @@ private fun saveBatterySlot(
                 activeDays = "ALL"
             )
 
-            val dao = AppDatabase.get(context).slotDao()
-            val savedId: Long
-            if (slotId != -1L) {
-                dao.update(slot)
-                savedId = slotId
-            } else {
-                savedId = dao.insert(slot)
-            }
-
-            // Start battery monitoring service
-            BatteryServiceManager.startMonitoringIfNeeded(context)
-
-            // Immediately evaluate the saved slot against the current battery level
-            // (don't wait for the next ACTION_BATTERY_CHANGED which may take minutes)
+            val savedId = SystemSlotController.save(context, slot)
             val currentLevel = BatteryBroadcastReceiver.getBatteryPercentage(context)
-            if (currentLevel >= 0) {
-                val shouldTrigger = when (thresholdType) {
-                    TriggerConfig.Battery.ThresholdType.REACHES_OR_BELOW -> currentLevel <= batteryPercentage
-                    TriggerConfig.Battery.ThresholdType.REACHES_OR_ABOVE -> currentLevel >= batteryPercentage
-                }
-                if (shouldTrigger) {
-                    android.util.Log.i("BatteryConfig", "Immediately triggering slot $savedId (battery=$currentLevel%, threshold=$batteryPercentage%)")
-                    com.autonion.automationcompanion.features.system_context_automation.shared.executor.SlotExecutor.execute(context, savedId)
-                }
-                dao.updateLastTriggerState(savedId, shouldTrigger)
+            if (currentLevel in 0..100) {
+                com.autonion.automationcompanion.features.system_context_automation.shared.executor.SlotExecutor
+                    .executeNow(context, savedId, batteryLevel = currentLevel)
             }
 
             android.os.Handler(android.os.Looper.getMainLooper()).post {

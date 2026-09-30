@@ -15,8 +15,8 @@ android {
         applicationId = "com.autonion.automationcompanion"
         minSdk = 24
         targetSdk = 36
-        versionCode = 10
-        versionName = "1.1.1"
+        versionCode = 14
+        versionName = "1.1.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -39,7 +39,8 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -49,6 +50,8 @@ android {
 
     // Use Java 17 for Compose
     compileOptions {
+        // Backport java.time used by System Context triggers to Android 7 (API 24/25).
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -64,7 +67,19 @@ android {
     }
 }
 
+// AGP's default 2.2.10 Compose mapping tool was never published. Match the
+// Compose compiler so optimized releases also retain Compose crash mappings.
+configurations.matching { it.name == "composeMappingProducerClasspath" }.configureEach {
+    resolutionStrategy.eachDependency {
+        if (requested.group == "org.jetbrains.kotlin" && requested.name == "compose-group-mapping") {
+            useVersion(libs.versions.kotlin.get())
+            because("The mapping producer must match the project's Compose compiler")
+        }
+    }
+}
+
 dependencies {
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
     implementation(libs.java.websocket)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.core.ktx)
